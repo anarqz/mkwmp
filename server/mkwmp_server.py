@@ -203,7 +203,7 @@ def auth_response(request_body):
         "sub": user, "iss": "mkwmp-local", "iat": issued, "exp": issued + 3600}) + "."
     duration = b"\x08" + encode_varint(3600)  # google.protobuf.Duration.seconds
     token_message = (protobuf_bytes(1, user) + protobuf_bytes(2, token) +
-                     protobuf_bytes(3, "mkwmp-local-refresh-token") + protobuf_bytes(4, duration))
+                     protobuf_bytes(3, f"mkwmp-local-refresh-token-{slot}") + protobuf_bytes(4, duration))
     return protobuf_bytes(2, token_message)
 
 
@@ -256,6 +256,11 @@ class H2Protocol(asyncio.Protocol):
         log(f"--- connection from {peer}" + (f" (TLS, ALPN={tls.selected_alpn_protocol()})" if tls else "") + " ---")
         self.conn.initiate_connection()
         transport.write(self.conn.data_to_send())
+
+    def ticket_user(self, token):
+        # A fresh local sign-in on this connection takes precedence over any
+        # bearer the game retained from its previous profile or login.
+        return self.user or self.issued_tokens.get(token)
 
     def data_received(self, data):
         try:
@@ -334,19 +339,20 @@ class H2Protocol(asyncio.Protocol):
             self.user = bytes_field(token_info, 1).decode()
             self.issued_tokens[bytes_field(token_info, 2).decode()] = self.user
         if st["path"] == CREATE_TICKET:
-            user = self.issued_tokens.get(st["token"], self.user)
+            user = self.ticket_user(st["token"])
             if user is None:
                 self.conn.send_headers(sid, [("grpc-status", "16")], end_stream=True)
                 log("<<< CreateMatchmakingTicket: no local account")
                 return
             try:
                 response = create_ticket_response(self.matchmaking, user, body)
+                log(f"--- queued local matchmaking user {user.rsplit('/', 1)[-1]} ---")
             except (IndexError, ValueError):
                 self.conn.send_headers(sid, [("grpc-status", "3")], end_stream=True)
                 log("<<< CreateMatchmakingTicket: invalid request")
                 return
         if st["path"] == TRACK_TICKET:
-            user = self.issued_tokens.get(st["token"], self.user)
+            user = self.ticket_user(st["token"])
             try:
                 (flag, message), = decode_grpc_messages(body)
                 prefix, ticket_id = bytes_field(message, 1).decode().rsplit("/", 1)

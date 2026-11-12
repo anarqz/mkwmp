@@ -114,6 +114,11 @@ Verified at 19:05:18: holding the authenticated TrackMatchmakingTicket
 stream open, without an empty frame or success trailers, leaves player one
 in free roam at “A PROCURAR JOGADORES”. The next milestone is a match update
 that advances both game clients; reservation alone does not notify either.
+At 19:11 both game instances submitted Normal24 requests. After preferring
+the account issued on the active connection, the server assigned distinct
+users and tickets and opened both tracking streams (`scratch/two-tickets.log`).
+The server-side queue pairs these tickets; neither game has received a match
+update yet. Ghidra's track consumer is at `main+0x138fea0`.
 Port 8905 now logs to `scratch/match-ticket.log`; use Python `-E -s`
 for direct server launch so its sibling module is importable.
 
