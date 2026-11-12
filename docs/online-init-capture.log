@@ -1,0 +1,46 @@
+[16:32:17.799410] mkwmp gRPC capture server listening on 127.0.0.1:8903 (TLS + h2)
+[16:32:31.895007] --- connection from ('127.0.0.1', 64966) (TLS, ALPN=h2) ---
+[16:32:31.917458] >>> gRPC CALL /nn.npln.auth.v1.Auth/IssuePrearrangedUserToken  (authority=t-e96531c6-lp1.lp1.t.npln.srv.nintendo.net:443, 101 body bytes)
+[16:32:31.920096]     raw gRPC body: 00000000600a1674656e616e74732f742d65393635333163362d6c70311a460a4465794a68624763694f694a756232356c496e302e65794a7a645749694f694a74613364746343317362324e6862434973496d6c7a63794936496d317264323177496e302e
+[16:32:31.921705]     request message (96 bytes, flag=0):
+[16:32:31.921705]   1: string "tenants/t-e96531c6-lp1"
+[16:32:31.922261]   3: message (70B) {
+[16:32:31.922261]     1: string "eyJhbGciOiJub25lIn0.eyJzdWIiOiJta3dtcC1sb2NhbCIsImlzcyI6Im1rd21wIn0."
+[16:32:31.922261]   }
+[16:32:31.922261] <<< responded to /nn.npln.auth.v1.Auth/IssuePrearrangedUserToken with 314 protobuf bytes (grpc-status 0)
+[16:32:31.922261]     raw response protobuf: 12b7020a4174656e616e74732f742d65393635333163362d6c70312f75736572732f30303030303030302d303030302d343030302d383030302d30303030303030303030303112d10165794a68624763694f694a756232356c4969776964486c77496a6f69536c6455496e302e65794a7a645749694f694a305a573568626e527a4c3351745a546b324e544d78597a5974624841784c33567a5a584a7a4c7a41774d4441774d4441774c5441774d4441744e4441774d4330344d4441774c5441774d4441774d4441774d4441774d534973496d6c7a63794936496d3172643231774c577876593246734969776961574630496a6f784e7a6b304e5445784f5455784c434a6c654841694f6a45334f5451314d5455314e5446392e1a196d6b776d702d6c6f63616c2d726566726573682d746f6b656e220308901c
+[16:32:31.939063] >>> gRPC CALL /nn.npln.matchmaking.v1.GameSessionService/ListLatencyMeasurementServers  (authority=t-e96531c6-lp1.lp1.t.npln.srv.nintendo.net:443, 24 body bytes)
+[16:32:31.940085]     raw gRPC body: 00000000130a0f74656e616e74732f63757272656e741014
+[16:32:31.941589]     request message (19 bytes, flag=0):
+[16:32:31.941589]   1: string "tenants/current"
+[16:32:31.941589]   2: varint 20
+[16:32:31.941589] <<< responded to /nn.npln.matchmaking.v1.GameSessionService/ListLatencyMeasurementServers with 0 protobuf bytes (grpc-status 0)
+[16:32:32.039970] >>> gRPC CALL /nn.npln.leaderboard.v1.LeaderboardService/UpdateHolder  (authority=t-e96531c6-lp1.lp1.t.npln.srv.nintendo.net:443, 73 body bytes)
+[16:32:32.041873]     raw gRPC body: 00000000440a2a0a1f74656e616e74732f63757272656e742f686f6c646572732f64656661756c741a054c6f63616c220012160a0c646973706c61795f6e616d650a066669656c6473
+[16:32:32.041873]     request message (68 bytes, flag=0):
+[16:32:32.042715]   1: message (42B) {
+[16:32:32.042715]     1: string "tenants/current/holders/default"
+[16:32:32.042715]     3: string "Local"
+[16:32:32.042715]     4: bytes(0) 
+[16:32:32.042715]   }
+[16:32:32.042715]   2: message (22B) {
+[16:32:32.043367]     1: string "display_name"
+[16:32:32.043367]     1: string "fields"
+[16:32:32.043367]   }
+[16:32:32.043367] <<< responded to /nn.npln.leaderboard.v1.LeaderboardService/UpdateHolder with 0 protobuf bytes (grpc-status 0)
+[16:32:32.045680] >>> gRPC CALL /nn.npln.friends.v1.Friends/ActivateUser  (authority=t-e96531c6-lp1.lp1.t.npln.srv.nintendo.net:443, 36 body bytes)
+[16:32:32.045680]     raw gRPC body: 000000001f0a1d74656e616e74732f63757272656e742f75736572732f63757272656e74
+[16:32:32.045680]     request message (31 bytes, flag=0):
+[16:32:32.045680]   1: string "tenants/current/users/current"
+[16:32:32.046684] <<< responded to /nn.npln.friends.v1.Friends/ActivateUser with 0 protobuf bytes (grpc-status 0)
+[16:32:32.047202] >>> gRPC CALL /nn.npln.maintenance.v1.MaintenanceScheduleService/SubscribeMaintenanceSchedules  (authority=t-e96531c6-lp1.lp1.t.npln.srv.nintendo.net:443, 22 body bytes)
+[16:32:32.047202]     raw gRPC body: 00000000110a0f74656e616e74732f63757272656e74
+[16:32:32.047202]     request message (17 bytes, flag=0):
+[16:32:32.047202]   1: string "tenants/current"
+[16:32:32.047202] <<< opened /nn.npln.maintenance.v1.MaintenanceScheduleService/SubscribeMaintenanceSchedules with an empty snapshot; stream remains active
+[16:32:32.064039] >>> gRPC CALL /nn.npln.friends.v1.Friends/SubscribeFriendUsers  (authority=t-e96531c6-lp1.lp1.t.npln.srv.nintendo.net:443, 36 body bytes)
+[16:32:32.067067]     raw gRPC body: 000000001f0a1d74656e616e74732f63757272656e742f75736572732f63757272656e74
+[16:32:32.067067]     request message (31 bytes, flag=0):
+[16:32:32.067067]   1: string "tenants/current/users/current"
+[16:32:32.067067] <<< opened /nn.npln.friends.v1.Friends/SubscribeFriendUsers with an empty snapshot; stream remains active
+[16:33:02.066432] --- subscription cancelled: /nn.npln.maintenance.v1.MaintenanceScheduleService/SubscribeMaintenanceSchedules (HTTP/2 error 8) ---

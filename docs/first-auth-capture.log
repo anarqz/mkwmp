@@ -1,0 +1,10 @@
+[16:14:10.794865] mkwmp gRPC capture server listening on 127.0.0.1:8901 (TLS + h2)
+[16:14:21.055031] --- connection from ('127.0.0.1', 54064) (TLS, ALPN=h2) ---
+[16:14:21.075803] >>> gRPC CALL /nn.npln.auth.v1.Auth/IssuePrearrangedUserToken  (authority=t-e96531c6-lp1.lp1.t.npln.srv.nintendo.net:443, 101 body bytes)
+[16:14:21.077811]     raw gRPC body: 00000000600a1674656e616e74732f742d65393635333163362d6c70311a460a4465794a68624763694f694a756232356c496e302e65794a7a645749694f694a74613364746343317362324e6862434973496d6c7a63794936496d317264323177496e302e
+[16:14:21.080321]     request message (96 bytes, flag=0):
+[16:14:21.080321]   1: string "tenants/t-e96531c6-lp1"
+[16:14:21.080321]   3: message (70B) {
+[16:14:21.080321]     1: string "eyJhbGciOiJub25lIn0.eyJzdWIiOiJta3dtcC1sb2NhbCIsImlzcyI6Im1rd21wIn0."
+[16:14:21.080321]   }
+[16:14:21.080321] <<< responded to /nn.npln.auth.v1.Auth/IssuePrearrangedUserToken with empty OK (grpc-status 0)

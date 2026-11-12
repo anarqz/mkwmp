@@ -1,0 +1,16 @@
+// Wire layout recovered from the client's generated parser/serializer.
+// Message/field names are descriptive; the original .proto names are unavailable.
+syntax = "proto3";
+package mkwmp.recovered;
+import "google/protobuf/duration.proto";
+
+message IssuePrearrangedUserTokenResponse {
+  // Field 1 is a User message, not yet reconstructed; unused on the observed success path.
+  Token token = 2; // outer parser main+0xec3cc0, tag 0x12
+}
+message Token {
+  string user = 1;          // +0x10, tag 0x0a; parsed as tenants/<tenant>/users/<user>
+  string access_token = 2;  // +0x18, tag 0x12; semantic name inferred from consumers
+  string refresh_token = 3; // +0x20, tag 0x1a; semantic name inferred from consumers
+  google.protobuf.Duration expires_in = 4; // +0x28, tag 0x22
+}
