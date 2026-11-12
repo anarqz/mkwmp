@@ -241,12 +241,14 @@ def bulk_get_responses(body):
 class H2Protocol(asyncio.Protocol):
     matchmaking = LocalMatchmaking()
     issued_tokens = {}
+    active_trackers = {}
 
     def __init__(self):
         self.conn = H2Connection(H2Configuration(client_side=False, header_encoding="utf-8"))
         self.transport = None
         self.streams = {}   # stream_id -> {"path":..., "data":bytearray}
         self.subscriptions = {}
+        self.tracked_tickets = {}
         self.user = None
 
     def connection_made(self, transport):
@@ -288,6 +290,7 @@ class H2Protocol(asyncio.Protocol):
             elif isinstance(ev, StreamReset):
                 self.streams.pop(ev.stream_id, None)
                 path = self.subscriptions.pop(ev.stream_id, None)
+                self.release_tracker(ev.stream_id)
                 if path:
                     log(f"--- subscription cancelled: {path} (HTTP/2 error {ev.error_code}) ---")
             elif isinstance(ev, WindowUpdated):
@@ -366,6 +369,8 @@ class H2Protocol(asyncio.Protocol):
                 self.conn.send_headers(sid, [("grpc-status", "5")], end_stream=True)
                 return
             self.subscriptions[sid] = TRACK_TICKET
+            self.tracked_tickets[sid] = (user, ticket.id)
+            self.active_trackers.setdefault(ticket.id, set()).add((self, sid))
             log(f"<<< tracking {ticket.id}; waiting for a match update")
             return
         if st["path"] == BULK_GET:
@@ -398,11 +403,27 @@ class H2Protocol(asyncio.Protocol):
         if response:
             log(f"    raw response protobuf: {response.hex()}")
 
+    def release_tracker(self, sid):
+        tracker = self.tracked_tickets.pop(sid, None)
+        if tracker is not None:
+            user, ticket_id = tracker
+            # A transport reconnect can overlap the previous stream. Only
+            # release the seat once the last tracker for that ticket closes.
+            remaining = self.active_trackers.get(ticket_id)
+            if remaining is not None:
+                remaining.discard((self, sid))
+                if not remaining:
+                    del self.active_trackers[ticket_id]
+                    self.matchmaking.cancel(user, ticket_id)
+                    log(f"--- released local ticket {ticket_id} ---")
+
     def connection_lost(self, exc):
         if self.subscriptions:
             log(f"--- connection closed with {len(self.subscriptions)} active subscriptions ---")
         self.streams.clear()
         self.subscriptions.clear()
+        for sid in list(self.tracked_tickets):
+            self.release_tracker(sid)
 
 
 async def main():

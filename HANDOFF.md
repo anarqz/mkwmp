@@ -119,6 +119,13 @@ the account issued on the active connection, the server assigned distinct
 users and tickets and opened both tracking streams (`scratch/two-tickets.log`).
 The server-side queue pairs these tickets; neither game has received a match
 update yet. Ghidra's track consumer is at `main+0x138fea0`.
+Both clients closed tracking after roughly 150 seconds. The adapter now
+releases a ticket on its last tracker reset or disconnect, and an HTTP/2
+test verifies that the remaining seat returns to the queue. The running
+server still has the earlier build. Ghidra followed track outcome 3 into
+`main+0x13dbf00`, which reads a resource name at message object +0x28,
+a second string at +0x38, and a repeated collection. The wire tags and
+outcome discriminator still need verification before sending an assignment.
 Port 8905 now logs to `scratch/match-ticket.log`; use Python `-E -s`
 for direct server launch so its sibling module is importable.
 
