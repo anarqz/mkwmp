@@ -179,6 +179,13 @@ def create_ticket_response(queue, user, request_body):
     return protobuf_bytes(1, name)
 
 
+def match_assignment(tenant, lobby_id):
+    # Track response serializer main+0x1408a40: outcome 5, session 7.
+    # Session serializer main+0x140b440: resource name 1.
+    name = f"{tenant}/gameSessions/{lobby_id}"
+    return b"\x28\x03" + protobuf_bytes(7, protobuf_bytes(1, name))
+
+
 SECOND_LOCAL_TOKEN = b"eyJhbGciOiJub25lIn0.eyJzdWIiOiJta3dtcC1sb2NhbC0yIiwiaXNzIjoibWt3bXAifQ."
 
 
@@ -242,6 +249,7 @@ class H2Protocol(asyncio.Protocol):
     matchmaking = LocalMatchmaking()
     issued_tokens = {}
     active_trackers = {}
+    announce_matches = False
 
     def __init__(self):
         self.conn = H2Connection(H2Configuration(client_side=False, header_encoding="utf-8"))
@@ -372,6 +380,8 @@ class H2Protocol(asyncio.Protocol):
             self.tracked_tickets[sid] = (user, ticket.id)
             self.active_trackers.setdefault(ticket.id, set()).add((self, sid))
             log(f"<<< tracking {ticket.id}; waiting for a match update")
+            if self.announce_matches:
+                self.publish_match(ticket)
             return
         if st["path"] == BULK_GET:
             try:
@@ -403,6 +413,27 @@ class H2Protocol(asyncio.Protocol):
         if response:
             log(f"    raw response protobuf: {response.hex()}")
 
+    def publish_match(self, ticket):
+        if ticket.lobby is None:
+            return
+        lobby = self.matchmaking.lobbies[ticket.lobby]
+        groups = [self.active_trackers.get(seat) for seat in lobby.seats]
+        if not all(groups):
+            return
+        frame = grpc_frame(match_assignment(ticket.user.split("/users/", 1)[0], lobby.id))
+        streams = [stream for group in groups for stream in group]
+        if any(peer.conn.local_flow_control_window(sid) < len(frame) for peer, sid in streams):
+            return
+        for seat in lobby.seats:
+            del self.active_trackers[seat]
+        for peer, sid in streams:
+            del peer.tracked_tickets[sid]
+            del peer.subscriptions[sid]
+            peer.conn.send_data(sid, frame)
+            peer.conn.send_headers(sid, [("grpc-status", "0")], end_stream=True)
+            peer.transport.write(peer.conn.data_to_send())
+        log(f"<<< assigned both tickets to local session {lobby.id}")
+
     def release_tracker(self, sid):
         tracker = self.tracked_tickets.pop(sid, None)
         if tracker is not None:
@@ -433,7 +464,9 @@ async def main():
     ap.add_argument("--log", default=None)
     ap.add_argument("--tls-cert", help="PEM certificate for the embedded OpenSSL transport")
     ap.add_argument("--tls-key", help="matching PEM private key")
+    ap.add_argument("--announce-matches", action="store_true", help="send experimental local session assignments")
     args = ap.parse_args()
+    H2Protocol.announce_matches = args.announce_matches
     if bool(args.tls_cert) != bool(args.tls_key):
         ap.error("--tls-cert and --tls-key must be supplied together")
     tls = None

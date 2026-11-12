@@ -11,6 +11,33 @@ import mkwmp_server as capture
 
 
 class ProtocolTest(unittest.IsolatedAsyncioTestCase):
+    def test_assignment_sent_to_both_live_trackers(self):
+        queue = capture.LocalMatchmaking()
+        first = queue.create("tenants/local/users/one", "Normal24")
+        second = queue.create("tenants/local/users/two", "Normal24")
+        with patch.object(capture.H2Protocol, "matchmaking", queue), patch.object(
+            capture.H2Protocol, "active_trackers", {}
+        ), patch.object(capture, "log"):
+            peers = [capture.H2Protocol(), capture.H2Protocol()]
+            from unittest.mock import Mock
+            for peer, ticket in zip(peers, (first, second)):
+                peer.conn = Mock()
+                peer.conn.local_flow_control_window.return_value = 65535
+                peer.transport = Mock()
+                peer.tracked_tickets[1] = (ticket.user, ticket.id)
+                peer.subscriptions[1] = capture.TRACK_TICKET
+                peer.active_trackers[ticket.id] = {(peer, 1)}
+            peers[0].publish_match(first)
+            for peer in peers:
+                frame = peer.conn.send_data.call_args.args[1]
+                [(flag, reply)] = capture.decode_grpc_messages(frame)
+                self.assertEqual(flag, 0)
+                self.assertTrue(reply.startswith(b"\x28\x03"))
+                session = capture.bytes_field(reply, 7)
+                self.assertEqual(capture.bytes_field(session, 1).decode(), f"tenants/local/gameSessions/{first.lobby}")
+                peer.conn.send_headers.assert_called_once_with(1, [("grpc-status", "0")], end_stream=True)
+                self.assertFalse(peer.tracked_tickets)
+
     def test_captured_race_request_returns_a_named_ticket(self):
         request = bytes.fromhex(
             "000000009f0a0f74656e616e74732f63757272656e74128b01122b74656e616e74732f"

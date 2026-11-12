@@ -126,6 +126,14 @@ server still has the earlier build. Ghidra followed track outcome 3 into
 `main+0x13dbf00`, which reads a resource name at message object +0x28,
 a second string at +0x38, and a repeated collection. The wire tags and
 outcome discriminator still need verification before sending an assignment.
+
+Ghidra confirmed the tags in the serializers at `main+0x1408a40` and
+`main+0x140b440`: tracking outcome is varint field 5, value 3 enters the
+session branch, field 7 holds the session object, and its field 1 holds
+the resource name `tenants/<tenant>/gameSessions/<uuid>`. The experimental
+`--announce-matches` mode sends the same session name to both live trackers.
+Server tests pass; in-game acceptance and peer connection still need a live
+test. The running listener uses `scratch/match-assignment.log`.
 Port 8905 now logs to `scratch/match-ticket.log`; use Python `-E -s`
 for direct server launch so its sibling module is importable.
 
