@@ -21,6 +21,7 @@ import struct
 import ssl
 import sys
 import time
+from uuid import UUID
 
 from h2.config import H2Configuration
 from h2.connection import H2Connection
@@ -29,6 +30,7 @@ from local_matchmaking import LocalMatchmaking
 
 LOG_FILE = None
 CREATE_TICKET = "/nn.npln.matchmaking.v1.Matchmaker/CreateMatchmakingTicket"
+TRACK_TICKET = "/nn.npln.matchmaking.v1.Matchmaker/TrackMatchmakingTicket"
 PRESENCE_SUBSCRIBE = "/nn.npln.friends.v1.PresenceService/SubscribePresences"
 PRESENCE_KEEPALIVE = "/nn.npln.friends.v1.PresenceService/KeepAlive"
 SUBSCRIPTIONS = {
@@ -343,6 +345,23 @@ class H2Protocol(asyncio.Protocol):
                 self.conn.send_headers(sid, [("grpc-status", "3")], end_stream=True)
                 log("<<< CreateMatchmakingTicket: invalid request")
                 return
+        if st["path"] == TRACK_TICKET:
+            user = self.issued_tokens.get(st["token"], self.user)
+            try:
+                (flag, message), = decode_grpc_messages(body)
+                prefix, ticket_id = bytes_field(message, 1).decode().rsplit("/", 1)
+                if flag or prefix != "tenants/current/matchmakingTickets":
+                    raise ValueError("invalid ticket resource")
+                ticket = self.matchmaking.tickets.get(UUID(ticket_id))
+            except (IndexError, ValueError):
+                self.conn.send_headers(sid, [("grpc-status", "3")], end_stream=True)
+                return
+            if user is None or ticket is None or ticket.user != user:
+                self.conn.send_headers(sid, [("grpc-status", "5")], end_stream=True)
+                return
+            self.subscriptions[sid] = TRACK_TICKET
+            log(f"<<< tracking {ticket.id}; waiting for a match update")
+            return
         if st["path"] == BULK_GET:
             try:
                 results = bulk_get_responses(body)

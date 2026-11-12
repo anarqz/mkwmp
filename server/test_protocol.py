@@ -102,6 +102,20 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 writer.write(conn.data_to_send())
                 end = await events_until(lambda evs: any(isinstance(e, StreamEnded) and e.stream_id == 7 for e in evs))
                 self.assertEqual(dict(next(e for e in end if isinstance(e, TrailersReceived)).headers)["grpc-status"], "0")
+                user = "tenants/local/users/test"
+                with patch.object(capture.H2Protocol, "issued_tokens", {"test-token": user}), patch.object(
+                    capture.H2Protocol, "matchmaking", capture.LocalMatchmaking()
+                ):
+                    ticket = capture.H2Protocol.matchmaking.create(user, "Normal24")
+                    conn.send_headers(9, [(":method", "POST"), (":scheme", "http"),
+                        (":authority", "local.test"), (":path", capture.TRACK_TICKET),
+                        ("content-type", "application/grpc"), ("authorization", "Bearer test-token")])
+                    name = f"tenants/current/matchmakingTickets/{ticket.id}"
+                    conn.send_data(9, capture.grpc_frame(capture.protobuf_bytes(1, name)), end_stream=True)
+                    request(11, "/local.test.Service/Unary")
+                    tracking = await events_until(lambda evs: any(isinstance(e, StreamEnded) and e.stream_id == 11 for e in evs))
+                    self.assertTrue(any(getattr(e, "stream_id", None) == 9 for e in tracking))
+                    self.assertFalse(any(isinstance(e, (StreamEnded, DataReceived)) and e.stream_id == 9 for e in tracking))
                 conn.reset_stream(1)
                 writer.write(conn.data_to_send())
                 await writer.drain()

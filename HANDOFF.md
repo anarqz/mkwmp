@@ -110,6 +110,10 @@ Live acceptance verified at 19:02:37: the game used the returned ID in
 `TrackMatchmakingTicket`. The stub closed that stream with an empty success
 reply; the character picker returned to the main menu without the old popup.
 The next change is to keep the track stream open and send state updates.
+Verified at 19:05:18: holding the authenticated TrackMatchmakingTicket
+stream open, without an empty frame or success trailers, leaves player one
+in free roam at “A PROCURAR JOGADORES”. The next milestone is a match update
+that advances both game clients; reservation alone does not notify either.
 Port 8905 now logs to `scratch/match-ticket.log`; use Python `-E -s`
 for direct server launch so its sibling module is importable.
 
