@@ -1,199 +1,187 @@
-//! mkwmp launcher.
+//! mkwmp launcher: a small window to play on an mkwmp server.
 //!
-//!   mkwmp-launcher [--no-launch] [--no-update] [--version] [client.toml]
+//!   mkwmp-launcher [client.toml]                 the window
+//!   mkwmp-launcher --headless [--no-launch] [--no-update] [client.toml]
+//!   mkwmp-launcher --version
 //!
-//! 1. Updates itself and the game patch from GitHub Releases (verified
-//!    signatures; failures never block play).
-//! 2. Writes `<game>/mkwmp.toml`: the lobby, your name, and how the game
-//!    reaches this launcher (local API on 127.0.0.1).
-//! 3. Takes a seat: at start (`seat = "start"`), or when the game goes online
-//!    (`seat = "online"`). Shows the queue, keeps the seat alive, picks up
-//!    friend edits in client.toml, rejoins after a server restart.
-//! 4. Starts the game (unless `--no-launch` / `launch = false`, e.g. SteamOS:
-//!    start it from Steam) and frees the seat when it exits or on Ctrl-C.
+//! Settings live in client.toml (next to the launcher by default); the window
+//! edits it. The launcher updates itself and the game patch from GitHub
+//! Releases (signed), takes a seat on the server (or queues), serves the
+//! game's seat requests on 127.0.0.1, and starts the game.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod api;
 mod config;
+mod core;
+mod gui;
 mod launch;
 mod local;
+mod log;
 mod probe;
 mod seat;
 mod update;
 
-use std::process::Child;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use config::{ClientConfig, SeatMode};
-use rand::RngCore;
-use seat::Seat;
+use config::ClientConfig;
+use core::{Core, SessionView};
 
 struct Args {
-    path: String,
+    path: Option<String>,
+    headless: bool,
     no_launch: bool,
     no_update: bool,
 }
 
 fn args() -> Args {
-    let mut a = Args { path: "client.toml".into(), no_launch: false, no_update: false };
+    let mut a = Args { path: None, headless: false, no_launch: false, no_update: false };
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
+            "--headless" => a.headless = true,
             "--no-launch" => a.no_launch = true,
             "--no-update" => a.no_update = true,
             "--version" | "-V" => {
+                console();
                 println!("mkwmp-launcher {}", update::VERSION);
                 std::process::exit(0);
             }
             "-h" | "--help" => {
-                println!("usage: mkwmp-launcher [--no-launch] [--no-update] [--version] [client.toml]");
+                console();
+                println!("usage: mkwmp-launcher [--headless] [--no-launch] [--no-update] [--version] [client.toml]");
                 std::process::exit(0);
             }
-            _ => a.path = arg,
+            _ => a.path = Some(arg),
         }
     }
     a
 }
 
-#[tokio::main]
-async fn main() {
-    let a = args();
-    if let Err(e) = run(a).await {
-        eprintln!("mkwmp: {e}");
-        std::process::exit(1);
+/// A release build on Windows has no console of its own; borrow the
+/// terminal's when one started us.
+fn console() {
+    #[cfg(windows)]
+    unsafe {
+        windows_sys::Win32::System::Console::AttachConsole(windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS);
     }
 }
 
-async fn run(a: Args) -> Result<(), String> {
-    let cfg = ClientConfig::load(&a.path)?;
-    println!("mkwmp-launcher {}", update::VERSION);
+fn default_config_path() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.join("client.toml")))
+        .unwrap_or_else(|| PathBuf::from("client.toml"))
+        .display()
+        .to_string()
+}
+
+fn main() {
+    let a = args();
+    if a.headless {
+        console();
+    }
+    let path = a.path.clone().unwrap_or_else(default_config_path);
+    let mut cfg = match ClientConfig::load_or_default(&path) {
+        Ok(c) => c,
+        Err(e) => fatal(&e),
+    };
+    if a.no_launch {
+        cfg.launch = false;
+    }
+    if a.no_update {
+        cfg.update = false;
+    }
     update::clean_old();
 
-    if cfg.update && !a.no_update {
-        updates(&cfg, &a).await;
-    }
-    if let Some(msg) = probe::ensure_host(&cfg.game) {
-        println!("mkwmp: winmm_host.dll: {msg}");
-    }
-
-    let seat = Arc::new(Seat::new(&cfg, &a.path));
-
-    // Where the game connects: the server's lobby.
-    let lobby = loop {
-        match seat.api().lobby_endpoint().await {
-            Ok(l) => break l,
-            Err(e) => {
-                eprintln!("mkwmp: {e}; retrying");
-                tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_secs(5)) => {}
-                    _ = tokio::signal::ctrl_c() => return Ok(()),
-                }
-            }
-        }
-    };
+    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime");
+    let core = Core::new(path, cfg.clone());
 
     // The local API the game calls for its seat.
     let addr = format!("127.0.0.1:{}", cfg.local_port);
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .map_err(|e| format!("cannot open {addr} ({e}); is another launcher running?"))?;
-    let mut token = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut token);
-    let token: String = token.iter().map(|b| format!("{b:02x}")).collect();
-    tokio::spawn({
-        let app = local::router(seat.clone(), token.clone());
-        async move {
-            let _ = axum::serve(listener, app).await;
+    match rt.block_on(tokio::net::TcpListener::bind(&addr)) {
+        Ok(listener) => {
+            let app = local::router(core.clone());
+            rt.spawn(async move {
+                let _ = axum::serve(listener, app).await;
+            });
+        }
+        Err(e) => {
+            let msg = format!("cannot open {addr} ({e}); is another launcher running?");
+            if a.headless {
+                fatal(&msg);
+            }
+            log::note(msg);
+        }
+    }
+    rt.spawn(core.clone().status_loop());
+
+    if a.headless {
+        headless(&rt, core);
+    } else {
+        // Updates run beside the window; a new launcher replaces this one.
+        rt.spawn({
+            let core = core.clone();
+            async move {
+                if let Some(exe) = core.updates().await {
+                    tokio::time::sleep(Duration::from_millis(800)).await;
+                    let _ = std::process::Command::new(&exe)
+                        .args(std::env::args_os().skip(1))
+                        .env("MKWMP_UPDATED", "1")
+                        .spawn();
+                    std::process::exit(0);
+                }
+            }
+        });
+        let _guard = rt.enter();
+        if let Err(e) = gui::run(core.clone()) {
+            fatal(&e);
+        }
+        // Window closed: free the seat before leaving.
+        rt.block_on(wait_idle(&core, Duration::from_secs(5)));
+    }
+}
+
+fn headless(rt: &tokio::runtime::Runtime, core: Arc<Core>) {
+    rt.block_on(async {
+        if let Some(exe) = core.clone().updates().await {
+            let status = std::process::Command::new(&exe)
+                .args(std::env::args_os().skip(1))
+                .env("MKWMP_UPDATED", "1")
+                .status();
+            std::process::exit(status.map(|s| s.code().unwrap_or(0)).unwrap_or(1));
+        }
+        if let Some(p) = core.ui().cfg.problem() {
+            fatal(&p);
+        }
+        core.play();
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(500)) => {}
+                _ = tokio::signal::ctrl_c() => {
+                    core.stop();
+                    wait_idle(&core, Duration::from_secs(5)).await;
+                    return;
+                }
+            }
+            match core.ui().session {
+                SessionView::Idle => return,
+                SessionView::Failed(e) => fatal(&e),
+                _ => {}
+            }
         }
     });
+}
 
-    let write = |ticket: Option<&str>, lobby: &str| {
-        let toml = launch::probe_toml(
-            &cfg,
-            &launch::ProbeConfig { lobby, launcher: &addr, launcher_token: &token, ticket },
-        );
-        launch::write_probe_toml(&cfg.game, &toml).map_err(|e| format!("writing mkwmp.toml: {e}"))
-    };
-    write(None, &lobby)?;
-    println!("mkwmp: {} as {} (lobby {lobby})", cfg.server, cfg.name);
-    match cfg.seat {
-        SeatMode::Start => println!("mkwmp: taking a seat"),
-        SeatMode::Online => println!("mkwmp: you'll get a seat when you go online in the game"),
-    }
-
-    let launch = cfg.launch && !a.no_launch;
-    let mut game: Option<Child> = None;
-    if launch {
-        println!("mkwmp: starting the game");
-        game = Some(launch::spawn_game(&cfg.game).map_err(|e| format!("starting mkw.exe from {}: {e}", cfg.game.display()))?);
-    } else {
-        println!("mkwmp: start the game now and keep this window open (Ctrl-C frees the seat)");
-    }
-
-    loop {
-        if let Some((ticket, seated_lobby)) = seat.tick().await {
-            // seat = "start": the ticket also goes in mkwmp.toml for probes
-            // that read it there.
-            let t = (cfg.seat == SeatMode::Start).then_some(ticket.as_str());
-            write(t, &seated_lobby)?;
-        }
-        if let Some(child) = game.as_mut() {
-            if let Ok(Some(status)) = child.try_wait() {
-                println!("mkwmp: game exited ({status}); releasing the seat");
-                seat.release().await;
-                return Ok(());
-            }
-        }
-        tokio::select! {
-            _ = tokio::time::sleep(Duration::from_secs(1)) => {}
-            _ = tokio::signal::ctrl_c() => {
-                println!("mkwmp: leaving");
-                seat.release().await;
-                return Ok(());
-            }
-        }
+async fn wait_idle(core: &Arc<Core>, max: Duration) {
+    core.stop();
+    let until = tokio::time::Instant::now() + max;
+    while core.busy() && tokio::time::Instant::now() < until {
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
-/// Self-update, then bring the game patch in line with this release.
-/// Never fatal.
-async fn updates(cfg: &ClientConfig, a: &Args) {
-    let u = update::Updater::new();
-    if std::env::var_os("MKWMP_UPDATED").is_none() {
-        match update::self_update(&u).await {
-            Ok(Some(exe)) => {
-                println!("mkwmp: updated; restarting");
-                restart(&exe, a);
-            }
-            Ok(None) => {}
-            Err(e) => eprintln!("mkwmp: update check failed: {e} (continuing)"),
-        }
-    }
-    match update::own_release(&u).await {
-        Ok((r, sums)) => match u.asset(&r, &sums, update::PROBE_ASSET).await {
-            Ok(bytes) => match probe::install_probe(&cfg.game, &bytes, probe::game_running()) {
-                Ok(probe::ProbeAction::UpToDate) => {}
-                Ok(probe::ProbeAction::Installed { backup }) => {
-                    println!("mkwmp: installed the game patch {} into {}", r.tag_name, cfg.game.display());
-                    if let Some(b) = backup {
-                        println!("mkwmp: your previous winmm.dll is saved as {}", b.display());
-                    }
-                }
-                Ok(probe::ProbeAction::GameRunning) => {
-                    println!("mkwmp: a game patch update is ready; close the game and start the launcher again")
-                }
-                Err(e) => eprintln!("mkwmp: installing the game patch failed: {e} (continuing)"),
-            },
-            Err(e) => eprintln!("mkwmp: game patch download failed: {e} (continuing)"),
-        },
-        Err(e) => eprintln!("mkwmp: game patch check failed: {e} (continuing)"),
-    }
-}
-
-/// Run the updated launcher with the same arguments and exit with its code.
-fn restart(exe: &std::path::Path, _a: &Args) -> ! {
-    let status = std::process::Command::new(exe)
-        .args(std::env::args_os().skip(1))
-        .env("MKWMP_UPDATED", "1")
-        .status();
-    std::process::exit(status.map(|s| s.code().unwrap_or(0)).unwrap_or(1))
+fn fatal(msg: &str) -> ! {
+    eprintln!("mkwmp: {msg}");
+    std::process::exit(1)
 }

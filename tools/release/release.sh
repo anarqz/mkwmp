@@ -22,9 +22,10 @@ case "${1:-}" in
 draft)
   mkdir -p "$out"
   cargo zigbuild --release --manifest-path rust/Cargo.toml -p client --target x86_64-pc-windows-gnu
-  cargo zigbuild --release --manifest-path rust/Cargo.toml -p client --target x86_64-unknown-linux-musl
+  # The window needs the system's GL/X11/Wayland libraries: glibc, not musl.
+  cargo zigbuild --release --manifest-path rust/Cargo.toml -p client --target x86_64-unknown-linux-gnu.2.31
   cp rust/target/x86_64-pc-windows-gnu/release/mkwmp-launcher.exe "$out/mkwmp-launcher-x86_64-windows.exe"
-  cp rust/target/x86_64-unknown-linux-musl/release/mkwmp-launcher "$out/mkwmp-launcher-x86_64-linux"
+  cp rust/target/x86_64-unknown-linux-gnu/release/mkwmp-launcher "$out/mkwmp-launcher-x86_64-linux"
   # A draft is private and creates no tag; publishing tags the commit below.
   gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --prerelease \
     --target "$(git rev-parse HEAD)" --title "mkwmp $version" --notes-file tools/release/notes.md

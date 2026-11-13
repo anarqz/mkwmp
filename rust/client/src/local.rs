@@ -21,30 +21,27 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde_json::json;
 
-use crate::seat::{Answer, Seat};
+use crate::core::Core;
+use crate::seat::Answer;
 
-#[derive(Clone)]
-struct Local {
-    seat: Arc<Seat>,
-    token: Arc<String>,
+pub fn router(core: Arc<Core>) -> Router {
+    Router::new().route("/local/v1/seat", post(want)).with_state(core)
 }
 
-pub fn router(seat: Arc<Seat>, token: String) -> Router {
-    Router::new()
-        .route("/local/v1/seat", post(want))
-        .with_state(Local { seat, token: Arc::new(token) })
-}
-
-async fn want(State(l): State<Local>, h: HeaderMap) -> Response {
+async fn want(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
     let ok = h
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|t| t == l.token.as_str());
+        .is_some_and(|t| t == core.token());
     if !ok {
         return (StatusCode::UNAUTHORIZED, Json(json!({"state": "unauthorized"}))).into_response();
     }
-    match l.seat.want().await {
+    let Some(seat) = core.seat().await else {
+        let m = "press PLAY in the mkwmp launcher";
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"state": "unavailable", "message": m}))).into_response();
+    };
+    match seat.want().await {
         Answer::Seated { ticket, lobby, name } => {
             Json(json!({"state": "seated", "ticket": ticket, "lobby": lobby, "name": name})).into_response()
         }

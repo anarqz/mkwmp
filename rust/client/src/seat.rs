@@ -15,6 +15,23 @@ use crate::config::{ClientConfig, SeatMode};
 /// The game stops asking (left Online Play, quit) → the seat goes after this.
 pub const IDLE_RELEASE: Duration = Duration::from_secs(90);
 
+/// The seat as the window shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Phase {
+    /// seat = "online": no seat until the game goes online.
+    WaitingForGame,
+    Joining,
+    Queued(usize),
+    Seated,
+    Refused(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct Snapshot {
+    pub phase: Phase,
+    pub friends: Vec<Friend>,
+}
+
 /// What the local API answers the game.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Answer {
@@ -115,7 +132,7 @@ impl Seat {
                 Ok(())
             }
             Err(ApiError::Refused(m)) => {
-                println!("mkwmp: the server refused: {m}");
+                crate::log::note(format!("the server refused: {m}"));
                 st.refused = Some(m.clone());
                 Err(Answer::Refused(m))
             }
@@ -134,7 +151,7 @@ impl Seat {
         };
         if !wanted {
             if let Some(s) = st.session.take() {
-                println!("mkwmp: the game stopped asking; releasing the seat");
+                crate::log::note("the game stopped asking; releasing the seat");
                 self.api.leave(&s.sid, &s.key).await;
                 st.view = None;
             }
@@ -172,7 +189,7 @@ impl Seat {
                     Ok(v)
                 }
                 Err(ApiError::Refused(m)) => {
-                    eprintln!("mkwmp: friends not updated: {m}");
+                    crate::log::note(format!("friends not updated: {m}"));
                     st.rejected_friends = Some(list);
                     self.api.poll(&sid, &key).await
                 }
@@ -182,7 +199,7 @@ impl Seat {
         };
         match result {
             Ok(v) if v.boot_id != boot => {
-                println!("mkwmp: the server restarted; rejoining");
+                crate::log::note("the server restarted; rejoining");
                 st.session = None;
                 st.view = None;
                 st.next_poll = Instant::now();
@@ -193,13 +210,13 @@ impl Seat {
                 st.view = Some(v);
             }
             Err(ApiError::Gone) => {
-                println!("mkwmp: session expired; rejoining");
+                crate::log::note("session expired; rejoining");
                 st.session = None;
                 st.view = None;
                 st.next_poll = Instant::now();
             }
             Err(e) => {
-                eprintln!("mkwmp: {e}; retrying");
+                crate::log::note(format!("{e}; retrying"));
                 st.next_poll = Instant::now() + Duration::from_secs(5);
             }
         }
@@ -208,16 +225,16 @@ impl Seat {
     fn show(st: &mut State, v: &View) {
         if v.state == "queued" && st.shown_position != v.position {
             let pos = v.position.unwrap_or(0);
-            println!(
-                "mkwmp: server full ({}/{} seats); you are {} in queue",
+            crate::log::note(format!(
+                "server full ({}/{} seats); you are {} in queue",
                 v.seats_total - v.seats_free,
                 v.seats_total,
                 ordinal(pos)
-            );
+            ));
         }
         let was_seated = st.view.as_ref().is_some_and(|old| old.state == "seated");
         if v.state == "seated" && !was_seated {
-            println!("mkwmp: seated");
+            crate::log::note("seated");
         }
         st.shown_position = if v.state == "queued" { v.position } else { None };
         if v.friends != st.shown_friends {
@@ -227,10 +244,26 @@ impl Seat {
                     (true, false) => "online, hasn't added you",
                     _ => "offline",
                 };
-                println!("mkwmp:   friend {:<16} {s}", f.name);
+                println!("mkwmp:   friend {:<16} {s}", f.name); // the window shows these as lights
             }
             st.shown_friends = v.friends.clone();
         }
+    }
+
+    /// What the window shows: the seat's state and the friend list.
+    pub async fn snapshot(&self) -> Snapshot {
+        let st = self.state.lock().await;
+        let phase = if let Some(m) = &st.refused {
+            Phase::Refused(m.clone())
+        } else {
+            match &st.view {
+                Some(v) if v.ticket.is_some() => Phase::Seated,
+                Some(v) => Phase::Queued(v.position.unwrap_or(0)),
+                None if st.session.is_none() && self.mode == SeatMode::Online => Phase::WaitingForGame,
+                None => Phase::Joining,
+            }
+        };
+        Snapshot { phase, friends: st.view.as_ref().map(|v| v.friends.clone()).unwrap_or_default() }
     }
 
     /// Free the seat (game exited, Ctrl-C).

@@ -29,6 +29,16 @@ pub struct Ticket {
     pub lobby: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Status {
+    pub name: String,
+    pub seats_total: usize,
+    pub seated: usize,
+    pub queued: usize,
+    pub lobby_endpoint: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct Friend {
     pub name: String,
@@ -88,14 +98,21 @@ impl Api {
         }
     }
 
-    /// The server's public status; `lobbyEndpoint` is what the game connects to.
-    pub async fn lobby_endpoint(&self) -> Result<String, ApiError> {
+    /// The server's public status.
+    pub async fn status(&self) -> Result<Status, ApiError> {
         let url = format!("{}/seat/v1/status", self.base);
         let res = self.http.get(url).send().await.map_err(|e| ApiError::Transient(format!("cannot reach the server: {e}")))?;
-        let v: serde_json::Value = res.json().await.map_err(|e| ApiError::Transient(format!("bad answer: {e}")))?;
-        v["lobbyEndpoint"]
-            .as_str()
-            .map(String::from)
+        if !res.status().is_success() {
+            return Err(ApiError::Transient(format!("server answered {}", res.status())));
+        }
+        res.json().await.map_err(|e| ApiError::Transient(format!("not an mkwmp server: {e}")))
+    }
+
+    /// Where the game connects: the server's lobby.
+    pub async fn lobby_endpoint(&self) -> Result<String, ApiError> {
+        self.status()
+            .await?
+            .lobby_endpoint
             .ok_or_else(|| ApiError::Transient("the server is too old (no lobbyEndpoint)".into()))
     }
 

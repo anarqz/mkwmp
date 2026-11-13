@@ -1,5 +1,6 @@
-## mkwmp launcher config -- the one file a player edits. Put it next to
-## mkwmp-launcher and run the launcher. Setup guides: https://anarqz.github.io/mkwmp/
+## mkwmp launcher settings. The launcher window creates and edits this file
+## (client.toml next to the launcher); you only need it for --headless or
+## options the window doesn't show. Guides: https://anarqz.github.io/mkwmp/
 
 server = "https://mkw.anarqz.dev"  # seat server URL (the official one)
 name = "Player1"                   # in-game name: 3-16 letters, digits, '-' or '_'; unique on the server

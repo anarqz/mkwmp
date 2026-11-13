@@ -44,12 +44,8 @@
     <p>The official server has <b>50 seats</b>. When it's full you wait in a queue and the launcher shows your place in line. Your seat stays yours while the launcher runs.</p>
     <ol class="steps">
       <li><b>Install</b> the game and the MKWMP patch: <a href="#install">Windows</a> or <a href="#steamos">Steam Deck / SteamOS</a>.</li>
-      <li><b>Write <code>client.toml</code></b> next to the launcher:
-<pre><code>server  = "https://mkw.anarqz.dev"
-name    = "YourName"            # 3-16: letters, digits, - and _
-friends = ["Friend_1", "Pal-2"] # up to 8
-game    = "C:/Games/mkw"        # folder with mkw.exe</code></pre></li>
-      <li><b>Run the launcher.</b> It updates itself and the game patch, takes a seat (or queues), and starts the game. Closing the game frees your seat.</li>
+      <li><b>Open the launcher.</b> Its window shows the server's free seats and queue. Type your <b>name</b> and pick the <b>game folder</b>; the server is already set to the official one (<code>https://mkw.anarqz.dev</code>). Add up to 8 friends.</li>
+      <li><b>Press PLAY.</b> The launcher updates itself and the game patch, takes a seat (or shows your place in the queue), and starts the game. Closing the game frees your seat.</li>
       <li><b>In the game</b>, choose <b>Online Play → Race</b> or <b>Online Play → Battle</b> (1P). Players who pick the same mode are matched together. Until you click Online Play, the game behaves exactly like the normal offline game.</li>
     </ol>
     <div class="cards">
@@ -63,8 +59,8 @@ game    = "C:/Games/mkw"        # folder with mkw.exe</code></pre></li>
     <h2><span class="coin blue">2</span> INSTALL ON WINDOWS</h2>
     <ol class="steps">
       <li><b>Set up mkw-recomp 0.1.10</b> (Windows build) with <b>your own copy</b> of the game, as the <a href="https://github.com/adriadam10/mkw-recomp">mkw-recomp README</a> describes. MKWMP needs game version <b>1.0.0</b>; other versions won't work.</li>
-      <li><b>Get the launcher</b>: download <code>mkwmp-launcher-x86_64-windows.exe</code> from the <a href="https://github.com/anarqz/mkwmp/releases">latest release</a>. Put <code>client.toml</code> next to it (see <a href="#play">Play</a>), with <code>game</code> pointing at your game folder.</li>
-      <li><b>Run it.</b> The first run installs the game patch (<code>winmm.dll</code>) into the game folder. It also copies your system's <code>winmm.dll</code> there as <code>winmm_host.dll</code>, and saves any <code>winmm.dll</code> already there as <code>winmm.dll.bak</code>. Every download is checked against the release's signature.</li>
+      <li><b>Get the launcher</b>: download <code>mkwmp-launcher-x86_64-windows.exe</code> from the <a href="https://github.com/anarqz/mkwmp/releases">latest release</a> and put it anywhere, for example in the game folder. It keeps its settings in <code>client.toml</code> next to itself.</li>
+      <li><b>Open it and press PLAY</b> (see <a href="#play">Play</a>). The first run installs the game patch (<code>winmm.dll</code>) into the game folder. It also copies your system's <code>winmm.dll</code> there as <code>winmm_host.dll</code>, and saves any <code>winmm.dll</code> already there as <code>winmm.dll.bak</code>. Every download is checked against the release's signature.</li>
       <li><b>Play.</b> The launcher keeps itself and the patch up to date. Without the launcher running, the game stays offline as normal.</li>
     </ol>
     <p class="hint">Game folder after setup: <code>mkw.exe</code>, <code>mkwgame.dll</code>, <code>SDL3.dll</code>, …, <code>winmm.dll</code> (MKWMP), <code>winmm_host.dll</code> (your system's copy), and <code>mkwmp.toml</code> (written by the launcher). Updates to the patch wait until the game is closed.</p>
@@ -78,8 +74,8 @@ game    = "C:/Games/mkw"        # folder with mkw.exe</code></pre></li>
       <li><b>Add to Steam.</b> Add <code>mkw.exe</code> as a <b>non-Steam game</b>. Under <b>Properties → Compatibility</b>, force <b>Proton 10.0</b> (install it from Steam if needed). Proton 11 can't see the controller.</li>
       <li><b>Launch options</b> (Properties → General):
 <pre><code>WINEDLLOVERRIDES="winmm=n,b" GRPC_DNS_RESOLVER=native MKW_MESH_COMPUTE=1 MKW_ASSUME_FOCUS=1 %command% --play</code></pre></li>
-      <li><b>Launcher.</b> Download <code>mkwmp-launcher-x86_64-linux</code> from the <a href="https://github.com/anarqz/mkwmp/releases">latest release</a> and make it executable (<code>chmod +x</code>). Make <code>client.toml</code> with <code>game</code> pointing at the game folder and <b><code>launch = false</code></b>: on SteamOS the game starts from its Steam shortcut. The first run installs the patch. It also copies Proton 10.0's <code>winmm.dll</code> in as <code>winmm_host.dll</code>.</li>
-      <li><b>Play.</b> In Konsole, run <code>./mkwmp-launcher-x86_64-linux client.toml</code>, then start the game from Steam. Keep the launcher running while you play; <b>Ctrl-C</b> frees your seat.</li>
+      <li><b>Launcher.</b> Download <code>mkwmp-launcher-x86_64-linux</code> from the <a href="https://github.com/anarqz/mkwmp/releases">latest release</a>, make it executable (right-click → Properties → Permissions, or <code>chmod +x</code>), and open it. In the window, set your name and the game folder, and tick <b>"I start the game from Steam"</b>. The first PLAY installs the patch and copies Proton 10.0's <code>winmm.dll</code> in as <code>winmm_host.dll</code>.</li>
+      <li><b>Play.</b> Press <b>PLAY</b> in the launcher, then start the game from Steam. Keep the launcher open while you play; <b>STOP</b> or closing it frees your seat. You can also add the launcher to Steam as a non-Steam game: in Game Mode it opens fullscreen with large text.</li>
     </ol>
     <p class="hint">The controller wakes up 20–50 seconds after the game starts; MKWMP fixes up Steam Input under Proton by itself. Both a Steam Deck and a ROG Ally X running SteamOS have been tested.</p>
   </section>
