@@ -25,6 +25,8 @@ import sys
 import time
 from uuid import UUID
 
+import turn_relay
+
 from h2.config import H2Configuration
 from h2.connection import H2Connection
 from h2.events import DataReceived, RequestReceived, StreamEnded, StreamReset, WindowUpdated
@@ -350,6 +352,27 @@ def gs_timestamp(seconds):
 
 
 GAMESYNC_WRITE_DOCUMENTS = "/nn.npln.gamesync.v1.Gamesync/WriteDocuments"
+ALLOCATE_ICE_SERVER_SET = "/nn.npln.matchmaking.v1.GameSessionService/AllocateIceServerSet"
+TURN_PORT = 3478
+
+
+def ice_server_set_response(now=None):
+    """AllocateIceServerSet response (serializer main+0x1410640, converter
+    FUN_013cf8e0, consumer nplnd::IceServerConfigGetter FUN_016297a0):
+      1 name, 2 {1 host, 2 port, 3 int}, 3 repeated IceServer,
+      4 Duration, 5 Timestamp (expiry), 6 Duration
+      IceServer (main+0x14121fc) {1 host, 2 port, 3 type (1 = TURN), 4 username, 5 credential}
+    Pia's TURN client (TurnProtocol) must reach "ready" before AttachMeshJob
+    finishes (FUN_01630b64 polls FUN_01634ef0)."""
+    now = int(time.time()) if now is None else now
+    server = (protobuf_bytes(1, "127.0.0.1") + b"\x10" + encode_varint(TURN_PORT) + b"\x18\x01" +
+              protobuf_bytes(4, turn_relay.USERNAME) + protobuf_bytes(5, turn_relay.PASSWORD))
+    return (protobuf_bytes(1, "tenants/current/iceServerSets/local") +
+            protobuf_bytes(2, protobuf_bytes(1, "127.0.0.1") + b"\x10" + encode_varint(TURN_PORT)) +
+            protobuf_bytes(3, server) +
+            protobuf_bytes(4, b"\x08" + encode_varint(3600)) +
+            protobuf_bytes(5, b"\x08" + encode_varint(now + 3600)) +
+            protobuf_bytes(6, b"\x08" + encode_varint(3600)))
 
 
 def parse_write_documents(body):
@@ -606,7 +629,7 @@ def stored_documents(doc_name):
     return [DOC_STORE[doc_name]] if doc_name in DOC_STORE else []
 
 
-def keep_user_session_replies(session, targets, now=None, lobby_of=lambda user_id: None):
+def keep_user_session_replies(session, targets, now=None, lobby_of=lambda user_id: None, members=()):
     """Per target: ADDED changes for the matching documents, then the op ack.
     docs/__us/<id> carries the descriptor (shared per lobby via lobby_of) plus
     the game-session fixed data; other targets are served from DOC_STORE."""
@@ -616,7 +639,13 @@ def keep_user_session_replies(session, targets, now=None, lobby_of=lambda user_i
     for target, doc_name in targets:
         op_id = target_op_id(target)
         tid = str(op_id)
-        if doc_name.startswith("docs/__us/"):
+        if doc_name == "docs/__us/":
+            # Collection listen on every user session (after the mesh join):
+            # one ADDED per lobby member (members = user ids of the lobby).
+            for user_id in members:
+                out.append(session_message(session, change_message(tid, CHANGE_ADDED, user_session_document(
+                    f"docs/__us/{user_id}", user_id, now, lobby_of(user_id)))))
+        elif doc_name.startswith("docs/__us/"):
             user_id = doc_name.rsplit("/", 1)[-1]
             lobby = lobby_of(user_id)
             doc = user_session_document(doc_name, user_id, now, lobby)
@@ -844,6 +873,14 @@ class H2Protocol(asyncio.Protocol):
             proto.transport.write(proto.conn.data_to_send())
             log(f"<<< KeepUserSession push {name} -> {proto.user or '?'} target {tid} (kind {kind})")
 
+    def lobby_members(self, sid):
+        """User ids in the lobby of this stream's user (lowest slot first)."""
+        lobby = self.lobby_of(self.stream_user.get(sid, ""))
+        if lobby is None:
+            return [self.stream_user[sid]] if self.stream_user.get(sid) else []
+        users = {t.user.rsplit("/", 1)[-1] for t in self.matchmaking.tickets.values() if t.lobby == lobby}
+        return sorted(users, key=user_slot)
+
     def lobby_of(self, user_id):
         """Lobby the user was matched into (tickets persist after assignment)."""
         for ticket in self.matchmaking.tickets.values():
@@ -881,7 +918,7 @@ class H2Protocol(asyncio.Protocol):
         for target, doc_name in targets:
             log(f"--- KeepUserSession target {target} -> {doc_name or '(no document)'}"
                 f" ({len(stored_documents(doc_name))} stored)")
-            if doc_name.startswith("docs/__us/"):
+            if doc_name.startswith("docs/__us/") and not doc_name.endswith("/"):
                 self.stream_user[sid] = doc_name.rsplit("/", 1)[-1]
             slot = user_slot(self.stream_user.get(sid, ""))
             if doc_name.endswith("/__pus/") and not lower_members_present(doc_name, slot):
@@ -898,8 +935,12 @@ class H2Protocol(asyncio.Protocol):
         for target, doc_name in targets:
             if doc_name and not doc_name.startswith("docs/__us/"):
                 H2Protocol.watchers.append((self, sid, session, target_op_id(target), doc_name))
-        frames = b"".join(grpc_frame(m) for m in keep_user_session_replies(
-            session, targets, lobby_of=self.lobby_of))
+        try:
+            frames = b"".join(grpc_frame(m) for m in keep_user_session_replies(
+                session, targets, lobby_of=self.lobby_of, members=self.lobby_members(sid)))
+        except Exception as exc:  # noqa: BLE001 - never kill the session stream
+            log(f"<<< KeepUserSession: failed to answer {targets}: {exc!r}")
+            return
         if not frames or self.transport is None or self.transport.is_closing():
             return
         self.conn.send_data(sid, frames)
@@ -945,6 +986,9 @@ class H2Protocol(asyncio.Protocol):
         response = auth_response(body) if is_auth else b""
         if st["path"] in (GAMESYNC_ISSUE_TOKEN, GAMESYNC_REFRESH_TOKEN):
             response = gamesync_token_response(body, self.ticket_user(st["token"]))
+        if st["path"] == ALLOCATE_ICE_SERVER_SET:
+            response = ice_server_set_response()
+            log(f"<<< AllocateIceServerSet: TURN 127.0.0.1:{TURN_PORT}")
         if st["path"] == GAMESYNC_GET_DOCUMENT:
             msgs = decode_grpc_messages(body)
             name = bytes_field(msgs[0][1], 1).decode(errors="replace") if msgs else ""
@@ -1117,6 +1161,7 @@ async def main():
         GAMESYNC_PORT = args.gamesync_port
         tasks.append(serve_sniffing(args.host, args.gamesync_port, tls))
         log(f"Gamesync endpoint listening on {args.host}:{args.gamesync_port} (TLS or h2c, sniffed)")
+    await turn_relay.start("127.0.0.1", TURN_PORT, log=log)
     await asyncio.gather(*tasks)
 
 

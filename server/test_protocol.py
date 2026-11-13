@@ -112,6 +112,20 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(capture.bytes_field(document, 1).decode(), name)
             self.assertTrue(keys <= set(_doc_fields(document)))
 
+    def test_user_session_collection_lists_every_member(self):
+        # Captured after the mesh join: Target{3: {1 "docs/__us"}} (collection).
+        frame = bytes.fromhex(
+            "0a147573657253657373696f6e732f63757272656e741a2f0a2d0a1e7573657253657373696f6e732f"
+            "63757272656e742f746172676574732f351a0b0a09646f63732f5f5f7573")
+        session, targets = capture.parse_keep_user_session(frame)
+        self.assertEqual(targets, [("userSessions/current/targets/5", "docs/__us/")])
+        ids = ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"]
+        replies = capture.keep_user_session_replies(session, targets, now=100, members=ids)
+        names = [capture.bytes_field(capture.bytes_field(capture.bytes_field(m, 2), 3), 1).decode()
+                 for m in replies[:2]]
+        self.assertEqual(names, [f"docs/__us/{i}" for i in ids])
+        self.assertEqual(len(replies), 4)   # 2 documents + sync op + done op
+
     def test_write_documents_returns_upcsid_in_first_result(self):
         pus = "docs/__pgn/All/__pus/00000000-0000-4000-8000-000000000002"
         response = capture.write_documents_response([(pus, 0), (pus, 4)], capture.user_slot, now=100)
