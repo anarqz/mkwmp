@@ -30,6 +30,8 @@ impl std::error::Error for ConfigError {}
 pub struct ServerConfig {
     pub server: Server,
     pub seats: Seats,
+    #[serde(default)]
+    pub ticket: Ticket,
     pub lobby: Lobby,
     pub tls: Tls,
 }
@@ -42,8 +44,54 @@ pub struct Server {
 
 #[derive(Debug, Deserialize)]
 pub struct Seats {
+    /// Players seated at once; everyone past it queues.
     pub capacity: usize,
+    /// HTTP bind of the seat API (what the Cloudflare tunnel points at).
     pub bind: String,
+    #[serde(default = "d_max_queue")]
+    pub max_queue: usize,
+    #[serde(default = "d_heartbeat")]
+    pub heartbeat_secs: u64,
+    #[serde(default = "d_seat_timeout")]
+    pub seat_timeout_secs: u64,
+    #[serde(default = "d_queue_poll")]
+    pub queue_poll_secs: u64,
+    #[serde(default = "d_queue_timeout")]
+    pub queue_timeout_secs: u64,
+    /// NPLN endpoint (`host:port`) handed to seated players: the lobby.
+    pub lobby_endpoint: String,
+    /// File with one bearer token per line accepted on the lobby roster
+    /// route. Absent: the route is disabled.
+    #[serde(default)]
+    pub lobby_tokens_file: Option<PathBuf>,
+}
+
+fn d_max_queue() -> usize { 500 }
+fn d_heartbeat() -> u64 { 20 }
+fn d_seat_timeout() -> u64 { 60 }
+fn d_queue_poll() -> u64 { 5 }
+fn d_queue_timeout() -> u64 { 30 }
+fn d_ttl() -> u64 { 12 * 3600 }
+
+#[derive(Debug, Deserialize)]
+pub struct Ticket {
+    /// Key id stamped in tickets this server signs.
+    #[serde(default)]
+    pub kid: String,
+    /// File holding the base64url Ed25519 seed (`seat keygen`). Seat server only.
+    #[serde(default)]
+    pub private_key_file: Option<PathBuf>,
+    /// `kid:base64url-public-key` entries a lobby trusts.
+    #[serde(default)]
+    pub public_keys: Vec<String>,
+    #[serde(default = "d_ttl")]
+    pub ttl_secs: u64,
+}
+
+impl Default for Ticket {
+    fn default() -> Self {
+        Self { kid: String::new(), private_key_file: None, public_keys: vec![], ttl_secs: d_ttl() }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -66,8 +114,13 @@ impl ServerConfig {
         let base = path.parent().unwrap_or(Path::new("."));
         cfg.tls.cert = resolve(base, &cfg.tls.cert);
         cfg.tls.key = resolve(base, &cfg.tls.key);
+        cfg.ticket.private_key_file = cfg.ticket.private_key_file.map(|p| resolve(base, &p));
+        cfg.seats.lobby_tokens_file = cfg.seats.lobby_tokens_file.map(|p| resolve(base, &p));
         if cfg.seats.capacity == 0 {
             return Err(ConfigError::Invalid("seats.capacity must be > 0"));
+        }
+        if cfg.seats.seat_timeout_secs <= cfg.seats.heartbeat_secs {
+            return Err(ConfigError::Invalid("seats.seat_timeout_secs must exceed heartbeat_secs"));
         }
         if cfg.lobby.lobby_size < 2 {
             return Err(ConfigError::Invalid("lobby.lobby_size must be >= 2"));
@@ -100,7 +153,9 @@ mod tests {
     #[test]
     fn server_config_loads_and_resolves_paths() {
         let cfg = ServerConfig::load(format!("{REPO}/config/server.toml")).unwrap();
-        assert!(cfg.seats.capacity >= 1);
+        assert_eq!(cfg.seats.capacity, 50);
+        assert_eq!(cfg.seats.heartbeat_secs, 20);
+        assert!(cfg.ticket.private_key_file.unwrap().ends_with("seat-ed25519.key"));
         assert_eq!(cfg.lobby.lobby_size, 2);
         assert!(cfg.tls.cert.ends_with("capture-cert.pem"));
     }
@@ -109,7 +164,7 @@ mod tests {
     fn zero_capacity_is_rejected() {
         let p = std::env::temp_dir().join("mkwmp_bad_server.toml");
         std::fs::write(&p, concat!(
-            "[server]\nname=\"x\"\nbind=\"x\"\n[seats]\ncapacity=0\nbind=\"x\"\n",
+            "[server]\nname=\"x\"\nbind=\"x\"\n[seats]\ncapacity=0\nbind=\"x\"\nlobby_endpoint=\"x\"\n",
             "[lobby]\nbind=\"x\"\nlobby_size=2\nmax_lobbies_per_worker=1\n",
             "[tls]\ncert=\"c\"\nkey=\"k\"\n")).unwrap();
         assert!(matches!(ServerConfig::load(&p), Err(ConfigError::Invalid(_))));

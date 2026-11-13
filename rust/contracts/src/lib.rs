@@ -9,12 +9,6 @@ macro_rules! package {
     };
 }
 
-pub mod mkwmp {
-    pub mod seat {
-        package!(v1, "mkwmp.seat.v1");
-    }
-}
-
 pub mod nn {
     pub mod npln {
         pub mod auth {

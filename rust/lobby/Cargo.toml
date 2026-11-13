@@ -5,8 +5,5 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-contracts.workspace = true
 config.workspace = true
-tonic.workspace = true
-prost.workspace = true
 tokio.workspace = true

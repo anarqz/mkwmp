@@ -5,10 +5,15 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-contracts.workspace = true
 config.workspace = true
-tonic.workspace = true
-prost.workspace = true
-tokio.workspace = true
-tokio-stream = "0.1"
-futures = "0.3"
+ticket = { path = "../ticket" }
+tokio = { workspace = true, features = ["net", "signal", "time"] }
+axum = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+ed25519-dalek = "2"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

@@ -1,60 +1,162 @@
-//! mkwmp client: join the server, show the queue, launch the game when seated.
+//! mkwmp launcher: take a seat on the server (or wait in its queue), then
+//! launch the game and keep the seat alive while it runs.
 //!
-//!   client [client.toml]
+//!   mkwmp [client.toml]
 //!
-//! Connects to the seat server, prints queue status, and on GRANTED writes the
-//! probe's mkwmp.toml and launches the game. The connection stays open for the
-//! whole session so the seat is held until the game exits.
+//! Edit `friends` in client.toml while playing: the launcher picks it up on its
+//! next heartbeat. If the server restarts, the launcher rejoins and rewrites
+//! the game's mkwmp.toml with the fresh ticket.
 
+mod api;
 mod config;
 mod launch;
 
+use std::process::Child;
+use std::time::Duration;
+
+use api::{Api, ApiError, View};
 use config::ClientConfig;
-use contracts::mkwmp::seat::v1::seat_client::SeatClient;
-use contracts::mkwmp::seat::v1::{JoinRequest, State};
-use tokio_stream::StreamExt;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = std::env::args().nth(1).unwrap_or_else(|| "config/client.toml".into());
-    let cfg = ClientConfig::load(&path)?;
-
-    println!("mkwmp: connecting to {} as {}...", cfg.server, cfg.name);
-    let mut client = SeatClient::connect(format!("http://{}", cfg.server))
-        .await
-        .map_err(|e| format!("cannot reach seat server {}: {e}", cfg.server))?;
-
-    let mut updates = client
-        .join_queue(JoinRequest { username: cfg.name.clone() })
-        .await?
-        .into_inner();
-
-    let mut launched = false;
-    while let Some(update) = updates.next().await {
-        let u = update?;
-        match State::try_from(u.state).unwrap_or(State::Unspecified) {
-            State::Queued => {
-                println!("mkwmp: waiting to join — {} in queue ({}/{} seats free)",
-                         ordinal(u.position), u.seats_free, u.seats_total);
-            }
-            State::Granted if !launched => {
-                launched = true;
-                println!("mkwmp: seat granted — launching game");
-                let toml = launch::probe_toml(&cfg, &u.ticket);
-                launch::write_probe_toml(&cfg.game, &toml)?;
-                let status = launch::run_game(&cfg.game)?;
-                println!("mkwmp: game exited ({status}); releasing seat");
-                break; // dropping the stream releases our seat
-            }
-            _ => {}
-        }
-    }
-    Ok(())
+struct Session {
+    sid: String,
+    key: String,
+    boot: String,
 }
 
-fn ordinal(n: u32) -> String {
+#[tokio::main]
+async fn main() {
+    let path = std::env::args().nth(1).unwrap_or_else(|| "client.toml".into());
+    if let Err(e) = run(&path).await {
+        eprintln!("mkwmp: {e}");
+        std::process::exit(1);
+    }
+}
+
+async fn run(path: &str) -> Result<(), String> {
+    let mut cfg = ClientConfig::load(path)?;
+    let api = Api::new(&cfg.server);
+    println!("mkwmp: joining {} as {}", cfg.server, cfg.name);
+
+    let mut session: Option<Session> = None;
+    let mut game: Option<Child> = None;
+    let mut ticket_written: Option<String> = None;
+    let mut last_friends: Vec<api::Friend> = vec![];
+
+    loop {
+        // Join (or rejoin after a restart / expiry).
+        let result = match &session {
+            None => api.join(&cfg.name, &cfg.friends).await,
+            Some(s) => {
+                let fresh = ClientConfig::load(path).ok();
+                match fresh {
+                    Some(f) if f.friends != cfg.friends => {
+                        cfg.friends = f.friends;
+                        api.set_friends(&s.sid, &s.key, &cfg.friends).await
+                    }
+                    _ => api.poll(&s.sid, &s.key).await,
+                }
+            }
+        };
+
+        let wait = match result {
+            Ok(v) => {
+                let restarted = session.as_ref().is_some_and(|s| s.boot != v.boot_id);
+                if restarted {
+                    println!("mkwmp: the server restarted; rejoining");
+                    session = None;
+                    continue;
+                }
+                if let Some(key) = v.session_key.clone() {
+                    session = Some(Session { sid: v.session_id.clone(), key, boot: v.boot_id.clone() });
+                }
+                show(&v, &mut last_friends);
+                if let Some(t) = &v.ticket {
+                    if ticket_written.as_deref() != Some(&t.token) {
+                        let toml = launch::probe_toml(&cfg, &t.lobby, &t.token);
+                        launch::write_probe_toml(&cfg.game, &toml).map_err(|e| format!("writing mkwmp.toml: {e}"))?;
+                        ticket_written = Some(t.token.clone());
+                    }
+                    if game.is_none() {
+                        println!("mkwmp: seat granted, launching the game");
+                        match launch::spawn_game(&cfg.game) {
+                            Ok(child) => game = Some(child),
+                            Err(e) => {
+                                api.leave(&v.session_id, session.as_ref().map_or("", |s| &s.key)).await;
+                                return Err(format!("launching mkw.exe from {}: {e}", cfg.game.display()));
+                            }
+                        }
+                    }
+                }
+                Duration::from_millis(v.next_poll_ms.clamp(1_000, 30_000))
+            }
+            Err(ApiError::Gone) => {
+                println!("mkwmp: session expired; rejoining");
+                session = None;
+                Duration::from_secs(1)
+            }
+            Err(ApiError::Refused(m)) => {
+                if let Some(s) = &session {
+                    api.leave(&s.sid, &s.key).await;
+                }
+                return Err(m);
+            }
+            Err(ApiError::Transient(m)) => {
+                eprintln!("mkwmp: {m}; retrying");
+                Duration::from_secs(5)
+            }
+        };
+
+        // Wait, but notice the game exiting or Ctrl-C promptly.
+        let deadline = tokio::time::Instant::now() + wait;
+        loop {
+            if let Some(child) = game.as_mut() {
+                if let Ok(Some(status)) = child.try_wait() {
+                    println!("mkwmp: game exited ({status}); releasing the seat");
+                    if let Some(s) = &session {
+                        api.leave(&s.sid, &s.key).await;
+                    }
+                    return Ok(());
+                }
+            }
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                break;
+            }
+            tokio::select! {
+                _ = tokio::time::sleep((deadline - now).min(Duration::from_millis(500))) => {}
+                _ = tokio::signal::ctrl_c() => {
+                    println!("mkwmp: leaving");
+                    if let Some(s) = &session {
+                        api.leave(&s.sid, &s.key).await;
+                    }
+                    return Ok(());
+                }
+            }
+        }
+    }
+}
+
+fn show(v: &View, last_friends: &mut Vec<api::Friend>) {
+    if v.state == "queued" {
+        let pos = v.position.unwrap_or(0);
+        println!("mkwmp: server full ({}/{} seats); you are {} in queue", v.seats_total - v.seats_free, v.seats_total, ordinal(pos));
+    }
+    if v.friends != *last_friends {
+        for f in &v.friends {
+            let s = match (f.online, f.mutual) {
+                (true, true) => "online, friends in game",
+                (true, false) => "online, hasn't added you",
+                _ => "offline",
+            };
+            println!("mkwmp:   friend {:<16} {s}", f.name);
+        }
+        *last_friends = v.friends.clone();
+    }
+}
+
+fn ordinal(n: usize) -> String {
     let suffix = match (n % 10, n % 100) {
-        (1, 11) | (2, 12) | (3, 13) => "th",
+        (_, 11..=13) => "th",
         (1, _) => "st",
         (2, _) => "nd",
         (3, _) => "rd",

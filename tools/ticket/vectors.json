@@ -1,0 +1,35 @@
+{
+    "expiredAt": 1700043200,
+    "invalid": [
+        {
+            "ticket": "mkw1.eyJ2IjoxLCJpc3MiOiJta3dtcCIsImtpZCI6InRlc3QxIiwic2lkIjoiMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYiLCJuYW1lIjoiUGxheWVyX09uZS0xNmNociIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDQzMjAwfQ.ckIaWIC0j3xZ1s0INTlM4AljNW57fkTGThd4Ric8B_Gf353zhtNyDBf9dbuWqyHd3VS7kCmeL3xhAQf9ziagAQ",
+            "why": "bad signature"
+        },
+        {
+            "ticket": "mkw1.eyJ2IjoxLCJpc3MiOiJta3dtcCIsImtpZCI6InRlc3QxIiwic2lkIjoiMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYiLCJuYW1lIjoiUGxheWVyX09uZS0xNmNociIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDQzMjAwfQ.1hAHQ0HzBKzUQ-lXNOlRbrf7H2ht-u6Rrr2uGRogX2Kj1JO_YZcLDbBOOmA4GdiIiPNxsESKyUJkAmyWAFTDCw",
+            "why": "signed by another key"
+        },
+        {
+            "ticket": "eyJhbGciOiJub25lIn0.YWJj.",
+            "why": "unsigned, not mkw1"
+        }
+    ],
+    "now": 1700000001,
+    "publicKeys": [
+        "test1:6kpsY-KcUgq-9VB7Ey7F-ZVHdq6-vnuSQh7qaRRG0iw"
+    ],
+    "valid": [
+        {
+            "claims": {
+                "exp": 1700043200,
+                "iat": 1700000000,
+                "iss": "mkwmp",
+                "kid": "test1",
+                "name": "Player_One-16chr",
+                "sid": "0123456789abcdef0123456789abcdef",
+                "v": 1
+            },
+            "ticket": "mkw1.eyJ2IjoxLCJpc3MiOiJta3dtcCIsImtpZCI6InRlc3QxIiwic2lkIjoiMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYiLCJuYW1lIjoiUGxheWVyX09uZS0xNmNociIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoxNzAwMDQzMjAwfQ.ckIaWIC0j3xZ1s0INTlM4AljNW57fkTGThd4Ric8B_Gf353zhtNyDBf9dbuWqyHd3VS7kCmeL3xhAQf9ziagCQ"
+        }
+    ]
+}

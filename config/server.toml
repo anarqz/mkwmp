@@ -1,16 +1,29 @@
-## mkwmp server config (Rust side). Loaded by the seat server and lobby manager.
-## Flow: a connection joins the active-user pool -> if a seat is free it gets a
-## ticket -> an in-game matchmaking request is checked against the ticket ->
-## access to the world/lobby service is granted.
+## mkwmp server config (Rust side). Loaded by the seat server and the lobby.
+## Flow: the launcher joins the seat server -> a free seat gets a signed ticket
+## (else the player queues) -> the game presents the ticket to the lobby,
+## which checks the signature and, over the roster call, that the seat is live.
+## All state is in memory and dies with the process; nothing persists.
 
 [server]
-name = "mkwmp"                 # instance name shown to players
+name = "mkwmp"                 # instance name shown to players; the ticket's `iss`
 bind = "127.0.0.1:8905"        # NPLN endpoint the game connects to (TLS)
 
 [seats]
-capacity = 16                  # N seats total; one per active user
-bind = "127.0.0.1:7000"        # seat service the client connects to (internal)
-# All state is in-memory and dies with the process; nothing persists.
+capacity = 50                  # players seated at once; the rest queue
+bind = "127.0.0.1:7000"        # seat HTTP API (point the Cloudflare tunnel here)
+max_queue = 500                # joins past this are refused
+heartbeat_secs = 20            # launcher heartbeat while seated
+seat_timeout_secs = 60         # no heartbeat for this long frees the seat
+queue_poll_secs = 5            # launcher poll while queued
+queue_timeout_secs = 30        # a queued player silent this long drops out
+lobby_endpoint = "127.0.0.1:8905"   # NPLN host:port handed to seated players
+# lobby_tokens_file = "../scratch/keys/lobby-tokens.txt"  # enables POST /seat/v1/lobby/roster
+
+[ticket]
+kid = "dev1"
+private_key_file = "../scratch/keys/seat-ed25519.key"     # `seat keygen`; seat server only
+public_keys = []               # "kid:base64url" entries a lobby trusts
+ttl_secs = 43200               # 12 h; liveness is the roster's job
 
 [lobby]
 bind = "127.0.0.1:8906"        # world/lobby (+ Gamesync) endpoint
