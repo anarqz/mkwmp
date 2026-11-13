@@ -645,6 +645,14 @@ def keep_user_session_replies(session, targets, now=None, lobby_of=lambda user_i
             for user_id in members:
                 out.append(session_message(session, change_message(tid, CHANGE_ADDED, user_session_document(
                     f"docs/__us/{user_id}", user_id, now, lobby_of(user_id)))))
+        elif doc_name == "docs/__gs/":
+            # Game-session collection (listened after the mesh join): the
+            # fixed data __gs/f, the same document the clients GetDocument.
+            lobby = lobby_of(members[0]) if members else None
+            out.append(session_message(session, change_message(
+                tid, CHANGE_ADDED, game_session_fixed_document(lobby, now))))
+            for doc in stored_documents(doc_name):
+                out.append(session_message(session, change_message(tid, CHANGE_ADDED, doc)))
         elif doc_name.startswith("docs/__us/"):
             user_id = doc_name.rsplit("/", 1)[-1]
             lobby = lobby_of(user_id)

@@ -351,9 +351,37 @@ these collections, so the race likely times out waiting for them.
 Next: find what fills the slot handle list at `mgr+0x12c0` (session
 manager `0x2230000–0x2250000`).
 
+### Race-start referee (2026-11-13, runs d23–d29)
+
+The "Ocorreu um erro de comunicação" ~2 min after the lobby join is a
+**referee timeout**, not network loss (traffic healthy to the end):
+- Error poster: error-service vtable slot 6 `FUN_0222d78c` (reason 37, kind 12,
+  generic dialog). Watch it with the probe (`comm_error` watchpoint).
+- Raised by `FUN_021271c8` (frame `0x2127378`): after `FUN_0212701c` registers
+  a key `%u_%d_%d_%d_%x` it waits **36 s** for `FUN_02127388` to find a matching
+  entry (status 0) — i.e. a server **`@@RefereeResult`**. Error id `0x606314c9`.
+- The request is `FUN_01e37e98`: writes `@@RefereeRequest/Request/<key>` with
+  `users`, `ussid_map`, `mode` (normal/survival/battle), `sub_mode`,
+  `rating_enabled`, `option{total_player_count, dropout_rank}`.
+- **It is never sent**: the per-slot online race context
+  (`*(*0x33e7ee0 + 0xa0 + slot*8)`, getter `FUN_0045b24c`) keeps its document
+  path handles `+0x8da0/+0x8da8` and player map `+0x28` empty the whole match
+  (`tools/re/watch_session_slots.py`). The same handles gate the
+  `PlayerStatic`/`Companion`/`Global` writes (`FUN_0049952c`, `FUN_00498a80`,
+  per-frame `FUN_00497e48`). What fills them is still unknown.
+
+Experiment `MKWMP_SKIP_REFEREE_TIMEOUT=1|2` (probe drops error-service slot-6
+posts: 1 = only `0x606314c9`, 2 = all ids). With 2 the race ran to the end for
+P1, but: P2's checkpoint/lap progress stayed 1/3 (watchdog `FUN_0035a9a0`
+error `0x660ac5da`), and P1 stayed in the post-finish auto-drive forever
+(waiting for the result; later error `0xf6378925`). Both point at the missing
+online race context + referee.
+
 ### Remaining to a full race
-1. Game-level session documents (above).
-2. Race result / referee (`@@RefereeResult`).
+1. Initialise the per-slot online race context (find the writer of
+   `ctx+0x8da0`/`+0x28`), so `@@RefereeRequest` is sent.
+2. Server referee: answer `@@RefereeRequest` with `@@RefereeResult/<key>`.
+3. Test on two machines (two instances on one GPU lag heavily and crash).
 
 ### All Gamesync message classes (vtables)
 

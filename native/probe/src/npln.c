@@ -864,11 +864,15 @@ static const uint64_t kTraceRanges[][2] = {
     {0x7001a00000ull, 0x7001b00000ull},   // game matchmaking sequence
     {0x7002230000ull, 0x7002240000ull},   // game online-session manager (drives Pia)
     {0x7002240000ull, 0x7002250000ull},   // its request dispatcher (FUN_02248cf0)
+    {0x7000495000ull, 0x70004a0000ull},   // game document writer (FUN_0049c9d8)
+    {0x7001e30000ull, 0x7001e42000ull},   // online race controller (PlayerStatic/Companion)
+    {0x7000195000ull, 0x7000196000ull},   // its caller (FUN_01e377c4 call site)
+    {0x7002120000ull, 0x7002130000ull},   // race comm-error raisers (FUN_02126ad4/021271c8)
 };
 
 // Watchpoints: every indirect call to these targets is logged (first 20,
 // then every 200th), with a state dump where useful. See docs/NETCODE.md.
-enum { W_START_P2P, W_P2P_INIT_SEQ, W_US_JOB, W_GAME_CB, W_PLUGIN_A, W_PLUGIN_B, W_COUNT };
+enum { W_START_P2P, W_P2P_INIT_SEQ, W_US_JOB, W_GAME_CB, W_PLUGIN_A, W_PLUGIN_B, W_COMM_ERROR, W_COUNT };
 static const uint64_t kWatch[W_COUNT] = {
     0x7002236714ull,   // FUN_02236714: game start-P2P (dispatcher request kind 1)
     0x7001285d20ull,   // FUN_01285d20: P2P initial sequence (thread run method)
@@ -876,12 +880,13 @@ static const uint64_t kWatch[W_COUNT] = {
     0x700223d768ull,   // game callback invoked by Pia session layer at matchmaking start
     0x70016279e4ull,   // NplnPlugin/session-layer entry (Pia -> plugin)
     0x7001629020ull,   // NplnPlugin/session-layer entry (Pia -> plugin)
+    0x700222d78cull,   // error service slot 6: post communication error (reason 37, kind 12)
 };
 static const char *const kWatchName[W_COUNT] = {"start_p2p", "p2p_init_seq", "us_job_run", "game_cb_223d768",
-                                                "plugin_16279e4", "plugin_1629020"};
+                                                "plugin_16279e4", "plugin_1629020", "comm_error"};
 // Optional field dump at x0 + off: count qwords.
-static const uint16_t kWatchDumpOff[W_COUNT] = {0, 0, 0x130, 0, 0, 0};
-static const uint8_t kWatchDumpCount[W_COUNT] = {0, 0, 12, 0, 0, 0};
+static const uint16_t kWatchDumpOff[W_COUNT] = {0, 0, 0x130, 0, 0, 0, 0};
+static const uint8_t kWatchDumpCount[W_COUNT] = {0, 0, 12, 0, 0, 0, 0};
 static volatile LONG g_watch_hits[W_COUNT];
 
 static int guest_readable(const void *p, size_t n) {
@@ -909,6 +914,27 @@ static void trace_watch(const Cpu *c) {
                         (const void *)mgr, (unsigned long long)slots, count, cur, handles);
             mkwmp_log("watch #%ld %s caller=main+%#llx count=%u cur=%u handles=%u", (long)n, kWatchName[w],
                       (unsigned long long)(c->x[30] - 0x7000000000ull), count, cur, handles);
+        } else if (w == W_COMM_ERROR) {
+            // x1 = error info {u32, u32, u64, u32}; also the caller's caller via x29.
+            const uint8_t *info = (const uint8_t *)(uintptr_t)c->x[1];
+            const uint8_t *fp = (const uint8_t *)(uintptr_t)c->x[29];
+            uint64_t lr[6] = {0}, w[3] = {0};
+            for (int k = 0; k < 6 && guest_readable(fp, 16); k++) {
+                memcpy(&lr[k], fp + 8, 8);
+                uint64_t next; memcpy(&next, fp, 8);
+                fp = (const uint8_t *)(uintptr_t)next;
+            }
+            if (guest_readable(info, 24)) memcpy(w, info, 24);
+            mkwmp_log("watch #%ld comm_error caller=main+%#llx frames=%#llx %#llx %#llx %#llx %#llx %#llx info=%016llx %016llx %016llx",
+                      (long)n, (unsigned long long)(c->x[30] - 0x7000000000ull),
+                      (unsigned long long)(lr[0] - 0x7000000000ull), (unsigned long long)(lr[1] - 0x7000000000ull),
+                      (unsigned long long)(lr[2] - 0x7000000000ull), (unsigned long long)(lr[3] - 0x7000000000ull),
+                      (unsigned long long)(lr[4] - 0x7000000000ull), (unsigned long long)(lr[5] - 0x7000000000ull),
+                      (unsigned long long)w[0], (unsigned long long)w[1], (unsigned long long)w[2]);
+            g_rt.rt_log("mkwmp: comm_error caller=main+%#llx frames=%#llx %#llx %#llx %#llx",
+                        (unsigned long long)(c->x[30] - 0x7000000000ull), (unsigned long long)(lr[0] - 0x7000000000ull),
+                        (unsigned long long)(lr[1] - 0x7000000000ull), (unsigned long long)(lr[2] - 0x7000000000ull),
+                        (unsigned long long)(lr[3] - 0x7000000000ull));
         } else {
             mkwmp_log("watch #%ld %s caller=main+%#llx x0=%#llx x1=%#llx x2=%#llx x3=%#llx", (long)n,
                       kWatchName[w], (unsigned long long)(c->x[30] - 0x7000000000ull),
@@ -934,6 +960,7 @@ static int in_trace_range(uint64_t a) {
 }
 #define EDGE_SLOTS 16384
 static int g_trace_edges;
+static int g_skip_referee_timeout;
 static volatile LONG64 g_edges[EDGE_SLOTS];
 
 static void trace_edge(uint64_t caller, uint64_t target, const Cpu *c) {
@@ -1022,6 +1049,19 @@ static void profile_dispatch(Cpu *c) {
     const uint8_t *job = is_pia_join_step(target) ? (void *)(uintptr_t)c->x[0] : NULL;
     uint64_t before = 0;
     if (job) memcpy(&before, job + 0x38, sizeof before);
+    // Experiment (MKWMP_SKIP_REFEREE_TIMEOUT=1): drop the race-start referee
+    // timeout error (FUN_021271c8 -> FUN_01e46958 posts id 0x606314c9 through
+    // error service slot 6) so the race can continue without a server referee.
+    // MKWMP_SKIP_REFEREE_TIMEOUT=2 drops every communication error (any id).
+    if (target == 0x700222d78cull && g_skip_referee_timeout && c->x[1] &&
+        guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
+        (g_skip_referee_timeout == 2 || *(const uint32_t *)(uintptr_t)c->x[1] == 0x606314c9u)) {
+        static volatile LONG skipped;
+        if (InterlockedIncrement(&skipped) <= 50)
+            mkwmp_log("communication error %#x suppressed (caller main+%#llx)",
+                      *(const uint32_t *)(uintptr_t)c->x[1], (unsigned long long)(caller - 0x7000000000ull));
+        return;
+    }
     original_dispatch(c);
     if (trace_operation && g_rt.rt_log)
         mlog("Match controller %s op=%llu target=%#llx ret=%#llx next_phase=%u desired=%u/%u flags=%#x",
@@ -1201,6 +1241,8 @@ int npln_register(void) {
     g_second_player = player ? !strcmp(player, "2") : cfg->slot == 2;
     const char *edges = getenv("MKWMP_TRACE_EDGES");
     g_trace_edges = edges && !strcmp(edges, "1");
+    const char *skip = getenv("MKWMP_SKIP_REFEREE_TIMEOUT");
+    g_skip_referee_timeout = skip ? atoi(skip) : 0;
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     if (!g_rt.hostfn_add_override || !g_rt.ldr_count) { log_line("npln_register: runtime not resolved"); return -1; }
     if (!g_dele.fiber_initialize || !g_dele.fiber_switch || !g_dele.fiber_switch_to ||
