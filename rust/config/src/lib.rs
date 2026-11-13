@@ -78,26 +78,22 @@ impl ServerConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct ClientConfig {
-    pub connection: Connection,
-    pub profile: Profile,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Connection {
     pub server: String,
+    pub name: String,
+    /// Loopback only: distinct account per instance on one machine. Default 1.
+    #[serde(default = "one")]
+    pub slot: u8,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct Profile {
-    pub name: String,
-    pub slot: u8,
+fn one() -> u8 {
+    1
 }
 
 impl ClientConfig {
     pub fn load(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
         let cfg: ClientConfig = parse(path.as_ref())?;
-        if cfg.profile.name.trim().is_empty() {
-            return Err(ConfigError::Invalid("profile.name must not be empty"));
+        if cfg.name.trim().is_empty() {
+            return Err(ConfigError::Invalid("name must not be empty"));
         }
         Ok(cfg)
     }
@@ -135,14 +131,14 @@ mod tests {
     #[test]
     fn client_config_loads() {
         let cfg = ClientConfig::load(format!("{REPO}/config/client.toml")).unwrap();
-        assert!(!cfg.profile.name.is_empty());
+        assert!(!cfg.name.is_empty());
+        assert_eq!(cfg.slot, 1); // defaulted when omitted
     }
 
     #[test]
-    fn empty_profile_name_is_rejected() {
-        let dir = std::env::temp_dir();
-        let p = dir.join("mkwmp_test_client.toml");
-        std::fs::write(&p, "[connection]\nserver=\"x\"\n[profile]\nname=\"\"\nslot=1\n").unwrap();
+    fn empty_name_is_rejected() {
+        let p = std::env::temp_dir().join("mkwmp_test_client.toml");
+        std::fs::write(&p, "server=\"x\"\nname=\"\"\n").unwrap();
         assert!(matches!(ClientConfig::load(&p), Err(ConfigError::Invalid(_))));
     }
 }

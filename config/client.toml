@@ -1,9 +1,9 @@
-## mkwmp client config. Read by the launcher, which sets the probe's environment
-## before starting the game. One file per player profile.
+## mkwmp client config. Read by the launcher, which sets the probe's
+## environment before starting the game. One file per player.
 
-[connection]
 server = "127.0.0.1:8905"      # mkwmp server to join
+name = "Player1"               # your username; must be unique on the server
 
-[profile]
-name = "Player1"               # username; must be unique on the server
-slot = 1                       # local account slot (1 or 2 for loopback)
+# slot: only for running two instances on one machine (loopback testing).
+# Leave it out on a normal setup. Player two sets slot = 2.
+# slot = 1
