@@ -62,6 +62,51 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 peer.conn.send_headers.assert_called_once_with(1, [("grpc-status", "0")], end_stream=True)
                 self.assertFalse(peer.tracked_tickets)
 
+    def test_gamesync_issue_token_returns_token_message(self):
+        subject = "tenants/local/gameSessions/g/userSessions/u"
+        request = capture.grpc_frame(capture.protobuf_bytes(1, subject) + capture.protobuf_bytes(2, "x"))
+        reply = capture.gamesync_token_response(request, None)
+        token = capture.bytes_field(reply, 1)
+        self.assertEqual(capture.bytes_field(token, 1).decode(), subject)
+        self.assertTrue(capture.bytes_field(token, 2))
+        self.assertTrue(capture.bytes_field(token, 3))
+        self.assertEqual(capture.bytes_field(token, 4), b"\x08" + capture.encode_varint(3600))
+        self.assertEqual(capture.bearer_token("bearer abc"), "abc")
+        self.assertEqual(capture.bearer_token("Bearer abc"), "abc")
+
+    async def test_keep_user_session_stays_open_and_logs_frames(self):
+        logged = []
+        with patch.object(capture, "log", logged.append):
+            loop = asyncio.get_running_loop()
+            server = await loop.create_server(capture.H2Protocol, "127.0.0.1", 0)
+            reader, writer = await asyncio.open_connection("127.0.0.1", server.sockets[0].getsockname()[1])
+            conn = H2Connection(H2Configuration(client_side=True, header_encoding="utf-8"))
+            conn.initiate_connection()
+            path = next(iter(capture.BIDI_STREAMS))
+            conn.send_headers(1, [(":method", "POST"), (":scheme", "http"), (":authority", "local.test"),
+                                  (":path", path), ("content-type", "application/grpc"), ("te", "trailers")])
+            writer.write(conn.data_to_send())
+            try:
+                events = []
+                while not any(getattr(e, "stream_id", None) == 1 and type(e).__name__ == "ResponseReceived"
+                              for e in events):
+                    data = await asyncio.wait_for(reader.read(65536), 3)
+                    events.extend(conn.receive_data(data))
+                    writer.write(conn.data_to_send())
+                conn.send_data(1, capture.grpc_frame(b"\x08\x05"))
+                writer.write(conn.data_to_send())
+                for _ in range(50):
+                    if any("frame (2 bytes): 0805" in line for line in logged):
+                        break
+                    await asyncio.sleep(0.02)
+                self.assertTrue(any("frame (2 bytes): 0805" in line for line in logged))
+                self.assertFalse(any(isinstance(e, StreamEnded) for e in events))
+            finally:
+                writer.close()
+                await writer.wait_closed()
+                server.close()
+                await server.wait_closed()
+
     def test_captured_race_request_returns_a_named_ticket(self):
         request = bytes.fromhex(
             "000000009f0a0f74656e616e74732f63757272656e74128b01122b74656e616e74732f"

@@ -39,6 +39,11 @@ SUBSCRIPTIONS = {
     "/nn.npln.friends.v1.Friends/SubscribeFriendUsers",
     "/nn.npln.maintenance.v1.MaintenanceScheduleService/SubscribeMaintenanceSchedules",
 }
+GAMESYNC_ISSUE_TOKEN = "/nn.npln.gamesync.v1.Gamesync/IssueToken"
+GAMESYNC_REFRESH_TOKEN = "/nn.npln.gamesync.v1.Gamesync/RefreshToken"
+# Bidirectional streams (RpcMethod type 3 in the stub at main+0x12bae9c): log
+# each client frame as it arrives and keep the stream open.
+BIDI_STREAMS = {"/nn.npln.gamesync.v1.Gamesync/KeepUserSession"}
 
 
 def log(msg):
@@ -291,6 +296,33 @@ def auth_response(request_body):
     return protobuf_bytes(2, token_message)
 
 
+def bearer_token(header):
+    # NPLN sends "Bearer"; the Gamesync interceptor (main+0x1297258) "bearer".
+    return header[7:] if header[:7].lower() == "bearer " else header
+
+
+def gamesync_token_response(request_body, fallback_user):
+    """Gamesync IssueToken/RefreshToken reply.
+
+    Response main+0x12a26fc: {1: Token}; Token main+0x12b94c4: 1 string
+    (subject), 2 access token, 3 refresh token, 4 Duration (main+0x11b2768),
+    the same layout as the Auth service's Token. Request main+0x12a1ee0 is
+    {1 string, 2 string}; its field 1 is echoed as the subject when present.
+    """
+    subject = fallback_user or "tenants/local/users/unknown"
+    messages = decode_grpc_messages(request_body)
+    if messages and not messages[0][0]:
+        try:
+            subject = bytes_field(messages[0][1], 1).decode()
+        except (ValueError, UnicodeDecodeError):
+            pass
+    issued = int(time.time())
+    token = f"mkwmp-gamesync-{issued}-{abs(hash(subject)) % 10**8}"
+    duration = b"\x08" + encode_varint(3600)
+    return protobuf_bytes(1, protobuf_bytes(1, subject) + protobuf_bytes(2, token) +
+                          protobuf_bytes(3, token + "-refresh") + protobuf_bytes(4, duration))
+
+
 BULK_GET = "/nn.npln.ugcstore.v1.Ugcstore/BulkGetDocuments"
 
 
@@ -361,14 +393,18 @@ class H2Protocol(asyncio.Protocol):
                 hdrs = dict(ev.headers)
                 self.streams[ev.stream_id] = {"path": hdrs.get(":path", "?"),
                                               "authority": hdrs.get(":authority", "?"),
-                                              "token": hdrs.get("authorization", "").removeprefix("Bearer "),
+                                              "token": bearer_token(hdrs.get("authorization", "")),
                                               "data": bytearray()}
+                if self.streams[ev.stream_id]["path"] in BIDI_STREAMS:
+                    self.handle_bidi(ev.stream_id, self.streams[ev.stream_id])
             elif isinstance(ev, DataReceived):
                 st = self.streams.get(ev.stream_id)
                 if st is not None:
                     st["data"].extend(ev.data)
                     if st["path"] == PRESENCE_KEEPALIVE:
                         self.handle_keepalive(ev.stream_id, st)
+                    elif st["path"] in BIDI_STREAMS:
+                        self.handle_bidi(ev.stream_id, st)
                 self.conn.acknowledge_received_data(ev.flow_controlled_length, ev.stream_id)
             elif isinstance(ev, StreamEnded):
                 self.handle_stream(ev.stream_id)
@@ -401,9 +437,33 @@ class H2Protocol(asyncio.Protocol):
             log(f"    raw gRPC body: {frame.hex()}")
             self.conn.send_data(sid, grpc_frame(b""))
 
+    def handle_bidi(self, sid, st):
+        """Log each complete client frame of a bidi stream; keep it open."""
+        data = st["data"]
+        if sid not in self.subscriptions:
+            self.conn.send_headers(sid, [(":status", "200"), ("content-type", "application/grpc")])
+            self.subscriptions[sid] = st["path"]
+            log(f">>> gRPC STREAM {st['path']} opened (stream {sid}, authority={st['authority']})")
+        while len(data) >= 5:
+            size = int.from_bytes(data[1:5], "big") + 5
+            if len(data) < size:
+                return
+            frame = bytes(data[:size])
+            del data[:size]
+            log(f">>> {st['path']} frame ({size - 5} bytes): {frame[5:].hex()}")
+            for line in decode_protobuf(frame[5:]):
+                log(line)
+
     def handle_stream(self, sid):
         st = self.streams.pop(sid, None)
         if st is None:
+            return
+        if st["path"] in BIDI_STREAMS:
+            # Client half-closed: finish the stream cleanly.
+            self.handle_bidi(sid, st)
+            self.subscriptions.pop(sid, None)
+            self.conn.send_headers(sid, [("grpc-status", "0")], end_stream=True)
+            log(f"<<< closed {st['path']} after client half-close")
             return
         if st["path"] == PRESENCE_KEEPALIVE:
             if self.subscriptions.pop(sid, None) is None:
@@ -419,10 +479,12 @@ class H2Protocol(asyncio.Protocol):
                 log(line)
             if not msg:
                 log("      <empty>")
-        response = (auth_response(body) if st["path"] == "/nn.npln.auth.v1.Auth/IssuePrearrangedUserToken"
-                    else b"")
+        is_auth = st["path"] == "/nn.npln.auth.v1.Auth/IssuePrearrangedUserToken"
+        response = auth_response(body) if is_auth else b""
+        if st["path"] in (GAMESYNC_ISSUE_TOKEN, GAMESYNC_REFRESH_TOKEN):
+            response = gamesync_token_response(body, self.ticket_user(st["token"]))
         self.conn.send_headers(sid, [(":status", "200"), ("content-type", "application/grpc")])
-        if response:
+        if is_auth:
             token_info = bytes_field(response, 2)
             self.user = bytes_field(token_info, 1).decode()
             self.issued_tokens[bytes_field(token_info, 2).decode()] = self.user
