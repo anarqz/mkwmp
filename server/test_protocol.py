@@ -46,6 +46,8 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 matched = [raw for f, _, raw in fields if f == 6]
                 session = capture.bytes_field(reply, 7)
                 self.assertEqual(capture.bytes_field(session, 1).decode(), session_name)
+                self.assertEqual(capture.bytes_field(session, 8).decode(), capture.GAMESYNC_HOST)
+                self.assertIn(b"\x48" + capture.encode_varint(capture.GAMESYNC_PORT), session)
                 for raw, ticket in zip(matched, (first, second)):
                     entry = capture.bytes_field(raw, 6)
                     user_id = ticket.user.rsplit("/", 1)[-1]

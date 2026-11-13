@@ -454,12 +454,23 @@ static void ov_sock_socket(Cpu *c) {
     if (fd < 0) { closesocket(s); g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
     ret_x(c, (uint64_t)fd);
 }
-// int nnsocketConnect(int fd, const sockaddr*, u32 len): ignore target, connect to our server.
+// int nnsocketConnect(int fd, const sockaddr*, u32 len): connect to our loopback server.
+// Port 443 (NPLN TLS) goes to MKWMP_PORT; any other explicit port, such as the
+// plaintext Gamesync endpoint we hand out in session assignments, keeps its port.
 static void ov_sock_connect(Cpu *c) {
     int fd = (int)arg_x(c, 0);
     SOCKET s = fd_get(fd);
     if (s == INVALID_SOCKET) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
-    int r = connect(s, (struct sockaddr *)&g_server, sizeof g_server);
+    struct sockaddr_in target = g_server;
+    const uint8_t *guest = arg_p(c, 1);
+    if (guest && arg_x(c, 2) >= 4 && guest[1] == 2) {
+        uint16_t port;
+        memcpy(&port, guest + 2, sizeof port);
+        if (port && ntohs(port) != 443) target.sin_port = port;
+    }
+    if (target.sin_port != g_server.sin_port)
+        g_rt.rt_log("mkwmp: nnsocketConnect keeps explicit port %u", (unsigned)ntohs(target.sin_port));
+    int r = connect(s, (struct sockaddr *)&target, sizeof target);
     if (r == 0) { rlog("nnsocketConnect -> connected (loopback)"); ret_x(c, 0); return; }
     int e = WSAGetLastError();
     if (e == WSAEWOULDBLOCK || e == WSAEINPROGRESS || e == WSAEALREADY) {
@@ -640,6 +651,16 @@ static void sock_getaddrinfo(Cpu *c, const char *label, int cpp_layout) {
     if (!ai || !sa) { free(ai); free(sa); ret_x(c, (uint64_t)-1); return; }
     sa[0] = 16; sa[1] = 2;                      // len=16, AF_INET=2
     memcpy(sa + 2, &g_server.sin_port, 2);      // port (network order)
+    // Keep an explicit numeric service other than 443 (see ov_sock_connect).
+    const char *service = arg_p(c, 1);
+    if (service && *service) {
+        char *end;
+        unsigned long port = strtoul(service, &end, 10);
+        if (!*end && port && port < 65536 && port != 443) {
+            uint16_t be = htons((uint16_t)port);
+            memcpy(sa + 2, &be, 2);
+        }
+    }
     memcpy(sa + 4, &g_server.sin_addr, 4);      // 127.0.0.1
     ai->ai_family = 2; ai->ai_socktype = 1; ai->ai_protocol = 6; ai->ai_addrlen = 16;
     if (cpp_layout) ai->ai_canonname = (char *)sa; // nn::socket::AddrInfo address at +0x18
@@ -771,7 +792,64 @@ static int is_pia_join_step(uint64_t target) {
     }
 }
 
+// Opt-in (MKWMP_TRACE_EDGES=1) coverage of indirect calls made from NPLN
+// matchmaking/game-session/Gamesync code. Each distinct caller->target pair is
+// logged once with a millisecond tick, so a run shows which code executed
+// between a match assignment and the resulting error.
+#define EDGE_LO 0x7001200000ull
+#define EDGE_HI 0x7001440000ull
+#define EDGE_SLOTS 8192
+static int g_trace_edges;
+static volatile LONG64 g_edges[EDGE_SLOTS];
+
+static void trace_edge(uint64_t caller, uint64_t target, const Cpu *c) {
+    if (caller < EDGE_LO || caller >= EDGE_HI) return;
+    uint64_t key = ((caller - 0x7000000000ull) << 32) ^ (target - 0x7000000000ull);
+    if (!key) return;
+    uint64_t h = key * 0x9E3779B97F4A7C15ull;
+    for (unsigned probe = 0; probe < 64; probe++) {
+        volatile LONG64 *slot = &g_edges[(h + probe) & (EDGE_SLOTS - 1)];
+        LONG64 seen = InterlockedCompareExchange64(slot, (LONG64)key, 0);
+        if (seen == (LONG64)key) return;
+        if (seen == 0) {
+            g_rt.rt_log("mkwmp: edge t=%llu caller=main+%#llx target=main+%#llx x0=%#llx x1=%#llx x2=%#llx",
+                        (unsigned long long)GetTickCount64(),
+                        (unsigned long long)(caller - 0x7000000000ull),
+                        (unsigned long long)(target - 0x7000000000ull),
+                        (unsigned long long)c->x[0], (unsigned long long)c->x[1],
+                        (unsigned long long)c->x[2]);
+            return;
+        }
+    }
+}
+
+// main+0x46966a0 constructs a string from a C string in x1 (used for error
+// messages such as "Timed out to get my UserSession." and resource names).
+// Mirror the ones built by NPLN matchmaking/Gamesync code into mkw.log.
+static void trace_sdk_message(const Cpu *c) {
+    const char *msg = (const char *)(uintptr_t)c->x[1];
+    if ((uintptr_t)msg < 0x10000) return;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(msg, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT ||
+        (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+        return;
+    size_t avail = (size_t)((const char *)mbi.BaseAddress + mbi.RegionSize - msg);
+    char buf[400];
+    size_t n = 0;
+    for (; n < sizeof buf - 1 && n < avail && msg[n]; n++)
+        buf[n] = (msg[n] >= 0x20 && msg[n] < 0x7f) ? msg[n] : '.';
+    buf[n] = 0;
+    g_rt.rt_log("mkwmp: sdk-msg t=%llu caller=main+%#llx \"%s\"",
+                (unsigned long long)GetTickCount64(),
+                (unsigned long long)(c->x[30] - 0x7000000000ull), buf);
+}
+
 static void profile_dispatch(Cpu *c) {
+    if (g_trace_edges && g_rt.rt_log) {
+        if (c->pc == 0x70046966a0ull && c->x[30] >= EDGE_LO && c->x[30] < EDGE_HI)
+            trace_sdk_message(c);
+        trace_edge(c->x[30], c->pc, c);
+    }
     // The lifted BLR uses rt_dispatch. This call retrieves the completed
     // BulkGetDocuments result into the guest's x8 return buffer.
     uint32_t *result = c->x[30] == 0x7001e463dcull && c->pc == 0x700146a200ull
@@ -984,6 +1062,8 @@ int npln_register(void) {
     if (!enabled || strcmp(enabled, "1")) { log_line("npln: inactive (set MKWMP_ENABLE=1 to engage)"); return 0; }
     const char *player = getenv("MKWMP_PLAYER");
     g_second_player = player && !strcmp(player, "2");
+    const char *edges = getenv("MKWMP_TRACE_EDGES");
+    g_trace_edges = edges && !strcmp(edges, "1");
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     if (!g_rt.hostfn_add_override || !g_rt.ldr_count) { log_line("npln_register: runtime not resolved"); return -1; }
     if (!g_dele.fiber_initialize || !g_dele.fiber_switch || !g_dele.fiber_switch_to ||

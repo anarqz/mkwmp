@@ -221,6 +221,10 @@ def create_ticket_response(queue, user, request_body):
     return protobuf_bytes(1, name)
 
 
+GAMESYNC_HOST = "localhost"   # "localhost" selects an insecure channel (main+0x12696a4)
+GAMESYNC_PORT = 8906
+
+
 def match_assignment(tenant, lobby_id, tickets, recipient, now=None):
     """TrackMatchmakingTicket reply announcing a found session to `recipient`.
 
@@ -229,7 +233,8 @@ def match_assignment(tenant, lobby_id, tickets, recipient, now=None):
                                    6 MatchedPlayer*, 7 GameSession
       MatchedPlayer main+0x140c708: 1 Player, 2 userSession resource,
                                    3 user-session id (read as Gamesync "__us/<id>")
-      GameSession  main+0x140b440: 1 name, 10 Timestamp, 12 Member*
+      GameSession  main+0x140b440: 1 name, 8 Gamesync host, 9 Gamesync port,
+                                   10 Timestamp, 12 Member*
       Member       main+0x1405fec: 1 user (string), 2 userSession, 4 Timestamp
     The join check main+0x138dea0 needs every local user in field 6 with a
     parseable userSession (field 2); without it the client reports
@@ -246,7 +251,11 @@ def match_assignment(tenant, lobby_id, tickets, recipient, now=None):
                                   protobuf_bytes(3, user_id))
         members += protobuf_bytes(12, protobuf_bytes(1, ticket.user) + protobuf_bytes(2, user_session) +
                                   protobuf_bytes(4, timestamp(now)))
-    session = protobuf_bytes(1, name) + protobuf_bytes(10, timestamp(now + 600)) + members
+    # Fields 8/9 are the Gamesync endpoint; empty values made the client
+    # resolve ":0" and fail Gamesync/IssueToken (2321-4992).
+    session = (protobuf_bytes(1, name) + protobuf_bytes(8, GAMESYNC_HOST) +
+               b"\x48" + encode_varint(GAMESYNC_PORT) +
+               protobuf_bytes(10, timestamp(now + 600)) + members)
     return (protobuf_bytes(1, f"{tenant}/matchmakingTickets/{recipient.id}") +
             protobuf_bytes(2, f"{tenant}/matchmakingConfigs/{recipient.mode}") +
             protobuf_bytes(4, player_for(recipient.user, recipient.player)) +
@@ -528,6 +537,7 @@ class H2Protocol(asyncio.Protocol):
 
 
 async def main():
+    global GAMESYNC_PORT
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8900)
@@ -535,6 +545,8 @@ async def main():
     ap.add_argument("--tls-cert", help="PEM certificate for the embedded OpenSSL transport")
     ap.add_argument("--tls-key", help="matching PEM private key")
     ap.add_argument("--announce-matches", action="store_true", help="send experimental local session assignments")
+    ap.add_argument("--gamesync-port", type=int, default=GAMESYNC_PORT,
+                    help="plaintext h2c listener advertised as the Gamesync endpoint (0 disables)")
     args = ap.parse_args()
     H2Protocol.announce_matches = args.announce_matches
     if bool(args.tls_cert) != bool(args.tls_key):
@@ -553,8 +565,12 @@ async def main():
     loop = asyncio.get_running_loop()
     server = await loop.create_server(H2Protocol, args.host, args.port, ssl=tls)
     log(f"mkwmp gRPC capture server listening on {args.host}:{args.port} ({'TLS + h2' if tls else 'h2c, plaintext'})")
-    async with server:
-        await server.serve_forever()
+    servers = [server]
+    if args.gamesync_port and args.gamesync_port != args.port:
+        GAMESYNC_PORT = args.gamesync_port
+        servers.append(await loop.create_server(H2Protocol, args.host, args.gamesync_port))
+        log(f"Gamesync endpoint listening on {args.host}:{args.gamesync_port} (h2c, plaintext)")
+    await asyncio.gather(*(s.serve_forever() for s in servers))
 
 
 if __name__ == "__main__":
