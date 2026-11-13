@@ -278,6 +278,22 @@ def match_assignment(tenant, lobby_id, tickets, recipient, now=None):
 SECOND_LOCAL_TOKEN = b"eyJhbGciOiJub25lIn0.eyJzdWIiOiJta3dtcC1sb2NhbC0yIiwiaXNzIjoibWt3bXAifQ."
 
 
+TICKET_SLOTS = {}   # lower(player name from a seat ticket) -> player number (1, 2, ...)
+
+
+def ticket_name(bearer):
+    """Player name from a seat ticket mkw1.<payload>.<sig> (signature NOT verified yet)."""
+    parts = bearer.split(".")
+    if len(parts) != 3 or parts[0] != "mkw1":
+        return None
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+    except ValueError:
+        return None
+    name = claims.get("name") if isinstance(claims, dict) else None
+    return name if isinstance(name, str) and name else None
+
+
 def auth_response(request_body):
     """Local test response; wire layout recovered from main+0xec3cc0/0xec7100."""
     # Read field 1 (tenant) from this specific request's uncompressed protobuf.
@@ -289,8 +305,17 @@ def auth_response(request_body):
         if message and message[0] == 10:
             size, start = _varint(message, 1)
             tenant = message[start:start + size].decode("utf-8")
-            if message[start + size:] == protobuf_bytes(3, protobuf_bytes(1, SECOND_LOCAL_TOKEN)):
+            rest = message[start + size:]
+            if rest == protobuf_bytes(3, protobuf_bytes(1, SECOND_LOCAL_TOKEN)):
                 slot = 2
+            else:
+                try:
+                    name = ticket_name(bytes_field(bytes_field(rest, 3), 1).decode())
+                except (ValueError, UnicodeDecodeError):
+                    name = None
+                if name:
+                    # Each seat-ticket player gets its own player number, in sign-in order.
+                    slot = TICKET_SLOTS.setdefault(name.lower(), len(TICKET_SLOTS) + 1)
     user = tenant + f"/users/00000000-0000-4000-8000-{slot:012d}"
     issued = int(time.time())
     def b64(value):

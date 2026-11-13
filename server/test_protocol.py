@@ -1,3 +1,5 @@
+import base64
+import json
 """Exercise long-lived subscriptions alongside unary RPCs on a real h2 socket."""
 import asyncio
 import unittest
@@ -359,6 +361,21 @@ class MatchDocumentsTest(unittest.TestCase):
         self.assertEqual(sorted(capture.DOC_STORE), ["docs/__mt/nat_traversal", "docs/__pgn/All/__pus/a"])
         self.assertFalse(capture.REFEREE_ANSWERED)
         capture.DOC_STORE.clear()
+
+class TicketPlayersTest(unittest.TestCase):
+    def test_each_ticket_name_gets_its_own_player(self):
+        capture.TICKET_SLOTS.clear()
+        def ticket(name):
+            p = base64.urlsafe_b64encode(json.dumps({"v": 1, "name": name}).encode()).rstrip(b"=").decode()
+            return f"mkw1.{p}.sig"
+        def user(bearer):
+            body = capture.grpc_frame(capture.protobuf_bytes(1, "tenants/t-x") +
+                                      capture.protobuf_bytes(3, capture.protobuf_bytes(1, bearer)))
+            return capture.bytes_field(capture.bytes_field(capture.auth_response(body), 2), 1).decode()
+        a, b = user(ticket("anarqz")), user(ticket("Alex"))
+        self.assertTrue(a.endswith("000000000001") and b.endswith("000000000002"))
+        self.assertEqual(user(ticket("ANARQZ")), a)
+        capture.TICKET_SLOTS.clear()
 
 
 if __name__ == "__main__":
