@@ -160,6 +160,16 @@ static void ov_show_error_variant(Cpu *c) {
                     variant[0], (unsigned long long)c->x[30]);
     }
 }
+// void nnosGetThreadCoreMask(int *ideal, uint64_t *mask, const ThreadType *t):
+// application cores 0-2, ideal core 0. nnosSetThreadCoreMask: keep the default.
+static void ov_get_thread_core_mask(Cpu *c) {
+    int32_t *ideal = arg_p(c, 0);
+    uint64_t *mask = arg_p(c, 1);
+    if (ideal) *ideal = 0;
+    if (mask) *mask = 0x7;
+    ret_x(c, 0);
+}
+static void ov_set_thread_core_mask(Cpu *c) { ret_x(c, 0); }
 static void ov_fiber_switch(Cpu *c) {
     // The shipped runtime rejects NULL, although GetCurrentFiber returns NULL
     // on a thread's base context. Its lower-level switch already supports it.
@@ -583,7 +593,9 @@ static void ov_sock_poll(Cpu *c) {
         valid++;
     }
     int away = 0;
-    if (ms && !ready && c->thread && g_dele.core_away && g_dele.core_back) away = g_dele.core_away();
+    static int no_core_away = -1;
+    if (no_core_away < 0) { const char *v = getenv("MKWMP_NO_CORE_AWAY"); no_core_away = v && !strcmp(v, "1"); }
+    if (ms && !ready && c->thread && g_dele.core_away && g_dele.core_back && !no_core_away) away = g_dele.core_away();
     int result = 0;
     if (valid) {
         result = WSAPoll(h, (ULONG)valid, ready ? 0 : (ms < 0 ? -1 : ms));
@@ -1252,7 +1264,21 @@ int npln_register(void) {
     }
     if (g_rt.ldr_count() != 0) { log_line("npln_register: TOO LATE"); return -1; }
     int n = (int)(sizeof(kRegs) / sizeof(kRegs[0]));
-    for (int i = 0; i < n; i++) g_rt.hostfn_add_override(kRegs[i].name, kRegs[i].fn);
+    // MKWMP_NO_FIBER=1 leaves fibers to the runtime (diagnosis for runtimes
+    // whose fiber internals differ from the build the workaround targets).
+    const char *nofiber = getenv("MKWMP_NO_FIBER");
+    int skip_fiber = nofiber && !strcmp(nofiber, "1");
+    for (int i = 0; i < n; i++) {
+        if (skip_fiber && strstr(kRegs[i].name, "Fiber")) { log_line(kRegs[i].name); continue; }
+        g_rt.hostfn_add_override(kRegs[i].name, kRegs[i].fn);
+    }
+    if (skip_fiber) {
+        // The freed slots take the core-mask pair: runtime 0.1.10 aborts the SDK's
+        // GetThreadCoreMask (result 0xe801) on the online start-up path (main+0x14c5bc0).
+        g_rt.hostfn_add_override("nnosGetThreadCoreMask", ov_get_thread_core_mask);
+        g_rt.hostfn_add_override("nnosSetThreadCoreMask", ov_set_thread_core_mask);
+        log_line("core-mask overrides registered");
+    }
     log_kv("npln_register: overrides", (uint64_t)n);
     return n;
 }
