@@ -74,6 +74,27 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(capture.bearer_token("bearer abc"), "abc")
         self.assertEqual(capture.bearer_token("Bearer abc"), "abc")
 
+    def test_keep_user_session_answers_captured_subscription(self):
+        # Client frame captured 2026-11-13 (class 8 session message).
+        frame = bytes.fromhex(
+            "0a147573657253657373696f6e732f63757272656e741a540a520a1e7573657253657373696f6e732f"
+            "63757272656e742f746172676574732f3112300a2e646f63732f5f5f75732f30303030303030302d30"
+            "3030302d343030302d383030302d303030303030303030303032")
+        session, targets = capture.parse_keep_user_session(frame)
+        self.assertEqual(session, "userSessions/current")
+        doc_name = "docs/__us/00000000-0000-4000-8000-000000000002"
+        self.assertEqual(targets, [("userSessions/current/targets/1", doc_name)])
+        added, current = capture.keep_user_session_replies(session, targets, now=100)
+        for message, kind in ((added, 1), (current, 3)):
+            self.assertEqual(capture.bytes_field(message, 1).decode(), session)   # field 1 = string
+            change = capture.bytes_field(message, 2)
+            self.assertEqual(capture.bytes_field(change, 1).decode(), targets[0][0])
+            self.assertIn(b"\x10" + capture.encode_varint(kind), change)
+            document = capture.bytes_field(change, 3)
+            self.assertEqual(capture.bytes_field(document, 1).decode(), doc_name)
+            entry = capture.bytes_field(capture.bytes_field(document, 2), 1)
+            self.assertEqual(capture.bytes_field(entry, 1), b"f")                  # peer descriptor key
+
     async def test_keep_user_session_stays_open_and_logs_frames(self):
         logged = []
         with patch.object(capture, "log", logged.append):

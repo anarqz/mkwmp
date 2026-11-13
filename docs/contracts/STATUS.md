@@ -23,8 +23,8 @@ One row per RPC. Workflow and status meanings: [WORKFLOW.md](WORKFLOW.md).
 | gamesync.v1.Gamesync | CommitTransaction | unary | todo |
 | gamesync.v1.Gamesync | CreateRound | unary | todo |
 | gamesync.v1.Gamesync | GetDocument | unary | todo |
-| gamesync.v1.Gamesync | IssueToken | unary | static |
-| gamesync.v1.Gamesync | KeepUserSession | bidi | next |
+| gamesync.v1.Gamesync | IssueToken | unary | live |
+| gamesync.v1.Gamesync | KeepUserSession | bidi | partial |
 | gamesync.v1.Gamesync | ListDocuments | unary | todo |
 | gamesync.v1.Gamesync | QueryCollectionIds | unary | todo |
 | gamesync.v1.Gamesync | ReadDocuments | unary | todo |

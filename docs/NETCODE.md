@@ -221,9 +221,33 @@ nested `f`). Two live hypotheses:
    OTHER player's user-session to exist before "my UserSession" resolves,
    which ties into the Pia P2P mesh (both peers must actually connect).
 
+### KeepUserSession contract — SOLVED by live probing (2026-11-13, runs p1–p5b)
+
+Method: per-player probe sequences on the open stream (`--kus-probe`), 5–8 s
+apart; the client's error timestamp identifies the probe that killed it.
+Protobuf skips wrong-wire-type fields, so the oracles were **invalid UTF-8**
+(kills only a string field) and **valid-UTF-8 non-message bytes** like `é`
+(kills only a message field).
+
+Result: the stream uses **class 8 in both directions**:
+`SessionMessage {1 string session, 2 Change, 3 repeated Op}`;
+`Op {1 bytes = serialized Target{1 name, 2 {1 document}}, 2 varint, 3 Status}`;
+`Change {1 string target, 2 varint kind, 3 Document}`;
+`Document {1 name, 2 fields, 3 create_time, 4 update_time}` (class 11).
+Change **kind 3 = CURRENT completes the listen** (P2 then entered the
+user-session handler, `main+0x1266824/0x1266890`); kinds 1/2 only deliver the
+document (`main+0x12a095c` parses its name). Earlier failures (0x240141) were
+our documents landing in field 1, a proto3 string, with non-UTF-8 bytes.
+Contract: `contracts/nn/npln/gamesync/v1/gamesync.proto`; server answers each
+subscribed target with ADDED + CURRENT.
+
+Also: `MKW_ASSUME_FOCUS=1` keeps background windows running (focus ruled out
+as a cause); two instances need `MKW_RESOLUTION=960x540 MKW_FPS=30` or the GPU
+resets (`vkQueueSubmit2 ... -4`). `tools/arrange_windows.ps1` docks P1/P2.
+
 ### Remaining to a race (large, multi-cycle)
-1. Identify the real KeepUserSession response type (or confirm the stream only
-   needs acks and the doc arrives via ReadDocuments/GetDocument).
+1. ~~Identify the real KeepUserSession response type~~ done; next: see what
+   each client subscribes to / does after its user session is CURRENT.
 2. Populate each player's doc so the OTHER learns its Pia addr/port.
 3. Pia P2P mesh over loopback — exchange game packets through the bridge
    (currently only echoes NAT probes). A whole subsystem.

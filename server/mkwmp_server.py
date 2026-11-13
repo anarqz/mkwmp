@@ -344,6 +344,86 @@ def gs_struct(entries):
     return protobuf_bytes(6, body)
 
 
+def gs_timestamp(seconds):
+    return b"\x08" + encode_varint(int(seconds))
+
+
+def gs_fields(entries):
+    """Document.fields / struct body (main+0xf1b700): repeated Entry{1:key, 2:Value}."""
+    return b"".join(protobuf_bytes(1, protobuf_bytes(1, k) + protobuf_bytes(2, v)) for k, v in entries)
+
+
+def user_session_document(name, user_id, now=None):
+    """Document (class 11, main+0x12ab0e8): {1 name, 2 fields, 3 create_time,
+    4 update_time}. fields["f"] is the peer descriptor struct read by
+    FUN_022364b0 / FUN_01267698."""
+    now = int(time.time()) if now is None else now
+    descriptor = gs_struct([
+        ("gsid", gs_str(f"gs-{user_id}")),
+        ("addr", gs_str("127.0.0.1")),
+        ("p", gs_int(10025)),
+        ("mcn", gs_str("")),
+        ("maxu", gs_int(2)),
+        ("ipc", gs_int(0)),
+        ("dpc", gs_int(0)),
+    ])
+    return (protobuf_bytes(1, name) + protobuf_bytes(2, gs_fields([("f", descriptor)])) +
+            protobuf_bytes(3, gs_timestamp(now)) + protobuf_bytes(4, gs_timestamp(now)))
+
+
+def change_message(name, kind, document):
+    """Change (class 30, main+0x12b7d00): {1 string, 2 varint, 3 Document}."""
+    return protobuf_bytes(1, name) + b"\x10" + encode_varint(kind) + protobuf_bytes(3, document)
+
+
+def session_message(session, change=b"", ops=b""):
+    """KeepUserSession message (class 8, main+0x12a8064), both directions:
+    {1 string session, 2 Change, 3 repeated Op{1 bytes, 2 varint, 3 Status}}."""
+    out = protobuf_bytes(1, session)
+    if change:
+        out += protobuf_bytes(2, change)
+    return out + ops
+
+
+CHANGE_ADDED, CHANGE_CURRENT = 1, 3   # verified live 2026-11-13: 3 completes the listen
+
+
+def parse_keep_user_session(body):
+    """Client frame (class 8): {1 session, 3 repeated Op}. Op.1 is a serialized
+    Target {1 target name, 2 {1 document name}}. Returns (session, [(target, doc)])."""
+    session = bytes_field(body, 1).decode()
+    targets = []
+    for field, _, raw in iter_fields(body):
+        if field != 3:
+            continue
+        _, start = _varint(raw, 0)
+        length, start = _varint(raw, start)
+        op = raw[start:start + length]
+        target_bytes = bytes_field(op, 1)
+        target = bytes_field(target_bytes, 1).decode()
+        try:
+            doc_name = bytes_field(bytes_field(target_bytes, 2), 1).decode()
+        except ValueError:
+            doc_name = ""
+        targets.append((target, doc_name))
+    return session, targets
+
+
+def keep_user_session_replies(session, targets, now=None):
+    """Per target: Change kind ADDED with the document, then kind CURRENT.
+    docs/__us/<id> carries the peer descriptor; other documents are sent empty
+    (logged, so new document types show up)."""
+    out = []
+    for target, doc_name in targets:
+        if doc_name.startswith("docs/__us/"):
+            doc = user_session_document(doc_name, doc_name.rsplit("/", 1)[-1], now)
+        else:
+            doc = protobuf_bytes(1, doc_name)
+        for kind in (CHANGE_ADDED, CHANGE_CURRENT):
+            out.append(session_message(session, change_message(target, kind, doc)))
+    return out
+
+
 def keep_user_session_response(doc_name, user_id, now=None):
     """KeepUserSession stream response. Recovered from the serializers:
       Snapshot (main+0x12a6020)       { 1: repeated DocumentChange, 2: Timestamp }
@@ -399,7 +479,43 @@ def bulk_get_responses(body):
 
 
 # ---- HTTP/2 server ----------------------------------------------------------
+# --kus-probe: per-slot KeepUserSession replies used to discover the response
+# type's wire layout. An empty message parses as any type.
+# Each slot gets a sequence, sent KUS_PROBE_GAP seconds apart on the same
+# stream. A probe that kills the session (parse or semantic failure) shows up
+# as a client error; its timestamp says which one.
+# Run p1/p2 (2026-11-13): empty, and every field 1-4 as empty len or varint 0,
+# all survived. Protobuf skips wrong-wire-type fields as unknown, so those
+# probes cannot see the schema. Parse failures come from malformed bytes,
+# broken nested messages, or invalid UTF-8 in proto3 string fields.
+# Run p3: P2 survived {2: not-utf8}, died on {1: not-utf8}; P1 survived every
+# build-up step whose field-1 bytes were < 0x80 and died on the full document
+# (field-1 bytes 0xf3...). Hypothesis: response field 1 is a proto3 string.
+KUS_PROBE_GAP = 8.0
+_NOT_UTF8 = b"\x08\x80\x01"   # valid message {1: 128}, invalid as UTF-8
+_NOT_MSG = "é".encode()  # b"\xc3\xa9": valid UTF-8, malformed as a message
+
+
+# Run p4: {1: "é"} survived (field 1 = string); {2: "é"} and {3: "é"} died
+# (fields 2, 3 = messages). The response is class 8 (main+0x12a8064),
+# the same "session message" the client sends. See session_message().
+TARGET_1 = "userSessions/current/targets/1"
+
+
+def _kus_probes(slot, name):
+    user_id = name.rsplit("/", 1)[-1]
+    doc = user_session_document(name, user_id)
+    if slot == "1":   # Change.1 = target name; vary the change kind
+        return [session_message("userSessions/current", change_message(TARGET_1, k, doc)) for k in (1, 0, 2)]
+    if slot == "2":   # vary Change.1 (document name / empty) and kind 3
+        return [session_message("userSessions/current", change_message(name, 1, doc)),
+                session_message("userSessions/current", change_message("", 1, doc)),
+                session_message("userSessions/current", change_message(TARGET_1, 3, doc))]
+    return []
+
+
 class H2Protocol(asyncio.Protocol):
+    kus_probe = False
     matchmaking = LocalMatchmaking()
     issued_tokens = {}
     active_trackers = {}
@@ -501,23 +617,37 @@ class H2Protocol(asyncio.Protocol):
             if st["path"] in BIDI_STREAMS and self.announce_matches:
                 self.answer_keep_user_session(sid, frame[5:])
 
-    def answer_keep_user_session(self, sid, body):
-        """Reply to a KeepUserSession subscription with the subscribed document.
-        Experimental envelope hypothesis; see keep_user_session_response."""
-        try:
-            target = bytes_field(body, 3)           # the add-target wrapper
-            inner = bytes_field(target, 1)          # Target
-            doc_query = bytes_field(inner, 2)       # { 1: doc-name }
-            doc_name = bytes_field(doc_query, 1).decode()
-        except (ValueError, UnicodeDecodeError):
+    def send_probe(self, sid, slot, index, probe):
+        if sid not in self.subscriptions or self.transport.is_closing():
+            log(f"<<< KeepUserSession PROBE slot {slot} #{index}: skipped (stream gone)")
             return
-        user_id = doc_name.rsplit("/", 1)[-1]       # __us/<user-id>
-        reply = keep_user_session_response(doc_name, user_id)
-        if self.conn.local_flow_control_window(sid) < len(reply) + 5:
-            return
-        self.conn.send_data(sid, grpc_frame(reply))
+        self.conn.send_data(sid, grpc_frame(probe))
         self.transport.write(self.conn.data_to_send())
-        log(f"<<< KeepUserSession: pushed {doc_name} ({len(reply)} bytes): {reply.hex()}")
+        log(f"<<< KeepUserSession PROBE slot {slot} #{index}: {probe.hex() or '(empty)'}")
+
+    def answer_keep_user_session(self, sid, body):
+        """Answer each target the client subscribes to (see keep_user_session_replies)."""
+        try:
+            session, targets = parse_keep_user_session(body)
+        except (ValueError, UnicodeDecodeError):
+            log("<<< KeepUserSession: unparseable client frame")
+            return
+        if self.kus_probe:
+            # Wire-type probe sequence for this local slot (last digit of id).
+            for _, doc_name in targets:
+                slot = doc_name.rsplit("/", 1)[-1][-1:]
+                loop = asyncio.get_running_loop()
+                for i, probe in enumerate(_kus_probes(slot, doc_name)):
+                    loop.call_later(i * KUS_PROBE_GAP, self.send_probe, sid, slot, i, probe)
+            return
+        for target, doc_name in targets:
+            log(f"--- KeepUserSession target {target} -> {doc_name or '(no document)'}")
+        frames = b"".join(grpc_frame(m) for m in keep_user_session_replies(session, targets))
+        if not frames or self.conn.local_flow_control_window(sid) < len(frames):
+            return
+        self.conn.send_data(sid, frames)
+        self.transport.write(self.conn.data_to_send())
+        log(f"<<< KeepUserSession: {len(targets)} target(s) answered ADDED + CURRENT ({len(frames)} bytes)")
 
     def handle_stream(self, sid):
         st = self.streams.pop(sid, None)
@@ -675,8 +805,11 @@ async def main():
     ap.add_argument("--announce-matches", action="store_true", help="send experimental local session assignments")
     ap.add_argument("--gamesync-port", type=int, default=GAMESYNC_PORT,
                     help="plaintext h2c listener advertised as the Gamesync endpoint (0 disables)")
+    ap.add_argument("--kus-probe", action="store_true",
+                    help="send per-slot KeepUserSession wire-type probes (see KUS_PROBES)")
     args = ap.parse_args()
     H2Protocol.announce_matches = args.announce_matches
+    H2Protocol.kus_probe = args.kus_probe
     if bool(args.tls_cert) != bool(args.tls_key):
         ap.error("--tls-cert and --tls-key must be supplied together")
     tls = None

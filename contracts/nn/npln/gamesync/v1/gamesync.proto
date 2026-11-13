@@ -1,17 +1,80 @@
-// Recovered from mkw-recomp main.bin. Static only (not yet seen live).
+// Recovered from mkw-recomp main.bin. Field numbers verified; names inferred.
 // Stub main+0x12bae9c; message catalogue in docs/NETCODE.md section 4.
 syntax = "proto3";
 
 package nn.npln.gamesync.v1;
 
+import "google/protobuf/timestamp.proto";
 import "nn/npln/auth/v1/auth.proto";
 
 service Gamesync {
-  rpc IssueToken(IssueTokenRequest) returns (IssueTokenResponse);
+  rpc IssueToken(IssueTokenRequest) returns (IssueTokenResponse);          // live
   rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
-  // Bidi. Carries snapshot listener targets such as
-  // "userSessions/current/targets/1"; schema pending first capture.
-  rpc KeepUserSession(stream KeepUserSessionRequest) returns (stream KeepUserSessionResponse);
+  // Bidi, same message both ways (class 8, main+0x12a8064). Verified live
+  // 2026-11-13: client subscribes Ops; server answers Change ADDED + CURRENT.
+  rpc KeepUserSession(stream SessionMessage) returns (stream SessionMessage);
+}
+
+// class 8 (main+0x12a8064)
+message SessionMessage {
+  string session = 1;            // "userSessions/current"
+  Change change = 2;             // server -> client
+  repeated Op ops = 3;           // client -> server
+}
+
+// class 31 (main+0x12b8840)
+message Op {
+  bytes target = 1;              // serialized Target
+  int32 kind = 2;                // inferred
+  Status status = 3;             // google.rpc.Status shape (main+0xf15680)
+}
+
+message Target {
+  string name = 1;               // "userSessions/current/targets/1"
+  DocumentsTarget documents = 2;
+}
+
+message DocumentsTarget {
+  string document = 1;           // "docs/__us/<user-id>"
+}
+
+// class 30 (main+0x12b7d00)
+message Change {
+  string target = 1;             // target name
+  int32 kind = 2;                // 1 = added, 3 = current (completes the listen)
+  Document document = 3;
+}
+
+// class 11 (main+0x12ab0e8)
+message Document {
+  string name = 1;
+  Fields fields = 2;             // main+0xf1b700
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp update_time = 4;
+}
+
+message Fields {
+  repeated Entry entries = 1;
+  message Entry {
+    string key = 1;
+    Value value = 2;
+  }
+}
+
+// Oneof, main+0xf19724. Field 10 (list) not yet typed.
+message Value {
+  oneof kind {
+    int64 int_value = 3;
+    double double_value = 5;
+    Fields struct_value = 6;
+    string string_value = 7;
+  }
+}
+
+// google.rpc.Status shape (main+0xf15680); local copy, details omitted.
+message Status {
+  int32 code = 1;
+  string message = 2;
 }
 
 // main+0x12a1ee0
@@ -34,5 +97,3 @@ message RefreshTokenResponse {
   nn.npln.auth.v1.Token token = 1;
 }
 
-message KeepUserSessionRequest {}
-message KeepUserSessionResponse {}
