@@ -105,6 +105,7 @@ h1 .y { color: var(--yellow); }
 .btn.blue   { --c: var(--blue);   --d: var(--blue-d); }
 .btn.green  { --c: var(--green);  --d: var(--green-d); }
 .btn.yellow { --c: var(--yellow); --d: var(--yellow-d); color: var(--ink); }
+.btn.pink   { --c: #ff5e8a;      --d: #a81f4a; }
 
 /* ---- live server widget ------------------------------------------------ */
 .server {
@@ -213,7 +214,8 @@ pre code { background: none; padding: 0; color: inherit; }
 .faq dd { margin: 6px 0 0; }
 
 footer { color: #fff; text-align: center; }
-footer p { margin: 0; padding: 26px 0 40px; font: 10px/1.8 var(--pixel); color: var(--sky-2); }
+footer p { margin: 0; padding: 26px 0 10px; font: 10px/1.8 var(--pixel); color: var(--sky-2); }
+footer p:last-child { padding-bottom: 40px; }
 
 @media (prefers-reduced-motion: reduce) { .blink { animation: none; } }
 @media (max-width: 560px) {

@@ -115,6 +115,9 @@ fn main() {
         }
     }
     rt.spawn(core.clone().status_loop());
+    if !a.headless {
+        rt.spawn(core.clone().stars_loop());
+    }
 
     if a.headless {
         headless(&rt, core);

@@ -33,13 +33,17 @@ const SKY_2: Color32 = Color32::from_rgb(0xa6, 0xe3, 0xff);
 const ASPHALT: Color32 = Color32::from_rgb(0x5a, 0x5a, 0x6e);
 const MUTED: Color32 = Color32::from_rgb(0x6b, 0x63, 0x86);
 const SKY_TEXT: Color32 = Color32::from_rgb(0xa6, 0xe3, 0xff);
+const PINK: Color32 = Color32::from_rgb(0xff, 0x5e, 0x8a);
+const PINK_D: Color32 = Color32::from_rgb(0xa8, 0x1f, 0x4a);
+pub const REPO_URL: &str = "https://github.com/anarqz/mkwmp";
+pub const DONATE_URL: &str = "https://ko-fi.com/anarqz";
 const GOOD: Color32 = Color32::from_rgb(0x7d, 0xff, 0x7d);
 const BAD: Color32 = Color32::from_rgb(0xff, 0x8a, 0x8a);
 
 /// The design canvas, in points at zoom 1.
-const CANVAS: Vec2 = Vec2::new(480.0, 880.0);
-/// Road, flag and footer along the bottom.
-const GROUND: f32 = 48.0;
+const CANVAS: Vec2 = Vec2::new(480.0, 980.0);
+/// Hills, flag, road with karts, and the footer along the bottom.
+const GROUND: f32 = 106.0;
 const COLUMN: f32 = 432.0;
 /// Width inside a card (column minus border and margins).
 const INNER: f32 = COLUMN - 44.0;
@@ -52,7 +56,7 @@ pub fn game_mode() -> bool {
 pub fn run(core: Arc<Core>) -> Result<(), String> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("MKWMP")
-        .with_inner_size([CANVAS.x, CANVAS.y])
+        .with_inner_size([CANVAS.x * 0.8, CANVAS.y * 0.8])
         .with_min_inner_size([CANVAS.x * 0.6, CANVAS.y * 0.6]);
     if game_mode() {
         viewport = viewport.with_fullscreen(true);
@@ -157,7 +161,11 @@ impl eframe::App for App {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
         fit_zoom(&ctx);
-        ctx.request_repaint_after(Duration::from_millis(400));
+        // ~30 fps for the sky and the karts while focused; nearly still in
+        // the background (the game is usually in front).
+        let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        ctx.request_repaint_after(Duration::from_millis(if focused { 33 } else { 500 }));
+        let t = ctx.input(|i| i.time) as f32;
         let st = self.core.ui();
         // The PIN can arrive from a background REGISTER.
         if self.draft.pin.is_empty() && !st.cfg.pin.is_empty() && st.cfg.name.eq_ignore_ascii_case(&self.draft.name) {
@@ -166,7 +174,7 @@ impl eframe::App for App {
         let busy = !matches!(st.session, SessionView::Idle | SessionView::Failed(_));
 
         let screen = ctx.content_rect();
-        paint_backdrop(root.painter(), screen);
+        paint_backdrop(root.painter(), screen, t);
 
         // The canvas, centred.
         let canvas = Rect::from_center_size(screen.center(), CANVAS);
@@ -182,12 +190,13 @@ impl eframe::App for App {
             self.friends_card(ui, &st, busy);
             self.play_button(ui, busy);
             status_pill(ui, &st, &self.draft, &self.error);
+            links(ui, st.stars);
         });
 
         // Footer on the road.
         let foot = format!("v{VERSION}  ·  {}", if st.update.is_empty() { "…" } else { &st.update });
         root.painter().text(
-            pos2(screen.center().x, screen.bottom() - 13.0),
+            pos2(screen.center().x, screen.bottom() - 10.0),
             Align2::CENTER_CENTER,
             foot,
             pixel(8.0),
@@ -360,6 +369,67 @@ impl App {
 }
 
 // ---- pieces -----------------------------------------------------------------
+
+const STAR: [&str; 7] = ["...#...", "...#...", "#######", ".#####.", "..###..", ".##.##.", ".#...#."];
+const HEART: [&str; 6] = [".##.##.", "#######", "#######", ".#####.", "..###..", "...#..."];
+
+/// A tiny bitmap icon, `cell` points per pixel.
+fn paint_icon(p: &egui::Painter, at: egui::Pos2, rows: &[&str], cell: f32, color: Color32) {
+    for (y, row) in rows.iter().enumerate() {
+        for (x, ch) in row.chars().enumerate() {
+            if ch == '#' {
+                p.rect_filled(Rect::from_min_size(at + vec2(x as f32 * cell, y as f32 * cell), vec2(cell, cell)), 0.0, color);
+            }
+        }
+    }
+}
+
+/// GitHub (with stars) and Ko-fi buttons.
+fn links(ui: &mut egui::Ui, stars: Option<u64>) {
+    let (row, _) = ui.allocate_exact_size(vec2(COLUMN, 40.0), Sense::hover());
+    let w = 190.0;
+    let gap = 16.0;
+    let left = row.center().x - w - gap / 2.0;
+    let gh_text = match stars {
+        Some(n) => format!("GITHUB · {n}"),
+        None => "GITHUB".to_string(),
+    };
+    let gh = Rect::from_min_size(pos2(left, row.top()), vec2(w, 34.0));
+    let kofi = Rect::from_min_size(pos2(left + w + gap, row.top()), vec2(w, 34.0));
+    if icon_button(ui, gh, &gh_text, &STAR, INK, Color32::from_rgb(0x3a, 0x2f, 0x66), YELLOW).clicked() {
+        let _ = open::that(REPO_URL);
+    }
+    if icon_button(ui, kofi, "DONATE", &HEART, PINK, PINK_D, Color32::WHITE).clicked() {
+        let _ = open::that(DONATE_URL);
+    }
+}
+
+/// A small pixel button at `rect` with a bitmap icon before its label.
+fn icon_button(ui: &mut egui::Ui, rect: Rect, text: &str, icon: &[&str], fill: Color32, dark: Color32, icon_color: Color32) -> Response {
+    let resp = ui.interact(rect, ui.scope_id().with(text), Sense::click());
+    let pressed = resp.is_pointer_button_down_on();
+    let r = if pressed { rect.translate(vec2(3.0, 3.0)) } else { rect };
+    let p = ui.painter();
+    if !pressed {
+        p.rect_filled(rect.translate(vec2(3.0, 3.0)), 0.0, INK);
+    }
+    let fill = if resp.hovered() { fill.lerp_to_gamma(Color32::WHITE, 0.12) } else { fill };
+    p.rect_filled(r, 0.0, fill);
+    p.rect_filled(Rect::from_min_max(pos2(r.left(), r.bottom() - 3.0), r.max), 0.0, dark);
+    p.rect_stroke(r, 0.0, Stroke::new(3.0, INK), StrokeKind::Inside);
+    let font = pixel(9.0);
+    let galley = p.layout_no_wrap(text.to_string(), font, PAPER);
+    let cell = 2.0;
+    let icon_w = 7.0 * cell;
+    let total = icon_w + 8.0 + galley.size().x;
+    let x0 = r.center().x - total / 2.0;
+    paint_icon(p, pos2(x0, r.center().y - icon.len() as f32 * cell / 2.0), icon, cell, icon_color);
+    p.galley(pos2(x0 + icon_w + 8.0, r.center().y - galley.size().y / 2.0 + 1.0), galley, PAPER);
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp.on_hover_text(if icon.len() == 7 { REPO_URL } else { DONATE_URL })
+}
 
 /// A cream panel with a thick ink border, hard drop shadow and a coin heading.
 fn card(ui: &mut egui::Ui, title: &str, coin: Color32, coin_d: Color32, add: impl FnOnce(&mut egui::Ui)) {
@@ -540,9 +610,42 @@ fn status_pill(ui: &mut egui::Ui, st: &crate::core::Ui, draft: &ClientConfig, er
     pill(ui, &line, c, None);
 }
 
-/// Sky gradient, blocky clouds, and the road with a checkered flag along the
-/// bottom of the window.
-fn paint_backdrop(p: &egui::Painter, screen: Rect) {
+/// A generic go-kart, facing right. h = helmet, v = visor, b = body,
+/// d = body shade, w = wheel. Not any particular character.
+const KART: [&str; 11] = [
+    "......hhhh......",
+    ".....hhhhhh.....",
+    ".....hvvvvh.....",
+    "......hhhh......",
+    "...bbbbbbbbbb...",
+    "..bbbbbbbbbbbbb.",
+    ".bbbbbbbbbbbbbbb",
+    ".ddddddddddddddd",
+    "..www......www..",
+    ".wwwww....wwwww.",
+    "..www......www..",
+];
+
+fn paint_kart(p: &egui::Painter, at: egui::Pos2, cell: f32, body: Color32, dark: Color32) {
+    let helmet = body.lerp_to_gamma(Color32::WHITE, 0.45);
+    for (y, row) in KART.iter().enumerate() {
+        for (x, ch) in row.chars().enumerate() {
+            let c = match ch {
+                'h' => helmet,
+                'v' => INK,
+                'b' => body,
+                'd' => dark,
+                'w' => INK,
+                _ => continue,
+            };
+            p.rect_filled(Rect::from_min_size(at + vec2(x as f32 * cell, y as f32 * cell), vec2(cell, cell)), 0.0, c);
+        }
+    }
+}
+
+/// Sky gradient with drifting clouds, slow pixel hills, the checkered flag,
+/// and karts racing along the road at the bottom. `t` = seconds.
+fn paint_backdrop(p: &egui::Painter, screen: Rect, t: f32) {
     let mut mesh = epaint::Mesh::default();
     mesh.colored_vertex(screen.left_top(), SKY);
     mesh.colored_vertex(screen.right_top(), SKY);
@@ -552,7 +655,10 @@ fn paint_backdrop(p: &egui::Painter, screen: Rect) {
     mesh.add_triangle(1, 2, 3);
     p.add(mesh);
 
-    let cloud = |cx: f32, cy: f32, s: f32| {
+    // Blocky clouds drifting right, wrapping around.
+    let span = screen.width() + 120.0;
+    let cloud = |x0: f32, cy: f32, s: f32, speed: f32| {
+        let cx = screen.left() - 60.0 + (x0 * span + t * speed).rem_euclid(span);
         for (dx, dy, w, h) in [(-3.0, 0.0, 6.0, 2.0), (-2.0, -1.0, 4.0, 1.0), (-1.0, -2.0, 2.0, 1.0)] {
             p.rect_filled(
                 Rect::from_min_size(pos2(cx + dx * s, cy + dy * s), vec2(w * s, h * s)),
@@ -561,22 +667,29 @@ fn paint_backdrop(p: &egui::Painter, screen: Rect) {
             );
         }
     };
-    cloud(screen.left() + screen.width() * 0.10, screen.top() + 64.0, 8.0);
-    cloud(screen.left() + screen.width() * 0.90, screen.top() + 36.0, 6.0);
-    cloud(screen.left() + screen.width() * 0.93, screen.top() + screen.height() * 0.62, 5.0);
+    cloud(0.10, screen.top() + 64.0, 8.0, 6.0);
+    cloud(0.62, screen.top() + 34.0, 6.0, 9.0);
+    cloud(0.88, screen.top() + screen.height() * 0.45, 5.0, 4.0);
+    cloud(0.35, screen.top() + screen.height() * 0.66, 6.0, 7.0);
 
-    let road = Rect::from_min_max(pos2(screen.left(), screen.bottom() - 28.0), screen.max);
-    p.rect_filled(road, 0.0, ASPHALT);
-    let mut x = road.left();
-    while x < road.right() {
-        p.rect_filled(
-            Rect::from_min_size(pos2(x, road.top() + 2.0), vec2(20.0, 3.0)),
-            0.0,
-            Color32::from_white_alpha(120),
-        );
-        x += 40.0;
+    let road = Rect::from_min_max(pos2(screen.left(), screen.bottom() - 62.0), screen.max);
+    let flag_top = road.top() - 12.0;
+
+    // Rolling pixel hills, creeping left.
+    let step = 6.0;
+    let shift = (t * 5.0).rem_euclid(2000.0);
+    let mut x = screen.left();
+    while x < screen.right() {
+        let u = (x + shift) / 70.0;
+        let h = 20.0 + 16.0 * (u.sin() * 0.6 + (u * 0.37).sin() * 0.4).abs();
+        let h = (h / step).round() * step;
+        p.rect_filled(Rect::from_min_max(pos2(x, flag_top - h), pos2(x + step, flag_top)), 0.0, GREEN);
+        p.rect_filled(Rect::from_min_max(pos2(x, flag_top - h), pos2(x + step, flag_top - h + 3.0)), 0.0, GREEN_D);
+        x += step;
     }
-    let strip = Rect::from_min_max(pos2(screen.left(), road.top() - 12.0), pos2(screen.right(), road.top()));
+
+    // Checkered flag strip.
+    let strip = Rect::from_min_max(pos2(screen.left(), flag_top), pos2(screen.right(), road.top()));
     let n = (strip.width() / 12.0).ceil() as i32;
     for i in 0..n {
         for j in 0..2 {
@@ -587,5 +700,36 @@ fn paint_backdrop(p: &egui::Painter, screen: Rect) {
                 c,
             );
         }
+    }
+
+    // Road with lane dashes scrolling the other way (a sense of speed).
+    p.rect_filled(road, 0.0, ASPHALT);
+    let dash_shift = (t * 30.0).rem_euclid(40.0);
+    let mut x = road.left() - dash_shift;
+    while x < road.right() {
+        p.rect_filled(
+            Rect::from_min_size(pos2(x, road.top() + 38.0), vec2(20.0, 3.0)),
+            0.0,
+            Color32::from_white_alpha(110),
+        );
+        x += 40.0;
+    }
+
+    // Karts: different speeds, so they overtake each other; a 1-cell bounce.
+    let cell = 2.0;
+    let kw = 16.0 * cell;
+    let lap = screen.width() + kw * 2.0;
+    let karts = [
+        (RED, RED_D, 0.00, 26.0),
+        (BLUE, BLUE_D, 0.21, 31.0),
+        (GREEN, GREEN_D, 0.43, 23.0),
+        (YELLOW, YELLOW_D, 0.62, 29.0),
+        (PINK, PINK_D, 0.81, 34.0),
+    ];
+    for (i, (body, dark, phase, speed)) in karts.iter().enumerate() {
+        let x = screen.left() - kw + (phase * lap + t * speed).rem_euclid(lap);
+        let bounce = if ((t * 6.0 + i as f32 * 1.7) as i32) % 2 == 0 { 0.0 } else { cell };
+        let y = road.top() + 6.0 - bounce;
+        paint_kart(p, pos2(x.round(), y), cell, *body, *dark);
     }
 }
