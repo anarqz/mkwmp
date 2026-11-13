@@ -364,7 +364,7 @@ class MatchDocumentsTest(unittest.TestCase):
 
 class TicketPlayersTest(unittest.TestCase):
     def test_each_ticket_name_gets_its_own_player(self):
-        capture.TICKET_SLOTS.clear()
+        capture.USER_NUMBERS.clear()
         def ticket(name):
             p = base64.urlsafe_b64encode(json.dumps({"v": 1, "name": name}).encode()).rstrip(b"=").decode()
             return f"mkw1.{p}.sig"
@@ -373,9 +373,23 @@ class TicketPlayersTest(unittest.TestCase):
                                       capture.protobuf_bytes(3, capture.protobuf_bytes(1, bearer)))
             return capture.bytes_field(capture.bytes_field(capture.auth_response(body), 2), 1).decode()
         a, b = user(ticket("anarqz")), user(ticket("Alex"))
-        self.assertTrue(a.endswith("000000000001") and b.endswith("000000000002"))
+        # Stable ids from the (registered) name: uuid5(lower(name)); distinct small numbers.
+        self.assertEqual(a.rsplit("/", 1)[1], capture.ticket_user_id("anarqz"))
+        self.assertNotEqual(a, b)
         self.assertEqual(user(ticket("ANARQZ")), a)
-        capture.TICKET_SLOTS.clear()
+        self.assertEqual((capture.user_slot(a), capture.user_slot(b)), (1, 2))
+        # After a restart (numbers forgotten) a restored token's id still gets its own number.
+        capture.USER_NUMBERS.clear()
+        self.assertEqual(capture.user_slot(b), 1)
+        self.assertEqual(capture.user_slot(user(ticket("anarqz"))), 2)
+        self.assertEqual(capture.user_slot("tenants/x/users/00000000-0000-4000-8000-000000000002"), 2)
+        # Join order is lobby-relative: in a lobby of numbers {2, 1}, 2 waits only for 1.
+        capture.DOC_STORE.clear()
+        self.assertFalse(capture.lower_members_present("docs/__pgn/All/__pus/", 2, [a, b]))
+        capture.DOC_STORE["docs/__pgn/All/__pus/" + b.rsplit("/", 1)[1]] = b"x"
+        self.assertTrue(capture.lower_members_present("docs/__pgn/All/__pus/", 2, [a, b]))
+        capture.DOC_STORE.clear()
+        capture.USER_NUMBERS.clear()
 
 
 if __name__ == "__main__":

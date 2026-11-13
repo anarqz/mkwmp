@@ -278,7 +278,8 @@ def match_assignment(tenant, lobby_id, tickets, recipient, now=None):
 SECOND_LOCAL_TOKEN = b"eyJhbGciOiJub25lIn0.eyJzdWIiOiJta3dtcC1sb2NhbC0yIiwiaXNzIjoibWt3bXAifQ."
 
 
-TICKET_SLOTS = {}   # lower(player name from a seat ticket) -> player number (1, 2, ...)
+USER_NUMBERS = {}   # user id (uuid) -> small player number the game needs (ussid, upcsid, ...)
+LEGACY_USER = "00000000-0000-4000-8000-"   # the probe's local test users ...0001, ...0002
 
 
 def ticket_name(bearer):
@@ -314,9 +315,18 @@ def auth_response(request_body):
                 except (ValueError, UnicodeDecodeError):
                     name = None
                 if name:
-                    # Each seat-ticket player gets its own player number, in sign-in order.
-                    slot = TICKET_SLOTS.setdefault(name.lower(), len(TICKET_SLOTS) + 1)
-    user = tenant + f"/users/00000000-0000-4000-8000-{slot:012d}"
+                    user_id = ticket_user_id(name)
+                    user_slot(user_id)   # give it its small number now
+                    return token_response(tenant + f"/users/{user_id}", user_slot(user_id))
+    return token_response(tenant + f"/users/00000000-0000-4000-8000-{slot:012d}", slot)
+
+
+def ticket_user_id(name):
+    """Stable user id of a registered (PIN-proven) seat-ticket name: uuid5(lower(name))."""
+    return str(uuid5(NAMESPACE_URL, "mkwmp-user/" + name.lower()))
+
+
+def token_response(user, slot):
     issued = int(time.time())
     def b64(value):
         return base64.urlsafe_b64encode(json.dumps(value, separators=(",", ":")).encode()).rstrip(b"=").decode()
@@ -512,12 +522,22 @@ def store_write(name, fields_body, transformed=None, now=None):
 
 
 def user_slot(user_id):
-    """Local player number from the probe's synthetic user id (...0001, ...0002)."""
-    tail = user_id.rsplit("/", 1)[-1].replace("-", "")
+    """Small player number of a user id (or a document name ending in one).
+
+    Local test users (00000000-0000-4000-8000-0000000000NN) keep NN. Every other id (a
+    seat-ticket player's uuid5) gets the next free number the first time it is seen, so two
+    different players never share one, also after a restart restores tokens by user id."""
+    tail = user_id.rsplit("/", 1)[-1]
+    if tail.startswith(LEGACY_USER):
+        try:
+            return int(tail[len(LEGACY_USER):], 16) or 1
+        except ValueError:
+            return 1
     try:
-        return int(tail[-4:], 16) or 1
+        UUID(tail)
     except ValueError:
         return 1
+    return USER_NUMBERS.setdefault(tail, len(USER_NUMBERS) + 1)
 
 
 def gs_fields(entries):
@@ -537,7 +557,7 @@ def user_session_document(name, user_id, now=None, lobby=None):
     # User-session keys parsed by FUN_0128b2b4: uid (str), ussid/ucsid/upcsid
     # (int32), pgn (str, P2P group name -> client follows __pgn/<pgn>/...).
     # The ids are nonzero and distinct per player; their meaning is inferred.
-    local_id = int(user_id[-4:], 16) if all(c in "0123456789abcdef" for c in user_id[-4:]) else 1
+    local_id = user_slot(user_id)
     session_keys = [
         ("uid", gs_str(user_id)),
         ("ussid", gs_int(local_id)),
@@ -756,10 +776,12 @@ def in_collection(name, collection):
     return name.startswith(collection) and "/" not in name[len(collection):]
 
 
-def lower_members_present(collection, slot):
-    """True when every lower slot (1..slot-1) has a document in the collection."""
+def lower_members_present(collection, slot, members=None):
+    """True when every lobby member with a lower number than `slot` has a document in the
+    collection (members: user ids of the lobby; None = local test numbering 1..slot-1)."""
     have = {user_slot(name) for name in DOC_STORE if in_collection(name, collection)}
-    return all(s in have for s in range(1, slot))
+    lower = range(1, slot) if members is None else [n for n in map(user_slot, members) if n < slot]
+    return all(s in have for s in lower)
 
 
 GAMESYNC_GET_DOCUMENT = "/nn.npln.gamesync.v1.Gamesync/GetDocument"
@@ -1083,8 +1105,8 @@ class H2Protocol(asyncio.Protocol):
             if doc_name.startswith("docs/__us/") and not doc_name.endswith("/"):
                 self.stream_user[sid] = doc_name.rsplit("/", 1)[-1]
             slot = user_slot(self.stream_user.get(sid, ""))
-            if doc_name.endswith("/__pus/") and not lower_members_present(doc_name, slot):
-                # Answer later (release_pending) so lower slots arrive in the
+            if doc_name.endswith("/__pus/") and not lower_members_present(doc_name, slot, self.lobby_members(sid)):
+                # Answer later (release_pending) so lower-numbered lobby members arrive in the
                 # snapshot: the lower slot then initiates, the higher accepts.
                 H2Protocol.pending.append((self, sid, session, target, doc_name, slot))
                 log(f"--- KeepUserSession target {target_op_id(target)} deferred until slots < {slot} joined")
@@ -1113,7 +1135,7 @@ class H2Protocol(asyncio.Protocol):
     def release_pending(cls):
         for entry in list(cls.pending):
             proto, sid, session, target, doc_name, slot = entry
-            if lower_members_present(doc_name, slot):
+            if lower_members_present(doc_name, slot, proto.lobby_members(sid)):
                 cls.pending.remove(entry)
                 if sid in proto.subscriptions:
                     log(f"--- KeepUserSession target {target_op_id(target)} released (slot {slot})")
