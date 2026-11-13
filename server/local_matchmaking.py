@@ -14,6 +14,9 @@ class Ticket:
     mode: str
     id: UUID = field(default_factory=uuid4)
     lobby: UUID | None = None
+    # Serialized Player message from the client's CreateMatchmakingTicket
+    # (ticket field 4); echoed back in match assignments.
+    player: bytes = b""
 
 
 @dataclass
@@ -28,13 +31,13 @@ class LocalMatchmaking:
         self.tickets: dict[UUID, Ticket] = {}
         self.lobbies: dict[UUID, Lobby] = {}
 
-    def create(self, user: str, mode: str) -> Ticket:
+    def create(self, user: str, mode: str, player: bytes = b"") -> Ticket:
         for ticket in self.tickets.values():
             if ticket.user == user:
                 if ticket.mode != mode:
                     raise ValueError("Cancel the active ticket before changing mode.")
                 return ticket
-        ticket = Ticket(user, mode)
+        ticket = Ticket(user, mode, player=player)
         self.tickets[ticket.id] = ticket
         self._pair(mode)
         return ticket

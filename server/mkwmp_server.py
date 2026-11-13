@@ -164,35 +164,93 @@ def bytes_field(message, wanted):
     raise ValueError(f"missing field {wanted}")
 
 
+def iter_fields(message):
+    """Yield (field, wire type, raw encoded field bytes) for a flat message."""
+    i = 0
+    while i < len(message):
+        start = i
+        tag, i = _varint(message, i)
+        wire = tag & 7
+        if wire == 0:
+            _, i = _varint(message, i)
+        elif wire == 2:
+            length, i = _varint(message, i)
+            i += length
+        elif wire in (1, 5):
+            i += 8 if wire == 1 else 4
+        else:
+            raise ValueError("unsupported protobuf wire type")
+        if i > len(message):
+            raise ValueError("truncated protobuf field")
+        yield tag >> 3, wire, message[start:i]
+
+
+def timestamp(seconds):
+    # google.protobuf.Timestamp/Duration {1: int64 seconds, 2: int32 nanos};
+    # serializer main+0x11ddd08.
+    return b"\x08" + encode_varint(int(seconds))
+
+
+def player_for(user, player):
+    """The client's own Player (ticket field 4) with its real user resource.
+
+    Player serializer main+0x140d68c: 1 user, 2 attributes, 3 map, 4 string.
+    The client sends tenants/current/users/current; peers need the resolved name.
+    """
+    rest = b"".join(raw for field, _, raw in iter_fields(player) if field != 1)
+    return protobuf_bytes(1, user) + rest
+
+
 def create_ticket_response(queue, user, request_body):
     messages = decode_grpc_messages(request_body)
     if len(messages) != 1 or messages[0][0]:
         raise ValueError("expected one uncompressed ticket request")
     request = messages[0][1]
-    config = bytes_field(bytes_field(request, 2), 2).decode()
+    ticket_message = bytes_field(request, 2)
+    config = bytes_field(ticket_message, 2).decode()
     prefix = "tenants/current/matchmakingConfigs/"
     if not config.startswith(prefix) or not config[len(prefix):]:
         raise ValueError("invalid matchmaking config")
-    ticket = queue.create(user, config[len(prefix):])
+    try:
+        player = bytes_field(ticket_message, 4)
+    except ValueError:
+        player = b""
+    ticket = queue.create(user, config[len(prefix):], player)
     tenant = user.split("/users/", 1)[0]
     name = f"{tenant}/matchmakingTickets/{ticket.id}"
     return protobuf_bytes(1, name)
 
 
-def match_assignment(tenant, lobby_id, users):
-    # Track response serializer main+0x1408a40: outcome 5, session 7.
-    # Session serializer main+0x140b440: resource name 1.
+def match_assignment(tenant, lobby_id, tickets, recipient, now=None):
+    """TrackMatchmakingTicket reply announcing a found session to `recipient`.
+
+    Wire layout from the generated serializers (see docs/NETCODE.md):
+      track reply  main+0x1408a40: 1 ticket, 2 config, 4 Player*, 5 state,
+                                   6 MatchedPlayer*, 7 GameSession
+      MatchedPlayer main+0x140c708: 1 Player, 2 userSession resource,
+                                   3 user-session id (read as Gamesync "__us/<id>")
+      GameSession  main+0x140b440: 1 name, 10 Timestamp, 12 Member*
+      Member       main+0x1405fec: 1 user (string), 2 userSession, 4 Timestamp
+    The join check main+0x138dea0 needs every local user in field 6 with a
+    parseable userSession (field 2); without it the client reports
+    FAILED_PRECONDITION (2321-3072).
+    """
+    now = time.time() if now is None else now
     name = f"{tenant}/gameSessions/{lobby_id}"
-    # Session field 12 contains members. The member serializer writes its
-    # nested player as field 1; that player's resource name is field 1.
-    members = [protobuf_bytes(1, protobuf_bytes(1, user)) +
-               protobuf_bytes(2, f"{name}/userSessions/{user.rsplit('/', 1)[-1]}")
-               for user in users]
-    roster = b"".join(protobuf_bytes(12, member) for member in members)
-    # The success handler passes the track reply's own field 6 collection
-    # separately to the converter; session field 12 does not populate it.
-    players = b"".join(protobuf_bytes(6, member) for member in members)
-    return b"\x28\x03" + players + protobuf_bytes(7, protobuf_bytes(1, name) + roster)
+    matched = members = b""
+    for ticket in tickets:
+        user_id = ticket.user.rsplit("/", 1)[-1]
+        user_session = f"{name}/userSessions/{user_id}"
+        player = player_for(ticket.user, ticket.player)
+        matched += protobuf_bytes(6, protobuf_bytes(1, player) + protobuf_bytes(2, user_session) +
+                                  protobuf_bytes(3, user_id))
+        members += protobuf_bytes(12, protobuf_bytes(1, ticket.user) + protobuf_bytes(2, user_session) +
+                                  protobuf_bytes(4, timestamp(now)))
+    session = protobuf_bytes(1, name) + protobuf_bytes(10, timestamp(now + 600)) + members
+    return (protobuf_bytes(1, f"{tenant}/matchmakingTickets/{recipient.id}") +
+            protobuf_bytes(2, f"{tenant}/matchmakingConfigs/{recipient.mode}") +
+            protobuf_bytes(4, player_for(recipient.user, recipient.player)) +
+            b"\x28\x03" + matched + protobuf_bytes(7, session))
 
 
 SECOND_LOCAL_TOKEN = b"eyJhbGciOiJub25lIn0.eyJzdWIiOiJta3dtcC1sb2NhbC0yIiwiaXNzIjoibWt3bXAifQ."
@@ -429,19 +487,21 @@ class H2Protocol(asyncio.Protocol):
         groups = [self.active_trackers.get(seat) for seat in lobby.seats]
         if not all(groups):
             return
-        users = [self.matchmaking.tickets[seat].user for seat in lobby.seats]
-        frame = grpc_frame(match_assignment(ticket.user.split("/users/", 1)[0], lobby.id, users))
-        streams = [stream for group in groups for stream in group]
-        if any(peer.conn.local_flow_control_window(sid) < len(frame) for peer, sid in streams):
+        tickets = [self.matchmaking.tickets[seat] for seat in lobby.seats]
+        tenant = ticket.user.split("/users/", 1)[0]
+        sends = [(peer, sid, grpc_frame(match_assignment(tenant, lobby.id, tickets, seat_ticket)))
+                 for seat_ticket, group in zip(tickets, groups) for peer, sid in group]
+        if any(peer.conn.local_flow_control_window(sid) < len(frame) for peer, sid, frame in sends):
             return
         for seat in lobby.seats:
             del self.active_trackers[seat]
-        for peer, sid in streams:
+        for peer, sid, frame in sends:
             del peer.tracked_tickets[sid]
             del peer.subscriptions[sid]
             peer.conn.send_data(sid, frame)
             peer.conn.send_headers(sid, [("grpc-status", "0")], end_stream=True)
             peer.transport.write(peer.conn.data_to_send())
+            log(f"    assignment frame stream {sid}: {frame[5:].hex()}")
         log(f"<<< assigned both tickets to local session {lobby.id}")
 
     def release_tracker(self, sid):

@@ -13,8 +13,11 @@ import mkwmp_server as capture
 class ProtocolTest(unittest.IsolatedAsyncioTestCase):
     def test_assignment_sent_to_both_live_trackers(self):
         queue = capture.LocalMatchmaking()
-        first = queue.create("tenants/local/users/one", "Normal24")
-        second = queue.create("tenants/local/users/two", "Normal24")
+        # Player as captured: 1 placeholder user, 2 attributes, 3 empty map.
+        attrs = capture.protobuf_bytes(1, capture.protobuf_bytes(1, "rom_id"))
+        captured = capture.protobuf_bytes(1, "tenants/current/users/current") + capture.protobuf_bytes(2, attrs) + b"\x1a\x00"
+        first = queue.create("tenants/local/users/one", "Normal24", captured)
+        second = queue.create("tenants/local/users/two", "Normal24", captured)
         with patch.object(capture.H2Protocol, "matchmaking", queue), patch.object(
             capture.H2Protocol, "active_trackers", {}
         ), patch.object(capture, "log"):
@@ -28,18 +31,32 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 peer.subscriptions[1] = capture.TRACK_TICKET
                 peer.active_trackers[ticket.id] = {(peer, 1)}
             peers[0].publish_match(first)
-            for peer in peers:
+            session_name = f"tenants/local/gameSessions/{first.lobby}"
+            for peer, own in zip(peers, (first, second)):
                 frame = peer.conn.send_data.call_args.args[1]
                 [(flag, reply)] = capture.decode_grpc_messages(frame)
                 self.assertEqual(flag, 0)
-                self.assertTrue(reply.startswith(b"\x28\x03"))
+                fields = list(capture.iter_fields(reply))
+                self.assertEqual([f for f, _, _ in fields], [1, 2, 4, 5, 6, 6, 7])
+                self.assertIn(b"\x28\x03", reply)
+                self.assertEqual(capture.bytes_field(reply, 1).decode(), f"tenants/local/matchmakingTickets/{own.id}")
+                own_player = capture.bytes_field(reply, 4)
+                self.assertEqual(capture.bytes_field(own_player, 1).decode(), own.user)
+                self.assertEqual(capture.bytes_field(own_player, 2), attrs)
+                matched = [raw for f, _, raw in fields if f == 6]
                 session = capture.bytes_field(reply, 7)
-                self.assertEqual(capture.bytes_field(session, 1).decode(), f"tenants/local/gameSessions/{first.lobby}")
-                for ticket in (first, second):
-                    member = capture.protobuf_bytes(1, capture.protobuf_bytes(1, ticket.user))
-                    member += capture.protobuf_bytes(2, f"tenants/local/gameSessions/{first.lobby}/userSessions/{ticket.user.rsplit('/', 1)[-1]}")
-                    self.assertIn(capture.protobuf_bytes(12, member), session)
-                    self.assertIn(capture.protobuf_bytes(6, member), reply)
+                self.assertEqual(capture.bytes_field(session, 1).decode(), session_name)
+                for raw, ticket in zip(matched, (first, second)):
+                    entry = capture.bytes_field(raw, 6)
+                    user_id = ticket.user.rsplit("/", 1)[-1]
+                    # MatchedPlayer: Player, userSession resource, session id.
+                    self.assertEqual(capture.bytes_field(capture.bytes_field(entry, 1), 1).decode(), ticket.user)
+                    self.assertEqual(capture.bytes_field(entry, 2).decode(), f"{session_name}/userSessions/{user_id}")
+                    self.assertEqual(capture.bytes_field(entry, 3).decode(), user_id)
+                    # Session member field 1 is a plain string, not a message.
+                    member = capture.protobuf_bytes(1, ticket.user) + capture.protobuf_bytes(
+                        2, f"{session_name}/userSessions/{user_id}")
+                    self.assertIn(member, session)
                 peer.conn.send_headers.assert_called_once_with(1, [("grpc-status", "0")], end_stream=True)
                 self.assertFalse(peer.tracked_tickets)
 
