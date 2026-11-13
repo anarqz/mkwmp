@@ -27,6 +27,10 @@ static void wine_controller_fixup(void) {
         SetEnvironmentVariableA("SDL_GAMECONTROLLER_IGNORE_DEVICES", NULL);
         log_line("wine: cleared SDL_GAMECONTROLLER_IGNORE_DEVICES (Steam's Linux list)");
     }
+    // Steam Input's pad reaches Windows SDL as a Steam virtual gamepad (28de:12fd on the Ally X),
+    // which SDL3 hides unless this is set (verified with tools/padprobe.c under Proton).
+    SetEnvironmentVariableA("SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD", "1");
+    log_line("wine: SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD=1");
 }
 
 static void probe_init(void) {
