@@ -64,6 +64,7 @@ pub struct Seat {
     config_path: String,
     mode: SeatMode,
     name: String,
+    pin: String,
     state: Mutex<State>,
 }
 
@@ -78,6 +79,7 @@ impl Seat {
             config_path: config_path.to_string(),
             mode: cfg.seat,
             name: cfg.name.clone(),
+            pin: cfg.pin.clone(),
             state: Mutex::new(State {
                 session: None,
                 view: None,
@@ -122,7 +124,7 @@ impl Seat {
     }
 
     async fn join(&self, st: &mut State) -> Result<(), Answer> {
-        match self.api.join(&self.name, &st.friends).await {
+        match self.api.join(&self.name, &self.pin, &st.friends).await {
             Ok(v) => {
                 let key = v.session_key.clone().unwrap_or_default();
                 st.session = Some(Session { sid: v.session_id.clone(), key, boot: v.boot_id.clone() });

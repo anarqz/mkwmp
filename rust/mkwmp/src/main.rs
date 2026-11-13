@@ -3,8 +3,11 @@
 //!   mkwmp server [config/server.toml]   seats, queue and signed tickets (HTTP)
 //!   mkwmp lobby  [config/server.toml]   the game-facing lobby (matches)
 //!   mkwmp keygen [kid]                  print a new ticket signing key
+//!   mkwmp admin <list|register|reset-pin|release> [name] [--config config.toml]
+//!                                       manage registered profiles on the
+//!                                       running server (same machine)
 
-const USAGE: &str = "usage: mkwmp <server|lobby> [config.toml] | mkwmp keygen [kid]";
+const USAGE: &str = "usage: mkwmp <server|lobby> [config.toml] | mkwmp keygen [kid] | mkwmp admin <list|register|reset-pin|release> [name] [--config file]";
 
 #[tokio::main]
 async fn main() {
@@ -16,6 +19,7 @@ async fn main() {
             seat::keygen(arg.unwrap_or("k1"));
             Ok(())
         }
+        Some("admin") => admin(&args[1..]).await,
         Some("server") | Some("lobby") => match config::ServerConfig::load(arg.unwrap_or("config/server.toml")) {
             Ok(cfg) if cmd == Some("server") => seat::serve(&cfg).await,
             Ok(cfg) => lobby::serve(&cfg).await,
@@ -30,4 +34,50 @@ async fn main() {
         eprintln!("mkwmp: {e}");
         std::process::exit(1);
     }
+}
+
+/// Profile admin over the server's loopback admin API.
+async fn admin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut cfg_path = "config/server.toml".to_string();
+    let mut rest = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a == "--config" {
+            cfg_path = it.next().ok_or("--config needs a file")?.clone();
+        } else {
+            rest.push(a.as_str());
+        }
+    }
+    let cfg = config::ServerConfig::load(&cfg_path)?;
+    let token_file = cfg.registry.admin_token_file.as_ref().ok_or("set [registry] admin_token_file in the config")?;
+    let token = std::fs::read_to_string(token_file)?.trim().to_string();
+    let base = format!("http://{}/seat/v1/admin/profiles", cfg.seats.bind);
+    let http = reqwest::Client::new();
+    let res = match rest.as_slice() {
+        ["list"] => http.get(&base).bearer_auth(&token).send().await?,
+        [action @ ("register" | "reset-pin" | "release"), name] => {
+            http.post(&base).bearer_auth(&token).json(&serde_json::json!({"action": action, "name": name})).send().await?
+        }
+        _ => return Err(USAGE.into()),
+    };
+    let status = res.status();
+    let body: serde_json::Value = res.json().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("{status}: {}", body["error"]["message"].as_str().unwrap_or("error")).into());
+    }
+    if let Some(list) = body["profiles"].as_array() {
+        for p in list {
+            println!(
+                "{:<16} last seen {}{}",
+                p["name"].as_str().unwrap_or(""),
+                p["lastSeen"],
+                if p["reserved"].as_bool() == Some(true) { "  (reserved)" } else { "" }
+            );
+        }
+    } else if let Some(pin) = body["pin"].as_str() {
+        println!("{}: PIN {pin}  (give it to the player; it is not shown again)", body["name"].as_str().unwrap_or(""));
+    } else {
+        println!("done");
+    }
+    Ok(())
 }

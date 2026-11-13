@@ -32,6 +32,8 @@ pub struct ServerConfig {
     pub seats: Seats,
     #[serde(default)]
     pub ticket: Ticket,
+    #[serde(default)]
+    pub registry: RegistryCfg,
     pub lobby: Lobby,
     pub tls: Tls,
 }
@@ -72,6 +74,31 @@ fn d_seat_timeout() -> u64 { 60 }
 fn d_queue_poll() -> u64 { 5 }
 fn d_queue_timeout() -> u64 { 30 }
 fn d_ttl() -> u64 { 12 * 3600 }
+
+/// Registered profiles (name + PIN). The only state kept across restarts.
+#[derive(Debug, Deserialize)]
+pub struct RegistryCfg {
+    /// JSON file of profiles (hashed PINs). Absent: in memory only.
+    #[serde(default)]
+    pub file: Option<PathBuf>,
+    /// Names only the admin can register (`mkwmp admin register <name>`).
+    #[serde(default)]
+    pub reserved_names: Vec<String>,
+    /// Unused names become free after this many days (0 = never).
+    #[serde(default = "d_expire")]
+    pub expire_days: u64,
+    /// File with the token `mkwmp admin` sends (loopback only).
+    #[serde(default)]
+    pub admin_token_file: Option<PathBuf>,
+}
+
+fn d_expire() -> u64 { 180 }
+
+impl Default for RegistryCfg {
+    fn default() -> Self {
+        Self { file: None, reserved_names: vec![], expire_days: d_expire(), admin_token_file: None }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct Ticket {
@@ -116,6 +143,8 @@ impl ServerConfig {
         cfg.tls.key = resolve(base, &cfg.tls.key);
         cfg.ticket.private_key_file = cfg.ticket.private_key_file.map(|p| resolve(base, &p));
         cfg.seats.lobby_tokens_file = cfg.seats.lobby_tokens_file.map(|p| resolve(base, &p));
+        cfg.registry.file = cfg.registry.file.map(|p| resolve(base, &p));
+        cfg.registry.admin_token_file = cfg.registry.admin_token_file.map(|p| resolve(base, &p));
         if cfg.seats.capacity == 0 {
             return Err(ConfigError::Invalid("seats.capacity must be > 0"));
         }

@@ -16,6 +16,18 @@ Rules for a player's name and for every friend entry:
 - A friend list has at most 8 entries. Duplicates and the player's own name are dropped silently.
 - A bad entry is refused with `400 NAME_INVALID`.
 
+## 1a. Profiles (registered names)
+
+A name must be registered before it can join. Registering returns a 6-digit **PIN**, shown once; the launcher saves it in `client.toml`. Joining needs the name's PIN. Profiles are the only state kept across restarts: `[registry] file`, JSON, PINs as Argon2id hashes. Names unused for `expire_days` (180) become free; `reserved_names` can only be registered by the admin (`mkwmp admin register <name>`, loopback + admin token).
+
+Rate limits (client IP = `CF-Connecting-IP` when the request comes through the local tunnel, else the peer): 3 registrations per IP per hour; 10 wrong PINs per IP per 15 min; 10 wrong PINs per name per hour (then that name is locked until the window passes); 30 joins per IP per minute. Over a limit: `429 RATE_LIMITED` with `Retry-After`.
+
+| Route | Body → answer |
+| --- | --- |
+| `GET /seat/v1/profiles/{name}` | → `{name, registered, reserved}` |
+| `POST /seat/v1/profiles` | `{name}` → `201 {name, pin}`; `409 NAME_REGISTERED`, `403 NAME_RESERVED`, `400 NAME_INVALID`, `429` |
+| `GET/POST /seat/v1/admin/profiles` | admin only (loopback without CF headers + `Authorization: Bearer <admin token>`): list; `{action: register\|reset-pin\|release, name}` |
+
 ## 2. Routes
 
 A session authenticates with `Authorization: Bearer <sessionKey>`. A wrong key and an unknown session look the same: `404 SESSION_NOT_FOUND`.
@@ -26,7 +38,7 @@ Errors are `{"error": {"code", "message"}}`. Session answers carry `Cache-Contro
 | --- | --- | --- |
 | `GET /seat/v1/status` | → `{bootId, name, lobbyEndpoint, seatsTotal, seated, queued}` | Public, readable from any origin. `lobbyEndpoint` is the NPLN `host:port` the launcher writes as `server`. |
 | `GET /seat/v1/keys` | → `{keys: [{kid, publicKey}]}` | Public. The ticket verification key (base64url, raw 32 bytes). |
-| `POST /seat/v1/sessions` | `{name, friends?: string[]}` → `201 View + sessionKey` | Seats the player at once if a seat is free, else queues them. Errors: `400 NAME_INVALID`, `409 NAME_TAKEN`, `503 QUEUE_FULL` (with `Retry-After: 30`). |
+| `POST /seat/v1/sessions` | `{name, pin, friends?: string[]}` → `201 View + sessionKey` | Checks the profile's PIN, then seats the player at once if a seat is free, else queues them. Errors: `404 PROFILE_NOT_FOUND`, `401 PIN_WRONG`, `429 RATE_LIMITED`, `409 NAME_TAKEN` (that profile is already online), `503 QUEUE_FULL` (with `Retry-After: 30`). |
 | `GET /seat/v1/sessions/{id}` | → `View` | The poll while queued and the heartbeat while seated. Repeat within `nextPollMs`. |
 | `PUT /seat/v1/sessions/{id}/friends` | `{friends}` → `View` | Replaces the friend list. Also counts as a heartbeat. |
 | `DELETE /seat/v1/sessions/{id}` | → `204` | Frees the seat or the place in line. Idempotent. |

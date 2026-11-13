@@ -86,11 +86,17 @@ impl Api {
         if status.is_success() {
             return res.json().await.map_err(|e| ApiError::Transient(format!("bad answer: {e}")));
         }
-        if status == reqwest::StatusCode::NOT_FOUND {
+        let body: serde_json::Value = res.json().await.unwrap_or_default();
+        let code = body["error"]["code"].as_str().unwrap_or("");
+        // Only a lost session means "rejoin"; a missing profile is the player's to fix.
+        if status == reqwest::StatusCode::NOT_FOUND && (code == "SESSION_NOT_FOUND" || code.is_empty()) {
             return Err(ApiError::Gone);
         }
-        let body: serde_json::Value = res.json().await.unwrap_or_default();
-        let msg = body["error"]["message"].as_str().unwrap_or("server error").to_string();
+        let msg = match code {
+            "PIN_WRONG" => "wrong PIN for this name".to_string(),
+            "PROFILE_NOT_FOUND" => "this name isn't registered: press REGISTER".to_string(),
+            _ => body["error"]["message"].as_str().unwrap_or("server error").to_string(),
+        };
         if status.is_client_error() {
             Err(ApiError::Refused(msg))
         } else {
@@ -116,9 +122,35 @@ impl Api {
             .ok_or_else(|| ApiError::Transient("the server is too old (no lobbyEndpoint)".into()))
     }
 
-    pub async fn join(&self, name: &str, friends: &[String]) -> Result<View, ApiError> {
+    pub async fn join(&self, name: &str, pin: &str, friends: &[String]) -> Result<View, ApiError> {
         let url = format!("{}/seat/v1/sessions", self.base);
-        Self::read(self.http.post(url).json(&json!({"name": name, "friends": friends})).send().await).await
+        Self::read(self.http.post(url).json(&json!({"name": name, "pin": pin, "friends": friends})).send().await).await
+    }
+
+    /// Is `name` registered (or reserved)?
+    pub async fn profile(&self, name: &str) -> Result<(bool, bool), ApiError> {
+        let url = format!("{}/seat/v1/profiles/{name}", self.base);
+        let res = self.http.get(url).send().await.map_err(|e| ApiError::Transient(format!("cannot reach the server: {e}")))?;
+        let v: serde_json::Value = res.json().await.map_err(|e| ApiError::Transient(e.to_string()))?;
+        Ok((v["registered"].as_bool().unwrap_or(false), v["reserved"].as_bool().unwrap_or(false)))
+    }
+
+    /// Register `name`; returns its PIN.
+    pub async fn register(&self, name: &str) -> Result<String, ApiError> {
+        let url = format!("{}/seat/v1/profiles", self.base);
+        let res = self
+            .http
+            .post(url)
+            .json(&json!({ "name": name }))
+            .send()
+            .await
+            .map_err(|e| ApiError::Transient(format!("cannot reach the server: {e}")))?;
+        let ok = res.status().is_success();
+        let v: serde_json::Value = res.json().await.unwrap_or_default();
+        match (ok, v["pin"].as_str()) {
+            (true, Some(pin)) => Ok(pin.to_string()),
+            _ => Err(ApiError::Refused(v["error"]["message"].as_str().unwrap_or("could not register").to_string())),
+        }
     }
 
     pub async fn poll(&self, sid: &str, key: &str) -> Result<View, ApiError> {

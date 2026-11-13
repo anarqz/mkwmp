@@ -151,6 +151,26 @@ fn headless(rt: &tokio::runtime::Runtime, core: Arc<Core>) {
                 .status();
             std::process::exit(status.map(|s| s.code().unwrap_or(0)).unwrap_or(1));
         }
+        // No PIN yet: register the name if it's free (the PIN is printed once).
+        let cfg = core.ui().cfg;
+        if cfg.pin.is_empty() && config::valid_name(&cfg.name) {
+            let api = api::Api::new(cfg.server.trim_end_matches('/'));
+            match api.profile(&cfg.name).await {
+                Ok((false, false)) => match api.register(&cfg.name).await {
+                    Ok(pin) => {
+                        let mut c = cfg.clone();
+                        c.pin = pin.clone();
+                        if let Err(e) = core.set_config(c) {
+                            fatal(&e);
+                        }
+                        println!("mkwmp: registered {}. Your PIN is {pin}: write it down, it is not shown again.", cfg.name);
+                    }
+                    Err(e) => fatal(&e.to_string()),
+                },
+                Ok(_) => fatal(&format!("{} is registered: put its 6-digit PIN in client.toml (pin = \"123456\")", cfg.name)),
+                Err(e) => fatal(&e.to_string()),
+            }
+        }
         if let Some(p) = core.ui().cfg.problem() {
             fatal(&p);
         }

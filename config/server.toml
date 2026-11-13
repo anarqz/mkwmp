@@ -19,6 +19,14 @@ queue_timeout_secs = 30        # a queued player silent this long drops out
 lobby_endpoint = "127.0.0.1:8905"   # NPLN host:port handed to seated players
 # lobby_tokens_file = "../scratch/keys/lobby-tokens.txt"  # enables POST /seat/v1/lobby/roster
 
+[registry]
+# Registered profiles: a name + its 6-digit PIN. The only state kept across
+# restarts; PINs are stored hashed. Players register in the launcher.
+file = "../scratch/registry.json"
+reserved_names = []            # names only `mkwmp admin register <name>` can take
+expire_days = 180              # unused names become free again (0 = never)
+# admin_token_file = "../scratch/keys/admin-token.txt"  # enables `mkwmp admin` (loopback only)
+
 [ticket]
 kid = "dev1"
 private_key_file = "../scratch/keys/seat-ed25519.key"     # `seat keygen`; seat server only

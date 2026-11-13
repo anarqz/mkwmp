@@ -21,6 +21,9 @@ pub struct ClientConfig {
     pub server: String,
     /// Your in-game name: 3-16 of letters, digits, '-' and '_'.
     pub name: String,
+    /// The 6-digit PIN of your registered name (given once, at registration).
+    #[serde(default)]
+    pub pin: String,
     /// Up to 8 friend names. When a friend lists you too, you are friends in game.
     #[serde(default)]
     pub friends: Vec<String>,
@@ -72,6 +75,7 @@ impl Default for ClientConfig {
         Self {
             server: OFFICIAL_SERVER.into(),
             name: String::new(),
+            pin: String::new(),
             friends: vec![],
             game,
             launch: !is_steamos(),
@@ -111,6 +115,9 @@ impl ClientConfig {
     pub fn problem(&self) -> Option<String> {
         if !valid_name(&self.name) {
             return Some("Pick a name: 3-16 letters, digits, - or _".into());
+        }
+        if !(self.pin.len() == 6 && self.pin.bytes().all(|b| b.is_ascii_digit())) {
+            return Some("Register your name, or enter its 6-digit PIN".into());
         }
         if self.server.trim().is_empty() {
             return Some("Set the server URL".into());

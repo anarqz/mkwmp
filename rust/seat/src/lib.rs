@@ -3,7 +3,9 @@
 //! (`main.rs`) loads config and serves [`http::router`].
 
 pub mod http;
+pub mod limits;
 pub mod names;
+pub mod registry;
 pub mod roster;
 pub mod serve;
 

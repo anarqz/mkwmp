@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use crate::http::{router, system_clock, AppState};
+use crate::registry::Registry;
 use crate::roster::{Roster, Rules};
 use ticket::Issuer;
 
@@ -55,7 +56,16 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn std::error:
     let public = format!("{}:{}", issuer.kid(), issuer.public_key_b64());
     let roster = Roster::new(rules, issuer);
     let boot = roster.boot_id().to_string();
-    let state = AppState::new(roster, lobby_tokens.clone(), system_clock());
+    let reg = &cfg.registry;
+    let registry = Registry::open(reg.file.as_deref(), &reg.reserved_names, reg.expire_days).map_err(|e| e.to_string())?;
+    let profiles = registry.list().len();
+    let admin_token = match &reg.admin_token_file {
+        Some(p) => Some(
+            std::fs::read_to_string(p).map_err(|e| format!("reading {}: {e}", p.display()))?.trim().to_string(),
+        ),
+        None => None,
+    };
+    let state = AppState::new(roster, registry, lobby_tokens.clone(), admin_token, system_clock());
 
     // Sweep silent sessions even when no request arrives.
     let sweeper = state.clone();
@@ -65,6 +75,8 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn std::error:
             tick.tick().await;
             let now = sweeper.now();
             sweeper.roster().lock().unwrap().sweep(now);
+            sweeper.limiter().lock().unwrap().sweep(now);
+            sweeper.registry().lock().unwrap().sweep(now / 1000);
         }
     });
 
@@ -74,7 +86,11 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn std::error:
         cfg.server.name, s.bind, s.capacity, s.max_queue
     );
     println!("ticket key {public}; lobby roster {}", if lobby_tokens.is_empty() { "disabled" } else { "enabled" });
-    axum::serve(listener, router(state))
+    println!(
+        "registry: {profiles} profiles in {}",
+        reg.file.as_ref().map_or("memory (no [registry] file!)".to_string(), |p| p.display().to_string())
+    );
+    axum::serve(listener, router(state).into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

@@ -10,7 +10,7 @@ use eframe::egui::{
 };
 
 use crate::config::{valid_name, ClientConfig};
-use crate::core::{Core, ServerView, SessionView};
+use crate::core::{Core, ProfileView, ServerView, SessionView};
 use crate::seat::Phase;
 use crate::update::VERSION;
 
@@ -89,6 +89,7 @@ fn pixel(size: f32) -> FontId {
 struct App {
     core: Arc<Core>,
     draft: ClientConfig,
+    checked_name: String,
     friends: [String; 8],
     error: Option<String>,
 }
@@ -100,7 +101,7 @@ impl App {
         for (slot, f) in friends.iter_mut().zip(draft.friends.iter()) {
             *slot = f.clone();
         }
-        Self { core, draft, friends, error: None }
+        Self { core, draft, friends, error: None, checked_name: String::new() }
     }
 
     fn save(&mut self) {
@@ -165,6 +166,9 @@ impl eframe::App for App {
                     !busy,
                     TextEdit::singleline(&mut self.draft.name).hint_text("3-16: letters, digits, - _").desired_width(f32::INFINITY),
                 );
+                if r.changed() {
+                    self.draft.pin.clear(); // a PIN belongs to one name
+                }
                 if r.lost_focus() {
                     self.save();
                 }
@@ -173,6 +177,58 @@ impl eframe::App for App {
                     ui.label("");
                     ui.label(RichText::new("3-16 letters, digits, - or _").color(YELLOW).small());
                     ui.end_row();
+                }
+                // The profile behind the name: register it, or prove it's yours.
+                if ok && !busy {
+                    if self.checked_name != self.draft.name && !r.has_focus() {
+                        self.checked_name = self.draft.name.clone();
+                        self.save();
+                        self.core.check_profile();
+                    }
+                    let (for_name, view) = &ui_state.profile;
+                    let current = for_name.eq_ignore_ascii_case(&self.draft.name);
+                    ui.label("");
+                    ui.horizontal(|ui| match view {
+                        _ if !current => {}
+                        ProfileView::Checking => {
+                            ui.label(RichText::new("checking the name…").small().color(GREY));
+                        }
+                        ProfileView::Available => {
+                            ui.label(RichText::new("This name is free.").small().color(GREEN));
+                            let b = egui::Button::new(RichText::new("REGISTER").font(pixel(10.0)).color(INK)).fill(YELLOW);
+                            if ui.add(b).clicked() {
+                                self.save();
+                                self.core.register();
+                            }
+                        }
+                        ProfileView::Reserved => {
+                            ui.label(RichText::new("This name is reserved. Ask the server admin for its PIN.").small().color(YELLOW));
+                        }
+                        ProfileView::Registered | ProfileView::Unknown => {}
+                    });
+                    ui.end_row();
+                    let registered = current && matches!(view, ProfileView::Registered | ProfileView::Reserved);
+                    if registered || !self.draft.pin.is_empty() {
+                        ui.label("PIN");
+                        ui.horizontal(|ui| {
+                            let r = ui.add(
+                                TextEdit::singleline(&mut self.draft.pin)
+                                    .password(true)
+                                    .char_limit(6)
+                                    .hint_text("6 digits")
+                                    .desired_width(110.0),
+                            );
+                            if r.changed() {
+                                self.draft.pin.retain(|c| c.is_ascii_digit());
+                            }
+                            if r.lost_focus() {
+                                self.save();
+                            }
+                            let note = if self.draft.pin.len() == 6 { "saved on this device" } else { "the 6 digits you got when you registered" };
+                            ui.label(RichText::new(note).small().color(GREY));
+                        });
+                        ui.end_row();
+                    }
                 }
 
                 ui.label("Server");
@@ -217,6 +273,28 @@ impl eframe::App for App {
                 }
                 ui.end_row();
             });
+
+            // ---- a PIN just issued ----------------------------------------
+            if let Some(pin) = &ui_state.new_pin {
+                let pin = pin.clone();
+                framed(ui, YELLOW, |ui| {
+                    ui.label(RichText::new("YOUR PIN").font(pixel(10.0)).color(INK));
+                    ui.label(RichText::new(&pin).font(pixel(26.0)).color(INK));
+                    ui.label(
+                        RichText::new("Write it down. You need it to use this name on another device. It won't be shown again.")
+                            .color(INK),
+                    );
+                    ui.horizontal(|ui| {
+                        if ui.button("Copy").clicked() {
+                            ui.ctx().copy_text(pin.clone());
+                        }
+                        if ui.button("I wrote it down").clicked() {
+                            self.core.dismiss_pin();
+                        }
+                    });
+                });
+                self.draft.pin = pin;
+            }
 
             // ---- friends -----------------------------------------------------
             ui.add_space(4.0);
