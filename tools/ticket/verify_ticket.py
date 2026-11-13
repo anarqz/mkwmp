@@ -25,7 +25,7 @@ MAX_LEN = 512
 
 
 class TicketError(Exception):
-    pass
+    """Any reason a ticket is refused. Key on the `sid` claim, not the raw token."""
 
 
 def _b64d(s):
@@ -67,7 +67,8 @@ def verify(ticket, keys, now):
         raise TicketError("malformed ticket") from e
     if not isinstance(claims, dict):
         raise TicketError("malformed ticket")
-    key = keys.get(claims.get("kid"))
+    kid = claims.get("kid")
+    key = keys.get(kid) if isinstance(kid, str) else None
     if key is None:
         raise TicketError("ticket signed by an unknown key")
     sig = _b64d(sig_b64)

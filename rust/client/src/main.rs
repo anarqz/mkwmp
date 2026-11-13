@@ -41,19 +41,34 @@ async fn run(path: &str) -> Result<(), String> {
     let mut game: Option<Child> = None;
     let mut ticket_written: Option<String> = None;
     let mut last_friends: Vec<api::Friend> = vec![];
+    let mut rejected_friends: Option<Vec<String>> = None;
 
     loop {
         // Join (or rejoin after a restart / expiry).
         let result = match &session {
             None => api.join(&cfg.name, &cfg.friends).await,
             Some(s) => {
-                let fresh = ClientConfig::load(path).ok();
-                match fresh {
-                    Some(f) if f.friends != cfg.friends => {
-                        cfg.friends = f.friends;
-                        api.set_friends(&s.sid, &s.key, &cfg.friends).await
-                    }
-                    _ => api.poll(&s.sid, &s.key).await,
+                // Pick up friend edits. A refused list is reported once and
+                // never costs the seat; a transient failure retries next time.
+                let edited = ClientConfig::load(path)
+                    .ok()
+                    .map(|f| f.friends)
+                    .filter(|f| *f != cfg.friends && Some(f) != rejected_friends.as_ref());
+                match edited {
+                    Some(list) => match api.set_friends(&s.sid, &s.key, &list).await {
+                        Ok(v) => {
+                            cfg.friends = list;
+                            rejected_friends = None;
+                            Ok(v)
+                        }
+                        Err(ApiError::Refused(m)) => {
+                            eprintln!("mkwmp: friends not updated: {m}");
+                            rejected_friends = Some(list);
+                            api.poll(&s.sid, &s.key).await
+                        }
+                        Err(e) => Err(e),
+                    },
+                    None => api.poll(&s.sid, &s.key).await,
                 }
             }
         };
@@ -94,11 +109,19 @@ async fn run(path: &str) -> Result<(), String> {
                 session = None;
                 Duration::from_secs(1)
             }
-            Err(ApiError::Refused(m)) => {
+            Err(ApiError::Refused(m)) if game.is_none() => {
                 if let Some(s) = &session {
                     api.leave(&s.sid, &s.key).await;
                 }
                 return Err(m);
+            }
+            Err(ApiError::Refused(m)) => {
+                eprintln!("mkwmp: server refused: {m}; retrying");
+                if session.is_none() {
+                    Duration::from_secs(10)
+                } else {
+                    Duration::from_secs(5)
+                }
             }
             Err(ApiError::Transient(m)) => {
                 eprintln!("mkwmp: {m}; retrying");

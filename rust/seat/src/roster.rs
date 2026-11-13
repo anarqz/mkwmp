@@ -230,7 +230,38 @@ impl Roster {
     pub fn touch(&mut self, sid: &str, key: &str, now: u64) -> Result<View, RosterError> {
         self.sweep(now);
         self.session_mut(sid, key)?.last_seen = now;
+        self.renew_ticket(sid, now);
         Ok(self.view(sid))
+    }
+
+    /// Past half its lifetime, a seated session's ticket is re-signed so a
+    /// long session never presents an expired one.
+    fn renew_ticket(&mut self, sid: &str, now: u64) {
+        let half = self.rules.ticket_ttl_secs / 2;
+        let due = self.sessions[sid]
+            .seat
+            .as_ref()
+            .is_some_and(|seat| seat.expires_at.saturating_sub(now / 1000) < half);
+        if due {
+            let seat = self.sign(sid, now);
+            self.sessions.get_mut(sid).expect("touched session exists").seat = Some(seat);
+        }
+    }
+
+    fn sign(&self, sid: &str, now: u64) -> Seat {
+        let s = &self.sessions[sid];
+        let iat = now / 1000;
+        let exp = iat + self.rules.ticket_ttl_secs;
+        let ticket = self.issuer.sign(Claims {
+            v: 1,
+            iss: self.rules.server_name.clone(),
+            kid: String::new(),
+            sid: sid.to_string(),
+            name: s.name.clone(),
+            iat,
+            exp,
+        });
+        Seat { ticket, expires_at: exp }
     }
 
     /// Replace the friend list. Also counts as a heartbeat.
@@ -282,19 +313,9 @@ impl Roster {
     fn promote(&mut self, now: u64) {
         while self.seated < self.rules.capacity {
             let Some(sid) = self.queue.pop_front() else { break };
+            let seat = self.sign(&sid, now);
             let s = self.sessions.get_mut(&sid).expect("queued session exists");
-            let iat = now / 1000;
-            let exp = iat + self.rules.ticket_ttl_secs;
-            let token = self.issuer.sign(Claims {
-                v: 1,
-                iss: self.rules.server_name.clone(),
-                kid: String::new(),
-                sid: sid.clone(),
-                name: s.name.clone(),
-                iat,
-                exp,
-            });
-            s.seat = Some(Seat { ticket: token, expires_at: exp });
+            s.seat = Some(seat);
             // A newly seated player gets a full heartbeat window.
             s.last_seen = now;
             self.seated += 1;
@@ -472,6 +493,20 @@ mod tests {
         let b = r.join("bia", &[], 0).unwrap();
         r.touch(&a.view.session_id, &a.session_key, 30_001).unwrap();
         assert_eq!(r.touch(&b.view.session_id, &b.session_key, 30_002), Err(RosterError::NotFound));
+    }
+
+    #[test]
+    fn long_session_gets_a_fresh_ticket() {
+        let rules = Rules { capacity: 1, seat_timeout_ms: u64::MAX / 2, ..Rules::default() };
+        let mut r = Roster::new(rules, Issuer::new("t", SigningKey::from_bytes(&[1; 32])));
+        let a = r.join("ana", &[], 0).unwrap();
+        let t0 = a.view.ticket.unwrap().token;
+        let early = r.touch(&a.view.session_id, &a.session_key, 3_600_000).unwrap();
+        assert_eq!(early.ticket.unwrap().token, t0);
+        let late = r.touch(&a.view.session_id, &a.session_key, 6 * 3_600_000 + 1_000).unwrap();
+        let t1 = late.ticket.unwrap();
+        assert_ne!(t1.token, t0);
+        assert_eq!(t1.expires_at, 6 * 3600 + 1 + 12 * 3600);
     }
 
     #[test]
