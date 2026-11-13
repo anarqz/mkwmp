@@ -15,9 +15,17 @@ pub struct ClientConfig {
     pub friends: Vec<String>,
     /// Game directory (contains mkw.exe).
     pub game: PathBuf,
+    /// Start the game when seated. false: only hold the seat and write
+    /// mkwmp.toml (start the game yourself, e.g. from Steam on SteamOS).
+    #[serde(default = "yes")]
+    pub launch: bool,
     /// Loopback testing only: player two sets slot = 2.
     #[serde(default = "one")]
     pub slot: u8,
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn one() -> u8 {
@@ -48,5 +56,6 @@ mod tests {
         assert_eq!(c.server, "http://10.0.0.5:7000");
         assert_eq!(c.friends, vec!["Bia", "Cid"]);
         assert_eq!(c.slot, 1);
+        assert!(c.launch);
     }
 }

@@ -1,7 +1,11 @@
 //! mkwmp launcher: take a seat on the server (or wait in its queue), then
 //! launch the game and keep the seat alive while it runs.
 //!
-//!   mkwmp [client.toml]
+//!   mkwmp-launcher [--no-launch] [client.toml]
+//!
+//! `--no-launch` (or `launch = false` in client.toml): take the seat and write
+//! mkwmp.toml, but start nothing. Start the game yourself, e.g. from Steam on
+//! SteamOS; the seat is held until you press Ctrl-C.
 //!
 //! Edit `friends` in client.toml while playing: the launcher picks it up on its
 //! next heartbeat. If the server restarts, the launcher rejoins and rewrites
@@ -25,15 +29,27 @@ struct Session {
 
 #[tokio::main]
 async fn main() {
-    let path = std::env::args().nth(1).unwrap_or_else(|| "client.toml".into());
-    if let Err(e) = run(&path).await {
+    let mut no_launch = false;
+    let mut path = "client.toml".to_string();
+    for a in std::env::args().skip(1) {
+        match a.as_str() {
+            "--no-launch" => no_launch = true,
+            "-h" | "--help" => {
+                println!("usage: mkwmp-launcher [--no-launch] [client.toml]");
+                return;
+            }
+            _ => path = a,
+        }
+    }
+    if let Err(e) = run(&path, no_launch).await {
         eprintln!("mkwmp: {e}");
         std::process::exit(1);
     }
 }
 
-async fn run(path: &str) -> Result<(), String> {
+async fn run(path: &str, no_launch: bool) -> Result<(), String> {
     let mut cfg = ClientConfig::load(path)?;
+    let launch = cfg.launch && !no_launch;
     let api = Api::new(&cfg.server);
     println!("mkwmp: joining {} as {}", cfg.server, cfg.name);
 
@@ -42,6 +58,7 @@ async fn run(path: &str) -> Result<(), String> {
     let mut ticket_written: Option<String> = None;
     let mut last_friends: Vec<api::Friend> = vec![];
     let mut rejected_friends: Option<Vec<String>> = None;
+    let mut announced = false;
 
     loop {
         // Join (or rejoin after a restart / expiry).
@@ -91,7 +108,11 @@ async fn run(path: &str) -> Result<(), String> {
                         launch::write_probe_toml(&cfg.game, &toml).map_err(|e| format!("writing mkwmp.toml: {e}"))?;
                         ticket_written = Some(t.token.clone());
                     }
-                    if game.is_none() {
+                    if !launch && ticket_written.as_deref() == Some(&t.token) && !announced {
+                        announced = true;
+                        println!("mkwmp: seat granted. Start the game now; keep this window open (Ctrl-C frees the seat)");
+                    }
+                    if launch && game.is_none() {
                         println!("mkwmp: seat granted, launching the game");
                         match launch::spawn_game(&cfg.game) {
                             Ok(child) => game = Some(child),

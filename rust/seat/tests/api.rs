@@ -140,6 +140,13 @@ async fn lobby_roster_reports_liveness_and_mutual_friends() {
 async fn status_is_public() {
     let h = Harness::new(2);
     h.join("ana", &[]).await;
+    let res = h
+        .app
+        .clone()
+        .oneshot(Request::builder().uri("/seat/v1/status").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(res.headers()["access-control-allow-origin"], "*");
     let (st, s) = h.call("GET", "/seat/v1/status", None, None).await;
     assert_eq!(st, StatusCode::OK);
     assert_eq!((s["seatsTotal"].as_u64(), s["seated"].as_u64(), s["queued"].as_u64()), (Some(2), Some(1), Some(0)));

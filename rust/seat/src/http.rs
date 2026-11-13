@@ -84,9 +84,12 @@ fn no_store(body: impl serde::Serialize) -> Response {
     ([(header::CACHE_CONTROL, "no-store")], Json(body)).into_response()
 }
 
+/// Public and read-only, so any page may read it (the project site shows it).
 async fn status(State(s): State<AppState>) -> Response {
     let now = s.now();
-    no_store(s.roster.lock().unwrap().status(now))
+    let mut r = no_store(s.roster.lock().unwrap().status(now));
+    r.headers_mut().insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
+    r
 }
 
 async fn keys(State(s): State<AppState>) -> Response {

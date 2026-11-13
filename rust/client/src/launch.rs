@@ -23,9 +23,15 @@ pub fn write_probe_toml(game_dir: &Path, contents: &str) -> std::io::Result<Path
     Ok(path)
 }
 
-/// Start mkw.exe in the game directory.
+/// Start mkw.exe in the game directory. MKWMP_NO_FIBER=1 works around a
+/// mkw-recomp 0.1.10 abort on the online path (until the probe defaults it).
 pub fn spawn_game(game_dir: &Path) -> std::io::Result<Child> {
-    Command::new(game_dir.join("mkw.exe")).arg("--play").current_dir(game_dir).spawn()
+    let mut cmd = Command::new(game_dir.join("mkw.exe"));
+    cmd.arg("--play").current_dir(game_dir);
+    if std::env::var_os("MKWMP_NO_FIBER").is_none() {
+        cmd.env("MKWMP_NO_FIBER", "1");
+    }
+    cmd.spawn()
 }
 
 #[cfg(test)]
@@ -38,6 +44,7 @@ mod tests {
             name: "Ana".into(),
             friends: vec![],
             game: "C:/game".into(),
+            launch: true,
             slot,
         }
     }
