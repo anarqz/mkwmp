@@ -110,7 +110,7 @@ mkwmp lobby  server.toml  # the game-facing lobby</code></pre>
       <dt>Why a queue?</dt>
       <dd>Each server has a fixed number of seats so its lobby stays responsive. Your place is held while your launcher runs.</dd>
       <dt>Can someone skip the queue?</dt>
-      <dd>No. The lobby only lets in games with a ticket signed by the seat server, and a seat has to be held to keep that ticket valid.</dd>
+      <dd>That's the design: the lobby will only let in games holding a ticket signed by the seat server, and the ticket stays valid only while its seat is held. The lobby's ticket check is still being built.</dd>
       <dt>Where are my friends stored?</dt>
       <dd>Nowhere. Friend lists live only while you're online.</dd>
     </dl>
