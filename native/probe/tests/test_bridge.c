@@ -4,7 +4,8 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include "../src/npln.c"
-#include "../src/config.c"
+#include "../src/config.h"
+#include "../src/notify.h"
 
 static void quiet_log(const char *fmt, ...) { (void)fmt; }
 Runtime g_rt = {.rt_log = quiet_log};
@@ -176,6 +177,18 @@ int main(void) {
     assert(!strcmp(cc.host, "127.0.0.1") && cc.port == 8900 && cc.slot == 1);
     assert(!strcmp(cc.name, "Bia"));
 
-    puts("bridge: eventfd, addrinfo ABI, TCP, loopback peer UDP, certificate and config parse passed");
+    // Notification queue: FIFO, drain, and oldest-dropped-on-overflow.
+    Notification nbuf[32];
+    notify_push(NOTIFY_SUCCESS, "Connected to MKWMP");
+    notify_push(NOTIFY_INFO, "Waiting to join, 4th in queue");
+    assert(notify_drain(nbuf, 32) == 2);
+    assert(nbuf[0].level == NOTIFY_SUCCESS && !strcmp(nbuf[0].text, "Connected to MKWMP"));
+    assert(nbuf[1].id == nbuf[0].id + 1 && !strcmp(nbuf[1].text, "Waiting to join, 4th in queue"));
+    assert(notify_drain(nbuf, 32) == 0);
+    for (int i = 0; i < 20; i++) notify_push(NOTIFY_INFO, "x");   // overflow 16-slot ring
+    assert(notify_drain(nbuf, 32) == 16);
+    assert(nbuf[0].id == 7);  // first 4 of 20 dropped (ids 3..6)
+
+    puts("bridge: eventfd, addrinfo ABI, TCP, loopback peer UDP, certificate, config and notify passed");
     return 0;
 }

@@ -18,19 +18,34 @@
 #include <ws2tcpip.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
+#include <stdio.h>
 
-// ---- logging via rt_log (our own file logger doesn't work from guest-thread context) -----------
-static void rlog(const char *s) { if (g_rt.rt_log) g_rt.rt_log("mkwmp: %s", s); }
+// ---- logging ---------------------------------------------------------------
+// One sink for everything: our own mkwmp.log (the file players attach to
+// reports) plus a mirror into the game log via rt_log as a backstop. Format
+// once, emit twice. Safe to call from any override/thread.
+static void mlog(const char *fmt, ...) {
+    char buf[4096];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    if (n < 0) return;
+    mkwmp_log("%s", buf);
+    if (g_rt.rt_log) g_rt.rt_log("mkwmp: %s", buf);
+}
+static void rlog(const char *s) { mlog("%s", s); }
 static void dump_args(const char *name, Cpu *c, int n) {
     if (!g_rt.rt_log) return;
     uint64_t a[6] = {0};
     for (int i = 0; i < n && i < 6; i++) a[i] = arg_x(c, i);
-    g_rt.rt_log("mkwmp: CALL %s x0=%#llx x1=%#llx x2=%#llx x3=%#llx x4=%#llx", name,
+    mlog("CALL %s x0=%#llx x1=%#llx x2=%#llx x3=%#llx x4=%#llx", name,
                 (unsigned long long)a[0], (unsigned long long)a[1], (unsigned long long)a[2],
                 (unsigned long long)a[3], (unsigned long long)a[4]);
 }
 static void dump_cstr(const char *label, const void *p) {
-    if (g_rt.rt_log) g_rt.rt_log("mkwmp: %s = %s", label, p ? (const char *)p : "(null)");
+    if (g_rt.rt_log) mlog("%s = %s", label, p ? (const char *)p : "(null)");
 }
 static void rhex(const char *tag, const void *buf, size_t len) {
     if (!g_rt.rt_log) return;
@@ -40,7 +55,7 @@ static void rhex(const char *tag, const void *buf, size_t len) {
     size_t cap = len > 512 ? 512 : len, k = 0;
     for (size_t i = 0; i < cap; i++) { hb[k++] = H[b[i] >> 4]; hb[k++] = H[b[i] & 0xf]; hb[k++] = ' '; }
     hb[k] = 0;
-    g_rt.rt_log("mkwmp: %s len=%llu %s%s", tag, (unsigned long long)len, hb, cap < len ? "..." : "");
+    mlog("%s len=%llu %s%s", tag, (unsigned long long)len, hb, cap < len ? "..." : "");
 }
 
 // Linux errno numbers the game reads
@@ -134,14 +149,14 @@ static void ov_show_error_variant(Cpu *c) {
     if (!variant || !g_rt.rt_log) return;
     if (variant[0] == 1) {
         uint32_t result = variant[1];
-        g_rt.rt_log("mkwmp: game error result=%#x (%04u-%04u) caller=%#llx",
+        mlog("game error result=%#x (%04u-%04u) caller=%#llx",
                     result, 2000u + (result & 0x1ffu), (result >> 9) & 0x1fffu,
                     (unsigned long long)c->x[30]);
     } else if (variant[0] == 2) {
-        g_rt.rt_log("mkwmp: game error code=%04u-%04u caller=%#llx",
+        mlog("game error code=%04u-%04u caller=%#llx",
                     variant[1], variant[2], (unsigned long long)c->x[30]);
     } else {
-        g_rt.rt_log("mkwmp: game error variant=%u caller=%#llx",
+        mlog("game error variant=%u caller=%#llx",
                     variant[0], (unsigned long long)c->x[30]);
     }
 }
@@ -281,7 +296,7 @@ static int fs_interesting(const char *p) {
 }
 static void ov_fs_entry_type(Cpu *c) {
     const char *path = arg_p(c, 1);
-    if (fs_interesting(path)) g_rt.rt_log("mkwmp: fs GetEntryType %s", path);
+    if (fs_interesting(path)) mlog("fs GetEntryType %s", path);
     if (is_cfg(path)) {
         int32_t *out = arg_p(c, 0);
         if (out) *out = 1;   // DirectoryEntryType::File
@@ -292,11 +307,11 @@ static void ov_fs_entry_type(Cpu *c) {
 }
 static void ov_fs_open_file(Cpu *c) {
     const char *path = arg_p(c, 1);
-    if (fs_interesting(path)) g_rt.rt_log("mkwmp: fs OpenFile %s mode=%lld", path, (long long)arg_x(c, 2));
+    if (fs_interesting(path)) mlog("fs OpenFile %s mode=%lld", path, (long long)arg_x(c, 2));
     if (is_cfg(path)) {
         uint64_t *out = arg_p(c, 0);   // FileHandle { void* } -> our magic
         if (out) *out = NPLN_FH;
-        g_rt.rt_log("mkwmp: serving %s (%llu bytes)", NPLN_CFG_PATH, (unsigned long long)(sizeof(kNplnConfig) - 1));
+        mlog("serving %s (%llu bytes)", NPLN_CFG_PATH, (unsigned long long)(sizeof(kNplnConfig) - 1));
         ret_x(c, 0);
         return;
     }
@@ -368,7 +383,7 @@ static void net_init(void) {
     g_server.sin_addr.s_addr = inet_addr(host && *host ? host : "127.0.0.1");
     if (g_server.sin_addr.s_addr == INADDR_NONE) g_server.sin_addr.s_addr = inet_addr("127.0.0.1");
     g_ready = 1;
-    g_rt.rt_log("mkwmp: net bridge ready -> %s:%u", host && *host ? host : "127.0.0.1",
+    mlog("net bridge ready -> %s:%u", host && *host ? host : "127.0.0.1",
                 (unsigned)ntohs(g_server.sin_port));
 }
 
@@ -406,7 +421,7 @@ static void ov_eventfd(Cpu *c) {
     g_wake_count[fd] = arg_x(c, 0);
     g_wake_semaphore[fd] = (arg_x(c, 1) & 1) != 0;
     if (g_wake_count[fd]) send(wr, "w", 1, 0);
-    g_rt.rt_log("mkwmp: EventFd -> fd=%d flags=%llu", fd, (unsigned long long)arg_x(c, 1));
+    mlog("EventFd -> fd=%d flags=%llu", fd, (unsigned long long)arg_x(c, 1));
     ret_x(c, (uint64_t)fd);
     return;
 fail:
@@ -474,7 +489,7 @@ static void ov_sock_connect(Cpu *c) {
         if (port && ntohs(port) != 443) target.sin_port = port;
     }
     if (target.sin_port != g_server.sin_port)
-        g_rt.rt_log("mkwmp: nnsocketConnect keeps explicit port %u", (unsigned)ntohs(target.sin_port));
+        mlog("nnsocketConnect keeps explicit port %u", (unsigned)ntohs(target.sin_port));
     int r = connect(s, (struct sockaddr *)&target, sizeof target);
     if (r == 0) { rlog("nnsocketConnect -> connected (loopback)"); ret_x(c, 0); return; }
     int e = WSAGetLastError();
@@ -817,7 +832,7 @@ static void trace_edge(uint64_t caller, uint64_t target, const Cpu *c) {
         LONG64 seen = InterlockedCompareExchange64(slot, (LONG64)key, 0);
         if (seen == (LONG64)key) return;
         if (seen == 0) {
-            g_rt.rt_log("mkwmp: edge t=%llu caller=main+%#llx target=main+%#llx x0=%#llx x1=%#llx x2=%#llx",
+            mlog("edge t=%llu caller=main+%#llx target=main+%#llx x0=%#llx x1=%#llx x2=%#llx",
                         (unsigned long long)GetTickCount64(),
                         (unsigned long long)(caller - 0x7000000000ull),
                         (unsigned long long)(target - 0x7000000000ull),
@@ -844,7 +859,7 @@ static void trace_sdk_message(const Cpu *c) {
     for (; n < sizeof buf - 1 && n < avail && msg[n]; n++)
         buf[n] = (msg[n] >= 0x20 && msg[n] < 0x7f) ? msg[n] : '.';
     buf[n] = 0;
-    g_rt.rt_log("mkwmp: sdk-msg t=%llu caller=main+%#llx \"%s\"",
+    mlog("sdk-msg t=%llu caller=main+%#llx \"%s\"",
                 (unsigned long long)GetTickCount64(),
                 (unsigned long long)(c->x[30] - 0x7000000000ull), buf);
 }
@@ -865,7 +880,7 @@ static void profile_dispatch(Cpu *c) {
         uint32_t event[7];
         memcpy(event, (const void *)(uintptr_t)c->x[1], sizeof event);
         if (event[0])
-            g_rt.rt_log("mkwmp: controller event kind=%u detail=%#x/%#x/%#x/%#x/%#x/%#x caller=%#llx",
+            mlog("controller event kind=%u detail=%#x/%#x/%#x/%#x/%#x/%#x caller=%#llx",
                         event[0], event[1], event[2], event[3], event[4], event[5], event[6],
                         (unsigned long long)caller);
     }
@@ -894,7 +909,7 @@ static void profile_dispatch(Cpu *c) {
     if (job) memcpy(&before, job + 0x38, sizeof before);
     original_dispatch(c);
     if (trace_operation && g_rt.rt_log)
-        g_rt.rt_log("mkwmp: Match controller %s op=%llu target=%#llx ret=%#llx next_phase=%u desired=%u/%u flags=%#x",
+        mlog("Match controller %s op=%llu target=%#llx ret=%#llx next_phase=%u desired=%u/%u flags=%#x",
                     next_phase ? "complete" : "prepare", (unsigned long long)operation,
                     (unsigned long long)target, (unsigned long long)c->x[0],
                     next_phase ? *next_phase : 0, desired_mode, desired_phase, game_flags);
@@ -902,12 +917,12 @@ static void profile_dispatch(Cpu *c) {
         uint32_t after[2];
         memcpy(after, seq + 0x28, sizeof after);
         if (memcmp(seq_before, after, sizeof after))
-            g_rt.rt_log("mkwmp: Matchmake %s phase=%u/%u -> %u/%u",
+            mlog("Matchmake %s phase=%u/%u -> %u/%u",
                         target == 0x7001a93138ull ? "wait" : "start",
                         seq_before[0], seq_before[1], after[0], after[1]);
     }
     if (result && g_rt.rt_log)
-        g_rt.rt_log("mkwmp: BulkGetDocuments completion=%u (target=%#llx)",
+        mlog("BulkGetDocuments completion=%u (target=%#llx)",
                     *result, (unsigned long long)target);
     if (job && g_rt.rt_log) {
         uint64_t after, label;
@@ -916,7 +931,7 @@ static void profile_dispatch(Cpu *c) {
         if (before == after) return;
         memcpy(&label, job + 0x48, sizeof label);
         memcpy(&error, job + 0xd8, sizeof error);
-        g_rt.rt_log("mkwmp: Pia JoinRandomSession step=%#llx next=%#llx label=%#llx error=%#x",
+        mlog("Pia JoinRandomSession step=%#llx next=%#llx label=%#llx error=%#x",
                     (unsigned long long)target, (unsigned long long)after,
                     (unsigned long long)label, error);
     }
