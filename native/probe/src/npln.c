@@ -1297,10 +1297,12 @@ int npln_register(void) {
     }
     if (g_rt.ldr_count() != 0) { log_line("npln_register: TOO LATE"); return -1; }
     int n = (int)(sizeof(kRegs) / sizeof(kRegs[0]));
-    // MKWMP_NO_FIBER=1 leaves fibers to the runtime (diagnosis for runtimes
-    // whose fiber internals differ from the build the workaround targets).
+    // Fibers are left to the runtime by default (mkw-recomp 0.1.10, whose fiber
+    // internals differ from the 1.0.8 build the fiber workaround targets); the freed
+    // override slots take the core-mask pair. MKWMP_NO_FIBER=0 restores the fiber
+    // overrides (older runtimes).
     const char *nofiber = getenv("MKWMP_NO_FIBER");
-    int skip_fiber = nofiber && !strcmp(nofiber, "1");
+    int skip_fiber = !(nofiber && !strcmp(nofiber, "0"));
     for (int i = 0; i < n; i++) {
         if (skip_fiber && strstr(kRegs[i].name, "Fiber")) { log_line(kRegs[i].name); continue; }
         g_rt.hostfn_add_override(kRegs[i].name, kRegs[i].fn);

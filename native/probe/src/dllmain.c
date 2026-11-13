@@ -112,8 +112,13 @@ static void apply_env_file(void) {
     }
 }
 
+#ifndef MKWMP_VERSION
+#define MKWMP_VERSION "dev"
+#endif
+
 static void probe_init(void) {
     log_init();
+    log_line("mkwmp probe " MKWMP_VERSION);
     apply_env_file();
     wine_controller_fixup();
     if (GetEnvironmentVariableA("MKWMP_PAD_DIAG", NULL, 0) || (GetModuleHandleA("ntdll.dll") &&
