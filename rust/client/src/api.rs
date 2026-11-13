@@ -138,6 +138,27 @@ impl Api {
         Ok((v["registered"].as_bool().unwrap_or(false), v["reserved"].as_bool().unwrap_or(false)))
     }
 
+    /// Delete the profile `name` (needs its PIN). The name becomes free.
+    pub async fn delete_profile(&self, name: &str, pin: &str) -> Result<(), ApiError> {
+        let url = format!("{}/seat/v1/profiles/{name}", self.base);
+        let res = self
+            .http
+            .delete(url)
+            .json(&json!({ "pin": pin }))
+            .send()
+            .await
+            .map_err(|e| ApiError::Transient(format!("cannot reach the server: {e}")))?;
+        if res.status().is_success() {
+            return Ok(());
+        }
+        let v: serde_json::Value = res.json().await.unwrap_or_default();
+        Err(ApiError::Refused(match v["error"]["code"].as_str() {
+            Some("PIN_WRONG") => "wrong PIN for this name".into(),
+            Some("PROFILE_NOT_FOUND") => "this name isn't registered".into(),
+            _ => v["error"]["message"].as_str().unwrap_or("could not delete the profile").to_string(),
+        }))
+    }
+
     /// Register `name`; returns its PIN.
     pub async fn register(&self, name: &str) -> Result<String, ApiError> {
         let url = format!("{}/seat/v1/profiles", self.base);

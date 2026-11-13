@@ -283,6 +283,14 @@ impl Roster {
         }
     }
 
+    /// End the live session using `name`, if any (its profile was deleted).
+    pub fn drop_name(&mut self, name: &str, now: u64) {
+        if let Some(sid) = self.by_name.get(&names::key(name)).cloned() {
+            self.remove(&sid);
+            self.promote(now);
+        }
+    }
+
     /// Drop sessions not heard from in time, then fill free seats.
     pub fn sweep(&mut self, now: u64) {
         let (seat_to, queue_to) = (self.rules.seat_timeout_ms, self.rules.queue_timeout_ms);

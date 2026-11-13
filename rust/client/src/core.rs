@@ -140,6 +140,31 @@ impl Core {
         });
     }
 
+    /// Delete the configured profile from the server; on success the PIN is
+    /// cleared so the name (or another) can be registered again.
+    pub fn delete_profile(self: &Arc<Self>) {
+        self.set(|u| u.register = RegisterView::Working);
+        let core = self.clone();
+        tokio::spawn(async move {
+            let cfg = core.ui().cfg;
+            let outcome = match core.api().delete_profile(&cfg.name, &cfg.pin).await {
+                Ok(()) => {
+                    let mut c = cfg.clone();
+                    c.pin.clear();
+                    match core.set_config(c) {
+                        Ok(()) => {
+                            note(format!("deleted the profile {}", cfg.name));
+                            RegisterView::Idle
+                        }
+                        Err(e) => RegisterView::Failed(e),
+                    }
+                }
+                Err(e) => RegisterView::Failed(e.to_string()),
+            };
+            core.set(|u| u.register = outcome);
+        });
+    }
+
     /// Forget the last REGISTER outcome (the name changed).
     pub fn reset_register(&self) {
         self.set(|u| u.register = RegisterView::Idle);

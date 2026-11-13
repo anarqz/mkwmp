@@ -76,7 +76,7 @@ pub fn router(state: AppState) -> Router {
         .route("/seat/v1/status", get(status))
         .route("/seat/v1/keys", get(keys))
         .route("/seat/v1/profiles", post(register))
-        .route("/seat/v1/profiles/:name", get(profile))
+        .route("/seat/v1/profiles/:name", get(profile).delete(delete_profile))
         .route("/seat/v1/admin/profiles", get(admin_list).post(admin_action))
         .route("/seat/v1/sessions", post(create))
         .route("/seat/v1/sessions/:id", get(poll).delete(leave))
@@ -240,6 +240,48 @@ async fn register(
             s.limiter.lock().unwrap().record(&format!("register:{ip}"), limits::REGISTER_PER_IP, now);
             (StatusCode::CREATED, [(header::CACHE_CONTROL, "no-store")], Json(json!({"name": b.name, "pin": pin})))
                 .into_response()
+        }
+        Err(e) => registry_error(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct PinBody {
+    pin: String,
+}
+
+/// The owner deletes their profile (PIN required, wrong PINs rate-limited
+/// like joins). Its live session, if any, ends.
+async fn delete_profile(
+    State(s): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(name): Path<String>,
+    h: HeaderMap,
+    Json(b): Json<PinBody>,
+) -> Response {
+    let now = s.now();
+    let ip = client_ip(peer, &h);
+    let name_key = format!("name:{}", crate::names::key(&name));
+    {
+        let mut l = s.limiter.lock().unwrap();
+        let w = l
+            .wait_ms(&format!("pinfail:{ip}"), limits::PIN_FAIL_PER_IP, now)
+            .max(l.wait_ms(&name_key, limits::PIN_FAIL_PER_NAME, now));
+        if w > 0 {
+            return too_many(w);
+        }
+    }
+    let result = s.registry.lock().unwrap().delete(&name, &b.pin, now / 1000);
+    match result {
+        Ok(()) => {
+            s.roster.lock().unwrap().drop_name(&name, now);
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Err(RegistryError::WrongPin) => {
+            let mut l = s.limiter.lock().unwrap();
+            l.record(&format!("pinfail:{ip}"), limits::PIN_FAIL_PER_IP, now);
+            l.record(&name_key, limits::PIN_FAIL_PER_NAME, now);
+            registry_error(RegistryError::WrongPin)
         }
         Err(e) => registry_error(e),
     }

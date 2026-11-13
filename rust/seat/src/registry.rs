@@ -164,6 +164,21 @@ impl Registry {
         Ok(display)
     }
 
+    /// The owner deletes their profile: the name becomes free.
+    pub fn delete(&mut self, name: &str, pin: &str, now: u64) -> Result<(), RegistryError> {
+        let key = names::key(name);
+        match self.profiles.get(&key) {
+            Some(p) if !self.expired(p, now) => {
+                if !valid_pin(pin) || !pin_ok(pin, &p.pin_hash) {
+                    return Err(RegistryError::WrongPin);
+                }
+            }
+            _ => return Err(RegistryError::NotFound),
+        }
+        self.profiles.remove(&key);
+        self.save()
+    }
+
     /// Admin: a new PIN for an existing name.
     pub fn reset_pin(&mut self, name: &str) -> Result<String, RegistryError> {
         let p = self.profiles.get_mut(&names::key(name)).ok_or(RegistryError::NotFound)?;
@@ -223,6 +238,17 @@ mod tests {
         assert_eq!(r.login("ANA", wrong, 10), Err(RegistryError::WrongPin));
         assert_eq!(r.login("bia", &pin, 10), Err(RegistryError::NotFound));
         assert_eq!(r.register("ANA", 10, false), Err(RegistryError::Taken));
+    }
+
+    #[test]
+    fn owner_deletes_with_the_pin() {
+        let mut r = reg();
+        let pin = r.register("Ana", 0, false).unwrap();
+        let wrong = if pin == "000000" { "111111" } else { "000000" };
+        assert_eq!(r.delete("ana", wrong, 1), Err(RegistryError::WrongPin));
+        r.delete("ANA", &pin, 1).unwrap();
+        assert!(!r.exists("ana", 1));
+        assert!(r.register("ana", 2, false).is_ok());
     }
 
     #[test]

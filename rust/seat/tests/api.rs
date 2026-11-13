@@ -289,3 +289,20 @@ async fn admin_only_from_this_machine_with_the_token() {
     let (_, l) = local.call("GET", "/seat/v1/admin/profiles", Some("admin-secret"), None).await;
     assert_eq!(l["profiles"][0]["reserved"], true);
 }
+
+#[tokio::test]
+async fn owner_deletes_profile_with_pin_and_its_session_ends() {
+    let h = Harness::new(5);
+    let (st, _) = h.join("Ana", &[]).await;
+    assert_eq!(st, StatusCode::CREATED);
+    let pin = h.pins.lock().unwrap()["ana"].clone();
+    let wrong = if pin == "000000" { "111111" } else { "000000" };
+    let (st, _) = h.call("DELETE", "/seat/v1/profiles/ana", None, Some(json!({"pin": wrong}))).await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+    let (st, _) = h.call("DELETE", "/seat/v1/profiles/ANA", None, Some(json!({"pin": pin}))).await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    let (_, s) = h.call("GET", "/seat/v1/status", None, None).await;
+    assert_eq!(s["seated"], 0);
+    let (st, _) = h.call("POST", "/seat/v1/profiles", None, Some(json!({"name": "ana"}))).await;
+    assert_eq!(st, StatusCode::CREATED, "the name is free again");
+}

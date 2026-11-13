@@ -41,12 +41,17 @@ const GOOD: Color32 = Color32::from_rgb(0x7d, 0xff, 0x7d);
 const BAD: Color32 = Color32::from_rgb(0xff, 0x8a, 0x8a);
 
 /// The design canvas, in points at zoom 1.
-const CANVAS: Vec2 = Vec2::new(480.0, 980.0);
+const CANVAS: Vec2 = Vec2::new(960.0, 660.0);
 /// Hills, flag, road with karts, and the footer along the bottom.
 const GROUND: f32 = 106.0;
-const COLUMN: f32 = 432.0;
-/// Width inside a card (column minus border and margins).
-const INNER: f32 = COLUMN - 44.0;
+/// Content width (canvas minus margins); each card is half of it.
+const COLUMN: f32 = 912.0;
+const GAP: f32 = 24.0;
+const CARD_W: f32 = (COLUMN - GAP) / 2.0;
+/// Width inside a card (card minus border and margins).
+const INNER: f32 = CARD_W - 44.0;
+/// Both cards are at least this tall, so they line up.
+const CARD_MIN_H: f32 = 236.0;
 
 /// Steam Deck Game Mode (gamescope): open fullscreen.
 pub fn game_mode() -> bool {
@@ -56,7 +61,7 @@ pub fn game_mode() -> bool {
 pub fn run(core: Arc<Core>) -> Result<(), String> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("MKWMP")
-        .with_inner_size([CANVAS.x * 0.8, CANVAS.y * 0.8])
+        .with_inner_size([CANVAS.x * 0.9, CANVAS.y * 0.9])
         .with_min_inner_size([CANVAS.x * 0.6, CANVAS.y * 0.6]);
     if game_mode() {
         viewport = viewport.with_fullscreen(true);
@@ -127,6 +132,9 @@ struct App {
     friends: [String; 8],
     pin_entry: String,
     error: Option<String>,
+    confirm_delete: bool,
+    /// DELETE was confirmed; waiting for the server.
+    deleting: bool,
 }
 
 impl App {
@@ -136,7 +144,7 @@ impl App {
         for (slot, f) in friends.iter_mut().zip(draft.friends.iter()) {
             *slot = f.clone();
         }
-        Self { core, draft, friends, pin_entry: String::new(), error: None }
+        Self { core, draft, friends, pin_entry: String::new(), error: None, confirm_delete: false, deleting: false }
     }
 
     fn save(&mut self) {
@@ -168,8 +176,15 @@ impl eframe::App for App {
         let t = ctx.input(|i| i.time) as f32;
         let st = self.core.ui();
         // The PIN can arrive from a background REGISTER.
-        if self.draft.pin.is_empty() && !st.cfg.pin.is_empty() && st.cfg.name.eq_ignore_ascii_case(&self.draft.name) {
+        // The PIN can change in the background (REGISTER, delete).
+        if st.cfg.name.eq_ignore_ascii_case(&self.draft.name) && st.cfg.pin != self.draft.pin && !st.cfg.pin.is_empty() {
             self.draft.pin = st.cfg.pin.clone();
+        }
+        if self.deleting && st.register != RegisterView::Working {
+            self.deleting = false;
+            if st.cfg.pin.is_empty() {
+                self.draft.pin.clear(); // deleted: REGISTER is back
+            }
         }
         let busy = !matches!(st.session, SessionView::Idle | SessionView::Failed(_));
 
@@ -179,19 +194,28 @@ impl eframe::App for App {
         // The canvas, centred.
         let canvas = Rect::from_center_size(screen.center(), CANVAS);
         let col = Rect::from_min_size(
-            pos2(canvas.center().x - COLUMN / 2.0, canvas.top() + 20.0),
-            vec2(COLUMN, CANVAS.y - 20.0 - GROUND),
+            pos2(canvas.center().x - COLUMN / 2.0, canvas.top() + 16.0),
+            vec2(COLUMN, CANVAS.y - 16.0 - GROUND),
         );
         root.scope_builder(egui::UiBuilder::new().max_rect(col), |ui| {
             ui.spacing_mut().item_spacing.y = 12.0;
+            ui.spacing_mut().item_spacing.y = 10.0;
             title(ui);
             server_pill(ui, &st.server);
-            self.player_card(ui, &st, busy);
-            self.friends_card(ui, &st, busy);
-            self.play_button(ui, busy);
+            ui.add_space(4.0);
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = GAP;
+                self.player_card(ui, &st, busy);
+                self.friends_card(ui, &st, busy);
+            });
+            ui.add_space(6.0);
+            self.play_row(ui, busy, st.stars);
             status_pill(ui, &st, &self.draft, &self.error);
-            links(ui, st.stars);
         });
+
+        if self.confirm_delete {
+            self.delete_dialog(&ctx);
+        }
 
         // Footer on the road.
         let foot = format!("v{VERSION}  ·  {}", if st.update.is_empty() { "…" } else { &st.update });
@@ -223,7 +247,7 @@ impl App {
                         .hint_text("your name")
                         .char_limit(16)
                         .margin(vec2(8.0, 6.0))
-                        .desired_width(INNER - 158.0),
+                        .desired_width(INNER - 200.0),
                 );
                 if r.changed() {
                     self.draft.pin.clear(); // a PIN belongs to one name
@@ -234,6 +258,13 @@ impl App {
                 }
                 if has_pin {
                     pin_badge(ui, &self.draft.pin);
+                    let ok = !busy && st.register != RegisterView::Working;
+                    if pixel_button(ui, "X", vec2(32.0, 32.0), RED, RED_D, PAPER, 11.0, ok)
+                        .on_hover_text("Delete this profile from the server")
+                        .clicked()
+                    {
+                        self.confirm_delete = true;
+                    }
                 } else {
                     let working = st.register == RegisterView::Working;
                     let ok = !busy && !working && valid_name(&self.draft.name);
@@ -321,7 +352,8 @@ impl App {
     fn friends_card(&mut self, ui: &mut egui::Ui, st: &crate::core::Ui, busy: bool) {
         card(ui, "FRIENDS", GREEN, GREEN_D, |ui| {
             hint(ui, "Up to 8. Anyone who adds you back is your friend in the game.", MUTED);
-            let w = (INNER - 8.0) / 2.0 - 22.0;
+            // Two (light + field) pairs: field width minus its 8 pt margins each side.
+            let w = (INNER - 2.0 * 14.0 - 3.0 * 8.0 - 2.0 * 16.0) / 2.0;
             for row in 0..4 {
                 ui.horizontal(|ui| {
                     for col in 0..2 {
@@ -351,11 +383,58 @@ impl App {
         });
     }
 
-    fn play_button(&mut self, ui: &mut egui::Ui, busy: bool) {
+    fn delete_dialog(&mut self, ctx: &egui::Context) {
+        let modal = egui::Modal::new(egui::Id::unique("delete-profile"))
+            .backdrop_color(Color32::from_black_alpha(120))
+            .frame(
+                egui::Frame::new()
+                    .fill(PAPER)
+                    .stroke(Stroke::new(4.0, INK))
+                    .shadow(Shadow { offset: [8, 8], blur: 0, spread: 0, color: Color32::from_black_alpha(120) })
+                    .inner_margin(20),
+            );
+        let r = modal.show(ctx, |ui| {
+            ui.set_width(360.0);
+            ui.label(RichText::new("DELETE YOUR PROFILE FROM SERVER?").font(pixel(11.0)).color(INK));
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(format!(
+                    "\"{}\" and its PIN will be removed. Anyone can then register this name.",
+                    self.draft.name
+                ))
+                .size(13.0)
+                .color(MUTED),
+            );
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                if pixel_button(ui, "DELETE", vec2(150.0, 36.0), RED, RED_D, PAPER, 11.0, true).clicked() {
+                    self.confirm_delete = false;
+                    self.deleting = true;
+                    self.core.delete_profile();
+                }
+                ui.add_space(8.0);
+                if pixel_button(ui, "CANCEL", vec2(150.0, 36.0), BLUE, BLUE_D, PAPER, 11.0, true).clicked() {
+                    self.confirm_delete = false;
+                }
+            });
+        });
+        if r.should_close() {
+            self.confirm_delete = false;
+        }
+    }
+
+    /// GITHUB · PLAY · DONATE in one row.
+    fn play_row(&mut self, ui: &mut egui::Ui, busy: bool, stars: Option<u64>) {
+        let (row, _) = ui.allocate_exact_size(vec2(COLUMN, 72.0), Sense::hover());
+        let play = Rect::from_center_size(row.center(), vec2(420.0, 68.0));
+        let side = vec2(200.0, 40.0);
+        let gh = Rect::from_center_size(pos2((row.left() + play.left()) / 2.0, row.center().y), side);
+        let kofi = Rect::from_center_size(pos2((play.right() + row.right()) / 2.0, row.center().y), side);
+
         let problem = self.draft.problem();
         let enabled = busy || problem.is_none();
         let (label, fill, dark) = if busy { ("STOP", BLUE, BLUE_D) } else { ("PLAY", RED, RED_D) };
-        let clicked = pixel_button(ui, label, vec2(COLUMN - 4.0, 68.0), fill, dark, PAPER, 26.0, enabled).clicked();
+        let clicked = pixel_button_at(ui, play, "play", label, fill, dark, PAPER, 26.0, enabled).clicked();
         let enter = enabled && !busy && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !ui.ctx().egui_wants_keyboard_input();
         if clicked || enter {
             if busy {
@@ -364,6 +443,17 @@ impl App {
                 self.save();
                 self.core.play();
             }
+        }
+
+        let gh_text = match stars {
+            Some(n) => format!("GITHUB · {n}"),
+            None => "GITHUB".to_string(),
+        };
+        if icon_button(ui, gh, &gh_text, &STAR, INK, Color32::from_rgb(0x3a, 0x2f, 0x66), YELLOW).clicked() {
+            let _ = open::that(REPO_URL);
+        }
+        if icon_button(ui, kofi, "DONATE", &HEART, PINK, PINK_D, Color32::WHITE).clicked() {
+            let _ = open::that(DONATE_URL);
         }
     }
 }
@@ -381,26 +471,6 @@ fn paint_icon(p: &egui::Painter, at: egui::Pos2, rows: &[&str], cell: f32, color
                 p.rect_filled(Rect::from_min_size(at + vec2(x as f32 * cell, y as f32 * cell), vec2(cell, cell)), 0.0, color);
             }
         }
-    }
-}
-
-/// GitHub (with stars) and Ko-fi buttons.
-fn links(ui: &mut egui::Ui, stars: Option<u64>) {
-    let (row, _) = ui.allocate_exact_size(vec2(COLUMN, 40.0), Sense::hover());
-    let w = 190.0;
-    let gap = 16.0;
-    let left = row.center().x - w - gap / 2.0;
-    let gh_text = match stars {
-        Some(n) => format!("GITHUB · {n}"),
-        None => "GITHUB".to_string(),
-    };
-    let gh = Rect::from_min_size(pos2(left, row.top()), vec2(w, 34.0));
-    let kofi = Rect::from_min_size(pos2(left + w + gap, row.top()), vec2(w, 34.0));
-    if icon_button(ui, gh, &gh_text, &STAR, INK, Color32::from_rgb(0x3a, 0x2f, 0x66), YELLOW).clicked() {
-        let _ = open::that(REPO_URL);
-    }
-    if icon_button(ui, kofi, "DONATE", &HEART, PINK, PINK_D, Color32::WHITE).clicked() {
-        let _ = open::that(DONATE_URL);
     }
 }
 
@@ -439,18 +509,22 @@ fn card(ui: &mut egui::Ui, title: &str, coin: Color32, coin_d: Color32, add: imp
         .shadow(Shadow { offset: [8, 8], blur: 0, spread: 0, color: Color32::from_black_alpha(110) })
         .inner_margin(egui::Margin { left: 18, right: 18, top: 14, bottom: 16 })
         .show(ui, |ui| {
-            ui.set_width(INNER);
-            ui.spacing_mut().item_spacing.y = 6.0;
-            ui.horizontal(|ui| {
-                let (r, _) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
-                let p = ui.painter();
-                p.rect_filled(r, 0.0, coin);
-                p.rect_filled(Rect::from_min_max(pos2(r.left(), r.bottom() - 4.0), r.max), 0.0, coin_d);
-                p.rect_stroke(r, 0.0, Stroke::new(3.0, INK), StrokeKind::Inside);
-                ui.label(RichText::new(title).font(pixel(13.0)).color(INK));
+            // Cards may sit in a row; their own contents stack vertically.
+            ui.vertical(|ui| {
+                ui.set_width(INNER);
+                ui.set_min_height(CARD_MIN_H);
+                ui.spacing_mut().item_spacing.y = 6.0;
+                ui.horizontal(|ui| {
+                    let (r, _) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
+                    let p = ui.painter();
+                    p.rect_filled(r, 0.0, coin);
+                    p.rect_filled(Rect::from_min_max(pos2(r.left(), r.bottom() - 4.0), r.max), 0.0, coin_d);
+                    p.rect_stroke(r, 0.0, Stroke::new(3.0, INK), StrokeKind::Inside);
+                    ui.label(RichText::new(title).font(pixel(13.0)).color(INK));
+                });
+                ui.add_space(2.0);
+                add(ui);
             });
-            ui.add_space(2.0);
-            add(ui);
         });
 }
 
@@ -484,7 +558,7 @@ fn light(ui: &mut egui::Ui, color: Color32) -> Response {
 }
 
 /// The site's pixel button: bevelled fill, ink border, hard shadow; it
-/// sinks into its shadow while pressed.
+/// sinks into its shadow while pressed. Laid out in the flow.
 #[allow(clippy::too_many_arguments)]
 fn pixel_button(
     ui: &mut egui::Ui,
@@ -496,10 +570,27 @@ fn pixel_button(
     font: f32,
     enabled: bool,
 ) -> Response {
+    let (outer, _) = ui.allocate_exact_size(size + vec2(4.0, 4.0), Sense::hover());
+    pixel_button_at(ui, Rect::from_min_size(outer.min, size), text, text, fill, dark, text_color, font, enabled)
+}
+
+/// The pixel button at a fixed `rect` (its shadow falls 4 points outside).
+#[allow(clippy::too_many_arguments)]
+fn pixel_button_at(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    id: &str,
+    text: &str,
+    fill: Color32,
+    dark: Color32,
+    text_color: Color32,
+    font: f32,
+    enabled: bool,
+) -> Response {
     let sense = if enabled { Sense::click() } else { Sense::hover() };
-    let (outer, resp) = ui.allocate_exact_size(size + vec2(4.0, 4.0), sense);
+    let resp = ui.interact(rect, ui.scope_id().with(("pixel_button", id)), sense);
     let pressed = enabled && resp.is_pointer_button_down_on();
-    let r = Rect::from_min_size(outer.min + if pressed { vec2(4.0, 4.0) } else { Vec2::ZERO }, size);
+    let r = if pressed { rect.translate(vec2(4.0, 4.0)) } else { rect };
     let p = ui.painter();
     let (fill, dark) = if !enabled {
         (fill.lerp_to_gamma(Color32::GRAY, 0.55), dark.lerp_to_gamma(Color32::GRAY, 0.55))
@@ -509,7 +600,7 @@ fn pixel_button(
         (fill, dark)
     };
     if !pressed {
-        p.rect_filled(Rect::from_min_size(outer.min + vec2(4.0, 4.0), size), 0.0, INK);
+        p.rect_filled(rect.translate(vec2(4.0, 4.0)), 0.0, INK);
     }
     p.rect_filled(r, 0.0, fill);
     let b = 4.0;
@@ -655,22 +746,40 @@ fn paint_backdrop(p: &egui::Painter, screen: Rect, t: f32) {
     mesh.add_triangle(1, 2, 3);
     p.add(mesh);
 
-    // Blocky clouds drifting right, wrapping around.
-    let span = screen.width() + 120.0;
-    let cloud = |x0: f32, cy: f32, s: f32, speed: f32| {
-        let cx = screen.left() - 60.0 + (x0 * span + t * speed).rem_euclid(span);
-        for (dx, dy, w, h) in [(-3.0, 0.0, 6.0, 2.0), (-2.0, -1.0, 4.0, 1.0), (-1.0, -2.0, 2.0, 1.0)] {
-            p.rect_filled(
-                Rect::from_min_size(pos2(cx + dx * s, cy + dy * s), vec2(w * s, h * s)),
-                0.0,
-                Color32::from_white_alpha(235),
-            );
+    // A sky full of blocky clouds drifting right, wrapping around: big slow
+    // ones far back (fainter), small quicker ones in front.
+    let span = screen.width() + 160.0;
+    let sky_h = (screen.height() - 120.0).max(100.0);
+    let cloud = |x0: f32, y0: f32, s: f32, speed: f32, alpha: u8| {
+        let cx = screen.left() - 80.0 + (x0 * span + t * speed).rem_euclid(span);
+        let cy = screen.top() + 20.0 + y0 * sky_h;
+        let c = Color32::from_white_alpha(alpha);
+        for (dx, dy, w, h) in [(-3.0, 0.0, 6.0, 2.0), (-2.0, -1.0, 4.0, 1.0), (-1.0, -2.0, 2.0, 1.0), (1.0, -1.0, 1.5, 1.0)] {
+            p.rect_filled(Rect::from_min_size(pos2(cx + dx * s, cy + dy * s), vec2(w * s, h * s)), 0.0, c);
         }
     };
-    cloud(0.10, screen.top() + 64.0, 8.0, 6.0);
-    cloud(0.62, screen.top() + 34.0, 6.0, 9.0);
-    cloud(0.88, screen.top() + screen.height() * 0.45, 5.0, 4.0);
-    cloud(0.35, screen.top() + screen.height() * 0.66, 6.0, 7.0);
+    // (x phase, height 0..1, size, speed px/s, alpha)
+    const CLOUDS: [(f32, f32, f32, f32, u8); 16] = [
+        (0.02, 0.05, 11.0, 3.0, 150),
+        (0.31, 0.12, 12.0, 2.5, 140),
+        (0.58, 0.02, 10.0, 3.5, 150),
+        (0.83, 0.20, 13.0, 2.0, 135),
+        (0.15, 0.38, 10.0, 3.0, 140),
+        (0.70, 0.45, 11.0, 2.8, 140),
+        (0.44, 0.62, 12.0, 2.2, 130),
+        (0.93, 0.70, 10.0, 3.2, 140),
+        (0.08, 0.18, 7.0, 7.0, 235),
+        (0.25, 0.52, 6.0, 9.0, 235),
+        (0.40, 0.08, 6.0, 8.0, 240),
+        (0.52, 0.33, 7.0, 6.5, 235),
+        (0.66, 0.15, 5.0, 10.0, 240),
+        (0.78, 0.58, 6.0, 8.5, 235),
+        (0.88, 0.30, 7.0, 7.5, 240),
+        (0.97, 0.48, 5.0, 11.0, 240),
+    ];
+    for (x0, y0, size, speed, alpha) in CLOUDS {
+        cloud(x0, y0, size, speed, alpha);
+    }
 
     let road = Rect::from_min_max(pos2(screen.left(), screen.bottom() - 62.0), screen.max);
     let flag_top = road.top() - 12.0;
