@@ -1,0 +1,27 @@
+## mkwmp server config (Rust side). Loaded by the seat server and lobby manager.
+## Flow: a connection joins the active-user pool -> if a seat is free it gets a
+## ticket -> an in-game matchmaking request is checked against the ticket ->
+## access to the world/lobby service is granted.
+
+[server]
+name = "mkwmp"                 # instance name shown to players
+bind = "127.0.0.1:8905"        # NPLN endpoint the game connects to (TLS)
+
+[seats]
+capacity = 16                  # N seats total; one per active user
+# A user already holding a seat keeps it (ticket is idempotent per profile).
+
+[database]
+# SQLite file backing the active-user pool, seats and tickets.
+# Relative paths resolve against the config file's directory.
+path = "mkwmp.sqlite"
+
+[lobby]
+bind = "127.0.0.1:8906"        # world/lobby (+ Gamesync) endpoint
+lobby_size = 2                 # players per lobby (2 for loopback bring-up)
+max_lobbies_per_worker = 64    # a worker past this sheds; idle workers exit
+
+[tls]
+# Shared by both endpoints. Paths relative to this file.
+cert = "../scratch/certs/capture-cert.pem"
+key = "../scratch/certs/capture-key.pem"

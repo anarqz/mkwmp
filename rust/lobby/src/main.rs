@@ -10,6 +10,11 @@ use matchmaking::Matchmaking;
 // prototype one RPC at a time (docs/contracts/WORKFLOW.md).
 
 fn main() {
+    let path = std::env::args().nth(1).unwrap_or_else(|| "config/server.toml".into());
+    let cfg = config::ServerConfig::load(&path).expect("load server config");
     let _mm = Matchmaking::default();
-    println!("lobby manager: ready (gRPC wiring pending Track/Gamesync ports)");
+    println!(
+        "lobby manager on {} (lobby_size {}, max {}/worker); gRPC wiring pending Track/Gamesync ports",
+        cfg.lobby.bind, cfg.lobby.lobby_size, cfg.lobby.max_lobbies_per_worker
+    );
 }

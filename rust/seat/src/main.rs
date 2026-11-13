@@ -21,9 +21,11 @@ impl AuthService {
 // prototype (see docs/contracts/WORKFLOW.md). The roster is the backing store.
 
 fn main() {
-    let capacity = std::env::var("MKWMP_SEATS").ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(16);
-    let _service = AuthService::new(Arc::new(MemoryRoster::new(capacity)));
-    println!("seat server: {capacity} seats (gRPC wiring pending IssuePrearrangedUserToken port)");
+    let path = std::env::args().nth(1).unwrap_or_else(|| "config/server.toml".into());
+    let cfg = config::ServerConfig::load(&path).expect("load server config");
+    let _service = AuthService::new(Arc::new(MemoryRoster::new(cfg.seats.capacity)));
+    println!(
+        "seat server '{}': {} seats on {} (db {}); gRPC wiring pending IssuePrearrangedUserToken port",
+        cfg.server.name, cfg.seats.capacity, cfg.server.bind, cfg.database.path.display()
+    );
 }

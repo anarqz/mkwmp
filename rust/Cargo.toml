@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["contracts", "seat", "lobby", "gateway"]
+members = ["config", "contracts", "seat", "lobby", "gateway"]
 
 [workspace.package]
 edition = "2021"
@@ -13,3 +13,4 @@ prost = "0.13"
 prost-types = "0.13"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 contracts = { path = "contracts" }
+config = { path = "config" }
