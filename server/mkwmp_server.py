@@ -17,6 +17,7 @@ import asyncio
 import base64
 import datetime
 import json
+import os
 import struct
 import socket
 import ssl
@@ -481,6 +482,8 @@ def user_session_document(name, user_id, now=None, lobby=None):
 
 
 GS_FIXED_DOC = "docs/__gs/f"   # name checked by FUN_01267820 against "__gs" + "/" + "f"
+LOBBY_HOSTS = {}   # lobby id -> user id of the lowest-slot member (filled at assignment)
+LOBBY_SECRETS = {}  # lobby id -> shared random bytes served as __gs/f rs
 
 
 def game_session_fixed_document(lobby, now=None):
@@ -489,12 +492,18 @@ def game_session_fixed_document(lobby, now=None):
     by the client; the server pushes it on the session stream."""
     now = int(time.time()) if now is None else now
     key = str(lobby) if lobby else "solo"
+    # mcn: hypothesis "mesh creator" = the member that hosts the Pia mesh (both
+    # clients otherwise stay at station index 0xfd). Lowest slot hosts.
+    mcn = LOBBY_HOSTS.get(key, "00000000-0000-4000-8000-000000000001")
     fields = gs_fields([
         ("gsid", gs_str(f"gs-{key}")),
         ("addr", gs_str("127.0.0.1")),
         ("p", gs_int(10025)),
-        ("mcn", gs_str(key)),
+        ("mcn", gs_str(mcn)),
         ("maxu", gs_int(2)),
+        # rs: bytes (read like "pl", Value field 8). Hypothesis: shared session
+        # secret/seed; same random 32 bytes for every member of the lobby.
+        ("rs", protobuf_bytes(8, LOBBY_SECRETS.setdefault(key, os.urandom(32)))),
     ])
     return (protobuf_bytes(1, GS_FIXED_DOC) + protobuf_bytes(2, fields) +
             protobuf_bytes(3, gs_timestamp(now)) + protobuf_bytes(4, gs_timestamp(now)))
@@ -1030,7 +1039,8 @@ class H2Protocol(asyncio.Protocol):
         if not all(groups):
             return
         tickets = [self.matchmaking.tickets[seat] for seat in lobby.seats]
-        tenant = ticket.user.split("/users/", 1)[0]
+        LOBBY_HOSTS[str(lobby.id)] = min((t.user.rsplit("/", 1)[-1] for t in tickets), key=user_slot)
+        tenant =ticket.user.split("/users/", 1)[0]
         sends = [(peer, sid, grpc_frame(match_assignment(tenant, lobby.id, tickets, seat_ticket)))
                  for seat_ticket, group in zip(tickets, groups) for peer, sid in group]
         if any(peer.conn.local_flow_control_window(sid) < len(frame) for peer, sid, frame in sends):

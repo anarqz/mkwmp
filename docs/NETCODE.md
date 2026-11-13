@@ -253,7 +253,7 @@ Doc names arrive as `docs/<path>`; the client strips `docs/` (`0x12a095c`).
 | Document | Fields | Parser / user |
 |---|---|---|
 | `__us/<user-id>` user session | `uid` str, `ussid`/`ucsid`/`upcsid` int32, `pgn` str (P2P group) | `FUN_0128b2b4` |
-| `__gs/f` game-session fixed data | `gsid`, `addr`, `p` u16, `mcn`, `maxu`, `rs` list | `FUN_01267698`; name checked by `FUN_01267820` vs `"__gs"+"/"+"f"` (`FUN_01267910`); game copies `mcn` (`FUN_01267750`) |
+| `__gs/f` game-session fixed data | `gsid`, `addr`, `p` u16, `mcn`, `maxu`, `rs` bytes | `FUN_01267698`; name checked by `FUN_01267820` vs `"__gs"+"/"+"f"` (`FUN_01267910`); game copies `mcn` (`FUN_01267750`) |
 | `__pgn/<pgn>/__pus/…` group user sessions (inferred path) | `suid`, `susid` str, `sussid`, `suscid` int, `pl` list, `mp` map, `__stg` | `FUN_0128bc00`; path `FUN_0128b4dc` |
 | `__pgn/<pgn>/__stu…` (inferred) | ? | path `FUN_0128bf1c` |
 
@@ -269,16 +269,64 @@ traffic. The Pia mesh jobs (AttachMeshJob `0x162e000–0x1632000`, JoinMeshJob
 `0x1626000–0x162e000`, called from the game at `0x2235000–0x223a000`.
 `TrackAutomatch`/`TrackCreateSession`/`TrackJoinSession` there are telemetry.
 
-### Remaining to a race (large, multi-cycle)
-1. ~~Identify the real KeepUserSession response type~~ done. ~~User session and
-   fixed data~~ resolving. Next: what starts the mesh. Leading hypothesis: the
-   server must also push the group documents (`__pgn/<pgn>/__pus…`,
-   `__pgn/<pgn>/__stu…`) listing the members/stations; recover their exact
-   paths and fields from `FUN_0128b4dc`/`FUN_0128bf1c`/`FUN_0128bc00` callers.
-2. Populate each player's doc so the OTHER learns its Pia addr/port.
-3. Pia P2P mesh over loopback — exchange game packets through the bridge
-   (currently only echoes NAT probes). A whole subsystem.
-4. Session sync + race start.
+### KeepUserSession stream protocol — SOLVED (2026-11-13, runs d5–d20)
+
+Stream handler `FUN_01271c00` switches on the message oneof:
+- **field 2 Change** `{1 target id as DECIMAL string, 2 kind, 3 Document}`.
+  `Change.1` is `strtoul`'d to route to the subscription callback — sending
+  the target *name* routes to id 0 (silently dropped). Kind 1/2 = document
+  added/modified; kind 3 is NOT a document change (do not send).
+- **field 3 Op** `{1 decimal op id, 2 kind, 3 Status}`. Kind 1 completes the
+  client's op future (map `+0x240`); **kind 2 = target in sync** → task
+  `FUN_0127c880` runs the listener's second callback; kind 4 = failure.
+  Client op ids = per-stream counter (= the `targets/N` suffix).
+- Client frames: field 3 Op{1 Target{1 name, 2 {1 doc} | 3 {1 collection}}},
+  field 4 = remove target `{1 name}`.
+
+Server answer per target: ADDED docs, Op kind 2, Op kind 1; later writes are
+pushed (kind 1 new / 2 modified) to every listener of the doc/collection.
+
+### P2P initial sequence (`FUN_01285d20`) — runs to completion
+
+1. User-session job `FUN_0126c3b8` waits on its listen callback (`0x126e9b4`),
+   then starts the P2P sequence (`0x126aa3c` → thread `0x127ce4c`).
+2. Listens `__pgn/All/__stu/<me>` (2), `__stg/All` (3), collection
+   `__pgn/All/__pus` (4); `FUN_01281500` writes `__pgn/All/__pus/<me>`
+   via **WriteDocuments** with a counter transform on `upcsid`
+   (`__upcsidn`, +1, max 20000). Response (converter `FUN_012a00a0`):
+   `{1 repeated WriteResult, 2 commit Timestamp}`, WriteResult oneof
+   1 = ack, 2 = `{1 repeated Value}` transform results — **in result 0**
+   (one native write is split into update + transform writes).
+3. `__pus` doc handler `FUN_01289840` + synced callback `FUN_0128a378` →
+   NplnPlugin slot 4/5. `__stu`/`__stg` share parser `FUN_0128bc00`
+   (`suid susid sussid suscid pl mp`); `__stu/<peer>` is a signaling mailbox:
+   the initiator writes a 562-byte `pl` request, the peer answers `01 12…`,
+   then both relay 80-byte Pia packets via `pl`, then direct UDP.
+4. Simultaneous requests deadlock → server defers a client's `__pus` listen
+   until all lower slots wrote theirs (lower slot always initiates).
+5. Game calls **GetDocument(`docs/__gs/f`)** (`FUN_012805b4`, Pia
+   `AttachMeshJob` +0xc0); the response is the **bare Document**
+   (`FUN_012a0c00` parses field 1 as the name; a wrapper aborts the SDK).
+   `rs` in `__gs/f` is **bytes** (read like `pl`), not a list.
+   `AllocateIceServerSet` (from `nplnd::IceServerConfigGetter`) answered empty.
+
+### Current blocker (2026-11-13 run d20): Pia mesh never forms
+
+Station connection completes: 5-packet handshake over loopback (93-byte
+packets, magic `32ab9864`), then total silence on both sides. Both clients
+keep station index `0xfd` (= unassigned; `FUN_0156490c`), so no host
+created the mesh. Game controller (`tools/re/watch_match_connection.py`):
+`job 2, operation 3, phase 1, desired [0,3,0]`, completion `(1,1,0)`.
+Ruled out: probe Pia UDP routing (redirect + port-honouring Bind, no
+rejected sends), unhooked BSD socket overloads (only latency socket),
+`mcn` = host uid, random `rs` bytes, track stream closure (closed OK).
+Next: trace Pia `AttachMeshJob` steps after the attach future (60 s timer,
+`0x162ed88`), `session::JoinMeshJob`/`CreateMeshJob` decision, and what
+assigns station index 0 to the host.
+
+### Remaining to a race
+1. Pia mesh formation (above).
+2. Session sync + race start.
 
 ### All Gamesync message classes (vtables)
 
