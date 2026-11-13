@@ -52,6 +52,8 @@ pub enum ApiError {
     Gone,
     /// The server refused for a reason the player must fix (name taken...).
     Refused(String),
+    /// REGISTER: the name belongs to someone already.
+    Taken,
     /// Network or server trouble: retry.
     Transient(String),
 }
@@ -60,6 +62,7 @@ impl std::fmt::Display for ApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ApiError::Gone => f.write_str("session expired"),
+            ApiError::Taken => f.write_str("that name is already registered"),
             ApiError::Refused(m) | ApiError::Transient(m) => f.write_str(m),
         }
     }
@@ -147,8 +150,9 @@ impl Api {
             .map_err(|e| ApiError::Transient(format!("cannot reach the server: {e}")))?;
         let ok = res.status().is_success();
         let v: serde_json::Value = res.json().await.unwrap_or_default();
-        match (ok, v["pin"].as_str()) {
-            (true, Some(pin)) => Ok(pin.to_string()),
+        match (ok, v["pin"].as_str(), v["error"]["code"].as_str()) {
+            (true, Some(pin), _) => Ok(pin.to_string()),
+            (_, _, Some("NAME_REGISTERED")) => Err(ApiError::Taken),
             _ => Err(ApiError::Refused(v["error"]["message"].as_str().unwrap_or("could not register").to_string())),
         }
     }

@@ -11,7 +11,7 @@ use std::time::Duration;
 use rand::RngCore;
 use tokio::sync::{Notify, RwLock};
 
-use crate::api::{Api, Friend};
+use crate::api::{Api, ApiError, Friend};
 use crate::config::{ClientConfig, SeatMode};
 use crate::log::note;
 use crate::seat::{Phase, Seat};
@@ -32,22 +32,20 @@ pub enum SessionView {
     Failed(String),
 }
 
-/// What the server says about the name in the box.
+/// The REGISTER button's last outcome.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProfileView {
-    Unknown,
-    Checking,
-    Available,
-    Registered,
-    Reserved,
+pub enum RegisterView {
+    Idle,
+    Working,
+    /// The name is registered already: if it's yours, enter its PIN.
+    Taken,
+    Failed(String),
 }
 
 #[derive(Debug, Clone)]
 pub struct Ui {
     pub cfg: ClientConfig,
-    pub profile: (String, ProfileView), // for which name
-    /// A PIN just issued: shown until dismissed.
-    pub new_pin: Option<String>,
+    pub register: RegisterView,
     pub server: ServerView,
     pub session: SessionView,
     pub friends: Vec<Friend>,
@@ -72,8 +70,7 @@ impl Core {
             seat: RwLock::new(None),
             ui: Mutex::new(Ui {
                 cfg,
-                profile: (String::new(), ProfileView::Unknown),
-                new_pin: None,
+                register: RegisterView::Idle,
                 server: ServerView::Checking,
                 session: SessionView::Idle,
                 friends: vec![],
@@ -114,57 +111,35 @@ impl Core {
         Api::new(base.trim_end_matches('/'))
     }
 
-    /// Look up whether the configured name is registered (the window calls
-    /// this when the name changes).
-    pub fn check_profile(self: &Arc<Self>) {
-        let name = self.ui().cfg.name;
-        if !crate::config::valid_name(&name) {
-            self.set(|u| u.profile = (name, ProfileView::Unknown));
-            return;
-        }
-        self.set(|u| u.profile = (name.clone(), ProfileView::Checking));
-        let core = self.clone();
-        tokio::spawn(async move {
-            let view = match core.api().profile(&name).await {
-                Ok((_, true)) => ProfileView::Reserved,
-                Ok((true, _)) => ProfileView::Registered,
-                Ok((false, _)) => ProfileView::Available,
-                Err(_) => ProfileView::Unknown,
-            };
-            core.set(|u| {
-                if u.cfg.name == name {
-                    u.profile = (name, view);
-                }
-            });
-        });
-    }
-
-    /// Register the configured name. The PIN is saved to client.toml and
-    /// shown once.
+    /// REGISTER: ask the server for the configured name. Success saves the
+    /// PIN to client.toml; a taken name asks for its PIN instead.
     pub fn register(self: &Arc<Self>) {
+        self.set(|u| u.register = RegisterView::Working);
         let core = self.clone();
         tokio::spawn(async move {
             let name = core.ui().cfg.name;
-            match core.api().register(&name).await {
+            let outcome = match core.api().register(&name).await {
                 Ok(pin) => {
                     let mut cfg = core.ui().cfg;
-                    cfg.pin = pin.clone();
-                    if let Err(e) = core.set_config(cfg) {
-                        note(e);
+                    cfg.pin = pin;
+                    match core.set_config(cfg) {
+                        Ok(()) => {
+                            note(format!("registered {name}"));
+                            RegisterView::Idle
+                        }
+                        Err(e) => RegisterView::Failed(e),
                     }
-                    note(format!("registered {name}"));
-                    core.set(|u| {
-                        u.new_pin = Some(pin);
-                        u.profile = (name, ProfileView::Registered);
-                    });
                 }
-                Err(e) => note(format!("could not register {name}: {e}")),
-            }
+                Err(ApiError::Taken) => RegisterView::Taken,
+                Err(e) => RegisterView::Failed(e.to_string()),
+            };
+            core.set(|u| u.register = outcome);
         });
     }
 
-    pub fn dismiss_pin(&self) {
-        self.set(|u| u.new_pin = None);
+    /// Forget the last REGISTER outcome (the name changed).
+    pub fn reset_register(&self) {
+        self.set(|u| u.register = RegisterView::Idle);
     }
 
     pub fn busy(&self) -> bool {
