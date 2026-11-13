@@ -25,10 +25,9 @@ draft)
   cargo zigbuild --release --manifest-path rust/Cargo.toml -p client --target x86_64-unknown-linux-musl
   cp rust/target/x86_64-pc-windows-gnu/release/mkwmp-launcher.exe "$out/mkwmp-launcher-x86_64-windows.exe"
   cp rust/target/x86_64-unknown-linux-musl/release/mkwmp-launcher "$out/mkwmp-launcher-x86_64-linux"
-  git tag -a "$tag" -m "mkwmp $version" 2>/dev/null || echo "tag $tag exists"
-  git push origin "$tag"
+  # A draft is private and creates no tag; publishing tags the commit below.
   gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --prerelease \
-    --title "mkwmp $version" --notes-file tools/release/notes.md
+    --target "$(git rev-parse HEAD)" --title "mkwmp $version" --notes-file tools/release/notes.md
   gh release upload "$tag" --clobber "$out/mkwmp-launcher-x86_64-windows.exe" "$out/mkwmp-launcher-x86_64-linux"
   echo "draft $tag ready; Windows uploads mkwmp-probe-winmm.dll next"
   ;;
