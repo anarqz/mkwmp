@@ -329,42 +329,45 @@ def gamesync_token_response(request_body, fallback_user):
 BULK_GET = "/nn.npln.ugcstore.v1.Ugcstore/BulkGetDocuments"
 
 
-def value_msg(**kw):
-    """Gamesync Value (ugcstore shape): int=3, double=5, string=7."""
-    if "i" in kw:
-        return b"\x18" + encode_varint(kw["i"])          # field 3 varint
-    if "s" in kw:
-        return protobuf_bytes(7, kw["s"])                 # field 7 string
-    return b""
+# Gamesync Value is a oneof (serializer main+0xf19724, discriminator = field):
+#   3 = int (varint), 5 = double (fixed64), 7 = string, 6 = struct, 10 = list.
+def gs_int(i):
+    return b"\x18" + encode_varint(i)                      # Value field 3
 
+def gs_str(s):
+    return protobuf_bytes(7, s)                            # Value field 7
 
-def struct_fields(pairs):
-    """map<string, Value> as repeated entry{1:key, 2:Value} under field 2."""
-    out = b""
-    for key, val in pairs:
-        entry = protobuf_bytes(1, key) + protobuf_bytes(2, val)
-        out += protobuf_bytes(1, entry)
-    return out
+def gs_struct(entries):
+    """Value{6: Struct}. Struct = {1: repeated Entry{1:key, 2:Value}} — the
+    same key/Value encoding proven by ugcstore BulkGetDocuments."""
+    body = b"".join(protobuf_bytes(1, protobuf_bytes(1, k) + protobuf_bytes(2, v)) for k, v in entries)
+    return protobuf_bytes(6, body)
 
 
 def keep_user_session_response(doc_name, user_id, now=None):
-    """KeepUserSession stream response. Envelope recovered from serializers:
-      Snapshot (main+0x12a6020) { 1: repeated DocumentChange, 2: Timestamp read_time }
-      DocumentChange (main+0x12b0430) { 1: Document, 2: string, 3: msg }
-      Document { 1: name, 2: fields map<string,Value> }  (ugcstore shape)
-    Value: int=3, double=5, string=7.
+    """KeepUserSession stream response. Recovered from the serializers:
+      Snapshot (main+0x12a6020)       { 1: repeated DocumentChange, 2: Timestamp }
+      DocumentChange (main+0x12b0430) { 1: Document, 2: name }
+      Document (main+0x12af860)       { 1: Value body, 2: name }
+      Value (main+0xf19724)           oneof: 3 int, 5 double, 7 string, 6 struct
+    The game (FUN_022364b0) looks up child key "f" in the body struct, so the
+    doc body is a struct whose "f" entry is the peer descriptor struct
+    (gsid/addr/p/mcn/maxu, + ipc/dpc read by FUN_012679d8).
     """
     now = int(time.time()) if now is None else now
-    fields = struct_fields([
-        ("gsid", value_msg(s=f"gs-{user_id}")),
-        ("addr", value_msg(s="127.0.0.1")),
-        ("p", value_msg(i=10025)),
-        ("mcn", value_msg(s="")),
-        ("maxu", value_msg(i=2)),
+    descriptor = gs_struct([
+        ("gsid", gs_str(f"gs-{user_id}")),
+        ("addr", gs_str("127.0.0.1")),
+        ("p", gs_int(10025)),
+        ("mcn", gs_str("")),
+        ("maxu", gs_int(2)),
+        ("ipc", gs_int(0)),
+        ("dpc", gs_int(0)),
     ])
-    document = protobuf_bytes(1, doc_name) + protobuf_bytes(2, fields)
+    body = gs_struct([("f", descriptor)])                 # top-level Value struct
+    document = protobuf_bytes(1, body) + protobuf_bytes(2, doc_name)
     doc_change = protobuf_bytes(1, document) + protobuf_bytes(2, doc_name)
-    read_time = protobuf_bytes(2, b"\x08" + encode_varint(now))   # Snapshot field 2 = Timestamp{1:seconds}
+    read_time = protobuf_bytes(2, b"\x08" + encode_varint(now))
     return protobuf_bytes(1, doc_change) + read_time
 
 

@@ -196,8 +196,34 @@ top object has key `f` → a sub-struct holding the peer descriptor. The gamesyn
 Value type therefore supports a nested struct (richer than the ugcstore
 int/double/string Value); its exact field numbers for struct/list are TBD.
 
+### Value/Struct recovered (2026-11-13)
+
+Value serializer `main+0xf19724` is a **oneof** (discriminator = field number):
+`3` int (varint), `5` double (fixed64), `7` string, `6` struct, `10` list.
+Struct = `{1: repeated Entry{1:key, 2:Value}}` (same key/Value encoding proven
+by ugcstore BulkGetDocuments). gamesync **Document** `main+0x12af860` =
+`{1: Value body, 2: name}` (field 1 is a Value, NOT name-first — unlike
+ugcstore). So the `__us` body is a Value-struct; `server/mkwmp_server.py`
+`keep_user_session_response` now builds `Document{1: Value-struct{"f": struct{
+gsid,addr,p,mcn,maxu,ipc,dpc}}, 2: name}` wrapped in the Snapshot envelope.
+
+### Status: stuck at 0x240141, content-invariant
+
+Sending the Snapshot response reaches `companion_state` (main+0x1266e24) but
+always errors `0x240141 (2321-4608)` regardless of document content (flat vs
+nested `f`). Two live hypotheses:
+1. **Wrong response TYPE/framing** for the KeepUserSession bidi stream — the
+   client's reader can't parse what we send (INTERNAL). The exact response type
+   is not yet identified; the stub (main+0x12bae9c, slot 0x118) and the client
+   reader are obfuscated/indirect. "Snapshot" (0x12a6020) may actually be the
+   ReadDocuments/ListDocuments batch type, not KeepUserSession's.
+2. **Companion/peer requirement** — the doc parses, but the game needs the
+   OTHER player's user-session to exist before "my UserSession" resolves,
+   which ties into the Pia P2P mesh (both peers must actually connect).
+
 ### Remaining to a race (large, multi-cycle)
-1. Recover the gamesync Value/Struct nesting; build the `f` descriptor doc.
+1. Identify the real KeepUserSession response type (or confirm the stream only
+   needs acks and the doc arrives via ReadDocuments/GetDocument).
 2. Populate each player's doc so the OTHER learns its Pia addr/port.
 3. Pia P2P mesh over loopback — exchange game packets through the bridge
    (currently only echoes NAT probes). A whole subsystem.
