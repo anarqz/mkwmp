@@ -280,6 +280,8 @@ SECOND_LOCAL_TOKEN = b"eyJhbGciOiJub25lIn0.eyJzdWIiOiJta3dtcC1sb2NhbC0yIiwiaXNzI
 
 USER_NUMBERS = {}   # user id (uuid) -> small player number the game needs (ussid, upcsid, ...)
 LEGACY_USER = "00000000-0000-4000-8000-"   # the probe's local test users ...0001, ...0002
+USER_NAMES = {}     # user id -> launcher name from the seat ticket (shown to other players)
+PLAYER_STATIC = "docs/PlayerStatic/"        # each player's public data; `name` = display name
 
 
 def ticket_name(bearer):
@@ -317,6 +319,7 @@ def auth_response(request_body):
                 if name:
                     user_id = ticket_user_id(name)
                     user_slot(user_id)   # give it its small number now
+                    USER_NAMES[user_id] = name
                     return token_response(tenant + f"/users/{user_id}", user_slot(user_id))
     return token_response(tenant + f"/users/00000000-0000-4000-8000-{slot:012d}", slot)
 
@@ -513,7 +516,7 @@ def store_write(name, fields_body, transformed=None, now=None):
     now = int(time.time()) if now is None else now
     entries = doc_entries(fields_body)
     for key, value in (transformed or {}).items():
-        entries[key] = gs_int(value)
+        entries[key] = value if isinstance(value, bytes) else gs_int(value)   # bytes = raw Value
     doc = (protobuf_bytes(1, name) + protobuf_bytes(2, gs_fields(entries.items())) +
            protobuf_bytes(3, gs_timestamp(now)) + protobuf_bytes(4, gs_timestamp(now)))
     created = name not in DOC_STORE
@@ -1185,7 +1188,11 @@ class H2Protocol(asyncio.Protocol):
             writes = parse_write_documents(msgs[0][1]) if msgs else []
             response = write_documents_response(writes, user_slot)
             transformed = {name: {"upcsid": user_slot(name)} for name, count in writes if count}
+            writer_name = USER_NAMES.get((self.ticket_user(st["token"]) or "").rsplit("/", 1)[-1])
             for name, fields_body in (write_updates(msgs[0][1]) if msgs else []):
+                if writer_name and name.startswith(PLAYER_STATIC) and "name" in doc_entries(fields_body):
+                    # The name others see is the launcher identity from the seat ticket.
+                    transformed.setdefault(name, {})["name"] = gs_str(writer_name)
                 doc, created = store_write(name, fields_body, transformed.get(name))
                 H2Protocol.publish(name, doc, CHANGE_ADDED if created else 2)
                 verdict = referee_result(name, fields_body)

@@ -391,6 +391,16 @@ class TicketPlayersTest(unittest.TestCase):
         capture.DOC_STORE.clear()
         capture.USER_NUMBERS.clear()
 
+    def test_player_static_name_is_the_launcher_name(self):
+        # A client writes PlayerStatic.name from its console nickname (mkw-recomp: "Local");
+        # the stored document carries the ticket name instead.
+        fields = capture.gs_fields([("name", capture.gs_str("Local")), ("vehicle", capture.gs_int(3))])
+        doc, _ = capture.store_write("docs/PlayerStatic/2", fields, {"name": capture.gs_str("Alex")}, now=1)
+        stored = _doc_fields(doc)
+        self.assertEqual(stored["name"], capture.gs_str("Alex"))
+        self.assertEqual(stored["vehicle"], capture.gs_int(3))
+        capture.DOC_STORE.clear()
+
 
 if __name__ == "__main__":
     unittest.main()
