@@ -50,8 +50,8 @@ const GAP: f32 = 24.0;
 const CARD_W: f32 = (COLUMN - GAP) / 2.0;
 /// Width inside a card (card minus border and margins).
 const INNER: f32 = CARD_W - 44.0;
-/// Both cards are at least this tall, so they line up.
-const CARD_MIN_H: f32 = 236.0;
+/// Both cards' content height (fixed by design, so they always match).
+const CARD_H: f32 = 252.0;
 
 /// Steam Deck Game Mode (gamescope): open fullscreen.
 pub fn game_mode() -> bool {
@@ -205,8 +205,11 @@ impl eframe::App for App {
             ui.add_space(4.0);
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = GAP;
-                self.player_card(ui, &st, busy);
-                self.friends_card(ui, &st, busy);
+                let a = self.player_card(ui, &st, busy);
+                let b = self.friends_card(ui, &st, busy);
+                if std::env::var_os("MKWMP_GUI_DEBUG").is_some() {
+                    eprintln!("card heights: player {a:.1} friends {b:.1}");
+                }
             });
             ui.add_space(6.0);
             self.play_row(ui, busy, st.stars);
@@ -235,8 +238,9 @@ impl eframe::App for App {
 }
 
 impl App {
-    fn player_card(&mut self, ui: &mut egui::Ui, st: &crate::core::Ui, busy: bool) {
-        card(ui, "PLAYER", BLUE, BLUE_D, |ui| {
+    fn player_card(&mut self, ui: &mut egui::Ui, st: &crate::core::Ui, busy: bool) -> f32 {
+        let min_h = CARD_H;
+        card(ui, "PLAYER", BLUE, BLUE_D, min_h, |ui| {
             // Name + PIN (or REGISTER).
             field_label(ui, "NAME");
             ui.horizontal(|ui| {
@@ -247,7 +251,7 @@ impl App {
                         .hint_text("your name")
                         .char_limit(16)
                         .margin(vec2(8.0, 6.0))
-                        .desired_width(INNER - 200.0),
+                        .desired_width(INNER - 214.0), // room for PIN badge + X
                 );
                 if r.changed() {
                     self.draft.pin.clear(); // a PIN belongs to one name
@@ -256,6 +260,7 @@ impl App {
                 if r.lost_focus() {
                     self.save();
                 }
+                let taken = st.register == RegisterView::Taken && !has_pin;
                 if has_pin {
                     pin_badge(ui, &self.draft.pin);
                     let ok = !busy && st.register != RegisterView::Working;
@@ -264,6 +269,24 @@ impl App {
                         .clicked()
                     {
                         self.confirm_delete = true;
+                    }
+                } else if taken {
+                    // The name is someone's: if it's yours, its PIN goes here.
+                    let r = ui.add(
+                        TextEdit::singleline(&mut self.pin_entry)
+                            .char_limit(6)
+                            .hint_text("PIN")
+                            .margin(vec2(8.0, 6.0))
+                            .desired_width(58.0),
+                    );
+                    if r.changed() {
+                        self.pin_entry.retain(|c| c.is_ascii_digit());
+                    }
+                    let ok = self.pin_entry.len() == 6;
+                    if pixel_button(ui, "USE", vec2(56.0, 32.0), BLUE, BLUE_D, PAPER, 10.0, ok).clicked() {
+                        self.draft.pin = std::mem::take(&mut self.pin_entry);
+                        self.save();
+                        self.core.reset_register();
                     }
                 } else {
                     let working = st.register == RegisterView::Working;
@@ -275,36 +298,19 @@ impl App {
                     }
                 }
             });
-            if !self.draft.name.is_empty() && !valid_name(&self.draft.name) {
-                hint(ui, "3-16 letters, digits, - or _", RED_D);
+            // Exactly one message line, whatever the state (fixed card height).
+            let (msg, color) = if !self.draft.name.is_empty() && !valid_name(&self.draft.name) {
+                ("3-16 letters, digits, - or _".to_string(), RED_D)
+            } else if let RegisterView::Failed(m) = &st.register {
+                (m.clone(), RED_D)
+            } else if st.register == RegisterView::Taken && self.draft.pin.len() != 6 {
+                ("That name is registered. If it's yours, enter its PIN.".to_string(), RED_D)
             } else if self.draft.pin.len() == 6 {
-                hint(ui, "Your PIN: keep it to use this name on another device.", MUTED);
-            }
-            match &st.register {
-                RegisterView::Taken if self.draft.pin.is_empty() => {
-                    hint(ui, "That name is registered. If it's yours, enter its PIN:", RED_D);
-                    ui.horizontal(|ui| {
-                        let r = ui.add(
-                            TextEdit::singleline(&mut self.pin_entry)
-                                .char_limit(6)
-                                .hint_text("6 digits")
-                                .margin(vec2(8.0, 6.0))
-                                .desired_width(120.0),
-                        );
-                        if r.changed() {
-                            self.pin_entry.retain(|c| c.is_ascii_digit());
-                        }
-                        let ok = self.pin_entry.len() == 6;
-                        if pixel_button(ui, "USE PIN", vec2(120.0, 32.0), BLUE, BLUE_D, PAPER, 10.0, ok).clicked() {
-                            self.draft.pin = std::mem::take(&mut self.pin_entry);
-                            self.save();
-                            self.core.reset_register();
-                        }
-                    });
-                }
-                RegisterView::Failed(m) => hint(ui, m, RED_D),
-                _ => {}
-            }
+                ("Your PIN: keep it to use this name on another device.".to_string(), MUTED)
+            } else {
+                ("Register a name to play. You'll get a 6-digit PIN.".to_string(), MUTED)
+            };
+            hint(ui, &msg, color);
 
             field_label(ui, "SERVER");
             let r = ui.add_enabled(
@@ -346,11 +352,12 @@ impl App {
                 self.draft.launch = !steam;
                 self.save();
             }
-        });
+        })
     }
 
-    fn friends_card(&mut self, ui: &mut egui::Ui, st: &crate::core::Ui, busy: bool) {
-        card(ui, "FRIENDS", GREEN, GREEN_D, |ui| {
+    fn friends_card(&mut self, ui: &mut egui::Ui, st: &crate::core::Ui, busy: bool) -> f32 {
+        let min_h = CARD_H;
+        card(ui, "FRIENDS", GREEN, GREEN_D, min_h, |ui| {
             hint(ui, "Up to 8. Anyone who adds you back is your friend in the game.", MUTED);
             // Two (light + field) pairs: field width minus its 8 pt margins each side.
             let w = (INNER - 2.0 * 14.0 - 3.0 * 8.0 - 2.0 * 16.0) / 2.0;
@@ -380,7 +387,7 @@ impl App {
                     }
                 });
             }
-        });
+        })
     }
 
     fn delete_dialog(&mut self, ctx: &egui::Context) {
@@ -502,7 +509,16 @@ fn icon_button(ui: &mut egui::Ui, rect: Rect, text: &str, icon: &[&str], fill: C
 }
 
 /// A cream panel with a thick ink border, hard drop shadow and a coin heading.
-fn card(ui: &mut egui::Ui, title: &str, coin: Color32, coin_d: Color32, add: impl FnOnce(&mut egui::Ui)) {
+/// Returns the content height it needed, so side-by-side cards can match.
+fn card(
+    ui: &mut egui::Ui,
+    title: &str,
+    coin: Color32,
+    coin_d: Color32,
+    min_h: f32,
+    add: impl FnOnce(&mut egui::Ui),
+) -> f32 {
+    let mut used = 0.0;
     egui::Frame::new()
         .fill(PAPER)
         .stroke(Stroke::new(4.0, INK))
@@ -512,7 +528,7 @@ fn card(ui: &mut egui::Ui, title: &str, coin: Color32, coin_d: Color32, add: imp
             // Cards may sit in a row; their own contents stack vertically.
             ui.vertical(|ui| {
                 ui.set_width(INNER);
-                ui.set_min_height(CARD_MIN_H);
+                ui.set_min_height(min_h);
                 ui.spacing_mut().item_spacing.y = 6.0;
                 ui.horizontal(|ui| {
                     let (r, _) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
@@ -524,8 +540,10 @@ fn card(ui: &mut egui::Ui, title: &str, coin: Color32, coin_d: Color32, add: imp
                 });
                 ui.add_space(2.0);
                 add(ui);
+                used = ui.min_rect().height();
             });
         });
+    used
 }
 
 fn field_label(ui: &mut egui::Ui, text: &str) {
