@@ -323,21 +323,12 @@ impl App {
 
             field_label(ui, "GAME FOLDER");
             ui.horizontal(|ui| {
-                let mut path = self.draft.game.display().to_string();
-                let w = if cfg!(windows) { INNER - 112.0 } else { INNER };
-                let r = ui.add_enabled(
-                    !busy,
-                    TextEdit::singleline(&mut path).hint_text("folder with mkw.exe").margin(vec2(8.0, 6.0)).desired_width(w),
-                );
-                if r.changed() {
-                    self.draft.game = path.into();
-                }
-                if r.lost_focus() {
-                    self.save();
-                }
-                #[cfg(windows)]
-                if pixel_button(ui, "BROWSE", vec2(96.0, 32.0), BLUE, BLUE_D, PAPER, 9.0, !busy).clicked() {
-                    if let Some(dir) = rfd::FileDialog::new().set_title("Game folder (with mkw.exe)").pick_folder() {
+                // Picked, not typed: the field and BROWSE both open the
+                // system folder dialog (Explorer on Windows).
+                let field = path_field(ui, &self.draft.game, vec2(INNER - 112.0, 32.0), !busy);
+                let browse = pixel_button(ui, "BROWSE", vec2(96.0, 32.0), BLUE, BLUE_D, PAPER, 9.0, !busy);
+                if field.clicked() || browse.clicked() {
+                    if let Some(dir) = pick_game_folder(&self.draft.game) {
                         self.draft.game = dir;
                         self.save();
                     }
@@ -544,6 +535,43 @@ fn card(
             });
         });
     used
+}
+
+/// The system folder dialog, opened at the current game folder.
+fn pick_game_folder(current: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut d = rfd::FileDialog::new().set_title("Game folder (with mkw.exe)");
+    if current.is_dir() {
+        d = d.set_directory(current);
+    }
+    d.pick_folder()
+}
+
+/// A read-only, clickable path box styled like the text fields. Long paths
+/// keep their end (the folder name) and lose their start.
+fn path_field(ui: &mut egui::Ui, path: &std::path::Path, size: Vec2, enabled: bool) -> Response {
+    let sense = if enabled { Sense::click() } else { Sense::hover() };
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
+    let resp = resp.on_hover_cursor(if enabled { egui::CursorIcon::PointingHand } else { egui::CursorIcon::Default });
+    let v = ui.visuals();
+    let stroke = if enabled && resp.hovered() { v.widgets.hovered.bg_stroke } else { v.widgets.inactive.bg_stroke };
+    let p = ui.painter();
+    p.rect(rect, CornerRadius::ZERO, Color32::WHITE, stroke, egui::StrokeKind::Inside);
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let max_w = rect.width() - 16.0;
+    let full = path.display().to_string();
+    let (mut text, color) = if full.is_empty() { ("click to choose the folder with mkw.exe".to_string(), Color32::GRAY) } else { (full, INK) };
+    let fits = |t: &str| p.layout_no_wrap(t.to_string(), font.clone(), color).size().x <= max_w;
+    if !fits(&text) {
+        let chars: Vec<char> = text.chars().collect();
+        let mut start = 1;
+        while start < chars.len() && !fits(&format!("…{}", chars[start..].iter().collect::<String>())) {
+            start += 1;
+        }
+        text = format!("…{}", chars[start..].iter().collect::<String>());
+    }
+    let color = if enabled { color } else { color.gamma_multiply(0.5) };
+    p.text(rect.left_center() + vec2(8.0, 0.0), egui::Align2::LEFT_CENTER, text, font, color);
+    resp
 }
 
 fn field_label(ui: &mut egui::Ui, text: &str) {
