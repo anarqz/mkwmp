@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mkwmp: community online servers for mkw-recomp</title>
+<meta name="description" content="Open-source online play for the mkw-recomp PC runtime: a seat server with a queue, lobbies, and friends. Anyone can host.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <p class="status"><span class="dot"></span>In development: not playable yet</p>
+    <h1>mkwmp</h1>
+    <p class="lede">Community-run online play for the <a href="https://github.com/adriadam10/mkw-recomp">mkw-recomp</a> PC runtime. You get a server with a seat limit and a queue, lobbies for races and battles, and friends. Anyone can host one.</p>
+    <nav class="cta">
+      <a class="btn" href="https://github.com/anarqz/mkwmp">Source on GitHub</a>
+      <a class="btn ghost" href="https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md">Host a server</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section>
+    <h2>How it works</h2>
+    <ol class="steps">
+      <li>
+        <h3>Launcher</h3>
+        <p>You run <code>mkwmp-launcher</code> with your name and up to 8 friends. It connects to a server and takes a seat.</p>
+      </li>
+      <li>
+        <h3>Seat or queue</h3>
+        <p>A server has a fixed number of seats (50 by default). When it's full, you wait in line and see your position. Once you're seated you get a signed ticket.</p>
+      </li>
+      <li>
+        <h3>Lobby</h3>
+        <p>The launcher starts the game. The game presents the ticket to the lobby, which handles matchmaking, sessions and the connection between players.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="cols">
+    <div>
+      <h2>Friends</h2>
+      <p>List up to 8 names in the launcher. Anyone who lists you back is your friend in the game's <em>Online → Friends</em> menu, for as long as both of you are online. Nothing is stored, and you can change the list at any time.</p>
+    </div>
+    <div>
+      <h2>Names</h2>
+      <p>3–16 characters: letters, digits, <code>-</code> and <code>_</code>. Each name is unique on a server while its player is online, and the comparison ignores case.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Play</h2>
+    <p>Put the launcher next to its <code>client.toml</code>:</p>
+<pre><code>server  = "https://your-server.example"
+name    = "YourName"
+friends = ["Friend_1", "Friend-2"]
+game    = "C:/Games/mkw"          # folder with mkw.exe</code></pre>
+    <p>Run <code>mkwmp-launcher client.toml</code>. It waits in the queue if the server is full, writes the game's config, and starts the game once you're seated. Closing the game frees your seat.</p>
+  </section>
+
+  <section>
+    <h2>Host</h2>
+    <p>The server is one binary with two parts. Both fit on a small Linux VM (1 vCPU, 1 GB).</p>
+<pre><code>mkwmp keygen k1          # ticket signing key
+mkwmp server server.toml # seats, queue, tickets, friends
+mkwmp lobby  server.toml # the game-facing lobby</code></pre>
+    <p>You set the player limit and the timeouts in <code>server.toml</code>. Nothing is stored: a restart clears every seat, and launchers rejoin on their own. The full guide is <a href="https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md">docs/HOSTING.md</a>.</p>
+  </section>
+
+  <section class="note">
+    <h2>Status</h2>
+    <p>Matchmaking works for races and battles: two players land in one lobby and see each other. Finishing a match is still being worked on, and so is the ticket check at the lobby. This page and the repository go public once there is a playable version.</p>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>mkwmp is an unofficial community project. It is not affiliated with or endorsed by Nintendo. You need your own copy of the game.</p>
+</footer>
+</body>
+</html>
