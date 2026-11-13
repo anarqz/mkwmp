@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["config", "contracts", "seat", "lobby", "gateway"]
+members = ["config", "contracts", "seat", "lobby", "gateway", "client"]
 
 [workspace.package]
 edition = "2021"

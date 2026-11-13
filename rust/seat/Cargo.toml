@@ -10,3 +10,5 @@ config.workspace = true
 tonic.workspace = true
 prost.workspace = true
 tokio.workspace = true
+tokio-stream = "0.1"
+futures = "0.3"

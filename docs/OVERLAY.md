@@ -1,5 +1,13 @@
 # In-game overlay & notifications
 
+> **Superseded for pre-game states (2026-11-13).** The queue/seat UX now lives
+> in the Rust **client** (`rust/client`): it shows "Nth in queue", and when the
+> seat is granted it writes `mkwmp.toml` and launches the game. See
+> docs/ARCHITECTURE.md. An in-game overlay is only needed for *mid-race*
+> messages (disconnects, etc.), which are rare and currently log-only. The
+> notification core below still stands if we want them on screen later.
+
+
 The server tells the DLL what to show the player ("Connected to MKWMP",
 "Waiting to join, 4th in queue"). Three layers, decoupled so each can land
 independently:

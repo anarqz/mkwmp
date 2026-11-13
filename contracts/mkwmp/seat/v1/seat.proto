@@ -1,0 +1,31 @@
+// Internal client <-> seat-server protocol. This is OURS, not an NPLN/game
+// contract: the Rust client speaks it to claim a seat and watch the queue.
+syntax = "proto3";
+
+package mkwmp.seat.v1;
+
+service Seat {
+  // Join the server. Claims a seat if one is free, otherwise queues. The
+  // stream stays open — pushing position updates, then the grant — for the
+  // whole session; when the client disconnects the seat is released and the
+  // next in line is promoted.
+  rpc JoinQueue(JoinRequest) returns (stream QueueUpdate);
+}
+
+message JoinRequest {
+  string username = 1;
+}
+
+enum State {
+  STATE_UNSPECIFIED = 0;
+  QUEUED = 1;    // waiting; `position` is the place in line (1 = next)
+  GRANTED = 2;   // seated; `ticket` authorizes the game to reach the server
+}
+
+message QueueUpdate {
+  State state = 1;
+  uint32 position = 2;
+  string ticket = 3;
+  uint32 seats_total = 4;
+  uint32 seats_free = 5;
+}

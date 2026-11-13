@@ -9,7 +9,7 @@ bind = "127.0.0.1:8905"        # NPLN endpoint the game connects to (TLS)
 
 [seats]
 capacity = 16                  # N seats total; one per active user
-# A user already holding a seat keeps it (ticket is idempotent per profile).
+bind = "127.0.0.1:7000"        # seat service the client connects to (internal)
 # All state is in-memory and dies with the process; nothing persists.
 
 [lobby]

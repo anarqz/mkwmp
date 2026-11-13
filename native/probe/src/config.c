@@ -51,6 +51,8 @@ void mkwmp_config_parse(const char *text, MkwmpConfig *out) {
             out->host[sizeof out->host - 1] = 0;
         } else if (klen == 4 && !strncmp(line, "name", 4)) {
             store_str(out->name, sizeof out->name, val, eol);
+        } else if (klen == 6 && !strncmp(line, "ticket", 6)) {
+            store_str(out->ticket, sizeof out->ticket, val, eol);
         } else if (klen == 4 && !strncmp(line, "slot", 4)) {
             char buf[16];
             store_str(buf, sizeof buf, val, eol);

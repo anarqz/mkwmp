@@ -19,8 +19,9 @@ fn main() {
     for p in &protos {
         println!("cargo:rerun-if-changed={}", p.display());
     }
+    // NPLN services are server-only (the game is the client). The internal
+    // seat service also needs a client: our Rust client speaks it.
     tonic_build::configure()
-        .build_client(false)
         .compile_protos(&protos, &[root])
         .expect("compile protos");
 }

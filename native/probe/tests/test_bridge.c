@@ -170,9 +170,9 @@ int main(void) {
 
     // Client config parser.
     MkwmpConfig cc;
-    mkwmp_config_parse("server = \"10.0.0.5:9000\"\nname = \"Ana\"\nslot = 2\n", &cc);
+    mkwmp_config_parse("server = \"10.0.0.5:9000\"\nname = \"Ana\"\nticket = \"seat-01\"\nslot = 2\n", &cc);
     assert(cc.present && !strcmp(cc.host, "10.0.0.5") && cc.port == 9000);
-    assert(!strcmp(cc.name, "Ana") && cc.slot == 2);
+    assert(!strcmp(cc.name, "Ana") && cc.slot == 2 && !strcmp(cc.ticket, "seat-01"));
     mkwmp_config_parse("# comment\n[section]\nname = \"Bia\"\n", &cc);  // defaults + comments/sections
     assert(!strcmp(cc.host, "127.0.0.1") && cc.port == 8900 && cc.slot == 1);
     assert(!strcmp(cc.name, "Bia"));

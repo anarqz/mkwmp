@@ -43,6 +43,7 @@ pub struct Server {
 #[derive(Debug, Deserialize)]
 pub struct Seats {
     pub capacity: usize,
+    pub bind: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,7 +109,7 @@ mod tests {
     fn zero_capacity_is_rejected() {
         let p = std::env::temp_dir().join("mkwmp_bad_server.toml");
         std::fs::write(&p, concat!(
-            "[server]\nname=\"x\"\nbind=\"x\"\n[seats]\ncapacity=0\n",
+            "[server]\nname=\"x\"\nbind=\"x\"\n[seats]\ncapacity=0\nbind=\"x\"\n",
             "[lobby]\nbind=\"x\"\nlobby_size=2\nmax_lobbies_per_worker=1\n",
             "[tls]\ncert=\"c\"\nkey=\"k\"\n")).unwrap();
         assert!(matches!(ServerConfig::load(&p), Err(ConfigError::Invalid(_))));

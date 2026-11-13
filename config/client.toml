@@ -1,10 +1,11 @@
-## mkwmp client config. Copy this to <game dir>\mkwmp.toml (next to mkw.exe).
-## The probe (winmm.dll) reads it directly at startup -- there is no launcher.
-## If the file is absent, the game launches stock/offline.
+## mkwmp client config -- the one file a player edits. The client reads this,
+## shows the queue, and when a seat is granted it generates <game>\mkwmp.toml
+## (which the probe reads) and launches the game.
 
-server = "127.0.0.1:8905"      # mkwmp server to join (host:port)
+server = "127.0.0.1:7000"      # seat server address (host:port)
 name = "Player1"               # your username; must be unique on the server
+game = "scratch/game"          # game directory containing mkw.exe
 
 # slot: only for running two instances on one machine (loopback testing).
-# Leave it out on a normal setup. Player two sets slot = 2.
+# Player two sets slot = 2.
 # slot = 1

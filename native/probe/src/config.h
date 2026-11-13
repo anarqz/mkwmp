@@ -8,6 +8,7 @@ typedef struct {
     char host[64];      // server host (default 127.0.0.1)
     int port;           // server port (default 8900)
     char name[64];      // player username (may be empty)
+    char ticket[64];    // seat ticket from the client (may be empty)
     int slot;           // account slot, 1 or 2 (default 1)
 } MkwmpConfig;
 

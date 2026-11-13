@@ -26,14 +26,30 @@ Two small Rust services plus the local probe. Contracts in `contracts/*.proto` a
 
 The split matches NPLN: Auth is global (seat server); matchmaking/session/gamesync are per-match (lobby manager). The gateway is the only TLS endpoint; services speak plain gRPC behind it.
 
+## Client
+
+A small Rust binary (`rust/client`), run by the player. It reads `client.toml`
+(server, username, game dir), connects to the seat server's `Seat/JoinQueue`,
+and prints queue status ("3rd in queue"). When a seat is granted it writes
+`<game>\mkwmp.toml` (NPLN endpoint + name + the granted **ticket**) and
+launches `mkw.exe`, holding the gRPC stream — and thus the seat — until the
+game exits. This is why there is no in-game overlay for the queue: the wait
+happens in the client, before the game starts. The probe (DLL) still reads its
+own config directly; the client just generates it.
+
+`Seat/JoinQueue` (`contracts/mkwmp/seat/v1`) is our own internal protocol, not
+an NPLN/game contract.
+
 ## Crates
 
 ```
 rust/
   contracts/   generated prost types + tonic stubs (build.rs over ../contracts)
-  seat/        seat server binary
+  config/      typed server config loader
+  seat/        seat server: lib (manager + Seat service) + thin binary
   lobby/       lobby manager binary
   gateway/     TLS/h2 front, routing
+  client/      player client: queue UI + game launcher
 ```
 
 SOLID in practice: each service depends on the contract crate (the abstraction), not on the others. Matchmaking/seat state sit behind traits so the in-memory impl (today) can be swapped for a distributed one without touching handlers. One handler per RPC.
