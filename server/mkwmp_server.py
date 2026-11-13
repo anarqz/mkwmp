@@ -35,6 +35,7 @@ from local_matchmaking import LocalMatchmaking
 LOG_FILE = None
 CREATE_TICKET = "/nn.npln.matchmaking.v1.Matchmaker/CreateMatchmakingTicket"
 TRACK_TICKET = "/nn.npln.matchmaking.v1.Matchmaker/TrackMatchmakingTicket"
+CANCEL_TICKET = "/nn.npln.matchmaking.v1.Matchmaker/CancelMatchmakingTicket"
 PRESENCE_SUBSCRIBE = "/nn.npln.friends.v1.PresenceService/SubscribePresences"
 PRESENCE_KEEPALIVE = "/nn.npln.friends.v1.PresenceService/KeepAlive"
 SUBSCRIPTIONS = {
@@ -1150,6 +1151,8 @@ class H2Protocol(asyncio.Protocol):
                     H2Protocol.publish(final[0], final[1], CHANGE_MODIFIED)
             H2Protocol.release_pending()
             log(f"<<< WriteDocuments: {writes} -> upcsid by slot; stored {len(DOC_STORE)} docs")
+        if st["path"] == CANCEL_TICKET:
+            self.cancel_ticket(body)
         self.conn.send_headers(sid, [(":status", "200"), ("content-type", "application/grpc")])
         if is_auth:
             token_info = bytes_field(response, 2)
@@ -1246,6 +1249,27 @@ class H2Protocol(asyncio.Protocol):
             peer.transport.write(peer.conn.data_to_send())
             log(f"    assignment frame stream {sid}: {frame[5:].hex()}")
         log(f"<<< assigned both tickets to local session {lobby.id}")
+
+    def cancel_ticket(self, body):
+        """CancelMatchmakingTicket {1 "tenants/current/matchmakingTickets/<id>"}: the player left
+        the online menu while searching. Drop the ticket and end its TrackMatchmakingTicket
+        streams with CANCELLED; the game waits for that stream to finish before leaving
+        (otherwise it hangs on a loading screen)."""
+        try:
+            (_, message), = decode_grpc_messages(body)
+            ticket_id = UUID(bytes_field(message, 1).decode().rsplit("/", 1)[-1])
+        except (IndexError, ValueError):
+            log("<<< CancelMatchmakingTicket: invalid request")
+            return
+        for peer, tsid in list(self.active_trackers.pop(ticket_id, set())):
+            tracker = peer.tracked_tickets.pop(tsid, None)
+            peer.subscriptions.pop(tsid, None)
+            if peer.transport is not None and not peer.transport.is_closing():
+                peer.conn.send_headers(tsid, [("grpc-status", "1")], end_stream=True)
+                peer.transport.write(peer.conn.data_to_send())
+            if tracker:
+                self.matchmaking.cancel(tracker[0], ticket_id)
+        log(f"<<< CancelMatchmakingTicket: {ticket_id} cancelled, tracking ended")
 
     def release_tracker(self, sid):
         tracker = self.tracked_tickets.pop(sid, None)
