@@ -101,7 +101,15 @@ class Allocation:
             def datagram_received(self, data, peer):
                 alloc.from_peer(data, peer)
 
-        self.sock, _ = await loop.create_datagram_endpoint(Relay, local_addr=(self.server.relay_host, 0))
+        ports = self.server.relay_ports or [0]
+        for port in ports:
+            try:
+                self.sock, _ = await loop.create_datagram_endpoint(Relay, local_addr=(self.server.relay_host, port))
+                break
+            except OSError:
+                continue
+        else:
+            raise OSError(f"no free relay port in {ports[0]}-{ports[-1]}")
         self.relay = self.sock.get_extra_info("sockname")
 
     def from_peer(self, data, peer):
@@ -125,6 +133,7 @@ class TurnServer(asyncio.DatagramProtocol):
         self.allocations = {}
         self.nonce = os.urandom(8).hex().encode()
         self.relay_host = "127.0.0.1"
+        self.relay_ports = None   # list of allowed relay ports (None = any ephemeral port)
 
     def connection_made(self, transport):
         self.transport = transport
@@ -185,7 +194,13 @@ class TurnServer(asyncio.DatagramProtocol):
         alloc = self.allocations.get(client)
         if alloc is None:
             alloc = Allocation(self, client)
-            await alloc.open()
+            try:
+                await alloc.open()
+            except OSError as exc:
+                self.log(f"TURN allocation for {client} refused: {exc}")
+                self.transport.sendto(build(msg_type(ALLOCATE, ERROR), tid, [
+                    (A_ERROR, struct.pack("!HBB", 0, 5, 8) + b"Insufficient Capacity")], key), client)
+                return
             self.allocations[client] = alloc
             self.log(f"TURN allocation for {client} relayed at {alloc.relay}")
         self.reply(client, ALLOCATE, tid, [
@@ -198,11 +213,22 @@ class TurnServer(asyncio.DatagramProtocol):
         self.transport.sendto(build(msg_type(method, SUCCESS), tid, attrs, key), client)
 
 
-async def start(host="127.0.0.1", port=3478, log=print, relay_host=None):
+def parse_port_range(text):
+    """"49152:49407" -> [49152, ..., 49407]."""
+    lo, hi = (int(p) for p in text.split(":"))
+    if not 0 < lo <= hi < 65536:
+        raise ValueError(f"bad port range {text!r}")
+    return list(range(lo, hi + 1))
+
+
+async def start(host="127.0.0.1", port=3478, log=print, relay_host=None, relay_ports=None):
     """relay_host: the address relayed sockets bind to and advertise (must be
-    reachable by the peers: the server's LAN address in LAN mode)."""
+    reachable by the peers: the server's LAN address in LAN mode).
+    relay_ports: allowed relay ports (firewall range); None = ephemeral."""
     loop = asyncio.get_running_loop()
     transport, server = await loop.create_datagram_endpoint(lambda: TurnServer(log), local_addr=(host, port))
     server.relay_host = relay_host or (host if host != "0.0.0.0" else "127.0.0.1")
-    log(f"TURN relay listening on {host}:{port} (udp, user {USERNAME!r}, relays on {server.relay_host})")
+    server.relay_ports = relay_ports
+    span = f"ports {relay_ports[0]}-{relay_ports[-1]}" if relay_ports else "ephemeral ports"
+    log(f"TURN relay listening on {host}:{port} (udp, user {USERNAME!r}, relays on {server.relay_host}, {span})")
     return server

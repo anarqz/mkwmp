@@ -1214,6 +1214,8 @@ async def main():
     ap.add_argument("--port", type=int, default=8900)
     ap.add_argument("--public-host", default=None,
                     help="LAN address clients use for TURN/ICE/__gs addr (default: --host, or 127.0.0.1 for 0.0.0.0)")
+    ap.add_argument("--relay-ports", type=turn_relay.parse_port_range, default=None, metavar="LO:HI",
+                    help="UDP port range for TURN relay allocations (default: ephemeral ports)")
     ap.add_argument("--log", default=None)
     ap.add_argument("--tls-cert", help="PEM certificate for the embedded OpenSSL transport")
     ap.add_argument("--tls-key", help="matching PEM private key")
@@ -1248,7 +1250,7 @@ async def main():
         GAMESYNC_PORT = args.gamesync_port
         tasks.append(serve_sniffing(args.host, args.gamesync_port, tls))
         log(f"Gamesync endpoint listening on {args.host}:{args.gamesync_port} (TLS or h2c, sniffed)")
-    await turn_relay.start(args.host, TURN_PORT, log=log, relay_host=PUBLIC_HOST)
+    await turn_relay.start(args.host, TURN_PORT, log=log, relay_host=PUBLIC_HOST, relay_ports=args.relay_ports)
     await asyncio.gather(*tasks)
 
 
