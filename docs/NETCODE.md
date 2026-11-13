@@ -136,8 +136,34 @@ from tag bytes):
 The server answers IssueToken/RefreshToken with a Token and holds
 KeepUserSession open, logging each client frame.
 
-Gamesync request types beyond these, and the KeepUserSession response
-schema, are not recovered yet: capture the client frames first.
+### Captured live 2026-11-13 (both clients reached free roam)
+
+With the Gamesync TLS cert fixed (SNI, see below), the handshake succeeds and:
+
+- **IssueToken request** `{1: "userSessions/<user-id>", 2: {...}}`. Our 139-byte
+  Token reply (auth Token shape) is accepted.
+- **KeepUserSession** (bidi) opens; the client sends one subscription frame:
+  ```
+  { 1: "userSessions/current",
+    3 { 1 { 1: "userSessions/current/targets/1",
+            2 { 1: "docs/__us/<user-id>" } } } }
+  ```
+  i.e. it **subscribes to the document `docs/__us/<user-id>`** and waits for the
+  server to push it back on the stream. That doc is the P2P descriptor (fields
+  `gsid`/`addr`/`p`/`mcn`/`maxu`/`rs`, parser FUN_01267698). Both clients then
+  sit in free roam ("A PROCURAR JOGADORES") with no error, waiting for it.
+
+**TLS SNI gotcha:** a single-label Gamesync host (e.g. `localhost`) gets
+`.localdomain` appended for the TLS SNI (`localhost.localdomain`), which the
+capture cert did not cover → silent cert rejection → "failed to connect to all
+addresses". Fix: advertise a dotted FQDN in GameSession field 8
+(`gamesync.npln.nintendo.net`, already a cert SAN); connects are redirected to
+loopback regardless.
+
+**Next:** stream a KeepUserSession response carrying each user's `docs/__us/<id>`
+document with peer connection info, so the two instances can find each other
+over Pia. Needs: the KeepUserSession response (document-snapshot) schema and the
+UserSession document schema. This is the last major contract before P2P.
 
 ### All Gamesync message classes (vtables)
 
@@ -207,7 +233,9 @@ Reply types 101–103 with type, sender port, 127.0.0.1, 0. Parser
 | 21:29 | typed: own Player in 4, MatchedPlayer {Player, userSession, id}, Member field 1 string, Timestamps | 2321-4992 both, immediate |
 | 21:32–21:38 | same, with edge + string tracing | trace: Gamesync target `:0`, IssueToken DNS failure |
 | 21:46 | + session 8/9 = `localhost:8906` | clients connect to 8906 (not h2c), ~10 s of retries, menu |
-| next | 8906 sniffs TLS/h2c; IssueToken answered; KeepUserSession held open | pending |
+| 21:46 b | 8906 sniffs TLS/h2c; IssueToken answered; KeepUserSession held open | TLS SNI localhost.localdomain rejected → 2321-4992 |
+| 2026-11-13 08:05 | Gamesync host = gamesync.npln.nintendo.net (cert SAN) | **both clients in free roam**; Gamesync auth OK; KeepUserSession __us subscription captured |
+| next | stream the `docs/__us/<id>` UserSession document on KeepUserSession | pending |
 
 ## Live tracing (probe)
 

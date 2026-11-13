@@ -227,7 +227,10 @@ def create_ticket_response(queue, user, request_body):
     return protobuf_bytes(1, name)
 
 
-GAMESYNC_HOST = "localhost"   # "localhost" selects an insecure channel (main+0x12696a4)
+# A single-label host (e.g. "localhost") gets ".localdomain" appended for the
+# TLS SNI, which our cert does not cover. A dotted FQDN is used verbatim and is
+# in the capture cert's SANs; connects are redirected to loopback regardless.
+GAMESYNC_HOST = "gamesync.npln.nintendo.net"
 GAMESYNC_PORT = 8906
 
 
