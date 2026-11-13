@@ -816,14 +816,25 @@ static int is_pia_join_step(uint64_t target) {
 // matchmaking/game-session/Gamesync code. Each distinct caller->target pair is
 // logged once with a millisecond tick, so a run shows which code executed
 // between a match assignment and the resulting error.
-#define EDGE_LO 0x7001200000ull
-#define EDGE_HI 0x7001440000ull
-#define EDGE_SLOTS 8192
+// Traced code ranges (guest addresses): NPLN, Pia, the game's matchmaking
+// sequence (AIGlobalSeq*).
+static const uint64_t kTraceRanges[][2] = {
+    {0x7001200000ull, 0x7001440000ull},   // NPLN matchmaking / gamesync
+    {0x7001500000ull, 0x7001700000ull},   // Pia
+    {0x7001a00000ull, 0x7001b00000ull},   // game matchmaking sequence
+    {0x7002230000ull, 0x7002240000ull},   // game online-session manager (drives Pia)
+};
+static int in_trace_range(uint64_t a) {
+    for (size_t i = 0; i < sizeof kTraceRanges / sizeof kTraceRanges[0]; i++)
+        if (a >= kTraceRanges[i][0] && a < kTraceRanges[i][1]) return 1;
+    return 0;
+}
+#define EDGE_SLOTS 16384
 static int g_trace_edges;
 static volatile LONG64 g_edges[EDGE_SLOTS];
 
 static void trace_edge(uint64_t caller, uint64_t target, const Cpu *c) {
-    if (caller < EDGE_LO || caller >= EDGE_HI) return;
+    if (!in_trace_range(caller)) return;
     uint64_t key = ((caller - 0x7000000000ull) << 32) ^ (target - 0x7000000000ull);
     if (!key) return;
     uint64_t h = key * 0x9E3779B97F4A7C15ull;
@@ -866,7 +877,7 @@ static void trace_sdk_message(const Cpu *c) {
 
 static void profile_dispatch(Cpu *c) {
     if (g_trace_edges && g_rt.rt_log) {
-        if (c->pc == 0x70046966a0ull && c->x[30] >= EDGE_LO && c->x[30] < EDGE_HI)
+        if (c->pc == 0x70046966a0ull && in_trace_range(c->x[30]))
             trace_sdk_message(c);
         trace_edge(c->x[30], c->pc, c);
     }

@@ -245,9 +245,36 @@ Also: `MKW_ASSUME_FOCUS=1` keeps background windows running (focus ruled out
 as a cause); two instances need `MKW_RESOLUTION=960x540 MKW_FPS=30` or the GPU
 resets (`vkQueueSubmit2 ... -4`). `tools/arrange_windows.ps1` docks P1/P2.
 
+### Gamesync documents (2026-11-13, runs d1–d4)
+
+The server authors these; the client only reads them (no writer references).
+Doc names arrive as `docs/<path>`; the client strips `docs/` (`0x12a095c`).
+
+| Document | Fields | Parser / user |
+|---|---|---|
+| `__us/<user-id>` user session | `uid` str, `ussid`/`ucsid`/`upcsid` int32, `pgn` str (P2P group) | `FUN_0128b2b4` |
+| `__gs/f` game-session fixed data | `gsid`, `addr`, `p` u16, `mcn`, `maxu`, `rs` list | `FUN_01267698`; name checked by `FUN_01267820` vs `"__gs"+"/"+"f"` (`FUN_01267910`); game copies `mcn` (`FUN_01267750`) |
+| `__pgn/<pgn>/__pus/…` group user sessions (inferred path) | `suid`, `susid` str, `sussid`, `suscid` int, `pl` list, `mp` map, `__stg` | `FUN_0128bc00`; path `FUN_0128b4dc` |
+| `__pgn/<pgn>/__stu…` (inferred) | ? | path `FUN_0128bf1c` |
+
+Server sends, per `__us` subscription on target 1: ADDED `__us/<id>`, ADDED
+`__gs/f` (shared per lobby), CURRENT. Live: both clients resolve their user
+session (`0x1266824/0x1266890`), and the game's session manager reads `__gs/f`
+(`caller=main+0x2232780`). No error.
+
+**Still waiting:** the matchmaking operation stays pending (`prepare op=3`,
+never `complete`), "A procurar jogadores". No new subscription, RPC or Pia
+traffic. The Pia mesh jobs (AttachMeshJob `0x162e000–0x1632000`, JoinMeshJob
+`0x1576000–`) never start after resolve; they are driven by Pia's session layer
+`0x1626000–0x162e000`, called from the game at `0x2235000–0x223a000`.
+`TrackAutomatch`/`TrackCreateSession`/`TrackJoinSession` there are telemetry.
+
 ### Remaining to a race (large, multi-cycle)
-1. ~~Identify the real KeepUserSession response type~~ done; next: see what
-   each client subscribes to / does after its user session is CURRENT.
+1. ~~Identify the real KeepUserSession response type~~ done. ~~User session and
+   fixed data~~ resolving. Next: what starts the mesh. Leading hypothesis: the
+   server must also push the group documents (`__pgn/<pgn>/__pus…`,
+   `__pgn/<pgn>/__stu…`) listing the members/stations; recover their exact
+   paths and fields from `FUN_0128b4dc`/`FUN_0128bf1c`/`FUN_0128bc00` callers.
 2. Populate each player's doc so the OTHER learns its Pia addr/port.
 3. Pia P2P mesh over loopback — exchange game packets through the bridge
    (currently only echoes NAT probes). A whole subsystem.

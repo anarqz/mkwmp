@@ -10,6 +10,18 @@ from h2.events import DataReceived, StreamEnded, TrailersReceived
 import mkwmp_server as capture
 
 
+def _doc_fields(document):
+    """Document.fields (field 2) -> {key: raw Value bytes}."""
+    out = {}
+    for field, _, raw in capture.iter_fields(capture.bytes_field(document, 2)):
+        if field == 1:
+            _, start = capture._varint(raw, 0)
+            length, start = capture._varint(raw, start)
+            entry = raw[start:start + length]
+            out[capture.bytes_field(entry, 1).decode()] = capture.bytes_field(entry, 2)
+    return out
+
+
 class ProtocolTest(unittest.IsolatedAsyncioTestCase):
     def test_assignment_sent_to_both_live_trackers(self):
         queue = capture.LocalMatchmaking()
@@ -84,16 +96,32 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session, "userSessions/current")
         doc_name = "docs/__us/00000000-0000-4000-8000-000000000002"
         self.assertEqual(targets, [("userSessions/current/targets/1", doc_name)])
-        added, current = capture.keep_user_session_replies(session, targets, now=100)
-        for message, kind in ((added, 1), (current, 3)):
+        replies = capture.keep_user_session_replies(session, targets, now=100)
+        expected = [(1, doc_name, {"uid", "ussid", "ucsid", "upcsid", "pgn"}),
+                    (1, "docs/__gs/f", {"gsid", "addr", "p", "mcn", "maxu"}),
+                    (3, doc_name, {"uid", "pgn"})]
+        self.assertEqual(len(replies), len(expected))
+        for message, (kind, name, keys) in zip(replies, expected):
             self.assertEqual(capture.bytes_field(message, 1).decode(), session)   # field 1 = string
             change = capture.bytes_field(message, 2)
             self.assertEqual(capture.bytes_field(change, 1).decode(), targets[0][0])
             self.assertIn(b"\x10" + capture.encode_varint(kind), change)
             document = capture.bytes_field(change, 3)
-            self.assertEqual(capture.bytes_field(document, 1).decode(), doc_name)
-            entry = capture.bytes_field(capture.bytes_field(document, 2), 1)
-            self.assertEqual(capture.bytes_field(entry, 1), b"f")                  # peer descriptor key
+            self.assertEqual(capture.bytes_field(document, 1).decode(), name)
+            self.assertTrue(keys <= set(_doc_fields(document)))
+
+    def test_user_session_descriptor_is_shared_within_a_lobby(self):
+        lobby = "c3dacf52-23fe-43bd-90d9-7d63b2ec6d9e"
+        a, b = (_doc_fields(capture.user_session_document(f"docs/__us/{u}", u, now=1, lobby=lobby))
+                for u in ("0001", "0002"))
+        # Shared group; per-player identity.
+        self.assertEqual(a["pgn"], b["pgn"])
+        self.assertIn(lobby.encode(), a["pgn"])
+        self.assertNotEqual(a["uid"], b["uid"])
+        # Fixed data is one shared document for the lobby.
+        fixed = capture.game_session_fixed_document(lobby, now=1)
+        self.assertEqual(capture.bytes_field(fixed, 1).decode(), "docs/__gs/f")
+        self.assertIn(lobby.encode(), _doc_fields(fixed)["gsid"])
 
     async def test_keep_user_session_stays_open_and_logs_frames(self):
         logged = []

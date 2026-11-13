@@ -353,21 +353,47 @@ def gs_fields(entries):
     return b"".join(protobuf_bytes(1, protobuf_bytes(1, k) + protobuf_bytes(2, v)) for k, v in entries)
 
 
-def user_session_document(name, user_id, now=None):
+def user_session_document(name, user_id, now=None, lobby=None):
     """Document (class 11, main+0x12ab0e8): {1 name, 2 fields, 3 create_time,
-    4 update_time}. fields["f"] is the peer descriptor struct read by
-    FUN_022364b0 / FUN_01267698."""
+    4 update_time}. fields["f"] is the descriptor struct read by FUN_01267698.
+    The client never writes these keys (only readers reference them): the
+    Gamesync server authors them. The game copies `mcn` (descriptor+0x50,
+    FUN_01267750). Values are shared per lobby so both players land in the
+    same session; semantics still inferred."""
     now = int(time.time()) if now is None else now
-    descriptor = gs_struct([
-        ("gsid", gs_str(f"gs-{user_id}")),
+    session_key = str(lobby) if lobby else f"solo-{user_id}"
+    # User-session keys parsed by FUN_0128b2b4: uid (str), ussid/ucsid/upcsid
+    # (int32), pgn (str, P2P group name -> client follows __pgn/<pgn>/...).
+    # The ids are nonzero and distinct per player; their meaning is inferred.
+    local_id = int(user_id[-4:], 16) if all(c in "0123456789abcdef" for c in user_id[-4:]) else 1
+    session_keys = [
+        ("uid", gs_str(user_id)),
+        ("ussid", gs_int(local_id)),
+        ("ucsid", gs_int(local_id)),
+        ("upcsid", gs_int(local_id)),
+        ("pgn", gs_str(session_key)),
+    ]
+    return (protobuf_bytes(1, name) + protobuf_bytes(2, gs_fields(session_keys)) +
+            protobuf_bytes(3, gs_timestamp(now)) + protobuf_bytes(4, gs_timestamp(now)))
+
+
+GS_FIXED_DOC = "docs/__gs/f"   # name checked by FUN_01267820 against "__gs" + "/" + "f"
+
+
+def game_session_fixed_document(lobby, now=None):
+    """Game-session fixed data (parser FUN_01267698): gsid, addr, p (u16), mcn,
+    maxu, rs (list, omitted). Shared by every member of the lobby. Never written
+    by the client; the server pushes it on the session stream."""
+    now = int(time.time()) if now is None else now
+    key = str(lobby) if lobby else "solo"
+    fields = gs_fields([
+        ("gsid", gs_str(f"gs-{key}")),
         ("addr", gs_str("127.0.0.1")),
         ("p", gs_int(10025)),
-        ("mcn", gs_str("")),
+        ("mcn", gs_str(key)),
         ("maxu", gs_int(2)),
-        ("ipc", gs_int(0)),
-        ("dpc", gs_int(0)),
     ])
-    return (protobuf_bytes(1, name) + protobuf_bytes(2, gs_fields([("f", descriptor)])) +
+    return (protobuf_bytes(1, GS_FIXED_DOC) + protobuf_bytes(2, fields) +
             protobuf_bytes(3, gs_timestamp(now)) + protobuf_bytes(4, gs_timestamp(now)))
 
 
@@ -409,16 +435,23 @@ def parse_keep_user_session(body):
     return session, targets
 
 
-def keep_user_session_replies(session, targets, now=None):
+def keep_user_session_replies(session, targets, now=None, lobby_of=lambda user_id: None):
     """Per target: Change kind ADDED with the document, then kind CURRENT.
-    docs/__us/<id> carries the peer descriptor; other documents are sent empty
-    (logged, so new document types show up)."""
+    docs/__us/<id> carries the descriptor (shared per lobby via lobby_of);
+    other documents are sent empty (logged, so new document types show up)."""
     out = []
     for target, doc_name in targets:
         if doc_name.startswith("docs/__us/"):
-            doc = user_session_document(doc_name, doc_name.rsplit("/", 1)[-1], now)
-        else:
-            doc = protobuf_bytes(1, doc_name)
+            user_id = doc_name.rsplit("/", 1)[-1]
+            lobby = lobby_of(user_id)
+            doc = user_session_document(doc_name, user_id, now, lobby)
+            # ADDED user session, ADDED game-session fixed data, then CURRENT.
+            out.append(session_message(session, change_message(target, CHANGE_ADDED, doc)))
+            out.append(session_message(session, change_message(
+                target, CHANGE_ADDED, game_session_fixed_document(lobby, now))))
+            out.append(session_message(session, change_message(target, CHANGE_CURRENT, doc)))
+            continue
+        doc = protobuf_bytes(1, doc_name)
         for kind in (CHANGE_ADDED, CHANGE_CURRENT):
             out.append(session_message(session, change_message(target, kind, doc)))
     return out
@@ -617,6 +650,13 @@ class H2Protocol(asyncio.Protocol):
             if st["path"] in BIDI_STREAMS and self.announce_matches:
                 self.answer_keep_user_session(sid, frame[5:])
 
+    def lobby_of(self, user_id):
+        """Lobby the user was matched into (tickets persist after assignment)."""
+        for ticket in self.matchmaking.tickets.values():
+            if ticket.user.rsplit("/", 1)[-1] == user_id and ticket.lobby:
+                return ticket.lobby
+        return None
+
     def send_probe(self, sid, slot, index, probe):
         if sid not in self.subscriptions or self.transport.is_closing():
             log(f"<<< KeepUserSession PROBE slot {slot} #{index}: skipped (stream gone)")
@@ -642,7 +682,8 @@ class H2Protocol(asyncio.Protocol):
             return
         for target, doc_name in targets:
             log(f"--- KeepUserSession target {target} -> {doc_name or '(no document)'}")
-        frames = b"".join(grpc_frame(m) for m in keep_user_session_replies(session, targets))
+        frames = b"".join(grpc_frame(m) for m in keep_user_session_replies(
+            session, targets, lobby_of=self.lobby_of))
         if not frames or self.conn.local_flow_control_window(sid) < len(frames):
             return
         self.conn.send_data(sid, frames)
