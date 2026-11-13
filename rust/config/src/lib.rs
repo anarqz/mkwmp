@@ -29,7 +29,6 @@ impl std::error::Error for ConfigError {}
 pub struct ServerConfig {
     pub server: Server,
     pub seats: Seats,
-    pub database: Database,
     pub lobby: Lobby,
     pub tls: Tls,
 }
@@ -43,11 +42,6 @@ pub struct Server {
 #[derive(Debug, Deserialize)]
 pub struct Seats {
     pub capacity: usize,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Database {
-    pub path: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,7 +62,6 @@ impl ServerConfig {
         let path = path.as_ref();
         let mut cfg: ServerConfig = parse(path)?;
         let base = path.parent().unwrap_or(Path::new("."));
-        cfg.database.path = resolve(base, &cfg.database.path);
         cfg.tls.cert = resolve(base, &cfg.tls.cert);
         cfg.tls.key = resolve(base, &cfg.tls.key);
         if cfg.seats.capacity == 0 {
@@ -136,7 +129,6 @@ mod tests {
         let cfg = ServerConfig::load(format!("{REPO}/config/server.toml")).unwrap();
         assert!(cfg.seats.capacity >= 1);
         assert_eq!(cfg.lobby.lobby_size, 2);
-        assert!(cfg.database.path.is_absolute());
         assert!(cfg.tls.cert.ends_with("capture-cert.pem"));
     }
 

@@ -10,11 +10,7 @@ bind = "127.0.0.1:8905"        # NPLN endpoint the game connects to (TLS)
 [seats]
 capacity = 16                  # N seats total; one per active user
 # A user already holding a seat keeps it (ticket is idempotent per profile).
-
-[database]
-# SQLite file backing the active-user pool, seats and tickets.
-# Relative paths resolve against the config file's directory.
-path = "mkwmp.sqlite"
+# All state is in-memory and dies with the process; nothing persists.
 
 [lobby]
 bind = "127.0.0.1:8906"        # world/lobby (+ Gamesync) endpoint

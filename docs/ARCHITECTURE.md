@@ -40,10 +40,10 @@ SOLID in practice: each service depends on the contract crate (the abstraction),
 
 ## Config
 
-- `config/server.toml` — server side: instance name, NPLN bind, **seat capacity (N)**, SQLite path, lobby bind/size/scaling, TLS cert+key. Loaded by `seat` and `lobby` (`config::ServerConfig::load`); relative paths resolve against the file.
+- `config/server.toml` — server side: instance name, NPLN bind, **seat capacity (N)**, lobby bind/size/scaling, TLS cert+key. Loaded by `seat` and `lobby` (`config::ServerConfig::load`); relative paths resolve against the file.
 - `config/client.toml` — per player: server address, profile name, account slot. Read by the launcher, which sets the probe's environment.
 
-Flow the config drives: a connection joins the active-user pool → if a seat is free it gets a ticket → an in-game matchmaking request is validated against the ticket → access to the lobby/world service. The pool, seats and tickets are backed by SQLite (`database.path`).
+Flow the config drives: a connection joins the active-user pool → if a seat is free it gets a ticket → an in-game matchmaking request is validated against the ticket → access to the lobby/world service. All state is in-memory and dies with the process — no database.
 
 ## Today vs. target
 

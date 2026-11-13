@@ -25,7 +25,7 @@ fn main() {
     let cfg = config::ServerConfig::load(&path).expect("load server config");
     let _service = AuthService::new(Arc::new(MemoryRoster::new(cfg.seats.capacity)));
     println!(
-        "seat server '{}': {} seats on {} (db {}); gRPC wiring pending IssuePrearrangedUserToken port",
-        cfg.server.name, cfg.seats.capacity, cfg.server.bind, cfg.database.path.display()
+        "seat server '{}': {} seats on {} (in-memory); gRPC wiring pending IssuePrearrangedUserToken port",
+        cfg.server.name, cfg.seats.capacity, cfg.server.bind
     );
 }
