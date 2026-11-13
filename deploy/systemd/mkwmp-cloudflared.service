@@ -1,0 +1,19 @@
+# Optional: a Cloudflare tunnel connector that publishes the seat API over
+# HTTPS. Put TUNNEL_TOKEN=<token> in /etc/mkwmp/tunnel.env (mode 600) and
+# route the tunnel's hostname to http://127.0.0.1:7000 in Cloudflare.
+[Unit]
+Description=Cloudflare tunnel for the mkwmp seat API
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/mkwmp/tunnel.env
+
+[Service]
+EnvironmentFile=/etc/mkwmp/tunnel.env
+ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel run
+Restart=always
+RestartSec=5
+DynamicUser=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

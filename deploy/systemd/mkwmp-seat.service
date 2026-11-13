@@ -1,0 +1,25 @@
+# mkwmp seat server (`mkwmp server`): seats, queue, signed tickets.
+# Layout: /opt/mkwmp/{bin/mkwmp, config/server.toml, keys/}, user `mkwmp`.
+# Listens on [seats] bind (127.0.0.1:7000); put HTTPS in front of it
+# (Cloudflare tunnel or a reverse proxy). See docs/HOSTING.md.
+[Unit]
+Description=mkwmp seat server
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/mkwmp/bin/mkwmp
+ConditionPathExists=/opt/mkwmp/config/server.toml
+
+[Service]
+User=mkwmp
+WorkingDirectory=/opt/mkwmp
+ExecStart=/opt/mkwmp/bin/mkwmp server /opt/mkwmp/config/server.toml
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

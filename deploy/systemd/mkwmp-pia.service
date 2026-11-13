@@ -1,0 +1,22 @@
+# Pia NAT probe responder (UDP 10025), part of the lobby for now.
+[Unit]
+Description=mkwmp Pia NAT responder
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/mkwmp/lobby/pia_capture.py
+
+[Service]
+User=mkwmp
+WorkingDirectory=/opt/mkwmp/lobby
+ExecStart=/opt/mkwmp/venv/bin/python -I pia_capture.py --host 0.0.0.0 --reply --log /var/log/mkwmp/pia.log
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+LogsDirectory=mkwmp
+MemoryMax=128M
+
+[Install]
+WantedBy=multi-user.target
