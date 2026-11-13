@@ -53,6 +53,18 @@ void mkwmp_config_parse(const char *text, MkwmpConfig *out) {
             store_str(out->name, sizeof out->name, val, eol);
         } else if (klen == 6 && !strncmp(line, "ticket", 6)) {
             store_str(out->ticket, sizeof out->ticket, val, eol);
+        } else if (klen == 8 && !strncmp(line, "launcher", 8)) {
+            char buf[96];
+            store_str(buf, sizeof buf, val, eol);
+            char *colon = strrchr(buf, ':');
+            if (colon) {
+                *colon = 0;
+                out->launcher_port = atoi(colon + 1);
+                strncpy(out->launcher_host, buf, sizeof out->launcher_host - 1);
+                out->launcher_host[sizeof out->launcher_host - 1] = 0;
+            }
+        } else if (klen == 14 && !strncmp(line, "launcher_token", 14)) {
+            store_str(out->launcher_token, sizeof out->launcher_token, val, eol);
         } else if (klen == 4 && !strncmp(line, "slot", 4)) {
             char buf[16];
             store_str(buf, sizeof buf, val, eol);
@@ -62,9 +74,15 @@ void mkwmp_config_parse(const char *text, MkwmpConfig *out) {
     out->present = 1;
 }
 
+static MkwmpConfig cfg;
+static int loaded;
+
+const MkwmpConfig *mkwmp_config_reload(void) {
+    loaded = 0;
+    return mkwmp_config();
+}
+
 const MkwmpConfig *mkwmp_config(void) {
-    static MkwmpConfig cfg;
-    static int loaded;
     if (loaded) return &cfg;
     loaded = 1;
     defaults(&cfg);

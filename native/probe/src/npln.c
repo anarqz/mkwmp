@@ -13,6 +13,7 @@
 #include "log.h"
 #include "config.h"
 #include "capture_cert.h"
+#include "seat.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -65,6 +66,8 @@ static _Thread_local int g_errno;
 // LAN mode (server host not loopback): see net_init.
 static int g_lan;
 static struct in_addr g_local_ip;
+static char g_lobby_host[128];   // authoritative lobby from the seated reply (overrides mkwmp.toml)
+static int g_lobby_port;
 static void net_init(void);
 
 // SDK pthread_cond_timedwait reads the SDK clock via a direct call, bypassing
@@ -258,7 +261,13 @@ static void ov_nsa_load_token(Cpu *c) {
     uint64_t *out_len = arg_p(c, 0);
     char *buf = arg_p(c, 1);
     uint64_t cap = arg_x(c, 2);
+    // The seat ticket (mkw1.<payload>.<sig>) is the account token the lobby verifies in
+    // IssuePrearrangedUserToken; local tests without a launcher keep the dummy tokens.
+    static char ticket[520];
     const char *token = g_second_player ? kSecondDummyToken : kDummyToken;
+    if (seat_ticket(ticket, sizeof ticket) ||
+        (mkwmp_config()->ticket[0] && snprintf(ticket, sizeof ticket, "%s", mkwmp_config()->ticket) > 0))
+        token = ticket;
     size_t len = strlen(token);
     if (buf && cap >= len) { memcpy(buf, token, len); if (out_len) *out_len = len; }
     else if (out_len) *out_len = 0;
@@ -397,12 +406,25 @@ static void net_init(void) {
     const MkwmpConfig *cfg = mkwmp_config();
     const char *host = getenv("MKWMP_HOST");
     const char *port = getenv("MKWMP_PORT");
-    if (!host || !*host) host = cfg->host;
-    int pnum = port && *port ? atoi(port) : cfg->port;
+    if (!host || !*host) host = g_lobby_host[0] ? g_lobby_host : cfg->host;
+    int pnum = port && *port ? atoi(port) : g_lobby_port ? g_lobby_port : cfg->port;
+    if (!host || !*host) host = "127.0.0.1";
     g_server.sin_family = AF_INET;
     g_server.sin_port = htons((unsigned short)pnum);
-    g_server.sin_addr.s_addr = inet_addr(host && *host ? host : "127.0.0.1");
-    if (g_server.sin_addr.s_addr == INADDR_NONE) g_server.sin_addr.s_addr = inet_addr("127.0.0.1");
+    g_server.sin_addr.s_addr = inet_addr(host);
+    if (g_server.sin_addr.s_addr == INADDR_NONE) {
+        // Hostname (e.g. mkwlb.anarqz.dev): resolve once, IPv4.
+        struct addrinfo hints = {0}, *res = NULL;
+        hints.ai_family = AF_INET;
+        hints.ai_socktype = SOCK_STREAM;
+        if (!getaddrinfo(host, NULL, &hints, &res) && res) {
+            g_server.sin_addr = ((struct sockaddr_in *)res->ai_addr)->sin_addr;
+            freeaddrinfo(res);
+        } else {
+            mlog("net: cannot resolve lobby host %s, using 127.0.0.1", host);
+            g_server.sin_addr.s_addr = inet_addr("127.0.0.1");
+        }
+    }
     // LAN mode: a non-loopback server means real peers on other machines. Pia
     // then binds all interfaces, advertises this machine's LAN address, sends
     // NAT probes to the server host and keeps peer addresses as given.
@@ -1201,6 +1223,108 @@ static void ov_ssl_certificates(Cpu *c) {
     *out = info;
     ret_x(c, 0);
 }
+// ---- dormant until Online -----------------------------------------------------
+// The probe registers its overrides before the game loads (runtime rule), but stays DORMANT:
+// every override that shadows one of the runtime's own handlers (mkw.exe's `.ovr` section,
+// {name, fn} pairs) calls that stock handler, so the game behaves exactly like offline
+// mkw-recomp. The game's network request (nifm SubmitNetworkRequestAndWait, i.e. the player
+// opening Online Play) is the trigger: the probe asks mkwmp-launcher for a seat (seat.c) and
+// only when seated turns ACTIVE (our overrides from then on). Overrides with no stock handler
+// (raw sockets, ssl, ...) are only reached once the game is online.
+// MKWMP_EAGER=1: active from start (old behaviour, for debugging).
+static volatile LONG g_active;
+
+static GuestFn stock_handler(const char *name) {
+    static const char **names;
+    static GuestFn *fns;
+    static int count = -1;
+    if (count < 0) {
+        count = 0;
+        unsigned char *img = (unsigned char *)GetModuleHandleW(NULL);
+        IMAGE_NT_HEADERS64 *nt = (IMAGE_NT_HEADERS64 *)(img + ((IMAGE_DOS_HEADER *)img)->e_lfanew);
+        IMAGE_SECTION_HEADER *sec = IMAGE_FIRST_SECTION(nt);
+        for (int i = 0; i < nt->FileHeader.NumberOfSections; i++, sec++) {
+            if (memcmp(sec->Name, ".ovr", 5)) continue;
+            uint64_t *p = (uint64_t *)(img + sec->VirtualAddress);
+            int n = (int)(sec->Misc.VirtualSize / 16);
+            names = calloc((size_t)n, sizeof *names);
+            fns = calloc((size_t)n, sizeof *fns);
+            for (int k = 0; k < n && names && fns; k++) {
+                if (!p[2 * k] || !p[2 * k + 1]) continue;
+                names[count] = (const char *)(uintptr_t)p[2 * k];
+                fns[count++] = (GuestFn)(uintptr_t)p[2 * k + 1];
+            }
+        }
+        mlog("dormant mode: %d stock handlers in .ovr", count);
+    }
+    for (int k = 0; k < count; k++) if (!strcmp(names[k], name)) return fns[k];
+    return NULL;
+}
+
+// Online Play was opened: get a seat (if a launcher is configured) and go active.
+static void try_activate(void) {
+    static SRWLOCK lock = SRWLOCK_INIT;
+    AcquireSRWLockExclusive(&lock);
+    if (!g_active) {
+        const MkwmpConfig *cfg = mkwmp_config();
+        SeatReply r;
+        if (!cfg->launcher_port) {
+            mlog("online requested: no launcher in mkwmp.toml, going active without a seat");
+            InterlockedExchange(&g_active, 1);
+        } else if (seat_acquire(&r, 10 * 60 * 1000) == SEAT_SEATED) {
+            char *colon = strrchr(r.lobby, ':');
+            if (r.lobby[0] && colon) {
+                *colon = 0;
+                snprintf(g_lobby_host, sizeof g_lobby_host, "%s", r.lobby);
+                g_lobby_port = atoi(colon + 1);
+            }
+            seat_keepalive_start();
+            mlog("online requested: seated, going active");
+            InterlockedExchange(&g_active, 1);
+        } else {
+            mlog("online requested: no seat, staying offline (stock no-network)");
+        }
+    }
+    ReleaseSRWLockExclusive(&lock);
+}
+
+#define NREG 64
+static GuestFn g_ours[NREG], g_stock[NREG];
+static unsigned char g_trigger[NREG];
+static const char *g_gate_name[NREG];
+static void gate_call(int i, Cpu *c) {
+    if (!g_active && g_stock[i]) {
+        static volatile LONG seen[NREG];
+        if (!InterlockedExchange(&seen[i], 1) || g_trigger[i])
+            mlog("dormant call: %s caller=main+%#llx", g_gate_name[i],
+                 (unsigned long long)(c->x[30] - 0x7000000000ull));
+        // The game makes one automatic sign-in at boot (nifm request ~5 s in, before the title
+        // screen) and one per Online Play click, from the same caller (main+0x2247a7c). Decline
+        // the boot one (stock "no network": the menu stays offline, no seat taken); every later
+        // request is the player opening Online Play.
+        static volatile LONG requests;
+        if (g_trigger[i]) {
+            if (InterlockedIncrement(&requests) == 1) mlog("boot sign-in declined (stays offline until Online Play)");
+            else try_activate();
+        }
+        if (!g_active) { g_stock[i](c); return; }
+    }
+    g_ours[i](c);
+}
+#define GATE1(i) static void gate_##i(Cpu *c) { gate_call(i, c); }
+#define GATE8(a, b, c_, d, e, f, g, h) GATE1(a) GATE1(b) GATE1(c_) GATE1(d) GATE1(e) GATE1(f) GATE1(g) GATE1(h)
+GATE8(0, 1, 2, 3, 4, 5, 6, 7) GATE8(8, 9, 10, 11, 12, 13, 14, 15)
+GATE8(16, 17, 18, 19, 20, 21, 22, 23) GATE8(24, 25, 26, 27, 28, 29, 30, 31)
+GATE8(32, 33, 34, 35, 36, 37, 38, 39) GATE8(40, 41, 42, 43, 44, 45, 46, 47)
+GATE8(48, 49, 50, 51, 52, 53, 54, 55) GATE8(56, 57, 58, 59, 60, 61, 62, 63)
+#define GREF8(a, b, c_, d, e, f, g, h) gate_##a, gate_##b, gate_##c_, gate_##d, gate_##e, gate_##f, gate_##g, gate_##h
+static const GuestFn kGates[NREG] = {
+    GREF8(0, 1, 2, 3, 4, 5, 6, 7), GREF8(8, 9, 10, 11, 12, 13, 14, 15),
+    GREF8(16, 17, 18, 19, 20, 21, 22, 23), GREF8(24, 25, 26, 27, 28, 29, 30, 31),
+    GREF8(32, 33, 34, 35, 36, 37, 38, 39), GREF8(40, 41, 42, 43, 44, 45, 46, 47),
+    GREF8(48, 49, 50, 51, 52, 53, 54, 55), GREF8(56, 57, 58, 59, 60, 61, 62, 63),
+};
+
 // ---- registration table ----------------------------------------------------
 typedef struct { const char *name; GuestFn fn; } Reg;
 static const Reg kRegs[] = {
@@ -1303,10 +1427,25 @@ int npln_register(void) {
     // overrides (older runtimes).
     const char *nofiber = getenv("MKWMP_NO_FIBER");
     int skip_fiber = !(nofiber && !strcmp(nofiber, "0"));
-    for (int i = 0; i < n; i++) {
+    const char *eager = getenv("MKWMP_EAGER");
+    if (eager && !strcmp(eager, "1")) { g_active = 1; log_line("MKWMP_EAGER=1: active from start"); }
+    int gated = 0;
+    for (int i = 0; i < n && i < NREG; i++) {
         if (skip_fiber && strstr(kRegs[i].name, "Fiber")) { log_line(kRegs[i].name); continue; }
-        g_rt.hostfn_add_override(kRegs[i].name, kRegs[i].fn);
+        g_ours[i] = kRegs[i].fn;
+        g_gate_name[i] = kRegs[i].name;
+        g_stock[i] = stock_handler(kRegs[i].name);
+        g_trigger[i] = !strcmp(kRegs[i].name, "_ZN2nn4nifm27SubmitNetworkRequestAndWaitEv");
+        // Never gated: fs overrides only log and delegate; fibers are runtime fixes; nn::account
+        // is checked once at boot (IsNetworkServiceAccountAvailable) and cached, so a stock
+        // "no network account" there makes the first Online Play click fail.
+        if (!strncmp(kRegs[i].name, "_ZN2nn2fs", 9) || strstr(kRegs[i].name, "Fiber") ||
+            !strncmp(kRegs[i].name, "_ZN2nn7account", 14))
+            g_stock[i] = NULL;
+        gated += g_stock[i] != NULL;
+        g_rt.hostfn_add_override(kRegs[i].name, g_stock[i] ? kGates[i] : kRegs[i].fn);
     }
+    mlog("npln: %d overrides gated (dormant until Online)%s", gated, g_active ? ", but MKWMP_EAGER" : "");
     if (skip_fiber) {
         // The freed slots take the core-mask pair: runtime 0.1.10 aborts the SDK's
         // GetThreadCoreMask (result 0xe801) on the online start-up path (main+0x14c5bc0).

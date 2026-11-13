@@ -189,6 +189,24 @@ int main(void) {
     mkwmp_config_parse("# comment\n[section]\nname = \"Bia\"\n", &cc);  // defaults + comments/sections
     assert(!strcmp(cc.host, "127.0.0.1") && cc.port == 8900 && cc.slot == 1);
     assert(!strcmp(cc.name, "Bia"));
+    assert(cc.launcher_port == 0);
+    mkwmp_config_parse("server = \"mkwlb.anarqz.dev:8905\"\nlauncher = \"127.0.0.1:47820\"\n"
+                       "launcher_token = \"ab12\"\n", &cc);
+    assert(!strcmp(cc.host, "mkwlb.anarqz.dev") && cc.port == 8905);
+    assert(!strcmp(cc.launcher_host, "127.0.0.1") && cc.launcher_port == 47820 && !strcmp(cc.launcher_token, "ab12"));
+
+    // Local seat API replies (launcher contract).
+    SeatReply sr;
+    seat_parse(200, "{\"state\":\"seated\",\"ticket\":\"mkw1.p.s\",\"lobby\":\"216.128.169.210:8905\",\"name\":\"Ana\"}", &sr);
+    assert(sr.state == SEAT_SEATED && !strcmp(sr.ticket, "mkw1.p.s") && !strcmp(sr.lobby, "216.128.169.210:8905"));
+    seat_parse(200, "{\"state\": \"queued\", \"position\": 3, \"seatsTotal\": 50}", &sr);
+    assert(sr.state == SEAT_QUEUED && sr.position == 3 && sr.total == 50);
+    seat_parse(409, "{\"state\":\"refused\",\"message\":\"NAME_TAKEN\"}", &sr);
+    assert(sr.state == SEAT_REFUSED && !strcmp(sr.message, "NAME_TAKEN"));
+    seat_parse(503, "", &sr);
+    assert(sr.state == SEAT_UNAVAILABLE);
+    seat_parse(0, NULL, &sr);
+    assert(sr.state == SEAT_UNAVAILABLE);
 
     // Notification queue: FIFO, drain, and oldest-dropped-on-overflow.
     Notification nbuf[32];

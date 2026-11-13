@@ -1,15 +1,20 @@
-// Client config read by the probe from <game dir>\mkwmp.toml. Presence of the
-// file opts the game into capture; its absence means a stock offline launch.
+// Client config read by the probe from <game dir>\mkwmp.toml (written by mkwmp-launcher).
+// Presence of the file opts the game into multiplayer; its absence means a stock offline
+// launch. Even when present the probe stays dormant (stock offline behaviour) until the game
+// asks for the network (Online Play), see seat.h.
 #ifndef MKWMP_CONFIG_H
 #define MKWMP_CONFIG_H
 
 typedef struct {
-    int present;        // a config file was found and parsed
-    char host[64];      // server host (default 127.0.0.1)
-    int port;           // server port (default 8900)
-    char name[64];      // player username (may be empty)
-    char ticket[64];    // seat ticket from the client (may be empty)
-    int slot;           // account slot, 1 or 2 (default 1)
+    int present;             // a config file was found and parsed
+    char host[128];          // lobby host: IP literal or hostname (default 127.0.0.1)
+    int port;                // lobby port (default 8900)
+    char name[64];           // player username (may be empty)
+    char ticket[520];        // seat ticket (launcher seat = "start"; may be empty)
+    int slot;                // account slot, 1 or 2 (default 1)
+    char launcher_host[64];  // launcher local seat API (`launcher = "127.0.0.1:47820"`)
+    int launcher_port;       // 0 = no launcher configured
+    char launcher_token[96]; // bearer for the local seat API
 } MkwmpConfig;
 
 // Parse the minimal `key = "value"` / `key = N` format. Pure; unit-tested.
@@ -19,5 +24,8 @@ void mkwmp_config_parse(const char *text, MkwmpConfig *out);
 // Load <exe dir>\mkwmp.toml once (cached). Returns a struct with present=0 if
 // the file is absent or unreadable, defaults otherwise.
 const MkwmpConfig *mkwmp_config(void);
+
+// Re-read mkwmp.toml (e.g. the launcher restarted with a new token). Returns the same cache.
+const MkwmpConfig *mkwmp_config_reload(void);
 
 #endif
