@@ -400,6 +400,48 @@ def write_documents_response(writes, value_of, now=None):
     return out + protobuf_bytes(2, gs_timestamp(now))
 
 
+def write_updates(body):
+    """[(document name, fields body)] for each update Write (Write.1.1 Document)."""
+    updates = []
+    for field, _, raw in iter_fields(body):
+        if field != 1:
+            continue
+        _, s = _varint(raw, 0)
+        n, s = _varint(raw, s)
+        try:
+            document = bytes_field(bytes_field(raw[s:s + n], 1), 1)
+        except ValueError:
+            continue
+        updates.append((bytes_field(document, 1).decode(errors="replace"), bytes_field(document, 2)))
+    return updates
+
+
+def doc_entries(fields_body):
+    """Ordered {key: raw Value} from a fields body (repeated Entry{1 key, 2 Value})."""
+    entries = {}
+    for field, _, raw in iter_fields(fields_body):
+        if field == 1:
+            _, s = _varint(raw, 0)
+            n, s = _varint(raw, s)
+            entry = raw[s:s + n]
+            entries[bytes_field(entry, 1).decode(errors="replace")] = bytes_field(entry, 2)
+    return entries
+
+
+def store_write(name, fields_body, transformed=None, now=None):
+    """Store a written document, with server transform results applied
+    (e.g. {"upcsid": int}). Returns (document bytes, created?)."""
+    now = int(time.time()) if now is None else now
+    entries = doc_entries(fields_body)
+    for key, value in (transformed or {}).items():
+        entries[key] = gs_int(value)
+    doc = (protobuf_bytes(1, name) + protobuf_bytes(2, gs_fields(entries.items())) +
+           protobuf_bytes(3, gs_timestamp(now)) + protobuf_bytes(4, gs_timestamp(now)))
+    created = name not in DOC_STORE
+    DOC_STORE[name] = doc
+    return doc, created
+
+
 def user_slot(user_id):
     """Local player number from the probe's synthetic user id (...0001, ...0002)."""
     tail = user_id.rsplit("/", 1)[-1].replace("-", "")
@@ -460,7 +502,7 @@ def game_session_fixed_document(lobby, now=None):
 
 def change_message(name, kind, document):
     """Change (class 30, main+0x12b7d00): {1 string, 2 varint, 3 Document}."""
-    return protobuf_bytes(1, name) + b"\x10" + encode_varint(kind) + protobuf_bytes(3, document)
+    return protobuf_bytes(1, name) + b"\x10" + encode_varint(kind) + (protobuf_bytes(3, document) if document else b"")
 
 
 def session_message(session, change=b"", ops=b""):
@@ -472,8 +514,8 @@ def session_message(session, change=b"", ops=b""):
     return out + ops
 
 
-CHANGE_ADDED, CHANGE_CURRENT = 1, 3   # verified live 2026-11-13: 3 completes the listen
-OP_SUCCEEDED, OP_FAILED = 1, 4         # stream handler FUN_01271c00 (kind 2 = server request)
+CHANGE_ADDED, CHANGE_MODIFIED = 1, 2   # kind 3 is not a document change (FUN_01271c00)
+OP_SUCCEEDED, OP_CURRENT, OP_FAILED = 1, 2, 4   # stream handler FUN_01271c00
 
 
 def op_ack(op_id, kind=OP_SUCCEEDED):
@@ -500,18 +542,47 @@ def parse_keep_user_session(body):
         op = raw[start:start + length]
         target_bytes = bytes_field(op, 1)
         target = bytes_field(target_bytes, 1).decode()
-        try:
-            doc_name = bytes_field(bytes_field(target_bytes, 2), 1).decode()
-        except ValueError:
-            doc_name = ""
+        doc_name = ""
+        for tf, _, traw in iter_fields(target_bytes):
+            if tf in (2, 3):   # 2 = single document, 3 = collection (marked by a trailing "/")
+                _, s = _varint(traw, 0)
+                n, s = _varint(traw, s)
+                doc_name = bytes_field(traw[s:s + n], 1).decode() + ("/" if tf == 3 else "")
         targets.append((target, doc_name))
     return session, targets
 
 
+def removed_targets(body):
+    """Client frame field 4: remove target {1 target name}. Returns target ids."""
+    ids = []
+    for field, _, raw in iter_fields(body):
+        if field == 4:
+            _, s = _varint(raw, 0)
+            n, s = _varint(raw, s)
+            ids.append(target_op_id(bytes_field(raw[s:s + n], 1).decode()))
+    return ids
+
+
+# In-memory Gamesync document store (name -> serialized Document), filled by
+# WriteDocuments and served to listeners (single documents and collections).
+DOC_STORE = {}
+
+
+def in_collection(name, collection):
+    """collection ends with "/"; direct children only."""
+    return name.startswith(collection) and "/" not in name[len(collection):]
+
+
+def stored_documents(doc_name):
+    if doc_name.endswith("/"):
+        return [doc for name, doc in sorted(DOC_STORE.items()) if in_collection(name, doc_name)]
+    return [DOC_STORE[doc_name]] if doc_name in DOC_STORE else []
+
+
 def keep_user_session_replies(session, targets, now=None, lobby_of=lambda user_id: None):
-    """Per target: Change kind ADDED with the document, then kind CURRENT.
-    docs/__us/<id> carries the descriptor (shared per lobby via lobby_of);
-    other documents are sent empty (logged, so new document types show up)."""
+    """Per target: ADDED changes for the matching documents, then the op ack.
+    docs/__us/<id> carries the descriptor (shared per lobby via lobby_of) plus
+    the game-session fixed data; other targets are served from DOC_STORE."""
     # Change.1 is the numeric target id (FUN_01271c00 strtoul's it to route
     # the change to the subscription callback); kind 1/2 carry a document.
     out = []
@@ -527,8 +598,12 @@ def keep_user_session_replies(session, targets, now=None, lobby_of=lambda user_i
             out.append(session_message(session, change_message(
                 tid, CHANGE_ADDED, game_session_fixed_document(lobby, now))))
         else:
-            out.append(session_message(session, change_message(
-                tid, CHANGE_ADDED, protobuf_bytes(1, doc_name))))
+            for doc in stored_documents(doc_name):
+                out.append(session_message(session, change_message(tid, CHANGE_ADDED, doc)))
+        # Op kind 2 = target in sync: FUN_01271c00 posts task FUN_0127c880, which
+        # runs the listener's second callback (e.g. FUN_0128a378, which releases
+        # the P2P initial sequence). Then kind 1 completes the client's op.
+        out.append(session_message(session, ops=op_ack(op_id, OP_CURRENT)))
         out.append(session_message(session, ops=op_ack(op_id)))
     return out
 
@@ -629,6 +704,7 @@ class H2Protocol(asyncio.Protocol):
     issued_tokens = {}
     active_trackers = {}
     announce_matches = False
+    watchers = []   # (protocol, stream id, session, target id, document or collection/)
 
     def __init__(self):
         self.conn = H2Connection(H2Configuration(client_side=False, header_encoding="utf-8"))
@@ -726,6 +802,19 @@ class H2Protocol(asyncio.Protocol):
             if st["path"] in BIDI_STREAMS and self.announce_matches:
                 self.answer_keep_user_session(sid, frame[5:])
 
+    @classmethod
+    def publish(cls, name, doc, kind):
+        """Push a stored document change to every listener whose target covers it."""
+        for proto, sid, session, tid, target in list(cls.watchers):
+            if not (target == name or (target.endswith("/") and in_collection(name, target))):
+                continue
+            if sid not in proto.subscriptions or proto.transport is None or proto.transport.is_closing():
+                cls.watchers.remove((proto, sid, session, tid, target))
+                continue
+            proto.conn.send_data(sid, grpc_frame(session_message(session, change_message(str(tid), kind, doc))))
+            proto.transport.write(proto.conn.data_to_send())
+            log(f"<<< KeepUserSession push {name} -> {proto.user or '?'} target {tid} (kind {kind})")
+
     def lobby_of(self, user_id):
         """Lobby the user was matched into (tickets persist after assignment)."""
         for ticket in self.matchmaking.tickets.values():
@@ -756,8 +845,14 @@ class H2Protocol(asyncio.Protocol):
                 for i, probe in enumerate(_kus_probes(slot, doc_name)):
                     loop.call_later(i * KUS_PROBE_GAP, self.send_probe, sid, slot, i, probe)
             return
+        for tid in removed_targets(body):
+            H2Protocol.watchers = [w for w in H2Protocol.watchers if not (w[0] is self and w[1] == sid and w[3] == tid)]
+            log(f"--- KeepUserSession target {tid} removed")
         for target, doc_name in targets:
-            log(f"--- KeepUserSession target {target} -> {doc_name or '(no document)'}")
+            log(f"--- KeepUserSession target {target} -> {doc_name or '(no document)'}"
+                f" ({len(stored_documents(doc_name))} stored)")
+            if doc_name and not doc_name.startswith("docs/__us/"):
+                H2Protocol.watchers.append((self, sid, session, target_op_id(target), doc_name))
         frames = b"".join(grpc_frame(m) for m in keep_user_session_replies(
             session, targets, lobby_of=self.lobby_of))
         if not frames or self.conn.local_flow_control_window(sid) < len(frames):
@@ -799,7 +894,11 @@ class H2Protocol(asyncio.Protocol):
             msgs = decode_grpc_messages(body)
             writes = parse_write_documents(msgs[0][1]) if msgs else []
             response = write_documents_response(writes, user_slot)
-            log(f"<<< WriteDocuments: {writes} -> upcsid by slot")
+            transformed = {name: {"upcsid": user_slot(name)} for name, count in writes if count}
+            for name, fields_body in (write_updates(msgs[0][1]) if msgs else []):
+                doc, created = store_write(name, fields_body, transformed.get(name))
+                H2Protocol.publish(name, doc, CHANGE_ADDED if created else 2)
+            log(f"<<< WriteDocuments: {writes} -> upcsid by slot; stored {len(DOC_STORE)} docs")
         self.conn.send_headers(sid, [(":status", "200"), ("content-type", "application/grpc")])
         if is_auth:
             token_info = bytes_field(response, 2)

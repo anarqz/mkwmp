@@ -759,8 +759,13 @@ static void ov_pia_sendto(Cpu *c) {
     if (!sa.sin_port) {
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
+    if (len != 16) {
+        struct sockaddr_in local; int ll = sizeof local;
+        unsigned lport = getsockname(s, (struct sockaddr *)&local, &ll) ? 0 : ntohs(local.sin_port);
+        mlog("Pia UDP send %u -> %u (%u bytes)", lport, ntohs(sa.sin_port), (unsigned)len);
+    }
     rhex(">>> Pia UDP", buf, (size_t)len);
-    int sent = sendto(s, buf, (int)len, 0, (struct sockaddr *)&sa, sizeof sa);
+    int sent =sendto(s, buf, (int)len, 0, (struct sockaddr *)&sa, sizeof sa);
     if (sent == SOCKET_ERROR) g_errno = WSAGetLastError() == WSAEWOULDBLOCK ? G_EAGAIN : G_EINVAL;
     ret_x(c, (uint64_t)(int64_t)sent);
 }
@@ -781,6 +786,11 @@ static void ov_pia_recvfrom(Cpu *c) {
         int err = WSAGetLastError();
         g_errno = err == WSAEWOULDBLOCK || err == WSAECONNRESET ? G_EAGAIN : G_EINVAL;
     } else if (out) {
+        if (got != 16) {
+            struct sockaddr_in local; int ll = sizeof local;
+            unsigned lport = getsockname(s, (struct sockaddr *)&local, &ll) ? 0 : ntohs(local.sin_port);
+            mlog("Pia UDP recv %u <- %u (%d bytes)", lport, ntohs(sa.sin_port), got);
+        }
         memset(out, 0, 16);
         out[0] = 16; out[1] = 2;
         memcpy(out + 2, &sa.sin_port, 2);

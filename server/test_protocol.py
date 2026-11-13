@@ -99,8 +99,9 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         replies = capture.keep_user_session_replies(session, targets, now=100)
         expected = [(1, doc_name, {"uid", "ussid", "ucsid", "upcsid", "pgn"}),
                     (1, "docs/__gs/f", {"gsid", "addr", "p", "mcn", "maxu"})]
-        self.assertEqual(len(replies), len(expected) + 1)
-        # Last: op ack {3: Op{1 "1", 2 kind 1}} completing the client's op #1.
+        self.assertEqual(len(replies), len(expected) + 2)
+        # Then Op{1 "1", 2 kind 2} (target in sync) and Op{1 "1", 2 kind 1} (op done).
+        self.assertEqual(capture.bytes_field(replies[-2], 3), b"\x0a\x011\x10\x02")
         self.assertEqual(capture.bytes_field(replies[-1], 3), b"\x0a\x011\x10\x01")
         for message, (kind, name, keys) in zip(replies, expected):
             self.assertEqual(capture.bytes_field(message, 1).decode(), session)   # field 1 = string
