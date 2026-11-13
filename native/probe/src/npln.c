@@ -823,7 +823,70 @@ static const uint64_t kTraceRanges[][2] = {
     {0x7001500000ull, 0x7001700000ull},   // Pia
     {0x7001a00000ull, 0x7001b00000ull},   // game matchmaking sequence
     {0x7002230000ull, 0x7002240000ull},   // game online-session manager (drives Pia)
+    {0x7002240000ull, 0x7002250000ull},   // its request dispatcher (FUN_02248cf0)
 };
+
+// Watchpoints: every indirect call to these targets is logged (first 20,
+// then every 200th), with a state dump where useful. See docs/NETCODE.md.
+enum { W_START_P2P, W_P2P_INIT_SEQ, W_US_JOB, W_GAME_CB, W_PLUGIN_A, W_PLUGIN_B, W_COUNT };
+static const uint64_t kWatch[W_COUNT] = {
+    0x7002236714ull,   // FUN_02236714: game start-P2P (dispatcher request kind 1)
+    0x7001285d20ull,   // FUN_01285d20: P2P initial sequence (thread run method)
+    0x700126c3b8ull,   // FUN_0126c3b8: Gamesync user-session job run (P2P start gate at +0x140)
+    0x700223d768ull,   // game callback invoked by Pia session layer at matchmaking start
+    0x70016279e4ull,   // NplnPlugin/session-layer entry (Pia -> plugin)
+    0x7001629020ull,   // NplnPlugin/session-layer entry (Pia -> plugin)
+};
+static const char *const kWatchName[W_COUNT] = {"start_p2p", "p2p_init_seq", "us_job_run", "game_cb_223d768",
+                                                "plugin_16279e4", "plugin_1629020"};
+// Optional field dump at x0 + off: count qwords.
+static const uint16_t kWatchDumpOff[W_COUNT] = {0, 0, 0x130, 0, 0, 0};
+static const uint8_t kWatchDumpCount[W_COUNT] = {0, 0, 12, 0, 0, 0};
+static volatile LONG g_watch_hits[W_COUNT];
+
+static int guest_readable(const void *p, size_t n) {
+    MEMORY_BASIC_INFORMATION mbi;
+    if ((uintptr_t)p < 0x10000 || !VirtualQuery(p, &mbi, sizeof mbi)) return 0;
+    if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) return 0;
+    return (const char *)p + n <= (const char *)mbi.BaseAddress + mbi.RegionSize;
+}
+
+static void trace_watch(const Cpu *c) {
+    for (int w = 0; w < W_COUNT; w++) {
+        if (c->pc != kWatch[w]) continue;
+        LONG n = InterlockedIncrement(&g_watch_hits[w]);
+        if (n > 20 && n % 200) return;
+        const uint8_t *mgr = (const uint8_t *)(uintptr_t)c->x[0];
+        if (w == W_START_P2P && guest_readable(mgr + 0x12b8, 0x18)) {
+            // FUN_01a9637c(mgr, -1): slots at +0x12c0 (0x148 bytes each), count
+            // +0x12b8, current index +0x12c8; slot handle count at slot+0.
+            uint64_t slots; uint32_t count, cur, handles = 0xffffffff;
+            memcpy(&slots, mgr + 0x12c0, 8); memcpy(&count, mgr + 0x12b8, 4); memcpy(&cur, mgr + 0x12c8, 4);
+            const uint8_t *slot = (const uint8_t *)(uintptr_t)(slots + (uint64_t)(cur < count ? cur : 0) * 0x148);
+            if (slots && guest_readable(slot, 4)) memcpy(&handles, slot, 4);
+            g_rt.rt_log("mkwmp: watch #%ld %s caller=main+%#llx mgr=%p slots=%#llx count=%u cur=%u handles=%u",
+                        (long)n, kWatchName[w], (unsigned long long)(c->x[30] - 0x7000000000ull),
+                        (const void *)mgr, (unsigned long long)slots, count, cur, handles);
+            mkwmp_log("watch #%ld %s caller=main+%#llx count=%u cur=%u handles=%u", (long)n, kWatchName[w],
+                      (unsigned long long)(c->x[30] - 0x7000000000ull), count, cur, handles);
+        } else {
+            mkwmp_log("watch #%ld %s caller=main+%#llx x0=%#llx x1=%#llx x2=%#llx x3=%#llx", (long)n,
+                      kWatchName[w], (unsigned long long)(c->x[30] - 0x7000000000ull),
+                      (unsigned long long)c->x[0], (unsigned long long)c->x[1],
+                      (unsigned long long)c->x[2], (unsigned long long)c->x[3]);
+            if (kWatchDumpCount[w] && guest_readable(mgr + kWatchDumpOff[w], kWatchDumpCount[w] * 8u)) {
+                char line[512]; int len = 0;
+                for (int k = 0; k < kWatchDumpCount[w] && len < (int)sizeof line - 24; k++) {
+                    uint64_t v; memcpy(&v, mgr + kWatchDumpOff[w] + k * 8, 8);
+                    len += snprintf(line + len, sizeof line - len, " +%#x=%#llx",
+                                    (unsigned)(kWatchDumpOff[w] + k * 8), (unsigned long long)v);
+                }
+                mkwmp_log("watch %s fields:%s", kWatchName[w], line);
+            }
+        }
+        return;
+    }
+}
 static int in_trace_range(uint64_t a) {
     for (size_t i = 0; i < sizeof kTraceRanges / sizeof kTraceRanges[0]; i++)
         if (a >= kTraceRanges[i][0] && a < kTraceRanges[i][1]) return 1;
@@ -877,6 +940,7 @@ static void trace_sdk_message(const Cpu *c) {
 
 static void profile_dispatch(Cpu *c) {
     if (g_trace_edges && g_rt.rt_log) {
+        trace_watch(c);
         if (c->pc == 0x70046966a0ull && in_trace_range(c->x[30]))
             trace_sdk_message(c);
         trace_edge(c->x[30], c->pc, c);

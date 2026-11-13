@@ -98,17 +98,27 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(targets, [("userSessions/current/targets/1", doc_name)])
         replies = capture.keep_user_session_replies(session, targets, now=100)
         expected = [(1, doc_name, {"uid", "ussid", "ucsid", "upcsid", "pgn"}),
-                    (1, "docs/__gs/f", {"gsid", "addr", "p", "mcn", "maxu"}),
-                    (3, doc_name, {"uid", "pgn"})]
-        self.assertEqual(len(replies), len(expected))
+                    (1, "docs/__gs/f", {"gsid", "addr", "p", "mcn", "maxu"})]
+        self.assertEqual(len(replies), len(expected) + 1)
+        # Last: op ack {3: Op{1 "1", 2 kind 1}} completing the client's op #1.
+        self.assertEqual(capture.bytes_field(replies[-1], 3), b"\x0a\x011\x10\x01")
         for message, (kind, name, keys) in zip(replies, expected):
             self.assertEqual(capture.bytes_field(message, 1).decode(), session)   # field 1 = string
             change = capture.bytes_field(message, 2)
-            self.assertEqual(capture.bytes_field(change, 1).decode(), targets[0][0])
+            self.assertEqual(capture.bytes_field(change, 1).decode(), "1")   # numeric target id
             self.assertIn(b"\x10" + capture.encode_varint(kind), change)
             document = capture.bytes_field(change, 3)
             self.assertEqual(capture.bytes_field(document, 1).decode(), name)
             self.assertTrue(keys <= set(_doc_fields(document)))
+
+    def test_write_documents_returns_upcsid_in_first_result(self):
+        pus = "docs/__pgn/All/__pus/00000000-0000-4000-8000-000000000002"
+        response = capture.write_documents_response([(pus, 0), (pus, 4)], capture.user_slot, now=100)
+        results = [raw for field, _, raw in capture.iter_fields(response) if field == 1]
+        self.assertEqual(len(results), 2)
+        first = capture.bytes_field(response, 1)
+        values = capture.bytes_field(first, 2)
+        self.assertEqual(values, b"\x0a\x02\x18\x02" * 4)   # 4 x Value{int 2}
 
     def test_user_session_descriptor_is_shared_within_a_lobby(self):
         lobby = "c3dacf52-23fe-43bd-90d9-7d63b2ec6d9e"

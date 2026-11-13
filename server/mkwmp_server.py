@@ -348,6 +348,67 @@ def gs_timestamp(seconds):
     return b"\x08" + encode_varint(int(seconds))
 
 
+GAMESYNC_WRITE_DOCUMENTS = "/nn.npln.gamesync.v1.Gamesync/WriteDocuments"
+
+
+def parse_write_documents(body):
+    """WriteDocumentsRequest: {1 repeated Write, 2 deferments}. Write is a oneof:
+    1 update {1 Document, 2 precondition}, 3 transform {1 name, 2 repeated
+    FieldTransform{1 field path, 3 increment, 4 maximum, 6/7 counter name}}.
+    Returns [(document name, transform count)] per write."""
+    writes = []
+    for field, _, raw in iter_fields(body):
+        if field != 1:
+            continue
+        _, start = _varint(raw, 0)
+        length, start = _varint(raw, start)
+        write = raw[start:start + length]
+        name, count = "", 0
+        for wf, _, wraw in iter_fields(write):
+            _, s = _varint(wraw, 0)
+            n, s = _varint(wraw, s)
+            inner = wraw[s:s + n]
+            if wf == 1:
+                name = bytes_field(bytes_field(inner, 1), 1).decode(errors="replace")
+            elif wf == 3:
+                name = bytes_field(inner, 1).decode(errors="replace")
+                count = sum(1 for f, _, _ in iter_fields(inner) if f == 2)
+        writes.append((name, count))
+    return writes
+
+
+def write_documents_response(writes, value_of, now=None):
+    """WriteDocumentsResponse (converter FUN_012a00a0): {1 repeated WriteResult,
+    2 commit Timestamp}. WriteResult oneof: 1 = plain write ack, 2 = transform
+    results {1 repeated Value}, one per request FieldTransform (keyed by the
+    request's field paths, FUN_012a0440). value_of(name) gives the transform
+    result (the server-allocated counter, e.g. upcsid)."""
+    # The game builds ONE native write (set + transforms, FUN_01281500) that the
+    # SDK splits into an update Write and a transform Write; results map back by
+    # native write index, so the transform values belong in result 0.
+    now = int(time.time()) if now is None else now
+    total = sum(count for _, count in writes)
+    name0 = next((name for name, count in writes if count), writes[0][0] if writes else "")
+    writes = [(name0, total)] + [(name, 0) for name, _ in writes[1:]] if writes else []
+    out = b""
+    for name, count in writes:
+        if count:
+            result = protobuf_bytes(2, b"".join(protobuf_bytes(1, gs_int(value_of(name))) for _ in range(count)))
+        else:
+            result = protobuf_bytes(1, b"")
+        out += protobuf_bytes(1, result)
+    return out + protobuf_bytes(2, gs_timestamp(now))
+
+
+def user_slot(user_id):
+    """Local player number from the probe's synthetic user id (...0001, ...0002)."""
+    tail = user_id.rsplit("/", 1)[-1].replace("-", "")
+    try:
+        return int(tail[-4:], 16) or 1
+    except ValueError:
+        return 1
+
+
 def gs_fields(entries):
     """Document.fields / struct body (main+0xf1b700): repeated Entry{1:key, 2:Value}."""
     return b"".join(protobuf_bytes(1, protobuf_bytes(1, k) + protobuf_bytes(2, v)) for k, v in entries)
@@ -412,6 +473,18 @@ def session_message(session, change=b"", ops=b""):
 
 
 CHANGE_ADDED, CHANGE_CURRENT = 1, 3   # verified live 2026-11-13: 3 completes the listen
+OP_SUCCEEDED, OP_FAILED = 1, 4         # stream handler FUN_01271c00 (kind 2 = server request)
+
+
+def op_ack(op_id, kind=OP_SUCCEEDED):
+    """Server Op (message field 3): {1 decimal op id, 2 kind}. The client numbers
+    its ops per stream (1, 2, ...; also the "targets/N" suffix) and keeps a
+    future per id; kind 1 completes it, which the user-session job waits on."""
+    return protobuf_bytes(3, protobuf_bytes(1, str(op_id)) + b"\x10" + encode_varint(kind))
+
+
+def target_op_id(target):
+    return int(target.rsplit("/", 1)[-1]) if target.rsplit("/", 1)[-1].isdigit() else 1
 
 
 def parse_keep_user_session(body):
@@ -439,21 +512,24 @@ def keep_user_session_replies(session, targets, now=None, lobby_of=lambda user_i
     """Per target: Change kind ADDED with the document, then kind CURRENT.
     docs/__us/<id> carries the descriptor (shared per lobby via lobby_of);
     other documents are sent empty (logged, so new document types show up)."""
+    # Change.1 is the numeric target id (FUN_01271c00 strtoul's it to route
+    # the change to the subscription callback); kind 1/2 carry a document.
     out = []
     for target, doc_name in targets:
+        op_id = target_op_id(target)
+        tid = str(op_id)
         if doc_name.startswith("docs/__us/"):
             user_id = doc_name.rsplit("/", 1)[-1]
             lobby = lobby_of(user_id)
             doc = user_session_document(doc_name, user_id, now, lobby)
-            # ADDED user session, ADDED game-session fixed data, then CURRENT.
-            out.append(session_message(session, change_message(target, CHANGE_ADDED, doc)))
+            # ADDED user session, ADDED game-session fixed data.
+            out.append(session_message(session, change_message(tid, CHANGE_ADDED, doc)))
             out.append(session_message(session, change_message(
-                target, CHANGE_ADDED, game_session_fixed_document(lobby, now))))
-            out.append(session_message(session, change_message(target, CHANGE_CURRENT, doc)))
-            continue
-        doc = protobuf_bytes(1, doc_name)
-        for kind in (CHANGE_ADDED, CHANGE_CURRENT):
-            out.append(session_message(session, change_message(target, kind, doc)))
+                tid, CHANGE_ADDED, game_session_fixed_document(lobby, now))))
+        else:
+            out.append(session_message(session, change_message(
+                tid, CHANGE_ADDED, protobuf_bytes(1, doc_name))))
+        out.append(session_message(session, ops=op_ack(op_id)))
     return out
 
 
@@ -719,6 +795,11 @@ class H2Protocol(asyncio.Protocol):
         response = auth_response(body) if is_auth else b""
         if st["path"] in (GAMESYNC_ISSUE_TOKEN, GAMESYNC_REFRESH_TOKEN):
             response = gamesync_token_response(body, self.ticket_user(st["token"]))
+        if st["path"] == GAMESYNC_WRITE_DOCUMENTS:
+            msgs = decode_grpc_messages(body)
+            writes = parse_write_documents(msgs[0][1]) if msgs else []
+            response = write_documents_response(writes, user_slot)
+            log(f"<<< WriteDocuments: {writes} -> upcsid by slot")
         self.conn.send_headers(sid, [(":status", "200"), ("content-type", "application/grpc")])
         if is_auth:
             token_info = bytes_field(response, 2)
