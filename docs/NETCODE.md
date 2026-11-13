@@ -377,6 +377,33 @@ error `0x660ac5da`), and P1 stayed in the post-finish auto-drive forever
 (waiting for the result; later error `0xf6378925`). Both point at the missing
 online race context + referee.
 
+### Referee chain (2026-11-13, Battle over LAN, PC + Deck)
+
+Battle matchmaking (`matchmakingConfigs/Battle24`) behaves like Race and ends
+the same way: the winner auto-drives, the loser sees FINISH/spectator, then
+both get "Ocorreu um erro de comunicação". Why `@@RefereeRequest` is never
+written (`FUN_01e37e98` path: `<gs handle +0x10>@@RefereeRequest/<ctx+0x8da0
+->+0x10 string>/Request/<key>`):
+- `ctx+0x8da0`/`+0x8da8` (`ctx = FUN_0045b24c(slot)`) are pointers to player
+  map nodes (map `ctx+0x28`, node pool 0xc0 x 0x11c8 from ctor `FUN_00bf081c`).
+  Only writer: per-frame `FUN_0049a5a0` (called from `FUN_00497e48`). It clears
+  both, then for each member of the session member tree
+  `*(slot+0x138)+0x130 + *(…+0x19c)*0x20` (u32 size at tree+0x18) inserts a node
+  keyed by the member's `ussid`, copies `uid`, `st`, `name`/`p2p_sid`/`p2p_lid`/
+  `vehicle`/`driver`/… (from `PlayerStatic`), and sets `ctx+0x8da0` to the node
+  whose `ussid` equals session handle[0]`+0xa0` (handle[1] for `+0x8da8`).
+- Session handles: slot (`*(mgr+0x12c0)+cur*0x148`) `+8`, 16-byte shared_ptrs,
+  copied from a finished session op by the pollers `FUN_02237d98`…`FUN_02239f60`
+  (dispatcher `FUN_02237828`, assign `FUN_0223b804`). The user-session object
+  is parsed by `FUN_02255158` (`uid`, `st`, `ussid` at +0x98, …).
+- Live (`tools/re/watch_match_members.py`, P1 during a battle): handle[0] set
+  with `+0xa0` = 1 (our `ussid`), but both member trees stay at size 0 for the
+  whole match, so the map and `ctx+0x8da0` stay empty, so no referee request
+  and no `PlayerStatic`/`Companion`/`Global` writes. The server does answer the
+  `docs/__us/` collection listen with one ADDED document per lobby member.
+- Next: find what inserts into the member tree (the `docs/__us/` listener
+  callback, likely gated by a field our `__us` documents lack, e.g. `st`).
+
 ### Remaining to a full race
 1. Initialise the per-slot online race context (find the writer of
    `ctx+0x8da0`/`+0x28`), so `@@RefereeRequest` is sent.

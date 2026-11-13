@@ -1,0 +1,6 @@
+[package]
+name = "mkwmp-core"
+description = "Seats, player tickets and lobbies. Pure domain logic, no I/O."
+edition.workspace = true
+version.workspace = true
+license.workspace = true

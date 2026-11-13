@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/contracts", "crates/seat-server", "crates/lobby-manager"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+
+[workspace.dependencies]
+mkwmp-core = { path = "crates/core" }
+prost = "0.13"
+prost-build = "0.13"
+protox = "0.7"
