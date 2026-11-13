@@ -15,10 +15,12 @@ public class FindArm64PageRefs extends GhidraScript {
         String[] args = getScriptArgs();
         Set<Long> wanted = new HashSet<>();
         Set<Long> branches = new HashSet<>();
+        Set<Integer> constants = new HashSet<>();
         int field = -1;
         for (int i = 1; i < args.length; i++) {
             if (args[i].startsWith("field:")) field = Integer.parseUnsignedInt(args[i].substring(6), 16);
             else if (args[i].startsWith("branch:")) branches.add(Long.parseUnsignedLong(args[i].substring(7), 16));
+            else if (args[i].startsWith("constant:")) constants.add(Integer.parseUnsignedInt(args[i].substring(9), 16));
             else wanted.add(Long.parseUnsignedLong(args[i], 16));
         }
         MemoryBlock block = currentProgram.getMemory().getBlock(toAddr(0));
@@ -29,6 +31,17 @@ public class FindArm64PageRefs extends GhidraScript {
             for (int i = 0; i + 4 <= bytes.length; i += 4) {
                 if ((i & 0xffff) == 0) monitor.checkCancelled();
                 int w = code.getInt(i);
+                if (!constants.isEmpty() && (w & 0xffe00000) == 0x52800000) {
+                    int low = (w >>> 5) & 0xffff;
+                    for (int k = i + 4; k <= i + 24 && k + 4 <= bytes.length; k += 4) {
+                        int upper = code.getInt(k);
+                        if ((upper & 0xffe0001f) == (0x72a00000 | (w & 31))) {
+                            int value = low | (((upper >>> 5) & 0xffff) << 16);
+                            if (constants.contains(value)) out.printf("%08x constant %08x%n", i, value);
+                            break;
+                        }
+                    }
+                }
                 if ((w & 0x7c000000) == 0x14000000) {
                     long target = block.getStart().getOffset() + i + ((w << 6) >> 4);
                     if (branches.contains(target)) out.printf("%08x branch -> %08x%n", i, target);

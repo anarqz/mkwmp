@@ -35,6 +35,11 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(reply.startswith(b"\x28\x03"))
                 session = capture.bytes_field(reply, 7)
                 self.assertEqual(capture.bytes_field(session, 1).decode(), f"tenants/local/gameSessions/{first.lobby}")
+                for ticket in (first, second):
+                    member = capture.protobuf_bytes(1, capture.protobuf_bytes(1, ticket.user))
+                    member += capture.protobuf_bytes(2, f"tenants/local/gameSessions/{first.lobby}/userSessions/{ticket.user.rsplit('/', 1)[-1]}")
+                    self.assertIn(capture.protobuf_bytes(12, member), session)
+                    self.assertIn(capture.protobuf_bytes(6, member), reply)
                 peer.conn.send_headers.assert_called_once_with(1, [("grpc-status", "0")], end_stream=True)
                 self.assertFalse(peer.tracked_tickets)
 

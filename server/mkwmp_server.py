@@ -179,11 +179,20 @@ def create_ticket_response(queue, user, request_body):
     return protobuf_bytes(1, name)
 
 
-def match_assignment(tenant, lobby_id):
+def match_assignment(tenant, lobby_id, users):
     # Track response serializer main+0x1408a40: outcome 5, session 7.
     # Session serializer main+0x140b440: resource name 1.
     name = f"{tenant}/gameSessions/{lobby_id}"
-    return b"\x28\x03" + protobuf_bytes(7, protobuf_bytes(1, name))
+    # Session field 12 contains members. The member serializer writes its
+    # nested player as field 1; that player's resource name is field 1.
+    members = [protobuf_bytes(1, protobuf_bytes(1, user)) +
+               protobuf_bytes(2, f"{name}/userSessions/{user.rsplit('/', 1)[-1]}")
+               for user in users]
+    roster = b"".join(protobuf_bytes(12, member) for member in members)
+    # The success handler passes the track reply's own field 6 collection
+    # separately to the converter; session field 12 does not populate it.
+    players = b"".join(protobuf_bytes(6, member) for member in members)
+    return b"\x28\x03" + players + protobuf_bytes(7, protobuf_bytes(1, name) + roster)
 
 
 SECOND_LOCAL_TOKEN = b"eyJhbGciOiJub25lIn0.eyJzdWIiOiJta3dtcC1sb2NhbC0yIiwiaXNzIjoibWt3bXAifQ."
@@ -420,7 +429,8 @@ class H2Protocol(asyncio.Protocol):
         groups = [self.active_trackers.get(seat) for seat in lobby.seats]
         if not all(groups):
             return
-        frame = grpc_frame(match_assignment(ticket.user.split("/users/", 1)[0], lobby.id))
+        users = [self.matchmaking.tickets[seat].user for seat in lobby.seats]
+        frame = grpc_frame(match_assignment(ticket.user.split("/users/", 1)[0], lobby.id, users))
         streams = [stream for group in groups for stream in group]
         if any(peer.conn.local_flow_control_window(sid) < len(frame) for peer, sid in streams):
             return
