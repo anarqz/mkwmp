@@ -15,8 +15,23 @@
 
 int npln_register(void);
 
+// Under Proton, Steam's SDL_GAMECONTROLLER_IGNORE_DEVICES (meant for native Linux SDL games)
+// reaches this Windows process and lists the Xbox 360 id that Steam Input's virtual pad has
+// through Wine's XInput, so the game's SDL3 would ignore every controller. Clear it under Wine
+// (before SDL reads its environment); MKWMP_KEEP_SDL_IGNORE=1 keeps it.
+static void wine_controller_fixup(void) {
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (!ntdll || !GetProcAddress(ntdll, "wine_get_version")) return;
+    if (GetEnvironmentVariableA("MKWMP_KEEP_SDL_IGNORE", NULL, 0)) return;
+    if (GetEnvironmentVariableA("SDL_GAMECONTROLLER_IGNORE_DEVICES", NULL, 0)) {
+        SetEnvironmentVariableA("SDL_GAMECONTROLLER_IGNORE_DEVICES", NULL);
+        log_line("wine: cleared SDL_GAMECONTROLLER_IGNORE_DEVICES (Steam's Linux list)");
+    }
+}
+
 static void probe_init(void) {
     log_init();
+    wine_controller_fixup();
     if (coff_resolve_runtime()) {
         log_line("runtime resolved from COFF symbols");
         log_kv("hostfn_add_override", (uint64_t)(uintptr_t)g_rt.hostfn_add_override);
