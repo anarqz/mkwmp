@@ -324,9 +324,36 @@ Next: trace Pia `AttachMeshJob` steps after the attach future (60 s timer,
 `0x162ed88`), `session::JoinMeshJob`/`CreateMeshJob` decision, and what
 assigns station index 0 to the host.
 
-### Remaining to a race
-1. Pia mesh formation (above).
-2. Session sync + race start.
+**SOLVED (run d21/d22):** the attach waited on `nn::pia::turn::TurnProtocol`
+(`FUN_01630b64` polls `FUN_01634ef0`; TURN state stuck at 1). Fix: answer
+`AllocateIceServerSet` (serializer `0x1410640`, converter `FUN_013cf8e0`):
+`{1 name, 2 {1 host, 2 port, 3 int}, 3 repeated IceServer{1 host, 2 port,
+3 type (1 = TURN), 4 username, 5 credential}, 4 Duration, 5 Timestamp,
+6 Duration}` pointing at the local TURN relay (`server/turn_relay.py`).
+After the join each client listens on the collections `docs/__us`,
+`Companion`, `PlayerStatic`, `DPID`, `__gs`, `@@RefereeResult`, `Global`
+(the `__us` collection must list every lobby member).
+
+### MILESTONE 2026-11-13 run d22: two players, one lobby, race started
+
+Both clients joined the same free-roam lobby, voted a track and started the
+race; each saw the other's movement. ~2000 Pia packets each way over ~2 min
+(steady ~18/s). Then both showed "Ocorreu um erro de comunicação" at the same
+instant with no network/server event preceding it → a game-logic timeout.
+
+### Current blocker: game-level session documents never written
+The game's document writer `FUN_0049c9d8(ctx, collection, fields, slot, …)`
+(used for `PlayerStatic` by `FUN_01e377c4`, `Companion` by `FUN_01e39228`)
+first gets the game-session handle `FUN_01a9637c(mgr+0x80 …)` and silently
+skips the write when it is null — the same empty slot (`mgr+0x12c0`) that
+keeps the game's own start-P2P (`FUN_02236714`) a no-op. No client ever wrote
+these collections, so the race likely times out waiting for them.
+Next: find what fills the slot handle list at `mgr+0x12c0` (session
+manager `0x2230000–0x2250000`).
+
+### Remaining to a full race
+1. Game-level session documents (above).
+2. Race result / referee (`@@RefereeResult`).
 
 ### All Gamesync message classes (vtables)
 
