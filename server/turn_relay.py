@@ -101,7 +101,7 @@ class Allocation:
             def datagram_received(self, data, peer):
                 alloc.from_peer(data, peer)
 
-        self.sock, _ = await loop.create_datagram_endpoint(Relay, local_addr=("127.0.0.1", 0))
+        self.sock, _ = await loop.create_datagram_endpoint(Relay, local_addr=(self.server.relay_host, 0))
         self.relay = self.sock.get_extra_info("sockname")
 
     def from_peer(self, data, peer):
@@ -124,6 +124,7 @@ class TurnServer(asyncio.DatagramProtocol):
         self.transport = None
         self.allocations = {}
         self.nonce = os.urandom(8).hex().encode()
+        self.relay_host = "127.0.0.1"
 
     def connection_made(self, transport):
         self.transport = transport
@@ -197,8 +198,11 @@ class TurnServer(asyncio.DatagramProtocol):
         self.transport.sendto(build(msg_type(method, SUCCESS), tid, attrs, key), client)
 
 
-async def start(host="127.0.0.1", port=3478, log=print):
+async def start(host="127.0.0.1", port=3478, log=print, relay_host=None):
+    """relay_host: the address relayed sockets bind to and advertise (must be
+    reachable by the peers: the server's LAN address in LAN mode)."""
     loop = asyncio.get_running_loop()
     transport, server = await loop.create_datagram_endpoint(lambda: TurnServer(log), local_addr=(host, port))
-    log(f"TURN relay listening on {host}:{port} (udp, user {USERNAME!r})")
+    server.relay_host = relay_host or (host if host != "0.0.0.0" else "127.0.0.1")
+    log(f"TURN relay listening on {host}:{port} (udp, user {USERNAME!r}, relays on {server.relay_host})")
     return server

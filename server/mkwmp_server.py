@@ -354,6 +354,7 @@ def gs_timestamp(seconds):
 GAMESYNC_WRITE_DOCUMENTS = "/nn.npln.gamesync.v1.Gamesync/WriteDocuments"
 ALLOCATE_ICE_SERVER_SET = "/nn.npln.matchmaking.v1.GameSessionService/AllocateIceServerSet"
 TURN_PORT = 3478
+PUBLIC_HOST = "127.0.0.1"   # address clients reach this server at (TURN, ICE set, __gs/f addr); --public-host
 
 
 def ice_server_set_response(now=None):
@@ -365,10 +366,10 @@ def ice_server_set_response(now=None):
     Pia's TURN client (TurnProtocol) must reach "ready" before AttachMeshJob
     finishes (FUN_01630b64 polls FUN_01634ef0)."""
     now = int(time.time()) if now is None else now
-    server = (protobuf_bytes(1, "127.0.0.1") + b"\x10" + encode_varint(TURN_PORT) + b"\x18\x01" +
+    server = (protobuf_bytes(1, PUBLIC_HOST) + b"\x10" + encode_varint(TURN_PORT) + b"\x18\x01" +
               protobuf_bytes(4, turn_relay.USERNAME) + protobuf_bytes(5, turn_relay.PASSWORD))
     return (protobuf_bytes(1, "tenants/current/iceServerSets/local") +
-            protobuf_bytes(2, protobuf_bytes(1, "127.0.0.1") + b"\x10" + encode_varint(TURN_PORT)) +
+            protobuf_bytes(2, protobuf_bytes(1, PUBLIC_HOST) + b"\x10" + encode_varint(TURN_PORT)) +
             protobuf_bytes(3, server) +
             protobuf_bytes(4, b"\x08" + encode_varint(3600)) +
             protobuf_bytes(5, b"\x08" + encode_varint(now + 3600)) +
@@ -520,7 +521,7 @@ def game_session_fixed_document(lobby, now=None):
     mcn = LOBBY_HOSTS.get(key, "00000000-0000-4000-8000-000000000001")
     fields = gs_fields([
         ("gsid", gs_str(f"gs-{key}")),
-        ("addr", gs_str("127.0.0.1")),
+        ("addr", gs_str(PUBLIC_HOST)),
         ("p", gs_int(10025)),
         ("mcn", gs_str(mcn)),
         ("maxu", gs_int(2)),
@@ -685,7 +686,7 @@ def keep_user_session_response(doc_name, user_id, now=None):
     now = int(time.time()) if now is None else now
     descriptor = gs_struct([
         ("gsid", gs_str(f"gs-{user_id}")),
-        ("addr", gs_str("127.0.0.1")),
+        ("addr", gs_str(PUBLIC_HOST)),
         ("p", gs_int(10025)),
         ("mcn", gs_str("")),
         ("maxu", gs_int(2)),
@@ -996,7 +997,7 @@ class H2Protocol(asyncio.Protocol):
             response = gamesync_token_response(body, self.ticket_user(st["token"]))
         if st["path"] == ALLOCATE_ICE_SERVER_SET:
             response = ice_server_set_response()
-            log(f"<<< AllocateIceServerSet: TURN 127.0.0.1:{TURN_PORT}")
+            log(f"<<< AllocateIceServerSet: TURN {PUBLIC_HOST}:{TURN_PORT}")
         if st["path"] == GAMESYNC_GET_DOCUMENT:
             msgs = decode_grpc_messages(body)
             name = bytes_field(msgs[0][1], 1).decode(errors="replace") if msgs else ""
@@ -1132,10 +1133,12 @@ class H2Protocol(asyncio.Protocol):
 
 
 async def main():
-    global GAMESYNC_PORT
+    global GAMESYNC_PORT, PUBLIC_HOST
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8900)
+    ap.add_argument("--public-host", default=None,
+                    help="LAN address clients use for TURN/ICE/__gs addr (default: --host, or 127.0.0.1 for 0.0.0.0)")
     ap.add_argument("--log", default=None)
     ap.add_argument("--tls-cert", help="PEM certificate for the embedded OpenSSL transport")
     ap.add_argument("--tls-key", help="matching PEM private key")
@@ -1145,6 +1148,7 @@ async def main():
     ap.add_argument("--kus-probe", action="store_true",
                     help="send per-slot KeepUserSession wire-type probes (see KUS_PROBES)")
     args = ap.parse_args()
+    PUBLIC_HOST = args.public_host or (args.host if args.host != "0.0.0.0" else "127.0.0.1")
     H2Protocol.announce_matches = args.announce_matches
     H2Protocol.kus_probe = args.kus_probe
     if bool(args.tls_cert) != bool(args.tls_key):
@@ -1169,7 +1173,7 @@ async def main():
         GAMESYNC_PORT = args.gamesync_port
         tasks.append(serve_sniffing(args.host, args.gamesync_port, tls))
         log(f"Gamesync endpoint listening on {args.host}:{args.gamesync_port} (TLS or h2c, sniffed)")
-    await turn_relay.start("127.0.0.1", TURN_PORT, log=log)
+    await turn_relay.start(args.host, TURN_PORT, log=log, relay_host=PUBLIC_HOST)
     await asyncio.gather(*tasks)
 
 

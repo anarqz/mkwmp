@@ -62,6 +62,11 @@ static void rhex(const char *tag, const void *buf, size_t len) {
 enum { G_EINTR = 4, G_EAGAIN = 11, G_EINVAL = 22, G_EINPROGRESS = 115 };
 static _Thread_local int g_errno;
 
+// LAN mode (server host not loopback): see net_init.
+static int g_lan;
+static struct in_addr g_local_ip;
+static void net_init(void);
+
 // SDK pthread_cond_timedwait reads the SDK clock via a direct call, bypassing
 // this import override. Keep successful SDK timestamps in the same epoch.
 // gRPC reads the output even on SDK clock failure, so supply a fallback then.
@@ -224,11 +229,17 @@ static void ov_fiber_initialize(Cpu *c) {
 static void ov_nifm_is_network_available(Cpu *c) { ret_x(c, 1); }
 static void ov_nifm_submit_wait(Cpu *c) { (void)c; }
 static void ov_nifm_ip_config(Cpu *c) {
-    // nn::nifm returns network-order in_addr values. The transport below
-    // binds to loopback, so advertise that same address to Pia.
-    static const uint8_t fields[5][4] = {
+    // nn::nifm returns network-order in_addr values. Loopback mode advertises
+    // 127.0.0.1 (the Pia transport binds there); LAN mode this machine's address.
+    net_init();
+    uint8_t fields[5][4] = {
         {127, 0, 0, 1}, {255, 0, 0, 0}, {0}, {0}, {0}
     };
+    if (g_lan) {
+        memcpy(fields[0], &g_local_ip, 4);
+        static const uint8_t lan_mask[4] = {255, 255, 255, 0};
+        memcpy(fields[1], lan_mask, 4);
+    }
     for (int i = 0; i < 5; ++i) {
         void *out = arg_p(c, i);
         if (out) memcpy(out, fields[i], sizeof fields[i]);
@@ -392,9 +403,22 @@ static void net_init(void) {
     g_server.sin_port = htons((unsigned short)pnum);
     g_server.sin_addr.s_addr = inet_addr(host && *host ? host : "127.0.0.1");
     if (g_server.sin_addr.s_addr == INADDR_NONE) g_server.sin_addr.s_addr = inet_addr("127.0.0.1");
+    // LAN mode: a non-loopback server means real peers on other machines. Pia
+    // then binds all interfaces, advertises this machine's LAN address, sends
+    // NAT probes to the server host and keeps peer addresses as given.
+    g_lan = g_server.sin_addr.s_addr != htonl(INADDR_LOOPBACK);
+    g_local_ip.s_addr = htonl(INADDR_LOOPBACK);
+    if (g_lan) {
+        SOCKET probe = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        struct sockaddr_in route = g_server, me; int ml = sizeof me;
+        if (probe != INVALID_SOCKET && !connect(probe, (struct sockaddr *)&route, sizeof route) &&
+            !getsockname(probe, (struct sockaddr *)&me, &ml))
+            g_local_ip = me.sin_addr;
+        if (probe != INVALID_SOCKET) closesocket(probe);
+    }
     g_ready = 1;
-    mlog("net bridge ready -> %s:%u", host && *host ? host : "127.0.0.1",
-                (unsigned)ntohs(g_server.sin_port));
+    mlog("net bridge ready -> %s:%u (%s, local %s)", host && *host ? host : "127.0.0.1",
+                (unsigned)ntohs(g_server.sin_port), g_lan ? "LAN" : "loopback", inet_ntoa(g_local_ip));
 }
 
 static int fd_new(SOCKET s) {
@@ -727,7 +751,7 @@ static void ov_pia_bind(Cpu *c) {
     const uint8_t *guest = arg_p(c, 1);
     struct sockaddr_in sa = {0};
     sa.sin_family = AF_INET;
-    sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    sa.sin_addr.s_addr = htonl(g_lan ? INADDR_ANY : INADDR_LOOPBACK);
     // Honour the port Pia asked for: Pia advertises it to peers as its private
     // address (it never asks the socket afterwards). Fall back to ephemeral.
     unsigned requested = 0;
@@ -742,7 +766,7 @@ static void ov_pia_bind(Cpu *c) {
     }
     struct sockaddr_in got; int gl = sizeof got;
     unsigned actual = getsockname(s, (struct sockaddr *)&got, &gl) ? 0 : ntohs(got.sin_port);
-    mlog("Pia UDP bound to loopback: requested port %u, got %u", requested, actual);
+    mlog("Pia UDP bound to %s: requested port %u, got %u", g_lan ? "all interfaces" : "loopback", requested, actual);
     ret_x(c, 0);
 }
 
@@ -776,7 +800,16 @@ static void ov_pia_sendto(Cpu *c) {
     // Every peer is local in this setup: any other IPv4 peer address (e.g. one
     // advertised through Gamesync signaling) is redirected to loopback, same port.
     int is_probe = len == 16 && !buf[0] && !buf[1] && !buf[2] && (buf[3] == 0 || (buf[3] >= 101 && buf[3] <= 103));
-    if (guest && arg_x(c, 5) >= 16 && guest[1] == 2 && !is_probe && (guest[2] || guest[3])) {
+    if (g_lan) {
+        // Real peers: send where Pia says; NAT probes go to the server host.
+        if (is_probe) {
+            sa.sin_addr = g_server.sin_addr;
+            sa.sin_port = htons(10025);
+        } else if (guest && arg_x(c, 5) >= 16 && guest[1] == 2 && (guest[2] || guest[3])) {
+            memcpy(&sa.sin_port, guest + 2, sizeof sa.sin_port);
+            memcpy(&sa.sin_addr, guest + 4, 4);
+        }
+    } else if (guest && arg_x(c, 5) >= 16 && guest[1] == 2 && !is_probe && (guest[2] || guest[3])) {
         memcpy(&sa.sin_port, guest + 2, sizeof sa.sin_port);
         if (!(guest[4] == 127 && guest[5] == 0 && guest[6] == 0 && guest[7] == 1)) {
             static volatile LONG redirected;
