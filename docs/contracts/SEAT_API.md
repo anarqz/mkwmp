@@ -24,7 +24,7 @@ Errors are `{"error": {"code", "message"}}`. Session answers carry `Cache-Contro
 
 | Route | Body → answer | Notes |
 | --- | --- | --- |
-| `GET /seat/v1/status` | → `{bootId, name, seatsTotal, seated, queued}` | Public. |
+| `GET /seat/v1/status` | → `{bootId, name, lobbyEndpoint, seatsTotal, seated, queued}` | Public, readable from any origin. `lobbyEndpoint` is the NPLN `host:port` the launcher writes as `server`. |
 | `GET /seat/v1/keys` | → `{keys: [{kid, publicKey}]}` | Public. The ticket verification key (base64url, raw 32 bytes). |
 | `POST /seat/v1/sessions` | `{name, friends?: string[]}` → `201 View + sessionKey` | Seats the player at once if a seat is free, else queues them. Errors: `400 NAME_INVALID`, `409 NAME_TAKEN`, `503 QUEUE_FULL` (with `Retry-After: 30`). |
 | `GET /seat/v1/sessions/{id}` | → `View` | The poll while queued and the heartbeat while seated. Repeat within `nextPollMs`. |

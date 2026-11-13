@@ -1,15 +1,16 @@
-## mkwmp launcher config -- the one file a player edits. The launcher takes a
-## seat on the server (or waits in its queue), writes <game>\mkwmp.toml (which
-## the probe reads) and launches the game.
+## mkwmp launcher config -- the one file a player edits. Put it next to
+## mkwmp-launcher and run the launcher. Setup guides: https://anarqz.github.io/mkwmp/
 
-server = "http://127.0.0.1:7000"   # seat server URL, e.g. "https://mkw.anarqz.dev"
+server = "https://mkw.anarqz.dev"  # seat server URL (the official one)
 name = "Player1"                   # in-game name: 3-16 letters, digits, '-' or '_'; unique on the server
-game = "scratch/game"              # game directory containing mkw.exe
+game = "C:/Games/mkw"              # game folder containing mkw.exe
 
 # Up to 8 friends. When a friend lists you too, you are friends in game
 # (ONLINE -> FRIENDS). Edit this while playing; the launcher picks it up.
 friends = []
 
-# slot: only for running two instances on one machine (loopback testing).
-# Player two sets slot = 2.
-# slot = 1
+# launch = false     # don't start the game (SteamOS: start it from Steam)
+# seat = "online"    # take a seat only when you go online in the game ("start" = at launch)
+# update = false     # don't update the launcher and game patch from GitHub Releases
+# local_port = 47820 # where the game reaches the launcher (127.0.0.1)
+# slot = 2           # loopback testing only: the second instance on one PC

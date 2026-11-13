@@ -197,11 +197,17 @@ dependencies = [
 
 [[package]]
 name = "client"
-version = "0.1.0"
+version = "0.0.1-rc.1"
 dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "ed25519-dalek",
+ "rand 0.8.8",
  "reqwest",
+ "semver",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
  "toml",
 ]

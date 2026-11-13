@@ -144,6 +144,8 @@ pub struct RosterFriend {
 pub struct Status {
     pub boot_id: String,
     pub name: String,
+    /// NPLN `host:port` of this server's lobby.
+    pub lobby_endpoint: String,
     pub seats_total: usize,
     pub seated: usize,
     pub queued: usize,
@@ -406,6 +408,7 @@ impl Roster {
         Status {
             boot_id: self.boot_id.clone(),
             name: self.rules.server_name.clone(),
+            lobby_endpoint: self.rules.lobby_endpoint.clone(),
             seats_total: self.rules.capacity,
             seated: self.seated,
             queued: self.queue.len(),

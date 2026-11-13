@@ -8,6 +8,7 @@ use serde_json::json;
 pub struct View {
     pub boot_id: String,
     pub session_id: String,
+    pub name: String,
     #[serde(default)]
     pub session_key: Option<String>,
     pub state: String,
@@ -85,6 +86,17 @@ impl Api {
         } else {
             Err(ApiError::Transient(msg))
         }
+    }
+
+    /// The server's public status; `lobbyEndpoint` is what the game connects to.
+    pub async fn lobby_endpoint(&self) -> Result<String, ApiError> {
+        let url = format!("{}/seat/v1/status", self.base);
+        let res = self.http.get(url).send().await.map_err(|e| ApiError::Transient(format!("cannot reach the server: {e}")))?;
+        let v: serde_json::Value = res.json().await.map_err(|e| ApiError::Transient(format!("bad answer: {e}")))?;
+        v["lobbyEndpoint"]
+            .as_str()
+            .map(String::from)
+            .ok_or_else(|| ApiError::Transient("the server is too old (no lobbyEndpoint)".into()))
     }
 
     pub async fn join(&self, name: &str, friends: &[String]) -> Result<View, ApiError> {

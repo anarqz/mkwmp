@@ -1,210 +1,199 @@
-//! mkwmp launcher: take a seat on the server (or wait in its queue), then
-//! launch the game and keep the seat alive while it runs.
+//! mkwmp launcher.
 //!
-//!   mkwmp-launcher [--no-launch] [client.toml]
+//!   mkwmp-launcher [--no-launch] [--no-update] [--version] [client.toml]
 //!
-//! `--no-launch` (or `launch = false` in client.toml): take the seat and write
-//! mkwmp.toml, but start nothing. Start the game yourself, e.g. from Steam on
-//! SteamOS; the seat is held until you press Ctrl-C.
-//!
-//! Edit `friends` in client.toml while playing: the launcher picks it up on its
-//! next heartbeat. If the server restarts, the launcher rejoins and rewrites
-//! the game's mkwmp.toml with the fresh ticket.
+//! 1. Updates itself and the game patch from GitHub Releases (verified
+//!    signatures; failures never block play).
+//! 2. Writes `<game>/mkwmp.toml`: the lobby, your name, and how the game
+//!    reaches this launcher (local API on 127.0.0.1).
+//! 3. Takes a seat: at start (`seat = "start"`), or when the game goes online
+//!    (`seat = "online"`). Shows the queue, keeps the seat alive, picks up
+//!    friend edits in client.toml, rejoins after a server restart.
+//! 4. Starts the game (unless `--no-launch` / `launch = false`, e.g. SteamOS:
+//!    start it from Steam) and frees the seat when it exits or on Ctrl-C.
 
 mod api;
 mod config;
 mod launch;
+mod local;
+mod probe;
+mod seat;
+mod update;
 
 use std::process::Child;
+use std::sync::Arc;
 use std::time::Duration;
 
-use api::{Api, ApiError, View};
-use config::ClientConfig;
+use config::{ClientConfig, SeatMode};
+use rand::RngCore;
+use seat::Seat;
 
-struct Session {
-    sid: String,
-    key: String,
-    boot: String,
+struct Args {
+    path: String,
+    no_launch: bool,
+    no_update: bool,
+}
+
+fn args() -> Args {
+    let mut a = Args { path: "client.toml".into(), no_launch: false, no_update: false };
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--no-launch" => a.no_launch = true,
+            "--no-update" => a.no_update = true,
+            "--version" | "-V" => {
+                println!("mkwmp-launcher {}", update::VERSION);
+                std::process::exit(0);
+            }
+            "-h" | "--help" => {
+                println!("usage: mkwmp-launcher [--no-launch] [--no-update] [--version] [client.toml]");
+                std::process::exit(0);
+            }
+            _ => a.path = arg,
+        }
+    }
+    a
 }
 
 #[tokio::main]
 async fn main() {
-    let mut no_launch = false;
-    let mut path = "client.toml".to_string();
-    for a in std::env::args().skip(1) {
-        match a.as_str() {
-            "--no-launch" => no_launch = true,
-            "-h" | "--help" => {
-                println!("usage: mkwmp-launcher [--no-launch] [client.toml]");
-                return;
-            }
-            _ => path = a,
-        }
-    }
-    if let Err(e) = run(&path, no_launch).await {
+    let a = args();
+    if let Err(e) = run(a).await {
         eprintln!("mkwmp: {e}");
         std::process::exit(1);
     }
 }
 
-async fn run(path: &str, no_launch: bool) -> Result<(), String> {
-    let mut cfg = ClientConfig::load(path)?;
-    let launch = cfg.launch && !no_launch;
-    let api = Api::new(&cfg.server);
-    println!("mkwmp: joining {} as {}", cfg.server, cfg.name);
+async fn run(a: Args) -> Result<(), String> {
+    let cfg = ClientConfig::load(&a.path)?;
+    println!("mkwmp-launcher {}", update::VERSION);
+    update::clean_old();
 
-    let mut session: Option<Session> = None;
+    if cfg.update && !a.no_update {
+        updates(&cfg, &a).await;
+    }
+    if let Some(msg) = probe::ensure_host(&cfg.game) {
+        println!("mkwmp: winmm_host.dll: {msg}");
+    }
+
+    let seat = Arc::new(Seat::new(&cfg, &a.path));
+
+    // Where the game connects: the server's lobby.
+    let lobby = loop {
+        match seat.api().lobby_endpoint().await {
+            Ok(l) => break l,
+            Err(e) => {
+                eprintln!("mkwmp: {e}; retrying");
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                    _ = tokio::signal::ctrl_c() => return Ok(()),
+                }
+            }
+        }
+    };
+
+    // The local API the game calls for its seat.
+    let addr = format!("127.0.0.1:{}", cfg.local_port);
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| format!("cannot open {addr} ({e}); is another launcher running?"))?;
+    let mut token = [0u8; 32];
+    rand::rngs::OsRng.fill_bytes(&mut token);
+    let token: String = token.iter().map(|b| format!("{b:02x}")).collect();
+    tokio::spawn({
+        let app = local::router(seat.clone(), token.clone());
+        async move {
+            let _ = axum::serve(listener, app).await;
+        }
+    });
+
+    let write = |ticket: Option<&str>, lobby: &str| {
+        let toml = launch::probe_toml(
+            &cfg,
+            &launch::ProbeConfig { lobby, launcher: &addr, launcher_token: &token, ticket },
+        );
+        launch::write_probe_toml(&cfg.game, &toml).map_err(|e| format!("writing mkwmp.toml: {e}"))
+    };
+    write(None, &lobby)?;
+    println!("mkwmp: {} as {} (lobby {lobby})", cfg.server, cfg.name);
+    match cfg.seat {
+        SeatMode::Start => println!("mkwmp: taking a seat"),
+        SeatMode::Online => println!("mkwmp: you'll get a seat when you go online in the game"),
+    }
+
+    let launch = cfg.launch && !a.no_launch;
     let mut game: Option<Child> = None;
-    let mut ticket_written: Option<String> = None;
-    let mut last_friends: Vec<api::Friend> = vec![];
-    let mut rejected_friends: Option<Vec<String>> = None;
-    let mut announced = false;
+    if launch {
+        println!("mkwmp: starting the game");
+        game = Some(launch::spawn_game(&cfg.game).map_err(|e| format!("starting mkw.exe from {}: {e}", cfg.game.display()))?);
+    } else {
+        println!("mkwmp: start the game now and keep this window open (Ctrl-C frees the seat)");
+    }
 
     loop {
-        // Join (or rejoin after a restart / expiry).
-        let result = match &session {
-            None => api.join(&cfg.name, &cfg.friends).await,
-            Some(s) => {
-                // Pick up friend edits. A refused list is reported once and
-                // never costs the seat; a transient failure retries next time.
-                let edited = ClientConfig::load(path)
-                    .ok()
-                    .map(|f| f.friends)
-                    .filter(|f| *f != cfg.friends && Some(f) != rejected_friends.as_ref());
-                match edited {
-                    Some(list) => match api.set_friends(&s.sid, &s.key, &list).await {
-                        Ok(v) => {
-                            cfg.friends = list;
-                            rejected_friends = None;
-                            Ok(v)
-                        }
-                        Err(ApiError::Refused(m)) => {
-                            eprintln!("mkwmp: friends not updated: {m}");
-                            rejected_friends = Some(list);
-                            api.poll(&s.sid, &s.key).await
-                        }
-                        Err(e) => Err(e),
-                    },
-                    None => api.poll(&s.sid, &s.key).await,
-                }
+        if let Some((ticket, seated_lobby)) = seat.tick().await {
+            // seat = "start": the ticket also goes in mkwmp.toml for probes
+            // that read it there.
+            let t = (cfg.seat == SeatMode::Start).then_some(ticket.as_str());
+            write(t, &seated_lobby)?;
+        }
+        if let Some(child) = game.as_mut() {
+            if let Ok(Some(status)) = child.try_wait() {
+                println!("mkwmp: game exited ({status}); releasing the seat");
+                seat.release().await;
+                return Ok(());
             }
-        };
-
-        let wait = match result {
-            Ok(v) => {
-                let restarted = session.as_ref().is_some_and(|s| s.boot != v.boot_id);
-                if restarted {
-                    println!("mkwmp: the server restarted; rejoining");
-                    session = None;
-                    continue;
-                }
-                if let Some(key) = v.session_key.clone() {
-                    session = Some(Session { sid: v.session_id.clone(), key, boot: v.boot_id.clone() });
-                }
-                show(&v, &mut last_friends);
-                if let Some(t) = &v.ticket {
-                    if ticket_written.as_deref() != Some(&t.token) {
-                        let toml = launch::probe_toml(&cfg, &t.lobby, &t.token);
-                        launch::write_probe_toml(&cfg.game, &toml).map_err(|e| format!("writing mkwmp.toml: {e}"))?;
-                        ticket_written = Some(t.token.clone());
-                    }
-                    if !launch && ticket_written.as_deref() == Some(&t.token) && !announced {
-                        announced = true;
-                        println!("mkwmp: seat granted. Start the game now; keep this window open (Ctrl-C frees the seat)");
-                    }
-                    if launch && game.is_none() {
-                        println!("mkwmp: seat granted, launching the game");
-                        match launch::spawn_game(&cfg.game) {
-                            Ok(child) => game = Some(child),
-                            Err(e) => {
-                                api.leave(&v.session_id, session.as_ref().map_or("", |s| &s.key)).await;
-                                return Err(format!("launching mkw.exe from {}: {e}", cfg.game.display()));
-                            }
-                        }
-                    }
-                }
-                Duration::from_millis(v.next_poll_ms.clamp(1_000, 30_000))
-            }
-            Err(ApiError::Gone) => {
-                println!("mkwmp: session expired; rejoining");
-                session = None;
-                Duration::from_secs(1)
-            }
-            Err(ApiError::Refused(m)) if game.is_none() => {
-                if let Some(s) = &session {
-                    api.leave(&s.sid, &s.key).await;
-                }
-                return Err(m);
-            }
-            Err(ApiError::Refused(m)) => {
-                eprintln!("mkwmp: server refused: {m}; retrying");
-                if session.is_none() {
-                    Duration::from_secs(10)
-                } else {
-                    Duration::from_secs(5)
-                }
-            }
-            Err(ApiError::Transient(m)) => {
-                eprintln!("mkwmp: {m}; retrying");
-                Duration::from_secs(5)
-            }
-        };
-
-        // Wait, but notice the game exiting or Ctrl-C promptly.
-        let deadline = tokio::time::Instant::now() + wait;
-        loop {
-            if let Some(child) = game.as_mut() {
-                if let Ok(Some(status)) = child.try_wait() {
-                    println!("mkwmp: game exited ({status}); releasing the seat");
-                    if let Some(s) = &session {
-                        api.leave(&s.sid, &s.key).await;
-                    }
-                    return Ok(());
-                }
-            }
-            let now = tokio::time::Instant::now();
-            if now >= deadline {
-                break;
-            }
-            tokio::select! {
-                _ = tokio::time::sleep((deadline - now).min(Duration::from_millis(500))) => {}
-                _ = tokio::signal::ctrl_c() => {
-                    println!("mkwmp: leaving");
-                    if let Some(s) = &session {
-                        api.leave(&s.sid, &s.key).await;
-                    }
-                    return Ok(());
-                }
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+            _ = tokio::signal::ctrl_c() => {
+                println!("mkwmp: leaving");
+                seat.release().await;
+                return Ok(());
             }
         }
     }
 }
 
-fn show(v: &View, last_friends: &mut Vec<api::Friend>) {
-    if v.state == "queued" {
-        let pos = v.position.unwrap_or(0);
-        println!("mkwmp: server full ({}/{} seats); you are {} in queue", v.seats_total - v.seats_free, v.seats_total, ordinal(pos));
-    }
-    if v.friends != *last_friends {
-        for f in &v.friends {
-            let s = match (f.online, f.mutual) {
-                (true, true) => "online, friends in game",
-                (true, false) => "online, hasn't added you",
-                _ => "offline",
-            };
-            println!("mkwmp:   friend {:<16} {s}", f.name);
+/// Self-update, then bring the game patch in line with this release.
+/// Never fatal.
+async fn updates(cfg: &ClientConfig, a: &Args) {
+    let u = update::Updater::new();
+    if std::env::var_os("MKWMP_UPDATED").is_none() {
+        match update::self_update(&u).await {
+            Ok(Some(exe)) => {
+                println!("mkwmp: updated; restarting");
+                restart(&exe, a);
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("mkwmp: update check failed: {e} (continuing)"),
         }
-        *last_friends = v.friends.clone();
+    }
+    match update::own_release(&u).await {
+        Ok((r, sums)) => match u.asset(&r, &sums, update::PROBE_ASSET).await {
+            Ok(bytes) => match probe::install_probe(&cfg.game, &bytes, probe::game_running()) {
+                Ok(probe::ProbeAction::UpToDate) => {}
+                Ok(probe::ProbeAction::Installed { backup }) => {
+                    println!("mkwmp: installed the game patch {} into {}", r.tag_name, cfg.game.display());
+                    if let Some(b) = backup {
+                        println!("mkwmp: your previous winmm.dll is saved as {}", b.display());
+                    }
+                }
+                Ok(probe::ProbeAction::GameRunning) => {
+                    println!("mkwmp: a game patch update is ready; close the game and start the launcher again")
+                }
+                Err(e) => eprintln!("mkwmp: installing the game patch failed: {e} (continuing)"),
+            },
+            Err(e) => eprintln!("mkwmp: game patch download failed: {e} (continuing)"),
+        },
+        Err(e) => eprintln!("mkwmp: game patch check failed: {e} (continuing)"),
     }
 }
 
-fn ordinal(n: usize) -> String {
-    let suffix = match (n % 10, n % 100) {
-        (_, 11..=13) => "th",
-        (1, _) => "st",
-        (2, _) => "nd",
-        (3, _) => "rd",
-        _ => "th",
-    };
-    format!("{n}{suffix}")
+/// Run the updated launcher with the same arguments and exit with its code.
+fn restart(exe: &std::path::Path, _a: &Args) -> ! {
+    let status = std::process::Command::new(exe)
+        .args(std::env::args_os().skip(1))
+        .env("MKWMP_UPDATED", "1")
+        .status();
+    std::process::exit(status.map(|s| s.code().unwrap_or(0)).unwrap_or(1))
 }

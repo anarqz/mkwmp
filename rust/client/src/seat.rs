@@ -1,0 +1,254 @@
+//! The launcher's seat: one place that joins, heartbeats, picks up friend
+//! edits, rejoins after a server restart, and (in `seat = "online"` mode)
+//! lets the seat go once the game stops asking for it.
+//!
+//! The game reaches it through the local API ([`crate::local`]); `tick` is
+//! called once a second by the main loop.
+
+use std::time::{Duration, Instant};
+
+use tokio::sync::Mutex;
+
+use crate::api::{Api, ApiError, Friend, View};
+use crate::config::{ClientConfig, SeatMode};
+
+/// The game stops asking (left Online Play, quit) → the seat goes after this.
+pub const IDLE_RELEASE: Duration = Duration::from_secs(90);
+
+/// What the local API answers the game.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Answer {
+    Seated { ticket: String, lobby: String, name: String },
+    Queued { position: usize, seats_total: usize },
+    Refused(String),
+    Unavailable(String),
+}
+
+struct Session {
+    sid: String,
+    key: String,
+    boot: String,
+}
+
+struct State {
+    session: Option<Session>,
+    view: Option<View>,
+    next_poll: Instant,
+    last_want: Option<Instant>,
+    refused: Option<String>,
+    friends: Vec<String>,
+    rejected_friends: Option<Vec<String>>,
+    shown_friends: Vec<Friend>,
+    shown_position: Option<usize>,
+}
+
+pub struct Seat {
+    api: Api,
+    config_path: String,
+    mode: SeatMode,
+    name: String,
+    state: Mutex<State>,
+}
+
+/// A seated ticket changed (new seat, renewal, rejoin): the probe file must
+/// be rewritten.
+pub type TicketChanged = Option<(String, String)>; // (ticket, lobby)
+
+impl Seat {
+    pub fn new(cfg: &ClientConfig, config_path: &str) -> Self {
+        Self {
+            api: Api::new(&cfg.server),
+            config_path: config_path.to_string(),
+            mode: cfg.seat,
+            name: cfg.name.clone(),
+            state: Mutex::new(State {
+                session: None,
+                view: None,
+                next_poll: Instant::now(),
+                last_want: None,
+                refused: None,
+                friends: cfg.friends.clone(),
+                rejected_friends: None,
+                shown_friends: vec![],
+                shown_position: None,
+            }),
+        }
+    }
+
+    pub fn api(&self) -> &Api {
+        &self.api
+    }
+
+    /// The game asks for a seat (POST /local/v1/seat). Joins if needed.
+    pub async fn want(&self) -> Answer {
+        let mut st = self.state.lock().await;
+        st.last_want = Some(Instant::now());
+        if let Some(msg) = &st.refused {
+            return Answer::Refused(msg.clone());
+        }
+        if st.session.is_none() {
+            if let Err(a) = self.join(&mut st).await {
+                return a;
+            }
+        }
+        Self::answer(&st)
+    }
+
+    fn answer(st: &State) -> Answer {
+        match &st.view {
+            Some(v) => match &v.ticket {
+                Some(t) => Answer::Seated { ticket: t.token.clone(), lobby: t.lobby.clone(), name: v.name.clone() },
+                None => Answer::Queued { position: v.position.unwrap_or(0), seats_total: v.seats_total },
+            },
+            None => Answer::Unavailable("not connected to the server yet".into()),
+        }
+    }
+
+    async fn join(&self, st: &mut State) -> Result<(), Answer> {
+        match self.api.join(&self.name, &st.friends).await {
+            Ok(v) => {
+                let key = v.session_key.clone().unwrap_or_default();
+                st.session = Some(Session { sid: v.session_id.clone(), key, boot: v.boot_id.clone() });
+                st.next_poll = Instant::now() + Duration::from_millis(v.next_poll_ms.clamp(1_000, 30_000));
+                Self::show(st, &v);
+                st.view = Some(v);
+                Ok(())
+            }
+            Err(ApiError::Refused(m)) => {
+                println!("mkwmp: the server refused: {m}");
+                st.refused = Some(m.clone());
+                Err(Answer::Refused(m))
+            }
+            Err(e) => Err(Answer::Unavailable(e.to_string())),
+        }
+    }
+
+    /// Called about once a second. Returns a new ticket to write, if any.
+    pub async fn tick(&self) -> TicketChanged {
+        let mut st = self.state.lock().await;
+        let before = st.view.as_ref().and_then(|v| v.ticket.as_ref()).map(|t| t.token.clone());
+
+        let wanted = match self.mode {
+            SeatMode::Start => st.refused.is_none(),
+            SeatMode::Online => st.last_want.is_some_and(|t| t.elapsed() < IDLE_RELEASE),
+        };
+        if !wanted {
+            if let Some(s) = st.session.take() {
+                println!("mkwmp: the game stopped asking; releasing the seat");
+                self.api.leave(&s.sid, &s.key).await;
+                st.view = None;
+            }
+            return None;
+        }
+        if st.session.is_none() {
+            if Instant::now() >= st.next_poll && self.join(&mut st).await.is_err() {
+                st.next_poll = Instant::now() + Duration::from_secs(5);
+            }
+        } else if Instant::now() >= st.next_poll {
+            self.heartbeat(&mut st).await;
+        }
+
+        let after = st.view.as_ref().and_then(|v| v.ticket.as_ref()).map(|t| (t.token.clone(), t.lobby.clone()));
+        match after {
+            Some((tok, lobby)) if Some(&tok) != before.as_ref() => Some((tok, lobby)),
+            _ => None,
+        }
+    }
+
+    async fn heartbeat(&self, st: &mut State) {
+        let s = st.session.as_ref().expect("session");
+        let (sid, key, boot) = (s.sid.clone(), s.key.clone(), s.boot.clone());
+        // Friend edits in client.toml: a refused list is reported once and
+        // never costs the seat.
+        let edited = ClientConfig::load(&self.config_path)
+            .ok()
+            .map(|c| c.friends)
+            .filter(|f| *f != st.friends && Some(f) != st.rejected_friends.as_ref());
+        let result = match edited {
+            Some(list) => match self.api.set_friends(&sid, &key, &list).await {
+                Ok(v) => {
+                    st.friends = list;
+                    st.rejected_friends = None;
+                    Ok(v)
+                }
+                Err(ApiError::Refused(m)) => {
+                    eprintln!("mkwmp: friends not updated: {m}");
+                    st.rejected_friends = Some(list);
+                    self.api.poll(&sid, &key).await
+                }
+                Err(e) => Err(e),
+            },
+            None => self.api.poll(&sid, &key).await,
+        };
+        match result {
+            Ok(v) if v.boot_id != boot => {
+                println!("mkwmp: the server restarted; rejoining");
+                st.session = None;
+                st.view = None;
+                st.next_poll = Instant::now();
+            }
+            Ok(v) => {
+                st.next_poll = Instant::now() + Duration::from_millis(v.next_poll_ms.clamp(1_000, 30_000));
+                Self::show(st, &v);
+                st.view = Some(v);
+            }
+            Err(ApiError::Gone) => {
+                println!("mkwmp: session expired; rejoining");
+                st.session = None;
+                st.view = None;
+                st.next_poll = Instant::now();
+            }
+            Err(e) => {
+                eprintln!("mkwmp: {e}; retrying");
+                st.next_poll = Instant::now() + Duration::from_secs(5);
+            }
+        }
+    }
+
+    fn show(st: &mut State, v: &View) {
+        if v.state == "queued" && st.shown_position != v.position {
+            let pos = v.position.unwrap_or(0);
+            println!(
+                "mkwmp: server full ({}/{} seats); you are {} in queue",
+                v.seats_total - v.seats_free,
+                v.seats_total,
+                ordinal(pos)
+            );
+        }
+        let was_seated = st.view.as_ref().is_some_and(|old| old.state == "seated");
+        if v.state == "seated" && !was_seated {
+            println!("mkwmp: seated");
+        }
+        st.shown_position = if v.state == "queued" { v.position } else { None };
+        if v.friends != st.shown_friends {
+            for f in &v.friends {
+                let s = match (f.online, f.mutual) {
+                    (true, true) => "online, friends in game",
+                    (true, false) => "online, hasn't added you",
+                    _ => "offline",
+                };
+                println!("mkwmp:   friend {:<16} {s}", f.name);
+            }
+            st.shown_friends = v.friends.clone();
+        }
+    }
+
+    /// Free the seat (game exited, Ctrl-C).
+    pub async fn release(&self) {
+        let mut st = self.state.lock().await;
+        if let Some(s) = st.session.take() {
+            self.api.leave(&s.sid, &s.key).await;
+        }
+    }
+}
+
+fn ordinal(n: usize) -> String {
+    let suffix = match (n % 10, n % 100) {
+        (_, 11..=13) => "th",
+        (1, _) => "st",
+        (2, _) => "nd",
+        (3, _) => "rd",
+        _ => "th",
+    };
+    format!("{n}{suffix}")
+}
