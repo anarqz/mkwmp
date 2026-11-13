@@ -1,6 +1,7 @@
-//! Typed config for the mkwmp services. Mirrors `config/server.toml` and
-//! `config/client.toml`. Path fields resolve relative to the file's directory
-//! so configs are portable.
+//! Typed config for the mkwmp server services. Mirrors `config/server.toml`.
+//! Path fields resolve relative to the file's directory so configs are
+//! portable. The client config (`config/client.toml`) is read by the C probe,
+//! not here.
 
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -74,31 +75,6 @@ impl ServerConfig {
     }
 }
 
-// ---- client ---------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-pub struct ClientConfig {
-    pub server: String,
-    pub name: String,
-    /// Loopback only: distinct account per instance on one machine. Default 1.
-    #[serde(default = "one")]
-    pub slot: u8,
-}
-
-fn one() -> u8 {
-    1
-}
-
-impl ClientConfig {
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
-        let cfg: ClientConfig = parse(path.as_ref())?;
-        if cfg.name.trim().is_empty() {
-            return Err(ConfigError::Invalid("name must not be empty"));
-        }
-        Ok(cfg)
-    }
-}
-
 // ---- helpers --------------------------------------------------------------
 
 fn parse<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, ConfigError> {
@@ -129,16 +105,12 @@ mod tests {
     }
 
     #[test]
-    fn client_config_loads() {
-        let cfg = ClientConfig::load(format!("{REPO}/config/client.toml")).unwrap();
-        assert!(!cfg.name.is_empty());
-        assert_eq!(cfg.slot, 1); // defaulted when omitted
-    }
-
-    #[test]
-    fn empty_name_is_rejected() {
-        let p = std::env::temp_dir().join("mkwmp_test_client.toml");
-        std::fs::write(&p, "server=\"x\"\nname=\"\"\n").unwrap();
-        assert!(matches!(ClientConfig::load(&p), Err(ConfigError::Invalid(_))));
+    fn zero_capacity_is_rejected() {
+        let p = std::env::temp_dir().join("mkwmp_bad_server.toml");
+        std::fs::write(&p, concat!(
+            "[server]\nname=\"x\"\nbind=\"x\"\n[seats]\ncapacity=0\n",
+            "[lobby]\nbind=\"x\"\nlobby_size=2\nmax_lobbies_per_worker=1\n",
+            "[tls]\ncert=\"c\"\nkey=\"k\"\n")).unwrap();
+        assert!(matches!(ServerConfig::load(&p), Err(ConfigError::Invalid(_))));
     }
 }

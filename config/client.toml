@@ -1,7 +1,8 @@
-## mkwmp client config. Read by the launcher, which sets the probe's
-## environment before starting the game. One file per player.
+## mkwmp client config. Copy this to <game dir>\mkwmp.toml (next to mkw.exe).
+## The probe (winmm.dll) reads it directly at startup -- there is no launcher.
+## If the file is absent, the game launches stock/offline.
 
-server = "127.0.0.1:8905"      # mkwmp server to join
+server = "127.0.0.1:8905"      # mkwmp server to join (host:port)
 name = "Player1"               # your username; must be unique on the server
 
 # slot: only for running two instances on one machine (loopback testing).

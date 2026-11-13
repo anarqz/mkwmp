@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include "../src/npln.c"
+#include "../src/config.c"
 
 static void quiet_log(const char *fmt, ...) { (void)fmt; }
 Runtime g_rt = {.rt_log = quiet_log};
@@ -165,6 +166,16 @@ int main(void) {
     assert(cert.x[0] == 0 && info == (GCertificateInfo *)cert_buffer);
     assert(info->size == sizeof kCaptureCert && info->data[0] == 0x30);
     WSACleanup();
-    puts("bridge: eventfd, addrinfo ABI, TCP, loopback peer UDP and certificate output passed");
+
+    // Client config parser.
+    MkwmpConfig cc;
+    mkwmp_config_parse("server = \"10.0.0.5:9000\"\nname = \"Ana\"\nslot = 2\n", &cc);
+    assert(cc.present && !strcmp(cc.host, "10.0.0.5") && cc.port == 9000);
+    assert(!strcmp(cc.name, "Ana") && cc.slot == 2);
+    mkwmp_config_parse("# comment\n[section]\nname = \"Bia\"\n", &cc);  // defaults + comments/sections
+    assert(!strcmp(cc.host, "127.0.0.1") && cc.port == 8900 && cc.slot == 1);
+    assert(!strcmp(cc.name, "Bia"));
+
+    puts("bridge: eventfd, addrinfo ABI, TCP, loopback peer UDP, certificate and config parse passed");
     return 0;
 }

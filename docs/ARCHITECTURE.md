@@ -41,7 +41,7 @@ SOLID in practice: each service depends on the contract crate (the abstraction),
 ## Config
 
 - `config/server.toml` — server side: instance name, NPLN bind, **seat capacity (N)**, lobby bind/size/scaling, TLS cert+key. Loaded by `seat` and `lobby` (`config::ServerConfig::load`); relative paths resolve against the file.
-- `config/client.toml` — per player: server address, profile name, account slot. Read by the launcher, which sets the probe's environment.
+- `config/client.toml` — per player: server address, username, optional loopback slot. Copied to `<game dir>\mkwmp.toml`; the probe (winmm.dll) reads it directly at startup. No launcher. If absent, the game runs stock/offline. Parsed in C (`native/probe/src/config.c`); env vars (`MKWMP_HOST/PORT/PLAYER/ENABLE`) still override for testing.
 
 Flow the config drives: a connection joins the active-user pool → if a seat is free it gets a ticket → an in-game matchmaking request is validated against the ticket → access to the lobby/world service. All state is in-memory and dies with the process — no database.
 

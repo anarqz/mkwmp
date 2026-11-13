@@ -11,6 +11,7 @@
 // Env: MKWMP_PORT (default 8900), MKWMP_HOST (default 127.0.0.1).
 #include "recomp.h"
 #include "log.h"
+#include "config.h"
 #include "capture_cert.h"
 
 #include <winsock2.h>
@@ -356,10 +357,14 @@ static void net_init(void) {
         g_sock[i] = INVALID_SOCKET;
         g_wake_peer[i] = INVALID_SOCKET;
     }
+    // Server from mkwmp.toml; env vars override for testing.
+    const MkwmpConfig *cfg = mkwmp_config();
     const char *host = getenv("MKWMP_HOST");
     const char *port = getenv("MKWMP_PORT");
+    if (!host || !*host) host = cfg->host;
+    int pnum = port && *port ? atoi(port) : cfg->port;
     g_server.sin_family = AF_INET;
-    g_server.sin_port = htons((unsigned short)(port && *port ? atoi(port) : 8900));
+    g_server.sin_port = htons((unsigned short)pnum);
     g_server.sin_addr.s_addr = inet_addr(host && *host ? host : "127.0.0.1");
     if (g_server.sin_addr.s_addr == INADDR_NONE) g_server.sin_addr.s_addr = inet_addr("127.0.0.1");
     g_ready = 1;
@@ -1055,13 +1060,15 @@ static const Reg kRegs[] = {
 _Static_assert(sizeof(kRegs) / sizeof(kRegs[0]) <= 64, "runtime override limit");
 
 int npln_register(void) {
-    // Opt-in: without MKWMP_ENABLE=1 we register nothing, so a normal launch behaves like stock
-    // (offline). The gates below start NPLN, which currently aborts during its init, so we must NOT
-    // engage them unless we're actively capturing.
+    // Opt-in: engage only if mkwmp.toml is present (or MKWMP_ENABLE=1 for tests).
+    // A stock launch (no config) must behave like offline: NPLN init aborts if
+    // we open the gates without actively capturing.
+    const MkwmpConfig *cfg = mkwmp_config();
     const char *enabled = getenv("MKWMP_ENABLE");
-    if (!enabled || strcmp(enabled, "1")) { log_line("npln: inactive (set MKWMP_ENABLE=1 to engage)"); return 0; }
+    int engage = cfg->present || (enabled && !strcmp(enabled, "1"));
+    if (!engage) { log_line("npln: inactive (no mkwmp.toml; set MKWMP_ENABLE=1 to force)"); return 0; }
     const char *player = getenv("MKWMP_PLAYER");
-    g_second_player = player && !strcmp(player, "2");
+    g_second_player = player ? !strcmp(player, "2") : cfg->slot == 2;
     const char *edges = getenv("MKWMP_TRACE_EDGES");
     g_trace_edges = edges && !strcmp(edges, "1");
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
