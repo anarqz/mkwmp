@@ -1,0 +1,25 @@
+// Recovered from mkw-recomp main.bin. Verified live for the profile read.
+syntax = "proto3";
+
+package nn.npln.ugcstore.v1;
+
+import "nn/npln/matchmaking/v1/matchmaking.proto";
+
+service Ugcstore {
+  rpc BulkGetDocuments(BulkGetDocumentsRequest) returns (stream BulkGetDocumentsResult);
+}
+
+message BulkGetDocumentsRequest {
+  repeated string names = 2;      // ".../documents/{normal,battle,survival}"
+}
+
+// main+0x1492980
+message BulkGetDocumentsResult {
+  Document document = 1;
+}
+
+// main+0x14903c0. The game reads double "Rating" (default 1500).
+message Document {
+  string name = 1;
+  map<string, nn.npln.matchmaking.v1.Value> fields = 2;
+}

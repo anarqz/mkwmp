@@ -1,0 +1,38 @@
+// Recovered from mkw-recomp main.bin. Static only (not yet seen live).
+// Stub main+0x12bae9c; message catalogue in docs/NETCODE.md section 4.
+syntax = "proto3";
+
+package nn.npln.gamesync.v1;
+
+import "nn/npln/auth/v1/auth.proto";
+
+service Gamesync {
+  rpc IssueToken(IssueTokenRequest) returns (IssueTokenResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  // Bidi. Carries snapshot listener targets such as
+  // "userSessions/current/targets/1"; schema pending first capture.
+  rpc KeepUserSession(stream KeepUserSessionRequest) returns (stream KeepUserSessionResponse);
+}
+
+// main+0x12a1ee0
+message IssueTokenRequest {
+  string unknown_1 = 1;
+  string unknown_2 = 2;
+}
+
+// main+0x12a26fc
+message IssueTokenResponse {
+  nn.npln.auth.v1.Token token = 1;
+}
+
+message RefreshTokenRequest {
+  string unknown_1 = 1;
+  string unknown_2 = 2;
+}
+
+message RefreshTokenResponse {
+  nn.npln.auth.v1.Token token = 1;
+}
+
+message KeepUserSessionRequest {}
+message KeepUserSessionResponse {}

@@ -1,0 +1,33 @@
+// Recovered from mkw-recomp main.bin. Field numbers verified; names inferred.
+syntax = "proto3";
+
+package nn.npln.auth.v1;
+
+import "google/protobuf/duration.proto";
+
+service Auth {
+  // Verified live: the client accepts outer field 2 only.
+  rpc IssuePrearrangedUserToken(IssuePrearrangedUserTokenRequest) returns (IssuePrearrangedUserTokenResponse);
+}
+
+message IssuePrearrangedUserTokenRequest {
+  string tenant = 1;              // "tenants/<tenant>"
+  Assertion assertion = 3;
+}
+
+message Assertion {
+  string jwt = 1;                 // probe sends a per-player dummy assertion
+}
+
+message IssuePrearrangedUserTokenResponse {
+  reserved 1;                     // User; omitted, accepted without it
+  Token token = 2;                // parser main+0xec3cc0
+}
+
+// Parser main+0xec7100. Also used by Gamesync IssueToken (main+0x12b94c4).
+message Token {
+  string user = 1;                // "tenants/<tenant>/users/<uuid>"
+  string access_token = 2;
+  string refresh_token = 3;
+  google.protobuf.Duration expires_in = 4;
+}

@@ -1,0 +1,90 @@
+// Recovered from mkw-recomp main.bin. Field numbers verified; names inferred.
+// Serializer addresses: see docs/NETCODE.md section 2.
+syntax = "proto3";
+
+package nn.npln.matchmaking.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service Matchmaker {
+  rpc CreateMatchmakingTicket(CreateMatchmakingTicketRequest) returns (MatchmakingTicket);
+  rpc TrackMatchmakingTicket(TrackMatchmakingTicketRequest) returns (stream MatchmakingTicket);
+}
+
+message CreateMatchmakingTicketRequest {
+  string parent = 1;              // "tenants/current"
+  MatchmakingTicket ticket = 2;
+}
+
+message TrackMatchmakingTicketRequest {
+  string name = 1;                // "tenants/current/matchmakingTickets/<uuid>"
+  string user = 2;                // "tenants/current/users/current"
+}
+
+// Serializer main+0x1408a40. Create reply needs only `name`.
+message MatchmakingTicket {
+  string name = 1;
+  string config = 2;              // ".../matchmakingConfigs/Normal24"
+  bytes unknown_3 = 3;            // {1 str, 2 str, 3 varint}, main+0x140a0d8
+  repeated Player players = 4;
+  int32 state = 5;                // 3 = session found
+  repeated MatchedPlayer matched_players = 6;
+  GameSession game_session = 7;
+}
+
+// main+0x140d68c
+message Player {
+  string user = 1;
+  Attributes attributes = 2;
+  map<string, string> properties = 3;   // type of map value unverified
+  string unknown_4 = 4;
+}
+
+// main+0x140c708. Join check main+0x138dea0 needs user_session.
+message MatchedPlayer {
+  Player player = 1;
+  string user_session = 2;        // ".../gameSessions/<g>/userSessions/<u>"
+  string user_session_id = 3;     // Gamesync document "__us/<id>"
+}
+
+// main+0x140b440
+message GameSession {
+  string name = 1;                // "tenants/<t>/gameSessions/<uuid>"
+  int32 unknown_2 = 2;
+  int32 unknown_3 = 3;
+  bool unknown_4 = 4;
+  bool unknown_5 = 5;
+  string unknown_6 = 6;           // "*" sets a flag
+  int32 unknown_7 = 7;
+  string gamesync_host = 8;       // verified: channel target host
+  uint32 gamesync_port = 9;       // verified: channel target port
+  google.protobuf.Timestamp unknown_10 = 10;
+  Attributes attributes = 11;
+  repeated Member members = 12;
+}
+
+// main+0x1405fec
+message Member {
+  string user = 1;
+  string user_session = 2;
+  map<string, string> properties = 3;
+  google.protobuf.Timestamp unknown_4 = 4;
+  int32 unknown_5 = 5;
+  string unknown_6 = 6;
+  Attributes attributes = 7;
+}
+
+message Attributes {
+  repeated Entry entries = 1;
+  message Entry {
+    string key = 1;
+    Value value = 2;
+  }
+}
+
+// Seen: int (3), double (5), string (7).
+message Value {
+  int64 int_value = 3;
+  double double_value = 5;
+  string string_value = 7;
+}
