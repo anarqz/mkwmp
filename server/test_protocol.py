@@ -332,6 +332,23 @@ class RefereeTest(unittest.TestCase):
         self.assertEqual(fields_out["result"], capture.gs_list([capture.gs_int(1), capture.gs_int(2)]))
         self.assertIsNone(capture.referee_result(name.replace("/1/", "/2/"), fields, now=100))
 
+    def test_a_report_finalizes_the_result_with_ratings(self):
+        capture.REFEREE_ANSWERED.clear()
+        capture.REFEREE_MATCHES.clear()
+        body = capture.decode_grpc_messages(self.REQUEST)[0][1]
+        (name, fields), = capture.write_updates(body)
+        result_name, _ = capture.referee_result(name, fields, now=100)
+        # Captured report (both players' outcome), retargeted at this result.
+        report = capture.decode_grpc_messages(bytes.fromhex("000000006c0a6a0a680a5a0a40646f63732f4040526566657265655265706f72742f63323263356564652d356334622d353162662d386130632d3339346231346463626639312f557365722f3112160a140a06726573756c74120a4a080a0218010a021800120a0a0860726573756c7460"))[0][1]
+        (rname, rfields), = capture.write_updates(report)
+        rname = "docs/@@RefereeReport/" + result_name.rsplit("/", 1)[-1] + "/User/1"
+        final_name, doc = capture.referee_final(rname, rfields, now=101)
+        self.assertEqual(final_name, result_name)
+        fields_out = _doc_fields(doc)
+        self.assertEqual(fields_out["status"], capture.gs_int(1))
+        self.assertEqual(fields_out["result"], capture.gs_list([capture.gs_int(1), capture.gs_int(0)]))
+        self.assertIn(b"\x0a\x011", fields_out["ratings"])
+
 class MatchDocumentsTest(unittest.TestCase):
     def test_a_new_lobby_drops_the_previous_match_documents(self):
         capture.DOC_STORE.clear()

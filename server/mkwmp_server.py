@@ -570,6 +570,48 @@ def referee_result(name, fields_body, now=None):
     doc = (protobuf_bytes(1, result_name) + protobuf_bytes(2, gs_fields(entries)) +
            protobuf_bytes(3, gs_timestamp(now)) + protobuf_bytes(4, gs_timestamp(now)))
     DOC_STORE[result_name] = doc
+    REFEREE_MATCHES[result_name] = (key, total)
+    return result_name, doc
+
+
+REFEREE_REPORT = "docs/@@RefereeReport/"
+REFEREE_MATCHES = {}   # result document name -> (request key, total players)
+RATING = 3000.0        # shown in the lobby; no rating changes (local play)
+
+
+def gs_map(entries):
+    """Value{10: Map{1: repeated Entry{1 key, 2 Value}}} (as in `ussid_map`)."""
+    return protobuf_bytes(10, b"".join(protobuf_bytes(1, protobuf_bytes(1, k) + protobuf_bytes(2, v))
+                                       for k, v in entries))
+
+
+def gs_double(x):
+    return b"\x29" + struct.pack("<d", x)                 # Value field 5 (fixed64)
+
+
+def referee_final(name, fields_body, now=None):
+    """Finalize the verdict when a member reports the outcome.
+
+    After the match each client writes docs/@@RefereeReport/<result uuid>/User/
+    <ussid> {result: [...]} (first a partial list, then all players). The
+    server then updates the @@RefereeResult document to status 1 with the
+    reported `result` and `ratings` = map {"<ussid>": rating} (FUN_00498404
+    parses them into the player map, node+0x8e0). Returns (name, document)
+    or None."""
+    parts = name[len(REFEREE_REPORT):].split("/")
+    if not name.startswith(REFEREE_REPORT) or len(parts) != 3 or parts[1] != "User":
+        return None
+    result_name = REFEREE_RESULT + parts[0]
+    if result_name not in REFEREE_MATCHES:
+        return None
+    key, total = REFEREE_MATCHES[result_name]
+    reported = doc_entries(fields_body).get("result", gs_list([]))
+    entries = [("request_id", gs_str(key)), ("status", gs_int(1)), ("result", reported),
+               ("ratings", gs_map([(str(ussid), gs_double(RATING)) for ussid in range(1, total + 1)]))]
+    now = int(time.time()) if now is None else now
+    doc = (protobuf_bytes(1, result_name) + protobuf_bytes(2, gs_fields(entries)) +
+           protobuf_bytes(3, gs_timestamp(now)) + protobuf_bytes(4, gs_timestamp(now)))
+    DOC_STORE[result_name] = doc
     return result_name, doc
 
 
@@ -679,6 +721,7 @@ def clear_match_documents():
     for name in stale:
         del DOC_STORE[name]
     REFEREE_ANSWERED.clear()
+    REFEREE_MATCHES.clear()
     return len(stale)
 
 
@@ -1101,6 +1144,10 @@ class H2Protocol(asyncio.Protocol):
                 if verdict:
                     log(f"<<< referee: {verdict[0]} for {name}")
                     H2Protocol.publish(verdict[0], verdict[1], CHANGE_ADDED)
+                final = referee_final(name, fields_body)
+                if final:
+                    log(f"<<< referee: final {final[0]} (status 1) after {name}")
+                    H2Protocol.publish(final[0], final[1], CHANGE_MODIFIED)
             H2Protocol.release_pending()
             log(f"<<< WriteDocuments: {writes} -> upcsid by slot; stored {len(DOC_STORE)} docs")
         self.conn.send_headers(sid, [(":status", "200"), ("content-type", "application/grpc")])
