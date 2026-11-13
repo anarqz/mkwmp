@@ -712,13 +712,25 @@ static void ov_pia_socket(Cpu *c) {
 
 static void ov_pia_bind(Cpu *c) {
     SOCKET s = fd_get((int)arg_x(c, 0));
+    const uint8_t *guest = arg_p(c, 1);
     struct sockaddr_in sa = {0};
     sa.sin_family = AF_INET;
     sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    if (s == INVALID_SOCKET || bind(s, (struct sockaddr *)&sa, sizeof sa)) {
-        g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
+    // Honour the port Pia asked for: Pia advertises it to peers as its private
+    // address (it never asks the socket afterwards). Fall back to ephemeral.
+    unsigned requested = 0;
+    if (guest && arg_x(c, 2) >= 4 && guest[1] == 2) {
+        memcpy(&sa.sin_port, guest + 2, sizeof sa.sin_port);
+        requested = ntohs(sa.sin_port);
     }
-    rlog("Pia UDP bound to loopback");
+    if (s == INVALID_SOCKET) { g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return; }
+    if (bind(s, (struct sockaddr *)&sa, sizeof sa)) {
+        sa.sin_port = 0;
+        if (bind(s, (struct sockaddr *)&sa, sizeof sa)) { g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return; }
+    }
+    struct sockaddr_in got; int gl = sizeof got;
+    unsigned actual = getsockname(s, (struct sockaddr *)&got, &gl) ? 0 : ntohs(got.sin_port);
+    mlog("Pia UDP bound to loopback: requested port %u, got %u", requested, actual);
     ret_x(c, 0);
 }
 
@@ -749,7 +761,18 @@ static void ov_pia_sendto(Cpu *c) {
     sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     // NAT probes reach the local responder. A peer endpoint learned from a
     // local session must keep its own port instead of going to that responder.
-    if (guest && arg_x(c, 5) >= 16 && guest[1] == 2 && guest[4] == 127 &&
+    // Every peer is local in this setup: any other IPv4 peer address (e.g. one
+    // advertised through Gamesync signaling) is redirected to loopback, same port.
+    int is_probe = len == 16 && !buf[0] && !buf[1] && !buf[2] && (buf[3] == 0 || (buf[3] >= 101 && buf[3] <= 103));
+    if (guest && arg_x(c, 5) >= 16 && guest[1] == 2 && !is_probe && (guest[2] || guest[3])) {
+        memcpy(&sa.sin_port, guest + 2, sizeof sa.sin_port);
+        if (!(guest[4] == 127 && guest[5] == 0 && guest[6] == 0 && guest[7] == 1)) {
+            static volatile LONG redirected;
+            if (InterlockedIncrement(&redirected) <= 20)
+                mlog("Pia UDP peer %u.%u.%u.%u:%u redirected to loopback", guest[4], guest[5], guest[6], guest[7],
+                     ntohs(sa.sin_port));
+        }
+    } else if (guest && arg_x(c, 5) >= 16 && guest[1] == 2 && guest[4] == 127 &&
         guest[5] == 0 && guest[6] == 0 && guest[7] == 1) {
         memcpy(&sa.sin_port, guest + 2, sizeof sa.sin_port);
     } else if (len == 16 && !buf[0] && !buf[1] && !buf[2] &&
@@ -757,6 +780,13 @@ static void ov_pia_sendto(Cpu *c) {
         sa.sin_port = htons(10025);
     }
     if (!sa.sin_port) {
+        static volatile LONG rejected;
+        if (InterlockedIncrement(&rejected) <= 20)
+            mlog("Pia UDP send rejected: %u bytes, addr family %u port %u ip %u.%u.%u.%u", (unsigned)len,
+                 guest && arg_x(c, 5) >= 16 ? guest[1] : 0xff,
+                 guest && arg_x(c, 5) >= 16 ? (unsigned)((guest[2] << 8) | guest[3]) : 0,
+                 guest && arg_x(c, 5) >= 16 ? guest[4] : 0, guest && arg_x(c, 5) >= 16 ? guest[5] : 0,
+                 guest && arg_x(c, 5) >= 16 ? guest[6] : 0, guest && arg_x(c, 5) >= 16 ? guest[7] : 0);
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
     if (len != 16) {

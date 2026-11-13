@@ -155,8 +155,21 @@ int main(void) {
     ov_pia_recvfrom(&datagram);
     assert(datagram.x[0] == 4 && memcmp(echoed, "peer", 4) == 0);
     assert(from_len == 16 && memcmp(guest_from + 4, guest_peer + 4, 4) == 0);
+    // A non-loopback peer (advertised via signaling) is redirected to loopback, same port.
     guest_peer[4] = 192;
-    datagram.x[0] = from_fd; datagram.x[4] = (uintptr_t)guest_peer; datagram.x[5] = sizeof guest_peer;
+    datagram.x[0] = from_fd; datagram.x[1] = (uintptr_t)"peer"; datagram.x[2] = 4;
+    datagram.x[4] = (uintptr_t)guest_peer; datagram.x[5] = sizeof guest_peer;
+    ov_pia_sendto(&datagram);
+    assert(datagram.x[0] == 4 && readable(to_fd));
+    from_len = sizeof guest_from;
+    datagram.x[0] = to_fd; datagram.x[1] = (uintptr_t)echoed; datagram.x[2] = sizeof echoed;
+    datagram.x[4] = (uintptr_t)guest_from; datagram.x[5] = (uintptr_t)&from_len;
+    ov_pia_recvfrom(&datagram);
+    assert(datagram.x[0] == 4);
+    // Port 0 is still rejected.
+    guest_peer[2] = guest_peer[3] = 0;
+    datagram.x[0] = from_fd; datagram.x[1] = (uintptr_t)"peer"; datagram.x[2] = 4;
+    datagram.x[4] = (uintptr_t)guest_peer; datagram.x[5] = sizeof guest_peer;
     ov_pia_sendto(&datagram);
     assert(datagram.x[0] == UINT64_MAX && g_errno == G_EINVAL);
     call2(ov_sock_close, from_fd, 0); call2(ov_sock_close, to_fd, 0);

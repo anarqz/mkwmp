@@ -573,6 +573,24 @@ def in_collection(name, collection):
     return name.startswith(collection) and "/" not in name[len(collection):]
 
 
+def lower_members_present(collection, slot):
+    """True when every lower slot (1..slot-1) has a document in the collection."""
+    have = {user_slot(name) for name in DOC_STORE if in_collection(name, collection)}
+    return all(s in have for s in range(1, slot))
+
+
+GAMESYNC_GET_DOCUMENT = "/nn.npln.gamesync.v1.Gamesync/GetDocument"
+
+
+def get_document(name, lobby=None, now=None):
+    """GetDocument (request {1 name}): the game-session fixed data or a stored
+    document. The response is the Document itself (FUN_012a0c00 parses its
+    field 1 as the document name; a wrapper aborts the SDK)."""
+    if name == GS_FIXED_DOC:
+        return game_session_fixed_document(lobby, now)
+    return DOC_STORE.get(name, b"")
+
+
 def stored_documents(doc_name):
     if doc_name.endswith("/"):
         return [doc for name, doc in sorted(DOC_STORE.items()) if in_collection(name, doc_name)]
@@ -705,6 +723,7 @@ class H2Protocol(asyncio.Protocol):
     active_trackers = {}
     announce_matches = False
     watchers = []   # (protocol, stream id, session, target id, document or collection/)
+    pending = []    # deferred __pus listens: (protocol, sid, session, target, collection/, slot)
 
     def __init__(self):
         self.conn = H2Connection(H2Configuration(client_side=False, header_encoding="utf-8"))
@@ -712,6 +731,7 @@ class H2Protocol(asyncio.Protocol):
         self.streams = {}   # stream_id -> {"path":..., "data":bytearray}
         self.subscriptions = {}
         self.tracked_tickets = {}
+        self.stream_user = {}   # KeepUserSession stream id -> user id (from docs/__us/<id>)
         self.user = None
 
     def connection_made(self, transport):
@@ -848,18 +868,44 @@ class H2Protocol(asyncio.Protocol):
         for tid in removed_targets(body):
             H2Protocol.watchers = [w for w in H2Protocol.watchers if not (w[0] is self and w[1] == sid and w[3] == tid)]
             log(f"--- KeepUserSession target {tid} removed")
+        ready = []
         for target, doc_name in targets:
             log(f"--- KeepUserSession target {target} -> {doc_name or '(no document)'}"
                 f" ({len(stored_documents(doc_name))} stored)")
+            if doc_name.startswith("docs/__us/"):
+                self.stream_user[sid] = doc_name.rsplit("/", 1)[-1]
+            slot = user_slot(self.stream_user.get(sid, ""))
+            if doc_name.endswith("/__pus/") and not lower_members_present(doc_name, slot):
+                # Answer later (release_pending) so lower slots arrive in the
+                # snapshot: the lower slot then initiates, the higher accepts.
+                H2Protocol.pending.append((self, sid, session, target, doc_name, slot))
+                log(f"--- KeepUserSession target {target_op_id(target)} deferred until slots < {slot} joined")
+                continue
+            ready.append((target, doc_name))
+        self.answer_targets(sid, session, ready)
+
+    def answer_targets(self, sid, session, targets):
+        """Send each target's documents + sync/ack ops and start watching it."""
+        for target, doc_name in targets:
             if doc_name and not doc_name.startswith("docs/__us/"):
                 H2Protocol.watchers.append((self, sid, session, target_op_id(target), doc_name))
         frames = b"".join(grpc_frame(m) for m in keep_user_session_replies(
             session, targets, lobby_of=self.lobby_of))
-        if not frames or self.conn.local_flow_control_window(sid) < len(frames):
+        if not frames or self.transport is None or self.transport.is_closing():
             return
         self.conn.send_data(sid, frames)
         self.transport.write(self.conn.data_to_send())
-        log(f"<<< KeepUserSession: {len(targets)} target(s) answered ADDED + CURRENT ({len(frames)} bytes)")
+        log(f"<<< KeepUserSession: {len(targets)} target(s) answered ({len(frames)} bytes)")
+
+    @classmethod
+    def release_pending(cls):
+        for entry in list(cls.pending):
+            proto, sid, session, target, doc_name, slot = entry
+            if lower_members_present(doc_name, slot):
+                cls.pending.remove(entry)
+                if sid in proto.subscriptions:
+                    log(f"--- KeepUserSession target {target_op_id(target)} released (slot {slot})")
+                    proto.answer_targets(sid, session, [(target, doc_name)])
 
     def handle_stream(self, sid):
         st = self.streams.pop(sid, None)
@@ -890,6 +936,13 @@ class H2Protocol(asyncio.Protocol):
         response = auth_response(body) if is_auth else b""
         if st["path"] in (GAMESYNC_ISSUE_TOKEN, GAMESYNC_REFRESH_TOKEN):
             response = gamesync_token_response(body, self.ticket_user(st["token"]))
+        if st["path"] == GAMESYNC_GET_DOCUMENT:
+            msgs = decode_grpc_messages(body)
+            name = bytes_field(msgs[0][1], 1).decode(errors="replace") if msgs else ""
+            user = (self.ticket_user(st["token"]) or "").rsplit("/", 1)[-1]
+            doc = get_document(name, self.lobby_of(user))
+            response = doc
+            log(f"<<< GetDocument {name}: {'found' if doc else 'not found'}")
         if st["path"] == GAMESYNC_WRITE_DOCUMENTS:
             msgs = decode_grpc_messages(body)
             writes = parse_write_documents(msgs[0][1]) if msgs else []
@@ -898,6 +951,7 @@ class H2Protocol(asyncio.Protocol):
             for name, fields_body in (write_updates(msgs[0][1]) if msgs else []):
                 doc, created = store_write(name, fields_body, transformed.get(name))
                 H2Protocol.publish(name, doc, CHANGE_ADDED if created else 2)
+            H2Protocol.release_pending()
             log(f"<<< WriteDocuments: {writes} -> upcsid by slot; stored {len(DOC_STORE)} docs")
         self.conn.send_headers(sid, [(":status", "200"), ("content-type", "application/grpc")])
         if is_auth:
