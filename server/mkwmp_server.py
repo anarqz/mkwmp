@@ -262,7 +262,8 @@ def match_assignment(tenant, lobby_id, tickets, recipient, now=None):
         player = player_for(ticket.user, ticket.player)
         matched += protobuf_bytes(6, protobuf_bytes(1, player) + protobuf_bytes(2, user_session) +
                                   protobuf_bytes(3, user_id))
-        members += protobuf_bytes(12, protobuf_bytes(1, ticket.user) + protobuf_bytes(2, user_session) +
+        # Member: 1 = userSession name, 2 = user (serializer 0x1405fec, converter FUN_013e94c8).
+        members += protobuf_bytes(12, protobuf_bytes(1, user_session) + protobuf_bytes(2, ticket.user) +
                                   protobuf_bytes(4, timestamp(now)))
     # Fields 8/9 are the Gamesync endpoint; empty values made the client
     # resolve ":0" and fail Gamesync/IssueToken (2321-4992).
@@ -482,8 +483,18 @@ def write_documents_response(writes, value_of, now=None):
     return out + protobuf_bytes(2, gs_timestamp(now))
 
 
-def write_updates(body):
-    """[(document name, fields body)] for each update Write (Write.1.1 Document)."""
+def _ld(raw):
+    """Payload of a length-delimited field as yielded by iter_fields (tag, length, bytes)."""
+    _, s = _varint(raw, 0)
+    n, s = _varint(raw, s)
+    return raw[s:s + n]
+
+
+def write_updates(body, with_mask=False):
+    """[(document name, fields body)] for each update Write (Write.1.1 Document).
+
+    with_mask: also return the Update's FieldMask paths (Write.1.2 {1: repeated path}) as a
+    list, or None when the write has no mask (a full replace)."""
     updates = []
     for field, _, raw in iter_fields(body):
         if field != 1:
@@ -491,10 +502,20 @@ def write_updates(body):
         _, s = _varint(raw, 0)
         n, s = _varint(raw, s)
         try:
-            document = bytes_field(bytes_field(raw[s:s + n], 1), 1)
+            update = bytes_field(raw[s:s + n], 1)
+            document = bytes_field(update, 1)
         except ValueError:
             continue
-        updates.append((bytes_field(document, 1).decode(errors="replace"), bytes_field(document, 2)))
+        name = bytes_field(document, 1).decode(errors="replace")
+        if not with_mask:
+            updates.append((name, bytes_field(document, 2)))
+            continue
+        mask = None
+        for uf, _, uraw in iter_fields(update):
+            if uf == 2:
+                mask = [_ld(p).decode(errors="replace").strip("`")
+                        for f2, _, p in iter_fields(_ld(uraw)) if f2 == 1]
+        updates.append((name, bytes_field(document, 2), mask))
     return updates
 
 
@@ -510,11 +531,22 @@ def doc_entries(fields_body):
     return entries
 
 
-def store_write(name, fields_body, transformed=None, now=None):
+def store_write(name, fields_body, transformed=None, now=None, mask=None):
     """Store a written document, with server transform results applied
-    (e.g. {"upcsid": int}). Returns (document bytes, created?)."""
+    (e.g. {"upcsid": int}). Returns (document bytes, created?).
+
+    mask: the write's FieldMask paths. Game writes are MERGE writes (FUN_0049c9d8): each lists
+    only the fields it sets, e.g. PlayerStatic arrives as {p2p_sid,p2p_lid}, {name},
+    {vehicle,driver}, ... so the masked fields are merged into the stored document (masked but
+    absent = removed). No mask, or "*", replaces the document."""
     now = int(time.time()) if now is None else now
     entries = doc_entries(fields_body)
+    if mask and "*" not in mask and name in DOC_STORE:
+        merged = doc_entries(bytes_field(DOC_STORE[name], 2))
+        for key in mask:
+            merged.pop(key, None)
+        merged.update(entries)
+        entries = merged
     for key, value in (transformed or {}).items():
         entries[key] = value if isinstance(value, bytes) else gs_int(value)   # bytes = raw Value
     doc = (protobuf_bytes(1, name) + protobuf_bytes(2, gs_fields(entries.items())) +
@@ -613,14 +645,39 @@ def referee_result(name, fields_body, now=None):
             if k == "total_player_count" and v[:1] == b"\x18":
                 total = _varint(v, 1)[0]
     result_name = REFEREE_RESULT + str(uuid5(NAMESPACE_URL, "mkwmp-referee/" + key))
-    entries = [("request_id", gs_str(key)), ("status", gs_int(0)),
-               ("result", gs_list([gs_int(rank) for rank in range(1, total + 1)]))]
+    # `result` = ordered race-player indices (0-based) that have finished / been eliminated
+    # (docs/RE-MAP.md 1.4): empty while the match runs.
+    REFEREE_MATCHES[result_name] = {"key": key, "total": total, "order": []}
+    return result_name, referee_document(result_name, now=now)
+
+
+def referee_document(result_name, final=False, now=None):
+    """The @@RefereeResult document of a match: status 0 (open) with the finish order so far,
+    or status 1 (final) with the full order and ratings {"<ussid>": rating}."""
+    match = REFEREE_MATCHES[result_name]
+    entries = [("request_id", gs_str(match["key"])), ("status", gs_int(1 if final else 0)),
+               ("result", gs_list([gs_int(i) for i in match["order"]]))]
+    if final:
+        entries.append(("ratings", gs_map([(str(u), gs_double(RATING)) for u in range(1, match["total"] + 1)])))
     now = int(time.time()) if now is None else now
     doc = (protobuf_bytes(1, result_name) + protobuf_bytes(2, gs_fields(entries)) +
            protobuf_bytes(3, gs_timestamp(now)) + protobuf_bytes(4, gs_timestamp(now)))
     DOC_STORE[result_name] = doc
-    REFEREE_MATCHES[result_name] = (key, total)
-    return result_name, doc
+    return doc
+
+
+def gs_int_list(value):
+    """[int] from a Value{9: List{1: repeated Value{3: int}}}."""
+    if value[:1] != b"\x4a":
+        return []
+    _, s = _varint(value, 0)
+    n, s = _varint(value, s)
+    out = []
+    for f, _, raw in iter_fields(value[s:s + n]):
+        item = _ld(raw) if f == 1 else b""
+        if item[:1] == b"\x18":
+            out.append(_varint(item, 1)[0])
+    return out
 
 
 REFEREE_REPORT = "docs/@@RefereeReport/"
@@ -639,29 +696,26 @@ def gs_double(x):
 
 
 def referee_final(name, fields_body, now=None):
-    """Finalize the verdict when a member reports the outcome.
+    """Merge a member's outcome report into the match's finish order.
 
-    After the match each client writes docs/@@RefereeReport/<result uuid>/User/
-    <ussid> {result: [...]} (first a partial list, then all players). The
-    server then updates the @@RefereeResult document to status 1 with the
-    reported `result` and `ratings` = map {"<ussid>": rating} (FUN_00498404
-    parses them into the player map, node+0x8e0). Returns (name, document)
-    or None."""
+    During/after the match each client writes docs/@@RefereeReport/<result uuid>/User/<ussid>
+    {result: [...]}: the race-player indices it has seen finish or be eliminated, in order
+    (first [1], then [1, 0]). Clients only report while the result is open (status 0), so the
+    server keeps it open, appending new indices in the reported order, and finalizes (status 1
+    + ratings, read by FUN_00498404) only once every player is listed. Returns
+    (result name, document, final?) or None."""
     parts = name[len(REFEREE_REPORT):].split("/")
     if not name.startswith(REFEREE_REPORT) or len(parts) != 3 or parts[1] != "User":
         return None
     result_name = REFEREE_RESULT + parts[0]
-    if result_name not in REFEREE_MATCHES:
+    match = REFEREE_MATCHES.get(result_name)
+    if match is None or match.get("final"):
         return None
-    key, total = REFEREE_MATCHES[result_name]
-    reported = doc_entries(fields_body).get("result", gs_list([]))
-    entries = [("request_id", gs_str(key)), ("status", gs_int(1)), ("result", reported),
-               ("ratings", gs_map([(str(ussid), gs_double(RATING)) for ussid in range(1, total + 1)]))]
-    now = int(time.time()) if now is None else now
-    doc = (protobuf_bytes(1, result_name) + protobuf_bytes(2, gs_fields(entries)) +
-           protobuf_bytes(3, gs_timestamp(now)) + protobuf_bytes(4, gs_timestamp(now)))
-    DOC_STORE[result_name] = doc
-    return result_name, doc
+    for index in gs_int_list(doc_entries(fields_body).get("result", b"")):
+        if index not in match["order"]:
+            match["order"].append(index)
+    match["final"] = len(match["order"]) >= match["total"]
+    return result_name, referee_document(result_name, final=match["final"], now=now), match["final"]
 
 
 GS_FIXED_DOC = "docs/__gs/f"   # name checked by FUN_01267820 against "__gs" + "/" + "f"
@@ -1189,20 +1243,21 @@ class H2Protocol(asyncio.Protocol):
             response = write_documents_response(writes, user_slot)
             transformed = {name: {"upcsid": user_slot(name)} for name, count in writes if count}
             writer_name = USER_NAMES.get((self.ticket_user(st["token"]) or "").rsplit("/", 1)[-1])
-            for name, fields_body in (write_updates(msgs[0][1]) if msgs else []):
+            for name, fields_body, mask in (write_updates(msgs[0][1], with_mask=True) if msgs else []):
                 if writer_name and name.startswith(PLAYER_STATIC) and "name" in doc_entries(fields_body):
                     # The name others see is the launcher identity from the seat ticket.
                     transformed.setdefault(name, {})["name"] = gs_str(writer_name)
-                doc, created = store_write(name, fields_body, transformed.get(name))
+                doc, created = store_write(name, fields_body, transformed.get(name), mask=mask)
                 H2Protocol.publish(name, doc, CHANGE_ADDED if created else 2)
                 verdict = referee_result(name, fields_body)
                 if verdict:
-                    log(f"<<< referee: {verdict[0]} for {name}")
+                    log(f"<<< referee: {verdict[0]} opened for {name}")
                     H2Protocol.publish(verdict[0], verdict[1], CHANGE_ADDED)
-                final = referee_final(name, fields_body)
-                if final:
-                    log(f"<<< referee: final {final[0]} (status 1) after {name}")
-                    H2Protocol.publish(final[0], final[1], CHANGE_MODIFIED)
+                update = referee_final(name, fields_body)
+                if update:
+                    result_name, result_doc, final = update
+                    log(f"<<< referee: {result_name} {'FINAL (status 1)' if final else 'updated (status 0)'} after {name}")
+                    H2Protocol.publish(result_name, result_doc, CHANGE_MODIFIED)
             H2Protocol.release_pending()
             log(f"<<< WriteDocuments: {writes} -> upcsid by slot; stored {len(DOC_STORE)} docs")
         if st["path"] == CANCEL_TICKET:

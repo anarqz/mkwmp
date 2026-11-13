@@ -69,9 +69,9 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(capture.bytes_field(capture.bytes_field(entry, 1), 1).decode(), ticket.user)
                     self.assertEqual(capture.bytes_field(entry, 2).decode(), f"{session_name}/userSessions/{user_id}")
                     self.assertEqual(capture.bytes_field(entry, 3).decode(), user_id)
-                    # Session member field 1 is a plain string, not a message.
-                    member = capture.protobuf_bytes(1, ticket.user) + capture.protobuf_bytes(
-                        2, f"{session_name}/userSessions/{user_id}")
+                    # Session Member: 1 = userSession name, 2 = user (FUN_013e94c8).
+                    member = capture.protobuf_bytes(1, f"{session_name}/userSessions/{user_id}") + \
+                        capture.protobuf_bytes(2, ticket.user)
                     self.assertIn(member, session)
                 peer.conn.send_headers.assert_called_once_with(1, [("grpc-status", "0")], end_stream=True)
                 self.assertFalse(peer.tracked_tickets)
@@ -331,25 +331,64 @@ class RefereeTest(unittest.TestCase):
         fields_out = _doc_fields(doc)
         self.assertEqual(fields_out["request_id"], capture.gs_str("2411989377_1_0_1_5e1d7"))
         self.assertEqual(fields_out["status"], capture.gs_int(0))
-        self.assertEqual(fields_out["result"], capture.gs_list([capture.gs_int(1), capture.gs_int(2)]))
+        self.assertEqual(fields_out["result"], capture.gs_list([]))   # nobody finished yet
         self.assertIsNone(capture.referee_result(name.replace("/1/", "/2/"), fields, now=100))
 
-    def test_a_report_finalizes_the_result_with_ratings(self):
+    # Captured report [1, 0] (both players), and a partial report [1].
+    FULL_REPORT = "000000006c0a6a0a680a5a0a40646f63732f4040526566657265655265706f72742f63323263356564652d356334622d353162662d386130632d3339346231346463626639312f557365722f3112160a140a06726573756c74120a4a080a0218010a021800120a0a0860726573756c7460"
+
+    def _report(self, result_name, indices):
+        values = capture.gs_list([capture.gs_int(i) for i in indices])
+        return ("docs/@@RefereeReport/" + result_name.rsplit("/", 1)[-1] + "/User/1",
+                capture.gs_fields([("result", values)]))
+
+    def test_reports_stay_open_until_every_player_is_listed(self):
         capture.REFEREE_ANSWERED.clear()
         capture.REFEREE_MATCHES.clear()
         body = capture.decode_grpc_messages(self.REQUEST)[0][1]
         (name, fields), = capture.write_updates(body)
         result_name, _ = capture.referee_result(name, fields, now=100)
-        # Captured report (both players' outcome), retargeted at this result.
-        report = capture.decode_grpc_messages(bytes.fromhex("000000006c0a6a0a680a5a0a40646f63732f4040526566657265655265706f72742f63323263356564652d356334622d353162662d386130632d3339346231346463626639312f557365722f3112160a140a06726573756c74120a4a080a0218010a021800120a0a0860726573756c7460"))[0][1]
-        (rname, rfields), = capture.write_updates(report)
-        rname = "docs/@@RefereeReport/" + result_name.rsplit("/", 1)[-1] + "/User/1"
-        final_name, doc = capture.referee_final(rname, rfields, now=101)
-        self.assertEqual(final_name, result_name)
-        fields_out = _doc_fields(doc)
-        self.assertEqual(fields_out["status"], capture.gs_int(1))
-        self.assertEqual(fields_out["result"], capture.gs_list([capture.gs_int(1), capture.gs_int(0)]))
-        self.assertIn(b"\x0a\x011", fields_out["ratings"])
+        # Partial report: still open (status 0) with the order so far.
+        rname, rfields = self._report(result_name, [1])
+        got, doc, final = capture.referee_final(rname, rfields, now=101)
+        self.assertEqual((got, final), (result_name, False))
+        self.assertEqual(_doc_fields(doc)["status"], capture.gs_int(0))
+        self.assertEqual(_doc_fields(doc)["result"], capture.gs_list([capture.gs_int(1)]))
+        # The captured full report completes it: status 1, order [1, 0], ratings.
+        report = capture.decode_grpc_messages(bytes.fromhex(self.FULL_REPORT))[0][1]
+        (_, rfields), = capture.write_updates(report)
+        got, doc, final = capture.referee_final(rname, rfields, now=102)
+        self.assertTrue(final)
+        out = _doc_fields(doc)
+        self.assertEqual(out["status"], capture.gs_int(1))
+        self.assertEqual(out["result"], capture.gs_list([capture.gs_int(1), capture.gs_int(0)]))
+        self.assertIn(b"\x0a\x011", out["ratings"])
+        self.assertIsNone(capture.referee_final(rname, rfields, now=103))   # already final
+
+
+class MergeWriteTest(unittest.TestCase):
+    def test_masked_writes_merge_into_the_document(self):
+        capture.DOC_STORE.clear()
+        n = "docs/PlayerStatic/1"
+        capture.store_write(n, capture.gs_fields([("p2p_sid", capture.gs_int(7)), ("p2p_lid", capture.gs_int(1))]),
+                            mask=["p2p_sid", "p2p_lid"], now=1)
+        doc, created = capture.store_write(n, capture.gs_fields([("name", capture.gs_str("Alex"))]), mask=["name"], now=2)
+        self.assertFalse(created)
+        out = _doc_fields(doc)
+        self.assertEqual((out["p2p_sid"], out["name"]), (capture.gs_int(7), capture.gs_str("Alex")))
+        doc, _ = capture.store_write(n, capture.gs_fields([("vehicle", capture.gs_int(3))]), mask=None, now=3)
+        self.assertEqual(set(_doc_fields(doc)), {"vehicle"})   # no mask = replace
+        capture.DOC_STORE.clear()
+
+    def test_write_updates_reads_the_field_mask(self):
+        # Write{1: Update{1: Document{1 name, 2 fields}, 2: FieldMask{1: "`name`"}}}
+        doc = capture.protobuf_bytes(1, "docs/PlayerStatic/1") + capture.protobuf_bytes(
+            2, capture.gs_fields([("name", capture.gs_str("Alex"))]))
+        update = capture.protobuf_bytes(1, doc) + capture.protobuf_bytes(2, capture.protobuf_bytes(1, "`name`"))
+        body = capture.protobuf_bytes(1, capture.protobuf_bytes(1, update))
+        (name, _, mask), = capture.write_updates(body, with_mask=True)
+        self.assertEqual((name, mask), ("docs/PlayerStatic/1", ["name"]))
+
 
 class MatchDocumentsTest(unittest.TestCase):
     def test_a_new_lobby_drops_the_previous_match_documents(self):
