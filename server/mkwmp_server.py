@@ -669,6 +669,19 @@ def removed_targets(body):
 DOC_STORE = {}
 
 
+def clear_match_documents():
+    """Forget the previous match's game-session documents (PlayerStatic,
+    Companion, @@Referee*, ...) when a new lobby forms. The store is not yet
+    scoped per lobby (game paths carry no session id), so a new match would
+    otherwise see stale documents, e.g. the old @@RefereeResult. User-level
+    __pgn/__mt documents are kept. One match at a time until it is scoped."""
+    stale = [n for n in DOC_STORE if not n.startswith(("docs/__pgn/", "docs/__mt/"))]
+    for name in stale:
+        del DOC_STORE[name]
+    REFEREE_ANSWERED.clear()
+    return len(stale)
+
+
 def in_collection(name, collection):
     """collection ends with "/"; direct children only."""
     return name.startswith(collection) and "/" not in name[len(collection):]
@@ -1167,6 +1180,9 @@ class H2Protocol(asyncio.Protocol):
         if not all(groups):
             return
         tickets = [self.matchmaking.tickets[seat] for seat in lobby.seats]
+        dropped = clear_match_documents()
+        if dropped:
+            log(f"--- new lobby {lobby.id}: dropped {dropped} documents of the previous match")
         LOBBY_HOSTS[str(lobby.id)] = min((t.user.rsplit("/", 1)[-1] for t in tickets), key=user_slot)
         tenant =ticket.user.split("/users/", 1)[0]
         sends = [(peer, sid, grpc_frame(match_assignment(tenant, lobby.id, tickets, seat_ticket)))

@@ -332,6 +332,17 @@ class RefereeTest(unittest.TestCase):
         self.assertEqual(fields_out["result"], capture.gs_list([capture.gs_int(1), capture.gs_int(2)]))
         self.assertIsNone(capture.referee_result(name.replace("/1/", "/2/"), fields, now=100))
 
+class MatchDocumentsTest(unittest.TestCase):
+    def test_a_new_lobby_drops_the_previous_match_documents(self):
+        capture.DOC_STORE.clear()
+        capture.DOC_STORE.update({"docs/PlayerStatic/1": b"x", "docs/@@RefereeResult/u": b"y",
+                                  "docs/__pgn/All/__pus/a": b"z", "docs/__mt/nat_traversal": b"w"})
+        capture.REFEREE_ANSWERED.add("k")
+        self.assertEqual(capture.clear_match_documents(), 2)
+        self.assertEqual(sorted(capture.DOC_STORE), ["docs/__mt/nat_traversal", "docs/__pgn/All/__pus/a"])
+        self.assertFalse(capture.REFEREE_ANSWERED)
+        capture.DOC_STORE.clear()
+
 
 if __name__ == "__main__":
     unittest.main()
