@@ -139,6 +139,50 @@ KeepUserSession open, logging each client frame.
 Gamesync request types beyond these, and the KeepUserSession response
 schema, are not recovered yet: capture the client frames first.
 
+### All Gamesync message classes (vtables)
+
+`tools/re/pb_vtables.py` finds 35 message vtables at `0x30f1cd0 + 0x80*i`
+(i = 0..32) plus `0x30f2d50`, `0x30f2e98`; `_InternalSerialize` is slot 12
+(`vtable+0x60`). Shapes from `tools/re/pb_serializers.py` (heuristic: misses
+fields written in repeated loops; "msg" = length-delimited non-string):
+
+| # | Serializer | Fields |
+|---|---|---|
+| 0 | `0x12a1ee0` | 1 str, 2 str (IssueTokenRequest) |
+| 1 | `0x12a26fc` | 1 Token (IssueTokenResponse) |
+| 2 | `0x12a3120` | 1 str, 2 str (RefreshTokenRequest) |
+| 3 | `0x12a393c` | 1 Token (RefreshTokenResponse) |
+| 4 | `0x12a4510` | 1 str, 2 msg, 3 str (GetDocumentRequest) |
+| 5 | `0x12a5420` | none detected |
+| 6 | `0x12a6020` | 1 repeated #18, 2 Timestamp |
+| 7 | `0x12a6f98` | 1 str, 2 str, 3 msg, 4 msg #10 |
+| 8 | `0x12a8064` | 1 str, 2 msg, 3 msg #31 |
+| 9 | `0x12a8bfc` | 1 msg |
+| 10 | `0x12a9198` | 1 str |
+| 11 | `0x12ab0e8` | 1 str, 2 msg, 3 msg, 4 msg |
+| 12 | `0x12abfa0` | 1 str |
+| 13 | `0x12ace70` | 1 str, 2 msg, 3 msg #29 |
+| 14 | `0x12ae3a4` | 1 msg, 2 msg, 3 msg, 4 msg #22 |
+| 15–17 | `0x12aef20`, `0x12af280`, `0x12af860` | none detected |
+| 18 | `0x12b0430` | 1 msg, 2 str, 3 msg |
+| 19 | `0x12b137c` | 1 msg, 2 msg (`0x12012a0`), 3 msg |
+| 20 | `0x12b1dbc` | 1 msg |
+| 21 | `0x12b26a0` | 1 str |
+| 22 | `0x12b2f60` | 1 str, 2 msg |
+| 23 | `0x12b38dc` | 1 varint, 2 Timestamp |
+| 24 | `0x12b435c` | 1 str, 2 varint, 3–5 msg, 6–8 str |
+| 25 | `0x12b58a4` | 1 msg, 2 msg #27 |
+| 26 | `0x12b625c` | 1 msg |
+| 27 | `0x12b68f8` | 1 str |
+| 28, 29 | `0x12b6f40`, `0x12b7558` | 1 str |
+| 30 | `0x12b7d00` | 1 str, 2 varint, 3 msg |
+| 31 | `0x12b8840` | 1 str, 2 varint, 3 msg |
+| 32 | `0x12b94c4` | Token: 1 str, 2 str, 3 str, 4 Duration |
+| 33, 34 | `0x12bf498`, `0x12bc0c0` | none detected |
+
+Use this to match captured KeepUserSession frames by shape; then read the
+matching class's parser (vtable neighbours) for field semantics.
+
 Gamesync RPCs present in the binary: IssueToken, RefreshToken,
 KeepUserSession, GetDocument, ReadDocuments, ListDocuments, WriteDocuments,
 Begin/Commit/RollbackTransaction, CreateRound, QueryCollectionIds. Related
