@@ -160,10 +160,32 @@ addresses". Fix: advertise a dotted FQDN in GameSession field 8
 (`gamesync.npln.nintendo.net`, already a cert SAN); connects are redirected to
 loopback regardless.
 
-**Next:** stream a KeepUserSession response carrying each user's `docs/__us/<id>`
-document with peer connection info, so the two instances can find each other
-over Pia. Needs: the KeepUserSession response (document-snapshot) schema and the
-UserSession document schema. This is the last major contract before P2P.
+**Next:** stream a KeepUserSession response carrying the `docs/__us/<id>`
+document so "get my UserSession" completes and the game advances toward P2P.
+
+What is known about the document:
+- `docs/__us/<id>` body is a **map<string, Value>** (accessor `FUN_0126661c`
+  delegates to a key lookup `FUN_00f0873c`; Value is the ugcstore Value shape:
+  int=3, double=5, string=7). Keys (parser `FUN_01267698`): `gsid` (string),
+  `addr` (string), `p` (u16 port), `mcn` (string), `maxu` (int), `rs` (list).
+  The game side (`FUN_022364b0`) then reads a child key `f`, and `ipc`/`dpc`.
+- The game subscribes to **its own** `__us/<id>` (matches the IssueToken user)
+  and blocks in "get my UserSession" until the server returns it. So the first
+  goal is just to return a well-formed own-doc, not yet peer info.
+
+Open problems (both hard, heavily obfuscated template code):
+1. **KeepUserSession response envelope** — the stream-response wrapper that
+   carries a document snapshot for target 1. Not yet recovered; the
+   document-cache path (`FUN_01284258`, globals 0x32f2148/0x32f2920) is
+   obfuscated. Firestore-Listen-shaped (targets + document changes).
+2. **Pia P2P mesh over loopback** — even with the doc delivered, the two
+   instances must exchange game packets through the Pia bridge (currently only
+   echoes NAT probes). This is a whole subsystem, not a single contract.
+
+Recommended approach for (1): empirical — craft a candidate response (Document
+{name, fields-map} in the mirror of the request), send it, read the game's
+parser reaction in mkwmp.log, iterate. Reaching an actual race is still several
+hard steps beyond this.
 
 ### All Gamesync message classes (vtables)
 
