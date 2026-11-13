@@ -302,6 +302,16 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
                 server.close()
                 await server.wait_closed()
 
+class TokenSubjectTest(unittest.TestCase):
+    def test_a_restarted_server_reads_the_player_from_its_own_token(self):
+        body = capture.grpc_frame(capture.protobuf_bytes(1, "tenants/t-x"))
+        token_info = capture.bytes_field(capture.auth_response(body), 2)
+        user = capture.bytes_field(token_info, 1).decode()
+        token = capture.bytes_field(token_info, 2).decode()
+        self.assertEqual(capture.token_subject(token), user)
+        self.assertIsNone(capture.token_subject("mkw1.abc.def"))
+        self.assertIsNone(capture.token_subject("not-a-token"))
+
 
 if __name__ == "__main__":
     unittest.main()

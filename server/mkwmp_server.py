@@ -302,6 +302,24 @@ def auth_response(request_body):
     return protobuf_bytes(2, token_message)
 
 
+def token_subject(token):
+    """The user resource named by one of our own tokens (auth_response), or None.
+
+    Tokens are self-describing, so a restarted server (empty issued_tokens)
+    still knows which player a running game is: no relaunch needed."""
+    parts = (token or "").split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+    except ValueError:
+        return None
+    if not isinstance(claims, dict) or claims.get("iss") != "mkwmp-local":
+        return None
+    sub = claims.get("sub")
+    return sub if isinstance(sub, str) and "/users/" in sub else None
+
+
 def bearer_token(header):
     # NPLN sends "Bearer"; the Gamesync interceptor (main+0x1297258) "bearer".
     return header[7:] if header[:7].lower() == "bearer " else header
@@ -792,7 +810,7 @@ class H2Protocol(asyncio.Protocol):
     def ticket_user(self, token):
         # A fresh local sign-in on this connection takes precedence over any
         # bearer the game retained from its previous profile or login.
-        return self.user or self.issued_tokens.get(token)
+        return self.user or self.issued_tokens.get(token) or token_subject(token)
 
     def data_received(self, data):
         try:
