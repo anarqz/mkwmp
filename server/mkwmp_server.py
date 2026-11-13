@@ -23,7 +23,7 @@ import socket
 import ssl
 import sys
 import time
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import turn_relay
 
@@ -518,9 +518,59 @@ def user_session_document(name, user_id, now=None, lobby=None):
         ("ucsid", gs_int(local_id)),
         ("upcsid", gs_int(local_id)),
         ("pgn", gs_str(session_key)),
+        # st: user-session state. The __us collection listener (FUN_02254e4c)
+        # keeps a member only when st == 2 (anything else = removed), and
+        # FUN_0049a5a0 builds the match player map from those members.
+        ("st", gs_int(2)),
     ]
     return (protobuf_bytes(1, name) + protobuf_bytes(2, gs_fields(session_keys)) +
             protobuf_bytes(3, gs_timestamp(now)) + protobuf_bytes(4, gs_timestamp(now)))
+
+
+def gs_list(values):
+    """Value{9: List{1: repeated Value}} (as in the referee request's `users`)."""
+    return protobuf_bytes(9, b"".join(protobuf_bytes(1, v) for v in values))
+
+
+REFEREE_REQUEST = "docs/@@RefereeRequest/"
+REFEREE_RESULT = "docs/@@RefereeResult/"
+REFEREE_ANSWERED = set()   # request keys already answered (one result per match)
+
+
+def referee_result(name, fields_body, now=None):
+    """Answer a client's referee request with the server's verdict.
+
+    Request (FUN_01e37e98): docs/@@RefereeRequest/<ussid>/Request/<key>, fields
+    users, ussid_map, mode, sub_mode, rating_enabled, option{total_player_count,
+    dropout_rank}. Every member writes the same <key>.
+    Result (read by FUN_00498404 into the ring at ctx+0xe8; waiters
+    FUN_02127388/FUN_0212d9fc): a document in @@RefereeResult whose id is a
+    UUID (FUN_01e39a5c), with request_id = <key>, status (0 = accepted; 1 also
+    reads `ratings`) and result = list of ints (<= 24, copied to entry+0xa4;
+    meaning still inferred: rank per player). Returns (name, document) or None
+    when the request was already answered."""
+    parts = name[len(REFEREE_REQUEST):].split("/")
+    if not name.startswith(REFEREE_REQUEST) or len(parts) != 3 or parts[1] != "Request":
+        return None
+    key = parts[2]
+    if key in REFEREE_ANSWERED:
+        return None
+    REFEREE_ANSWERED.add(key)
+    total = 2
+    option = doc_entries(fields_body).get("option", b"")
+    if option[:1] == b"\x52":   # Value{10: map}
+        _, s = _varint(option, 1)
+        for k, v in doc_entries(option[s:]).items():
+            if k == "total_player_count" and v[:1] == b"\x18":
+                total = _varint(v, 1)[0]
+    result_name = REFEREE_RESULT + str(uuid5(NAMESPACE_URL, "mkwmp-referee/" + key))
+    entries = [("request_id", gs_str(key)), ("status", gs_int(0)),
+               ("result", gs_list([gs_int(rank) for rank in range(1, total + 1)]))]
+    now = int(time.time()) if now is None else now
+    doc = (protobuf_bytes(1, result_name) + protobuf_bytes(2, gs_fields(entries)) +
+           protobuf_bytes(3, gs_timestamp(now)) + protobuf_bytes(4, gs_timestamp(now)))
+    DOC_STORE[result_name] = doc
+    return result_name, doc
 
 
 GS_FIXED_DOC = "docs/__gs/f"   # name checked by FUN_01267820 against "__gs" + "/" + "f"
@@ -661,9 +711,12 @@ def keep_user_session_replies(session, targets, now=None, lobby_of=lambda user_i
         if doc_name == "docs/__us/":
             # Collection listen on every user session (after the mesh join):
             # one ADDED per lobby member (members = user ids of the lobby).
+            # The listener keys members by strtoul(document id), so each
+            # member document is named by its numeric ussid (distinct keys;
+            # UUID names would all parse as 0 and collide).
             for user_id in members:
                 out.append(session_message(session, change_message(tid, CHANGE_ADDED, user_session_document(
-                    f"docs/__us/{user_id}", user_id, now, lobby_of(user_id)))))
+                    f"docs/__us/{user_slot(user_id)}", user_id, now, lobby_of(user_id)))))
         elif doc_name == "docs/__gs/":
             # Game-session collection (listened after the mesh join): the
             # fixed data __gs/f, the same document the clients GetDocument.
@@ -1031,6 +1084,10 @@ class H2Protocol(asyncio.Protocol):
             for name, fields_body in (write_updates(msgs[0][1]) if msgs else []):
                 doc, created = store_write(name, fields_body, transformed.get(name))
                 H2Protocol.publish(name, doc, CHANGE_ADDED if created else 2)
+                verdict = referee_result(name, fields_body)
+                if verdict:
+                    log(f"<<< referee: {verdict[0]} for {name}")
+                    H2Protocol.publish(verdict[0], verdict[1], CHANGE_ADDED)
             H2Protocol.release_pending()
             log(f"<<< WriteDocuments: {writes} -> upcsid by slot; stored {len(DOC_STORE)} docs")
         self.conn.send_headers(sid, [(":status", "200"), ("content-type", "application/grpc")])

@@ -123,8 +123,12 @@ class ProtocolTest(unittest.IsolatedAsyncioTestCase):
         replies = capture.keep_user_session_replies(session, targets, now=100, members=ids)
         names = [capture.bytes_field(capture.bytes_field(capture.bytes_field(m, 2), 3), 1).decode()
                  for m in replies[:2]]
-        self.assertEqual(names, [f"docs/__us/{i}" for i in ids])
+        # Named by numeric ussid: the listener keys members by strtoul(id).
+        self.assertEqual(names, ["docs/__us/1", "docs/__us/2"])
         self.assertEqual(len(replies), 4)   # 2 documents + sync op + done op
+        # st == 2 or the listener (FUN_02254e4c) drops the member.
+        doc = capture.bytes_field(capture.bytes_field(replies[0], 2), 3)
+        self.assertEqual(_doc_fields(doc)["st"], capture.gs_int(2))
 
     def test_write_documents_returns_upcsid_in_first_result(self):
         pus = "docs/__pgn/All/__pus/00000000-0000-4000-8000-000000000002"
@@ -311,6 +315,22 @@ class TokenSubjectTest(unittest.TestCase):
         self.assertEqual(capture.token_subject(token), user)
         self.assertIsNone(capture.token_subject("mkw1.abc.def"))
         self.assertIsNone(capture.token_subject("not-a-token"))
+
+class RefereeTest(unittest.TestCase):
+    # Captured battle request (P1, LAN run 2026-11-13 15:46).
+    REQUEST = bytes.fromhex("00000000f00aed010aea010ae3010a36646f63732f404052656665726565526571756573742f312f526571756573742f323431313938393337375f315f305f315f356531643712a8010a180a0975737369645f6d6170120b52090a070a0131120218020a0f0a05757365727312064a040a0218020a0e0a087375625f6d6f6465120218050a140a0e726174696e675f656e61626c6564120210010a430a066f7074696f6e123952370a180a12746f74616c5f706c617965725f636f756e74120218020a1b0a0c64726f706f75745f72616e6b120b18ffffffffffffffffff010a100a046d6f646512083a06626174746c651a020800")
+
+    def test_each_request_key_gets_one_accepted_result(self):
+        capture.REFEREE_ANSWERED.clear()
+        body = capture.decode_grpc_messages(self.REQUEST)[0][1]
+        (name, fields), = capture.write_updates(body)
+        result_name, doc = capture.referee_result(name, fields, now=100)
+        self.assertTrue(result_name.startswith("docs/@@RefereeResult/"))
+        fields_out = _doc_fields(doc)
+        self.assertEqual(fields_out["request_id"], capture.gs_str("2411989377_1_0_1_5e1d7"))
+        self.assertEqual(fields_out["status"], capture.gs_int(0))
+        self.assertEqual(fields_out["result"], capture.gs_list([capture.gs_int(1), capture.gs_int(2)]))
+        self.assertIsNone(capture.referee_result(name.replace("/1/", "/2/"), fields, now=100))
 
 
 if __name__ == "__main__":
