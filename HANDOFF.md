@@ -2,16 +2,27 @@
 
 Updated 2026-11-12. Workspace: C:\Users\alcmo\Projects\mkwmp.
 
-## Start here
+## Start here (updated 2026-11-12 22:00)
 
-**Two isolated game clients can sign in, create distinct Normal24 tickets, and wait in free roam. The server can reserve both seats and deliver a shared session assignment. The game clients have not joined a shared session or raced together.** The last completed two-player experiment rejected the assignment on both clients with **2321-3072**. The latest server adds per-player user-session names, but its log has no ticket or assignment yet: that change is **untested in-game**.
+**Two isolated clients sign in, queue, and accept a shared session assignment. Both now get past matchmaking and the session join check and try to reach the Gamesync (P2P setup) server on localhost:8906.** They have not joined each other yet. Read [docs/NETCODE.md](docs/NETCODE.md) first: it has the decoded flow, schemas and experiment log.
+
+What was learned this session:
+
+- 2321-xxxx errors are **gRPC status codes** mapped by `main+0x292f9bc` (3072 = FAILED_PRECONDITION, 4992 = UNAVAILABLE), often raised locally by the SDK.
+- 2321-3072 was the join check: each MatchedPlayer (track field 6) needs a `userSessions` resource (field 2). 2321-4992 was Gamesync: session **fields 8/9 are the Gamesync host/port**; empty → `:0`.
+- Probe tracing (`MKWMP_TRACE_EDGES=1`) logs NPLN code-path edges and SDK strings; it found the above in one run.
+
+**Next action:** run the two-client test once with the current server (already running, log `scratch/run-b1.log`). Look for the 8906 sniff line (`Gamesync connection first bytes … -> TLS/h2c`), `Gamesync/IssueToken`, and `KeepUserSession` frames. If the connection is TLS and the handshake fails, the client may verify the `gamesync.npln.nintendo.net` authority: regenerate the capture certificate with that SAN (`tools/make_capture_cert.ps1 -DnsName …`) and rebuild the probe. Then build the KeepUserSession reply that delivers the client's `__us/<user-id>` document (keys `gsid`, `addr`, `p`, `mcn`, `maxu`, `rs`; see NETCODE §4).
+
+Commits this session: 99b3f96 scanners; 42ff927 typed assignment + NETCODE.md; 458006e tracing + Gamesync endpoint; bb215a2 TLS/h2c sniffing; 6d30f0c IssueToken + KeepUserSession handling.
 
 The user controls every in-game click. Do not use computer control for the game. Shell launch of the isolated copies is authorized when requested; ask the user to close the games before replacing their DLLs. Use Ghidra for static reverse engineering; Python is for the server, tests and read-only live memory sampling. Commit each verified milestone. Use ForzaInfinity's docs/contracts/MATCHMAKING_API.md §§3 and 4a as the design reference for reservation, confirmed membership and cancellation, with MKWorld-specific wire and peer transport.
 
 ## State at handoff
 
-- Both games were closed at the last check. Player copies: scratch/game and scratch/game-p2. Their winmm.dll hashes match the built artifact (SHA-256 starts 70D6BCDB). Original game assets are shared through junctions; profiles, binaries and logs are separate. Do not install into the original under Downloads.
-- TLS + HTTP/2 server: 127.0.0.1:8905, last observed PID 16124, experimental assignments enabled, log scratch/match-user-sessions.log. Pia NAT responder: UDP 127.0.0.1:10025, last observed PID 15372, log scratch/pia-replies.log. Recheck PIDs before operating on either process.
+- Both games are closed. Player copies: scratch/game and scratch/game-p2, both with winmm.dll SHA-256 starting 2F3A5A5F (commit 458006e probe: tracing + explicit-port connect). Original game assets are shared through junctions; profiles, binaries and logs are separate. Do not install into the original under Downloads.
+- Server (one process): TLS + HTTP/2 on 127.0.0.1:8905 and Gamesync on 127.0.0.1:8906 (TLS or h2c, sniffed), assignments enabled, log scratch/run-b1.log. Pia NAT responder: UDP 127.0.0.1:10025, PID 15372, log scratch/pia-replies.log. An old unrelated capture server from 16:36 may still hold port 8904. Recheck PIDs before operating on any process.
+- Launch clients with `MKWMP_TRACE_EDGES=1` in addition to the variables below to get edge/string traces (boot runs ~0.35–0.6× speed while tracing).
 - Git main checkpoints: a977fc5 ticket capture and creation; 7cfad1f open tracking/free roam; f742660 distinct live tickets; 0a85271 release seats when tracking ends; 5009b2a experimental shared assignment. Roster, top-level player list and user-session changes were developed after 5009b2a. Preserve their checkpoint as experimental until a game verifies it.
 - Older notes, including superseded hypotheses and runtime bring-up, are archived in [investigation history](docs/handoff-investigation-history.md). See also [early findings](docs/FINDINGS.md) and [inferred auth schema](docs/auth-inferred.proto).
 
@@ -19,7 +30,9 @@ The user controls every in-game click. Do not use computer control for the game.
 
 If the listeners are already active, reuse them. To start them from the workspace in separate shells:
 
-    .venv/Scripts/python.exe -E -s server/mkwmp_server.py --port 8905 --tls-cert scratch/certs/capture-cert.pem --tls-key scratch/certs/capture-key.pem --log scratch/match-user-sessions.log --announce-matches
+    .venv/Scripts/python.exe -E -s server/mkwmp_server.py --port 8905 --tls-cert scratch/certs/capture-cert.pem --tls-key scratch/certs/capture-key.pem --log scratch/run-b1.log --announce-matches
+
+(The same process also serves Gamesync on 8906; change with `--gamesync-port`.)
     .venv/Scripts/python.exe -I server/pia_capture.py --reply --log scratch/pia-replies.log
 
 Use a new log filename if preserving an earlier run. The TLS certificate must match native/probe/src/capture_cert.h. Do not start another listener on the same port. Run without --announce-matches to reproduce the verified two-player waiting state without sending experimental assignments. A server restart clears in-memory tickets and token mappings. Fresh game launches after a restart avoid stale connections or missing local account mappings.
@@ -49,6 +62,8 @@ Tell the user to choose Online Play → Corrida in each window. Have the first p
 | Assignment | With --announce-matches, both live trackers get the same gameSessions UUID. Ghidra serializer main+0x1408a40: outcome field 5, value 3 enters session branch; field 7 carries session. Session serializer main+0x140b440: field 1 resource, field 12 repeated members. main+0x1391884 calls main+0x13dbf00 with the session object and a separate repeated collection from tracking field 6. |
 
 ## Current failure and next investigation
+
+**Superseded 2026-11-12 22:00:** items 1–3 below are resolved (see "Start here" and docs/NETCODE.md §§1–4). The current failure is the Gamesync connection on 8906. Item 4 still applies.
 
 1. A name-only assignment, then a session roster, then a roster plus top-level field 6 all produced **2321-3072 (0x180141)** in both clients. Swapping queue order swaps which client is already in free roam. The second client can fail during the picker. The server shows assignment fan-out but no subsequent session RPC; the game logs show event kind 2, detail 0x1/0x180141/0/0xb/0x6/0 and error caller main+0x25db61c. Do not treat “waiting for other players” as proof of a joined session.
 2. The newest candidate adds member field 2 as tenants/<tenant>/gameSessions/<uuid>/userSessions/<user-id>. Ghidra traced the consumer at main+0x13dbda0 into main+0x13ea200 / main+0x13e9de0, which parses gameSessions and userSessions segments. The exact identifier semantics and completeness of the member data remain unverified. **First action: run the fresh two-client experiment above.**
