@@ -12,6 +12,7 @@
 #include "recomp.h"
 
 #include <windows.h>
+#include <stdint.h>
 
 int npln_register(void);
 
@@ -33,9 +34,55 @@ static void wine_controller_fixup(void) {
     log_line("wine: SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD=1");
 }
 
+// MKWMP_PAD_DIAG=1: 20 s after start, log what XInput and the game's SDL3 see (controller debugging).
+typedef struct { DWORD packet; WORD buttons; BYTE lt, rt; SHORT lx, ly, rx, ry; } PadState;
+static DWORD WINAPI pad_diag(LPVOID unused) {
+    (void)unused;
+    for (int round = 0; round < 3; round++) {
+        Sleep(round ? 15000 : 20000);
+        HMODULE xi = LoadLibraryA("xinput1_4.dll");
+        DWORD (WINAPI *get)(DWORD, PadState *) = xi ? (void *)GetProcAddress(xi, "XInputGetState") : NULL;
+        for (DWORD i = 0; get && i < 4; i++) {
+            PadState s; mkwmp_log("pad-diag: XInput slot %lu %s", (unsigned long)i, get(i, &s) == 0 ? "CONNECTED" : "-");
+        }
+        HMODULE sdl = GetModuleHandleA("SDL3.dll");
+        if (!sdl) { mkwmp_log("pad-diag: SDL3 not loaded"); continue; }
+        uint32_t *(*joys)(int *) = (void *)GetProcAddress(sdl, "SDL_GetJoysticks");
+        const char *(*name)(uint32_t) = (void *)GetProcAddress(sdl, "SDL_GetJoystickNameForID");
+        const char *(*hint)(const char *) = (void *)GetProcAddress(sdl, "SDL_GetHint");
+        void (*sdl_free)(void *) = (void *)GetProcAddress(sdl, "SDL_free");
+        int n = 0; uint32_t *ids = joys ? joys(&n) : NULL;
+        const char *allow = hint ? hint("SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD") : NULL;
+        const char *ignore = hint ? hint("SDL_GAMECONTROLLER_IGNORE_DEVICES") : NULL;
+        mkwmp_log("pad-diag: SDL joysticks %d; allow-steam-virtual=%s ignore-list=%s", n,
+                  allow ? allow : "(unset)", ignore ? "(set)" : "(unset)");
+        for (int i = 0; i < n; i++) mkwmp_log("pad-diag:   %u %s", ids[i], name ? name(ids[i]) : "?");
+        if (ids && sdl_free) sdl_free(ids);
+        // Under Wine, Steam Input's pad can appear after the game initialised SDL, and SDL3's
+        // Windows backends then miss the hotplug. XInput connected + no SDL joystick: restart
+        // SDL's joystick/gamepad subsystems so they rescan and post SDL_EVENT_GAMEPAD_ADDED.
+        PadState probe_state;
+        if (n == 0 && get && get(0, &probe_state) == 0) {
+            void (*quit_sub)(uint32_t) = (void *)GetProcAddress(sdl, "SDL_QuitSubSystem");
+            int (*init_sub)(uint32_t) = (void *)GetProcAddress(sdl, "SDL_InitSubSystem");
+            if (quit_sub && init_sub) {
+                quit_sub(0x2000u | 0x200u);   // SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK
+                int ok = init_sub(0x2000u | 0x200u);
+                int m = 0; uint32_t *again = joys ? joys(&m) : NULL;
+                mkwmp_log("pad-diag: rescanned SDL joysticks (init %d): %d now", ok, m);
+                if (again && sdl_free) sdl_free(again);
+            }
+        }
+    }
+    return 0;
+}
+
 static void probe_init(void) {
     log_init();
     wine_controller_fixup();
+    if (GetEnvironmentVariableA("MKWMP_PAD_DIAG", NULL, 0) || (GetModuleHandleA("ntdll.dll") &&
+        GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version")))
+        CloseHandle(CreateThread(NULL, 0, pad_diag, NULL, 0, NULL));
     if (coff_resolve_runtime()) {
         log_line("runtime resolved from COFF symbols");
         log_kv("hostfn_add_override", (uint64_t)(uintptr_t)g_rt.hostfn_add_override);
