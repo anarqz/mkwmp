@@ -32,11 +32,18 @@ class LocalMatchmaking:
         self.lobbies: dict[UUID, Lobby] = {}
 
     def create(self, user: str, mode: str, player: bytes = b"") -> Ticket:
-        for ticket in self.tickets.values():
-            if ticket.user == user:
-                if ticket.mode != mode:
-                    raise ValueError("Cancel the active ticket before changing mode.")
-                return ticket
+        # A player has one search at a time. A repeated request for the same
+        # mode while still searching is the same ticket; anything else (another
+        # mode, or a ticket whose lobby already started) is stale and replaced,
+        # e.g. after the game quit without cancelling.
+        for old in list(self.tickets.values()):
+            if old.user != user:
+                continue
+            lobby = self.lobbies.get(old.lobby) if old.lobby else None
+            started = lobby is not None and len(lobby.joined) == len(lobby.seats)
+            if old.mode == mode and not started:
+                return old
+            self.cancel(user, old.id)
         ticket = Ticket(user, mode, player=player)
         self.tickets[ticket.id] = ticket
         self._pair(mode)

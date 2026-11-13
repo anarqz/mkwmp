@@ -19,6 +19,15 @@ class LocalMatchmakingTest(unittest.TestCase):
         match.join("two", second.id, second.lobby)
         self.assertEqual(lobby.joined, {first.id, second.id})
 
+    def test_a_new_mode_replaces_a_stale_ticket(self):
+        match = LocalMatchmaking()
+        race = match.create("one", "Normal24")
+        battle = match.create("one", "Battle24")
+        self.assertNotEqual(race.id, battle.id)
+        self.assertNotIn(race.id, match.tickets)
+        partner = match.create("two", "Battle24")
+        self.assertEqual(battle.lobby, partner.lobby)
+
     def test_cancel_before_both_players_join_requeues_the_other_seat(self):
         match = LocalMatchmaking()
         first = match.create("one", "race")
