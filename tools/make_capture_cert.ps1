@@ -1,7 +1,8 @@
 param(
     [string]$OutputDirectory = "$PSScriptRoot/../scratch/certs",
     [string]$HeaderPath = "$PSScriptRoot/../native/probe/src/capture_cert.h",
-    [string[]]$DnsName = @('*.lp1.t.npln.srv.nintendo.net', 'localhost')
+    # gamesync.npln.nintendo.net: the Gamesync channel's TLS authority (main+0x12696a4).
+    [string[]]$DnsName = @('*.lp1.t.npln.srv.nintendo.net', 'gamesync.npln.nintendo.net', 'localhost')
 )
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
