@@ -18,6 +18,7 @@ import base64
 import datetime
 import json
 import struct
+import socket
 import ssl
 import sys
 import time
@@ -566,11 +567,43 @@ async def main():
     server = await loop.create_server(H2Protocol, args.host, args.port, ssl=tls)
     log(f"mkwmp gRPC capture server listening on {args.host}:{args.port} ({'TLS + h2' if tls else 'h2c, plaintext'})")
     servers = [server]
+    tasks = [s.serve_forever() for s in servers]
     if args.gamesync_port and args.gamesync_port != args.port:
         GAMESYNC_PORT = args.gamesync_port
-        servers.append(await loop.create_server(H2Protocol, args.host, args.gamesync_port))
-        log(f"Gamesync endpoint listening on {args.host}:{args.gamesync_port} (h2c, plaintext)")
-    await asyncio.gather(*(s.serve_forever() for s in servers))
+        tasks.append(serve_sniffing(args.host, args.gamesync_port, tls))
+        log(f"Gamesync endpoint listening on {args.host}:{args.gamesync_port} (TLS or h2c, sniffed)")
+    await asyncio.gather(*tasks)
+
+
+async def serve_sniffing(host, port, tls):
+    """Accept both TLS and plaintext h2c on one port by peeking the first byte."""
+    loop = asyncio.get_running_loop()
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind((host, port))
+    listener.listen()
+    listener.setblocking(False)
+
+    def peek(conn):
+        conn.settimeout(10)
+        try:
+            return conn.recv(16, socket.MSG_PEEK)
+        finally:
+            conn.setblocking(False)
+
+    async def handle(conn):
+        try:
+            first = await loop.run_in_executor(None, peek, conn)
+        except OSError as e:
+            log(f"Gamesync sniff failed: {e!r}")
+            conn.close()
+            return
+        use_tls = bool(first) and first[0] == 0x16 and tls is not None
+        log(f"--- Gamesync connection first bytes {first.hex()} -> {'TLS' if use_tls else 'h2c'} ---")
+        await loop.connect_accepted_socket(H2Protocol, conn, ssl=tls if use_tls else None)
+
+    while True:
+        conn, _ = await loop.sock_accept(listener)
+        asyncio.ensure_future(handle(conn))
 
 
 if __name__ == "__main__":
