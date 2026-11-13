@@ -230,7 +230,33 @@ static void ov_fiber_initialize(Cpu *c) {
     }
 }
 static void ov_nifm_is_network_available(Cpu *c) { ret_x(c, 1); }
-static void ov_nifm_submit_wait(Cpu *c) { (void)c; }
+static GuestFn stock_handler(const char *name);
+// Online again after leaving: take the seat back (the launcher freed it 90 s after the
+// keepalives stopped; with a live seat this is just an immediate POST).
+static void ov_nifm_submit_wait(Cpu *c) {
+    (void)c;
+    if (seat_keepalive_paused()) {
+        SeatReply r;
+        if (seat_acquire(&r, 10 * 60 * 1000) == SEAT_SEATED) seat_keepalive_resume();
+    }
+}
+// The player left online: stop the seat keepalive so the launcher frees the seat.
+static void ov_nifm_cancel(Cpu *c) {
+    static GuestFn stock;
+    if (!stock) stock = stock_handler("_ZN2nn4nifm20CancelNetworkRequestEv");
+    if (stock) stock(c);
+    if (seat_keepalive_pause()) mlog("left online: seat keepalive paused (the launcher frees the seat in 90 s)");
+}
+// In-game player name: the launcher's `name` (mkw-recomp hardcodes "Local").
+static void ov_nickname(Cpu *c) {
+    char *out = arg_p(c, 0);
+    const char *name = mkwmp_config()->name;
+    if (out) {
+        memset(out, 0, 33);   // nn::account::Nickname: char[33]
+        snprintf(out, 33, "%s", name[0] ? name : "Local");
+    }
+    ret_x(c, 0);
+}
 static void ov_nifm_ip_config(Cpu *c) {
     // nn::nifm returns network-order in_addr values. Loopback mode advertises
     // 127.0.0.1 (the Pia transport binds there); LAN mode this machine's address.
@@ -747,7 +773,6 @@ static void sock_getaddrinfo(Cpu *c, const char *label, int cpp_layout) {
     ret_x(c, 0);
 }
 static void ov_sock_getaddrinfo(Cpu *c) { sock_getaddrinfo(c, "nnsocketGetAddrInfo node", 0); }
-static void ov_sock_getaddrinfo_bsd(Cpu *c) { sock_getaddrinfo(c, "nn::socket::GetAddrInfo BSD node", 0); }
 static void ov_sock_getaddrinfo_cpp(Cpu *c) { sock_getaddrinfo(c, "nn::socket::GetAddrInfo typed node", 1); }
 
 // Pia's separate datagram path. Keep it loopback-only; gRPC still uses TCP.
@@ -1359,8 +1384,10 @@ static const Reg kRegs[] = {
     {"_ZN2nn3ssl14BuiltInManager22GetBuiltInCertificatesEPPNS0_26BuiltInCertificateInfoBaseEPhjPNS0_15CaCertificateIdEj", ov_ssl_certificates},
     // Remaining SDK and Pia overrides
     {"nnsslInitialize", ov_ssl_initialize},
-    {"_ZN2nn6socket11GetAddrInfoEPKcS2_PK8addrinfoPPS3_", ov_sock_getaddrinfo_bsd},
-    {"_ZN2nn6socket12FreeAddrInfoEP8addrinfo", ov_sock_freeaddrinfo},
+    // (The BSD-style nn::socket::GetAddrInfo/FreeAddrInfo(addrinfo*) pair is never called by
+    //  this game; their slots went to GetNickname and CancelNetworkRequest: 64-override cap.)
+    {"_ZN2nn7account11GetNicknameEPNS0_8NicknameERKNS0_3UidE", ov_nickname},
+    {"_ZN2nn4nifm20CancelNetworkRequestEv", ov_nifm_cancel},
     {"_ZN2nn6socket6SocketENS0_6FamilyENS0_4TypeENS0_8ProtocolE", ov_pia_socket},
     {"_ZN2nn6socket10SetSockOptEiNS0_5LevelENS0_6OptionEPKvj", ov_pia_setsockopt},
     {"_ZN2nn6socket11GetAddrInfoEPKcS2_PKNS0_8AddrInfoEPPS3_", ov_sock_getaddrinfo_cpp},
@@ -1438,9 +1465,10 @@ int npln_register(void) {
         g_trigger[i] = !strcmp(kRegs[i].name, "_ZN2nn4nifm27SubmitNetworkRequestAndWaitEv");
         // Never gated: fs overrides only log and delegate; fibers are runtime fixes; nn::account
         // is checked once at boot (IsNetworkServiceAccountAvailable) and cached, so a stock
-        // "no network account" there makes the first Online Play click fail.
+        // "no network account" there makes the first Online Play click fail (GetNickname gives
+        // the launcher name offline too); CancelNetworkRequest calls the stock one itself.
         if (!strncmp(kRegs[i].name, "_ZN2nn2fs", 9) || strstr(kRegs[i].name, "Fiber") ||
-            !strncmp(kRegs[i].name, "_ZN2nn7account", 14))
+            !strncmp(kRegs[i].name, "_ZN2nn7account", 14) || strstr(kRegs[i].name, "CancelNetworkRequest"))
             g_stock[i] = NULL;
         gated += g_stock[i] != NULL;
         g_rt.hostfn_add_override(kRegs[i].name, g_stock[i] ? kGates[i] : kRegs[i].fn);

@@ -161,10 +161,19 @@ SeatState seat_acquire(SeatReply *out, int max_wait_ms) {
     }
 }
 
+static volatile LONG g_ka_started, g_ka_paused;
+
+int seat_keepalive_pause(void) {
+    return g_ka_started && !InterlockedExchange(&g_ka_paused, 1);
+}
+void seat_keepalive_resume(void) { InterlockedExchange(&g_ka_paused, 0); }
+int seat_keepalive_paused(void) { return g_ka_started && g_ka_paused; }
+
 static DWORD WINAPI keepalive(LPVOID unused) {
     (void)unused;
     for (;;) {
         Sleep(15000);
+        if (g_ka_paused) continue;
         SeatReply r;
         if (seat_post(&r) == 0 && r.state != SEAT_SEATED)
             mkwmp_log("seat keepalive: state %d (position %d)", (int)r.state, r.position);
@@ -173,8 +182,8 @@ static DWORD WINAPI keepalive(LPVOID unused) {
 }
 
 void seat_keepalive_start(void) {
-    static volatile LONG started;
-    if (InterlockedExchange(&started, 1)) return;
+    InterlockedExchange(&g_ka_paused, 0);
+    if (InterlockedExchange(&g_ka_started, 1)) return;
     HANDLE h = CreateThread(NULL, 0, keepalive, NULL, 0, NULL);
     if (h) CloseHandle(h);
 }

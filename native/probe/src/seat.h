@@ -39,6 +39,12 @@ SeatState seat_acquire(SeatReply *out, int max_wait_ms);
 // Start the keepalive thread (POST every 15 s while the process lives). Idempotent.
 void seat_keepalive_start(void);
 
+// Leaving online: stop posting (the launcher frees the seat after 90 s). Returns 1 if it was
+// running. Going online again: seat_acquire, then seat_keepalive_resume.
+int seat_keepalive_pause(void);
+void seat_keepalive_resume(void);
+int seat_keepalive_paused(void);
+
 // Latest ticket from a seated reply (renewals included). Returns 1 if there is one.
 int seat_ticket(char *dst, size_t n);
 
