@@ -329,6 +329,45 @@ def gamesync_token_response(request_body, fallback_user):
 BULK_GET = "/nn.npln.ugcstore.v1.Ugcstore/BulkGetDocuments"
 
 
+def value_msg(**kw):
+    """Gamesync Value (ugcstore shape): int=3, double=5, string=7."""
+    if "i" in kw:
+        return b"\x18" + encode_varint(kw["i"])          # field 3 varint
+    if "s" in kw:
+        return protobuf_bytes(7, kw["s"])                 # field 7 string
+    return b""
+
+
+def struct_fields(pairs):
+    """map<string, Value> as repeated entry{1:key, 2:Value} under field 2."""
+    out = b""
+    for key, val in pairs:
+        entry = protobuf_bytes(1, key) + protobuf_bytes(2, val)
+        out += protobuf_bytes(1, entry)
+    return out
+
+
+def keep_user_session_response(doc_name, user_id, now=None):
+    """KeepUserSession stream response. Envelope recovered from serializers:
+      Snapshot (main+0x12a6020) { 1: repeated DocumentChange, 2: Timestamp read_time }
+      DocumentChange (main+0x12b0430) { 1: Document, 2: string, 3: msg }
+      Document { 1: name, 2: fields map<string,Value> }  (ugcstore shape)
+    Value: int=3, double=5, string=7.
+    """
+    now = int(time.time()) if now is None else now
+    fields = struct_fields([
+        ("gsid", value_msg(s=f"gs-{user_id}")),
+        ("addr", value_msg(s="127.0.0.1")),
+        ("p", value_msg(i=10025)),
+        ("mcn", value_msg(s="")),
+        ("maxu", value_msg(i=2)),
+    ])
+    document = protobuf_bytes(1, doc_name) + protobuf_bytes(2, fields)
+    doc_change = protobuf_bytes(1, document) + protobuf_bytes(2, doc_name)
+    read_time = protobuf_bytes(2, b"\x08" + encode_varint(now))   # Snapshot field 2 = Timestamp{1:seconds}
+    return protobuf_bytes(1, doc_change) + read_time
+
+
 def bulk_get_responses(body):
     """Return one minimal local document per requested profile."""
     names = []
@@ -456,6 +495,26 @@ class H2Protocol(asyncio.Protocol):
             log(f">>> {st['path']} frame ({size - 5} bytes): {frame[5:].hex()}")
             for line in decode_protobuf(frame[5:]):
                 log(line)
+            if st["path"] in BIDI_STREAMS and self.announce_matches:
+                self.answer_keep_user_session(sid, frame[5:])
+
+    def answer_keep_user_session(self, sid, body):
+        """Reply to a KeepUserSession subscription with the subscribed document.
+        Experimental envelope hypothesis; see keep_user_session_response."""
+        try:
+            target = bytes_field(body, 3)           # the add-target wrapper
+            inner = bytes_field(target, 1)          # Target
+            doc_query = bytes_field(inner, 2)       # { 1: doc-name }
+            doc_name = bytes_field(doc_query, 1).decode()
+        except (ValueError, UnicodeDecodeError):
+            return
+        user_id = doc_name.rsplit("/", 1)[-1]       # __us/<user-id>
+        reply = keep_user_session_response(doc_name, user_id)
+        if self.conn.local_flow_control_window(sid) < len(reply) + 5:
+            return
+        self.conn.send_data(sid, grpc_frame(reply))
+        self.transport.write(self.conn.data_to_send())
+        log(f"<<< KeepUserSession: pushed {doc_name} ({len(reply)} bytes): {reply.hex()}")
 
     def handle_stream(self, sid):
         st = self.streams.pop(sid, None)

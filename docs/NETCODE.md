@@ -173,19 +173,35 @@ What is known about the document:
   and blocks in "get my UserSession" until the server returns it. So the first
   goal is just to return a well-formed own-doc, not yet peer info.
 
-Open problems (both hard, heavily obfuscated template code):
-1. **KeepUserSession response envelope** — the stream-response wrapper that
-   carries a document snapshot for target 1. Not yet recovered; the
-   document-cache path (`FUN_01284258`, globals 0x32f2148/0x32f2920) is
-   obfuscated. Firestore-Listen-shaped (targets + document changes).
-2. **Pia P2P mesh over loopback** — even with the doc delivered, the two
-   instances must exchange game packets through the Pia bridge (currently only
-   echoes NAT probes). This is a whole subsystem, not a single contract.
+### KeepUserSession response envelope — RECOVERED (2026-11-13)
 
-Recommended approach for (1): empirical — craft a candidate response (Document
-{name, fields-map} in the mirror of the request), send it, read the game's
-parser reaction in mkwmp.log, iterate. Reaching an actual race is still several
-hard steps beyond this.
+From the serializers:
+- **Snapshot** (response, main+0x12a6020): `{1: repeated DocumentChange, 2: Timestamp read_time}`.
+- **DocumentChange** (main+0x12b0430): `{1: Document, 2: string name, 3: msg}`.
+- **Document** (main+0x12af860): `{1: name, 2: fields}` (ugcstore-style).
+
+Sending `Snapshot{1: DocumentChange{1: Document{1:name,2:fields}}, 2: read_time}`
+with a flat fields map (gsid/addr/p/mcn/maxu) got the game to process
+`companion_state` (main+0x1266e24) — further than ever — then still error with
+**0x240141 (2321-4608)** and "Timed out to get my UserSession". So the envelope
+is accepted but the **document content** is rejected.
+
+### Document content — must be a nested Struct with child `f`
+
+The game-side consumer `FUN_022364b0` looks up child key **`f`** (string from
+`FUN_012679cc`) in the doc via `FUN_02252df8`, validates it (`FUN_01267820`),
+then parses THAT with `FUN_01267698` (gsid/addr/p/mcn/maxu/rs) and reads
+`ipc`/`dpc` (`FUN_012679d8`). So the doc is a **nested key→Value tree**: the
+top object has key `f` → a sub-struct holding the peer descriptor. The gamesync
+Value type therefore supports a nested struct (richer than the ugcstore
+int/double/string Value); its exact field numbers for struct/list are TBD.
+
+### Remaining to a race (large, multi-cycle)
+1. Recover the gamesync Value/Struct nesting; build the `f` descriptor doc.
+2. Populate each player's doc so the OTHER learns its Pia addr/port.
+3. Pia P2P mesh over loopback — exchange game packets through the bridge
+   (currently only echoes NAT probes). A whole subsystem.
+4. Session sync + race start.
 
 ### All Gamesync message classes (vtables)
 
