@@ -13,6 +13,9 @@
 
 #include <windows.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 int npln_register(void);
 
@@ -77,8 +80,41 @@ static DWORD WINAPI pad_diag(LPVOID unused) {
     return 0;
 }
 
+// <game dir>\mkwmp.env: KEY=VALUE lines (# comments) applied over the process environment
+// before the probe reads its settings. Lets a launch whose environment is fixed (e.g. a Steam
+// shortcut on the Deck) be reconfigured by editing a file; VALUE empty unsets KEY.
+static void apply_env_file(void) {
+    wchar_t path[MAX_PATH];
+    DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
+    if (!n || n >= MAX_PATH) return;
+    for (DWORD i = n; i > 0; i--) {
+        if (path[i - 1] == L'\\' || path[i - 1] == L'/') { path[i] = 0; break; }
+    }
+    wcsncat(path, L"mkwmp.env", MAX_PATH - wcslen(path) - 1);
+    HANDLE fh = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (fh == INVALID_HANDLE_VALUE) return;
+    char buf[4096];
+    DWORD got = 0;
+    ReadFile(fh, buf, sizeof buf - 1, &got, NULL);
+    CloseHandle(fh);
+    buf[got] = 0;
+    for (char *line = strtok(buf, "\r\n"); line; line = strtok(NULL, "\r\n")) {
+        while (*line == ' ' || *line == '\t') line++;
+        char *eq = strchr(line, '=');
+        if (!*line || *line == '#' || !eq || eq == line) continue;
+        *eq = 0;
+        SetEnvironmentVariableA(line, eq[1] ? eq + 1 : NULL);
+        char kv[512];
+        snprintf(kv, sizeof kv, "%s=%s", line, eq + 1);
+        _putenv(kv);   // the CRT's getenv() copy too
+        log_line(eq[1] ? "env file: set" : "env file: unset");
+        log_line(line);
+    }
+}
+
 static void probe_init(void) {
     log_init();
+    apply_env_file();
     wine_controller_fixup();
     if (GetEnvironmentVariableA("MKWMP_PAD_DIAG", NULL, 0) || (GetModuleHandleA("ntdll.dll") &&
         GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version")))
