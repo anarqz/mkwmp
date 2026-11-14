@@ -7,8 +7,9 @@
 //! ChannelBind, Send indications and ChannelData; peer traffic comes back as
 //! ChannelData (bound peers) or Data indications.
 //!
-//! Beyond the Python: allocations expire (their lifetime, refreshed by
-//! Refresh), so the relay port range doesn't leak; IPv4 only.
+//! Beyond the Python: allocations expire after an hour without Allocate or
+//! Refresh (the advertised lifetime stays 600 s), so the relay port range
+//! doesn't leak; refreshes are logged; IPv4 only.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -26,8 +27,12 @@ use crate::log::line;
 
 pub const MAGIC: u32 = 0x2112_A442;
 pub const REALM: &[u8] = b"mkwmp";
+/// Lifetime advertised (what the Python relay sent).
 const LIFETIME: u32 = 600;
 const MAX_LIFETIME: u32 = 3600;
+/// An allocation is dropped only after this long without Allocate/Refresh,
+/// whatever lifetime was advertised: whether the game refreshes is unverified.
+const KEEP: Duration = Duration::from_secs(3600);
 
 pub const BINDING: u16 = 1;
 pub const ALLOCATE: u16 = 3;
@@ -360,7 +365,8 @@ impl Relay {
                         line(format!("TURN allocation for {client} released"));
                     }
                 } else if let Some(alloc) = a.get_mut(&client) {
-                    alloc.expires = Instant::now() + Duration::from_secs(lifetime.into());
+                    alloc.expires = Instant::now() + KEEP.max(Duration::from_secs(lifetime.into()));
+                    line(format!("TURN refresh from {client} (lifetime {lifetime} s)"));
                 }
                 drop(a);
                 ok(REFRESH, &[(A_LIFETIME, &lifetime.to_be_bytes())])
@@ -388,7 +394,7 @@ impl Relay {
     /// The client's allocation (reused if it has one); returns the relayed address.
     async fn allocate(self: &Arc<Self>, client: SocketAddr, client4: SocketAddrV4) -> std::io::Result<SocketAddrV4> {
         if let Some(a) = self.allocations.lock().unwrap().get_mut(&client) {
-            a.expires = Instant::now() + Duration::from_secs(LIFETIME.into());
+            a.expires = Instant::now() + KEEP;
             return Ok(a.relay_addr);
         }
         let relay = Arc::new(self.bind_relay().await?);
@@ -396,7 +402,7 @@ impl Relay {
         let relay_addr = SocketAddrV4::new(self.opts.public_host, port);
         let channels = Arc::new(Mutex::new(Channels::default()));
         let task = tokio::spawn(from_peers(relay.clone(), channels.clone(), self.sock.clone(), client4));
-        let alloc = Allocation { relay, relay_addr, channels, expires: Instant::now() + Duration::from_secs(LIFETIME.into()), task };
+        let alloc = Allocation { relay, relay_addr, channels, expires: Instant::now() + KEEP, task };
         let mut a = self.allocations.lock().unwrap();
         // Two Allocates raced: keep the first.
         if let Some(existing) = a.get(&client) {

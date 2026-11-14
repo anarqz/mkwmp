@@ -1,0 +1,29 @@
+# mkwmp lobby, Rust (`mkwmp lobby`): NPLN + Gamesync + TURN + Pia NAT in one
+# process, unlimited lobbies. Replaces mkwmp-lobby.service (Python) and
+# mkwmp-pia.service: stop and disable both before enabling this one.
+# Layout: /opt/mkwmp/{bin/mkwmp, config/server.toml, keys/lobby-{cert,key}.pem}.
+# server.toml [lobby]: host = "0.0.0.0", public_host = "<public IPv4>",
+# relay_ports = "49152:49407"; [tls] = the pair the game patch trusts.
+[Unit]
+Description=mkwmp lobby (Rust: NPLN + Gamesync + TURN + Pia NAT)
+After=network-online.target mkwmp-seat.service
+Wants=network-online.target
+ConditionPathExists=/opt/mkwmp/bin/mkwmp
+ConditionPathExists=/opt/mkwmp/config/server.toml
+Conflicts=mkwmp-lobby.service mkwmp-pia.service
+
+[Service]
+User=mkwmp
+WorkingDirectory=/opt/mkwmp
+ExecStart=/opt/mkwmp/bin/mkwmp lobby /opt/mkwmp/config/server.toml
+Restart=always
+RestartSec=2
+LimitNOFILE=65536
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

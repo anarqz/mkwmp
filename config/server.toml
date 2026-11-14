@@ -46,6 +46,14 @@ nat_port = 10025               # UDP Pia NAT responder (0 = off)
 require_ticket = false         # true: sign-in needs a seat ticket
 # roster_url = "http://127.0.0.1:7000"                  # seat server, for seat liveness
 # roster_token_file = "../scratch/keys/lobby-token.txt"  # one line of its lobby_tokens_file
+gamesync_host = "gamesync.npln.nintendo.net"  # advertised; the patch redirects it, the cert covers it
+# token_secret_file = "../scratch/keys/lobby-token-secret"  # 32 random bytes: restarts keep running games
+
+[lobby.policy]
+# Unset = the tested defaults: 24 players per lobby, start at 2, gather 10 s.
+# capacity = { Normal24 = 24, Battle24 = 24 }
+# min_start = 2
+# gather_secs = 10
 
 [tls]
 # Shared by both endpoints. Paths relative to this file.

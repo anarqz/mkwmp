@@ -7,6 +7,8 @@
 //!                                       manage registered profiles on the
 //!                                       running server (same machine)
 
+mod lobby;
+
 const USAGE: &str = "usage: mkwmp <server|lobby> [config.toml] | mkwmp keygen [kid] | mkwmp admin <list|register|reset-pin|release> [name] [--config file]";
 
 #[tokio::main]
@@ -22,8 +24,10 @@ async fn main() {
         Some("admin") => admin(&args[1..]).await,
         Some("server") | Some("lobby") => match config::ServerConfig::load(arg.unwrap_or("config/server.toml")) {
             Ok(cfg) if cmd == Some("server") => seat::serve(&cfg).await,
-            // Wired to gateway::serve + lobby::Core by the gateway owner.
-            Ok(cfg) => Err(format!("mkwmp lobby: not wired yet ({}:{})", cfg.lobby.host, cfg.lobby.npln_port).into()),
+            Ok(cfg) => {
+                logging();
+                lobby::serve(&cfg).await
+            }
             Err(e) => Err(e.into()),
         },
         _ => {
@@ -81,4 +85,16 @@ async fn admin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         println!("done");
     }
     Ok(())
+}
+
+/// The lobby Core logs through `tracing`; RUST_LOG overrides (e.g. lobby=debug).
+fn logging() {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    use std::io::IsTerminal;
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .with_ansi(std::io::stderr().is_terminal())
+        .init();
 }

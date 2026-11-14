@@ -155,7 +155,35 @@ pub struct Lobby {
     /// One lobby token (a line of the seat server's lobby_tokens_file).
     #[serde(default)]
     pub roster_token_file: Option<PathBuf>,
+    /// Gamesync host advertised in match assignments: a dotted name the game
+    /// patch redirects here and the TLS certificate covers.
+    #[serde(default = "d_gamesync_host")]
+    pub gamesync_host: String,
+    /// At least 32 random bytes (`head -c 32 /dev/urandom`): the key of the
+    /// lobby's access tokens, so a restart keeps running games. None =
+    /// random per process.
+    #[serde(default)]
+    pub token_secret_file: Option<PathBuf>,
+    /// Matchmaking policy overrides; unset = the lobby's tested defaults.
+    #[serde(default)]
+    pub policy: LobbyPolicy,
 }
+
+#[derive(Debug, Default, Deserialize)]
+pub struct LobbyPolicy {
+    /// Players per lobby by mode, e.g. { Normal24 = 24, Battle24 = 24 }.
+    #[serde(default)]
+    pub capacity: std::collections::HashMap<String, usize>,
+    pub default_capacity: Option<usize>,
+    /// Players needed before a lobby starts.
+    pub min_start: Option<usize>,
+    /// Seconds a lobby keeps gathering once min_start is reached.
+    pub gather_secs: Option<f64>,
+    pub leave_grace_secs: Option<f64>,
+    pub connect_timeout_secs: Option<f64>,
+}
+
+fn d_gamesync_host() -> String { "gamesync.npln.nintendo.net".into() }
 
 fn d_host() -> String { "127.0.0.1".into() }
 fn d_public_host() -> String { "127.0.0.1".into() }
@@ -201,6 +229,7 @@ impl ServerConfig {
             return Err(ConfigError::Invalid("seats.seat_timeout_secs must exceed heartbeat_secs"));
         }
         cfg.lobby.roster_token_file = cfg.lobby.roster_token_file.map(|p| resolve(base, &p));
+        cfg.lobby.token_secret_file = cfg.lobby.token_secret_file.map(|p| resolve(base, &p));
         cfg.lobby.relay_range()?;
         if cfg.lobby.public_host.parse::<std::net::Ipv4Addr>().is_err() {
             return Err(ConfigError::Invalid("lobby.public_host must be an IPv4 address"));

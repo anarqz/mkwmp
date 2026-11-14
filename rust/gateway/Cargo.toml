@@ -21,6 +21,8 @@ sha1 = "0.10"
 md-5 = "0.10"
 crc32fast = "1"
 rand = "0.8"
+tracing = "0.1"
+socket2 = { version = "0.6", features = ["all"] }
 
 [dev-dependencies]
 rcgen = { version = "0.13", default-features = false, features = ["pem", "ring"] }

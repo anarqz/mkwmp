@@ -49,6 +49,12 @@ pub async fn accept_loop<B: Backend>(
             }
         };
         let _ = tcp.set_nodelay(true);
+        // A crashed game never sends FIN: keepalive closes its connection
+        // (and so frees its seat) within about a minute.
+        let ka = socket2::TcpKeepalive::new().with_time(Duration::from_secs(30)).with_interval(Duration::from_secs(10));
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
+        let ka = ka.with_retries(3);
+        let _ = socket2::SockRef::from(&tcp).set_tcp_keepalive(&ka);
         let conn = ids.fetch_add(1, Ordering::Relaxed);
         tokio::spawn(connection(tcp, peer, conn, tls.clone(), backend.clone()));
     }

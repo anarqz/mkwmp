@@ -12,6 +12,18 @@ path = "src/main.rs"
 config.workspace = true
 seat = { path = "../seat" }
 lobby = { path = "../lobby" }
+gateway = { path = "../gateway" }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 tokio.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 serde_json = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+h2 = "0.4"
+http = "1"
+bytes = "1"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls-pki-types = "1"
+rcgen = { version = "0.13", default-features = false, features = ["pem", "ring"] }
