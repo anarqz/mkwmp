@@ -36,13 +36,13 @@ Errors are `{"error": {"code", "message"}}`. Session answers carry `Cache-Contro
 
 | Route | Body → answer | Notes |
 | --- | --- | --- |
-| `GET /seat/v1/status` | → `{bootId, name, lobbyEndpoint, seatsTotal, seated, queued}` | Public, readable from any origin. `lobbyEndpoint` is the NPLN `host:port` the launcher writes as `server`. |
+| `GET /seat/v1/status` | → `{bootId, name, lobbyEndpoint, seatsTotal, seated, queued, lobbies}` | Public, readable from any origin. `lobbyEndpoint` is the NPLN `host:port` the launcher writes as `server`. `lobbies` is the lobby's last count of live lobbies per mode, e.g. `{"Normal24": 3}`. It is `{}` until the lobby reports, and again once its report is older than 60 s. Lobbies have no cap: they open and close with the players. |
 | `GET /seat/v1/keys` | → `{keys: [{kid, publicKey}]}` | Public. The ticket verification key (base64url, raw 32 bytes). |
 | `POST /seat/v1/sessions` | `{name, pin, friends?: string[]}` → `201 View + sessionKey` | Checks the profile's PIN, then seats the player at once if a seat is free, else queues them. Errors: `404 PROFILE_NOT_FOUND`, `401 PIN_WRONG`, `429 RATE_LIMITED`, `409 NAME_TAKEN` (that profile is already online), `503 QUEUE_FULL` (with `Retry-After: 30`). |
 | `GET /seat/v1/sessions/{id}` | → `View` | The poll while queued and the heartbeat while seated. Repeat within `nextPollMs`. |
 | `PUT /seat/v1/sessions/{id}/friends` | `{friends}` → `View` | Replaces the friend list. Also counts as a heartbeat. |
 | `DELETE /seat/v1/sessions/{id}` | → `204` | Frees the seat or the place in line. Idempotent. |
-| `POST /seat/v1/lobby/roster` | `{sessionIds: string[] (≤256)}` → `{bootId, sessions: RosterEntry[]}` | Lobby only, `Authorization: Bearer <lobby token>`. The tokens come from `[seats] lobby_tokens_file`. Without that file: `403 ROSTER_DISABLED`. Wrong token: `401`. |
+| `POST /seat/v1/lobby/roster` | `{sessionIds: string[] (≤256), lobbies?: {mode: count}}` → `{bootId, sessions: RosterEntry[]}` | Lobby only. `lobbies` takes at most 16 modes, and mode names are `[A-Za-z0-9_-]{1,32}`. `Authorization: Bearer <lobby token>`. The tokens come from `[seats] lobby_tokens_file`. Without that file: `403 ROSTER_DISABLED`. Wrong token: `401`. |
 
 ```ts
 View = {

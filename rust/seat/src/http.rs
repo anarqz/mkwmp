@@ -384,6 +384,9 @@ async fn leave(State(s): State<AppState>, Path(id): Path<String>, h: HeaderMap) 
 #[serde(rename_all = "camelCase")]
 struct RosterBody {
     session_ids: Vec<String>,
+    /// Live lobbies per mode, e.g. {"Normal24": 3}. Optional.
+    #[serde(default)]
+    lobbies: Option<std::collections::BTreeMap<String, usize>>,
 }
 
 async fn lobby_roster(State(s): State<AppState>, h: HeaderMap, Json(b): Json<RosterBody>) -> Response {
@@ -399,6 +402,9 @@ async fn lobby_roster(State(s): State<AppState>, h: HeaderMap, Json(b): Json<Ros
     }
     let now = s.now();
     let mut r = s.roster.lock().unwrap();
+    if let Some(l) = &b.lobbies {
+        r.report_lobbies(l, now);
+    }
     let sessions = r.roster(&b.session_ids, now);
     no_store(json!({"bootId": r.boot_id(), "sessions": sessions}))
 }

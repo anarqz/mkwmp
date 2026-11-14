@@ -5,7 +5,7 @@
 //! sleeping. Liveness: a session not heard from within its timeout is dropped
 //! by [`Roster::sweep`] and the queue is promoted.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use rand::RngCore;
 use serde::Serialize;
@@ -149,7 +149,17 @@ pub struct Status {
     pub seats_total: usize,
     pub seated: usize,
     pub queued: usize,
+    /// Live lobbies per matchmaking mode, as the lobby last reported them
+    /// (empty when it hasn't, or stopped reporting). Lobbies have no cap:
+    /// they open and close with the players.
+    pub lobbies: BTreeMap<String, usize>,
 }
+
+/// A lobby report older than this no longer shows in the status.
+const LOBBIES_STALE_MS: u64 = 60_000;
+/// At most this many modes per report; longer names are dropped.
+const MAX_LOBBY_MODES: usize = 16;
+const MAX_MODE_LEN: usize = 32;
 
 pub struct Roster {
     boot_id: String,
@@ -159,6 +169,8 @@ pub struct Roster {
     by_name: HashMap<String, String>, // name key -> sid
     queue: VecDeque<String>,
     seated: usize,
+    lobbies: BTreeMap<String, usize>,
+    lobbies_at: u64,
 }
 
 pub struct Created {
@@ -182,6 +194,8 @@ impl Roster {
             by_name: HashMap::new(),
             queue: VecDeque::new(),
             seated: 0,
+            lobbies: BTreeMap::new(),
+            lobbies_at: 0,
         }
     }
 
@@ -420,7 +434,19 @@ impl Roster {
             seats_total: self.rules.capacity,
             seated: self.seated,
             queued: self.queue.len(),
+            lobbies: if now.saturating_sub(self.lobbies_at) < LOBBIES_STALE_MS { self.lobbies.clone() } else { BTreeMap::new() },
         }
+    }
+
+    /// The lobby's count of live lobbies per mode (sent with its roster).
+    pub fn report_lobbies(&mut self, lobbies: &BTreeMap<String, usize>, now: u64) {
+        self.lobbies = lobbies
+            .iter()
+            .filter(|(m, _)| !m.is_empty() && m.len() <= MAX_MODE_LEN && m.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
+            .take(MAX_LOBBY_MODES)
+            .map(|(m, n)| (m.clone(), *n))
+            .collect();
+        self.lobbies_at = now;
     }
 }
 
@@ -592,5 +618,17 @@ mod tests {
         let b = r.join("bia", &[], 0).unwrap();
         let out = r.roster(&[b.view.session_id.clone(), "unknown".into()], 0);
         assert!(out.iter().all(|e| !e.alive && e.name.is_none()));
+    }
+
+    #[test]
+    fn lobby_counts_show_until_stale() {
+        let mut r = roster(2);
+        assert!(r.status(0).lobbies.is_empty());
+        let mut l = BTreeMap::new();
+        l.insert("Normal24".to_string(), 3);
+        l.insert("bad mode!".to_string(), 1);
+        r.report_lobbies(&l, 1_000);
+        assert_eq!(r.status(2_000).lobbies.into_iter().collect::<Vec<_>>(), vec![("Normal24".to_string(), 3)]);
+        assert!(r.status(1_000 + LOBBIES_STALE_MS).lobbies.is_empty());
     }
 }
