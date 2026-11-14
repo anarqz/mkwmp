@@ -80,7 +80,7 @@ impl std::fmt::Display for ApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ApiError::Gone => f.write_str("session expired"),
-            ApiError::Taken => f.write_str("that name is already registered"),
+            ApiError::Taken => f.write_str("that gametag is already registered"),
             ApiError::Refused(m) | ApiError::Transient(m) => f.write_str(m),
             ApiError::SignedOut => f.write_str("signed out"),
             ApiError::Limited(secs) => write!(f, "too many tries; wait {}", wait_text(*secs)),
@@ -124,8 +124,8 @@ impl Api {
             return Err(ApiError::Gone);
         }
         let msg = match code {
-            "PIN_WRONG" => "wrong PIN for this name".to_string(),
-            "PROFILE_NOT_FOUND" => "this name isn't registered: press REGISTER".to_string(),
+            "PIN_WRONG" => "wrong PIN for this gametag".to_string(),
+            "PROFILE_NOT_FOUND" => "this gametag isn't registered: press REGISTER".to_string(),
             _ => body["error"]["message"].as_str().unwrap_or("server error").to_string(),
         };
         if status.is_client_error() {
@@ -181,8 +181,8 @@ impl Api {
         }
         let v: serde_json::Value = res.json().await.unwrap_or_default();
         Err(ApiError::Refused(match v["error"]["code"].as_str() {
-            Some("PIN_WRONG") => "wrong PIN for this name".into(),
-            Some("PROFILE_NOT_FOUND") => "this name isn't registered".into(),
+            Some("PIN_WRONG") => "wrong PIN for this gametag".into(),
+            Some("PROFILE_NOT_FOUND") => "this gametag isn't registered".into(),
             _ => v["error"]["message"].as_str().unwrap_or("could not delete the profile").to_string(),
         }))
     }
@@ -236,8 +236,8 @@ impl Api {
         let msg = v["error"]["message"].as_str().unwrap_or("server error").to_string();
         match code {
             "PRESENCE_NOT_FOUND" => Err(ApiError::SignedOut),
-            "PIN_WRONG" => Err(ApiError::Refused("wrong PIN for this name".into())),
-            "PROFILE_NOT_FOUND" => Err(ApiError::Refused("this name isn't registered".into())),
+            "PIN_WRONG" => Err(ApiError::Refused("wrong PIN for this gametag".into())),
+            "PROFILE_NOT_FOUND" => Err(ApiError::Refused("this gametag isn't registered".into())),
             _ if status.is_client_error() => Err(ApiError::Refused(msg)),
             _ => Err(ApiError::Transient(msg)),
         }

@@ -16,7 +16,7 @@ impl std::fmt::Display for NameError {
         match self {
             NameError::Invalid(n) => write!(
                 f,
-                "invalid name {n:?}: use {MIN_LEN}-{MAX_LEN} letters, digits, '-' or '_'"
+                "invalid gametag {n:?}: use {MIN_LEN}-{MAX_LEN} letters, digits, '-' or '_'"
             ),
             NameError::TooManyFriends => write!(f, "at most {MAX_FRIENDS} friends"),
         }

@@ -467,7 +467,9 @@ impl App {
             hint(ui, &msg, color);
 
             // The lists, scrolling inside the card's fixed height.
-            let h = (CARD_H - ui.min_rect().height() - 6.0).max(60.0);
+            // What is left of the fixed card height (the card pads itself to
+            // CARD_H, so measure from the cursor, not the content size).
+            let h = (ui.min_rect().top() + CARD_H - ui.cursor().top() - 2.0).max(60.0);
             egui::ScrollArea::vertical().max_height(h).min_scrolled_height(h).auto_shrink([false, false]).show(ui, |ui| {
                 ui.set_width(INNER - 12.0);
                 ui.spacing_mut().item_spacing.y = 2.0;
