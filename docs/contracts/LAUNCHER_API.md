@@ -48,8 +48,8 @@ Same `Authorization: Bearer <launcher_token>` as `/seat`. The probe polls it (at
 
 | Status | Body | Meaning |
 |---|---|---|
-| 200 | `{"friends":[{"name":"Bia"}, ...]}` | Friends online right now (seated) who listed this player back (mutual), spelled as the seat server shows them. At most 100 entries; never the caller. |
+| 200 | `{"friends":[{"name":"Bia"}, ...]}` | Every friend on this player's launcher list: online mutual friends first (spelled as the seat server shows them), then the rest alphabetically. At most 100 entries; never the caller. The game reads its system list once per sign-in, so offline friends are included; the lobby's presence (mutual friends only) says who is online. |
 | 401 | `{"state":"unauthorized"}` | Wrong or missing token. |
 | 503 | `{"state":"unavailable","message"}` | PLAY not pressed yet. |
 
-Served from the launcher's cached roster: the seat server's mutual friends, refreshed with every heartbeat. Account ids follow the lobby's rule: user id = uuid5(NAMESPACE_URL, "mkwmp-user/" + lower(name)); account id = its first 8 bytes big-endian, top bit cleared, 0 → 1.
+Served from the launcher's cached roster (the seat server's view of this player's friends), refreshed with every heartbeat. Account ids follow the lobby's rule: user id = uuid5(NAMESPACE_URL, "mkwmp-user/" + lower(name)); account id = its first 8 bytes big-endian, top bit cleared, 0 → 1.
