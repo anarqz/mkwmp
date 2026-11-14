@@ -131,7 +131,7 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn Error>> {
             .unwrap_or("")
             .trim()
             .to_string();
-        tokio::spawn(report_counts(core.clone(), url.trim_end_matches('/').to_string(), token));
+        tokio::spawn(roster_sync(core.clone(), url.trim_end_matches('/').to_string(), token, l.roster_secs.max(1)));
     }
     let gw = gateway::GatewayConfig {
         host: l.host.parse()?,
@@ -149,23 +149,130 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Live lobbies per mode → the seat server's public status, every 15 s.
-async fn report_counts(core: lobby::Core, url: String, token: String) {
+/// Every `roster_secs`: the seat server learns the live lobby counts, and the Core
+/// learns which signed-in seats are still alive and who their mutual friends
+/// are (friend lists and presence show only those).
+async fn roster_sync(core: lobby::Core, url: String, token: String, every: u64) {
     let http = reqwest::Client::builder().timeout(Duration::from_secs(5)).build().expect("http client");
+    let mut seen = Seen::default();
     let mut failing = false;
     loop {
         let lobbies: std::collections::BTreeMap<String, usize> =
             core.counts().into_iter().map(|(mode, c)| (mode, c.lobbies)).collect();
-        let body = serde_json::json!({ "sessionIds": [], "lobbies": lobbies });
-        let res = http.post(format!("{url}/seat/v1/lobby/roster")).bearer_auth(&token).json(&body).send().await;
-        match res.map(|r| r.status()) {
-            Ok(s) if s.is_success() => failing = false,
-            other if !failing => {
-                failing = true;
-                eprintln!("mkwmp lobby: roster report failed: {other:?}");
+        let sids = core.live_sessions();
+        let mut entries = vec![];
+        let mut ok = true;
+        // The seat server takes at most 256 ids per call; counts ride on the first.
+        let chunks: Vec<&[String]> = if sids.is_empty() { vec![&[]] } else { sids.chunks(256).collect() };
+        for (i, chunk) in chunks.into_iter().enumerate() {
+            let mut body = serde_json::json!({ "sessionIds": chunk });
+            if i == 0 {
+                body["lobbies"] = serde_json::json!(lobbies);
             }
-            _ => {}
+            let res = http.post(format!("{url}/seat/v1/lobby/roster")).bearer_auth(&token).json(&body).send().await;
+            let reply = match res {
+                Ok(r) if r.status().is_success() => r.json::<serde_json::Value>().await.ok(),
+                Ok(r) => {
+                    if !failing {
+                        eprintln!("mkwmp lobby: roster call answered {}", r.status());
+                    }
+                    None
+                }
+                Err(e) => {
+                    if !failing {
+                        eprintln!("mkwmp lobby: roster call failed: {e}");
+                    }
+                    None
+                }
+            };
+            match reply {
+                Some(v) => entries.extend(seen.entries(&v)),
+                None => {
+                    ok = false;
+                    break;
+                }
+            }
         }
-        tokio::time::sleep(Duration::from_secs(15)).await;
+        failing = !ok;
+        if ok {
+            seen.alive_in.retain(|sid, _| sids.contains(sid));
+        }
+        // Never act on a partial or failed answer: a missing seat would be
+        // kicked mid-race.
+        if ok && !sids.is_empty() {
+            core.roster(entries);
+        }
+        tokio::time::sleep(Duration::from_secs(every)).await;
+    }
+}
+
+/// Which seats each seat-server boot has confirmed alive. A seat is reported
+/// dead to the Core only when the same boot that saw it alive says it's gone
+/// (left or timed out); a seat server restart forgets every seat, and that
+/// must not end running games.
+#[derive(Default)]
+struct Seen {
+    alive_in: std::collections::HashMap<String, (String, String)>, // sid -> (bootId, name)
+}
+
+impl Seen {
+    fn entries(&mut self, v: &serde_json::Value) -> Vec<lobby::RosterEntry> {
+        let boot = v["bootId"].as_str().unwrap_or("").to_string();
+        let mut out = vec![];
+        for s in v["sessions"].as_array().into_iter().flatten() {
+            let Some(sid) = s["sessionId"].as_str() else { continue };
+            let alive = s["alive"].as_bool().unwrap_or(false);
+            let mut name = s["name"].as_str().unwrap_or("").to_string();
+            if alive {
+                self.alive_in.insert(sid.to_string(), (boot.clone(), name.clone()));
+            } else {
+                match self.alive_in.get(sid) {
+                    // A dropped seat has no name in the roster: use the last one seen.
+                    Some((b, n)) if *b == boot => {
+                        name = n.clone();
+                        self.alive_in.remove(sid);
+                    }
+                    // Unknown to this boot but never confirmed by it: leave it be.
+                    _ => continue,
+                }
+            }
+            out.push(lobby::RosterEntry {
+                session_id: sid.to_string(),
+                name,
+                alive,
+                friends: s["friends"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|f| f["name"].as_str().map(str::to_string))
+                    .collect(),
+            });
+        }
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Seen;
+    use serde_json::json;
+
+    #[test]
+    fn dead_only_when_the_same_boot_saw_it_alive() {
+        let mut s = Seen::default();
+        let alive = json!({"bootId": "b1", "sessions": [
+            {"sessionId": "a", "name": "Ana", "alive": true, "friends": [{"sessionId": "b", "name": "Bia"}]},
+            {"sessionId": "x", "alive": false, "friends": []}]});
+        let e = s.entries(&alive);
+        assert_eq!(e.len(), 1, "never-seen dead seat is skipped");
+        assert_eq!((e[0].name.as_str(), e[0].friends.clone()), ("Ana", vec!["Bia".to_string()]));
+        // Seat server restarted: "a" is unknown to b2; no kick.
+        let restarted = json!({"bootId": "b2", "sessions": [{"sessionId": "a", "alive": false, "friends": []}]});
+        assert!(s.entries(&restarted).is_empty());
+        // Same boot drops it: reported dead once.
+        let dropped = json!({"bootId": "b1", "sessions": [{"sessionId": "a", "alive": false, "friends": []}]});
+        let e = s.entries(&dropped);
+        assert!(e.len() == 1 && !e[0].alive && e[0].name == "Ana");
+        assert!(s.entries(&dropped).is_empty());
     }
 }

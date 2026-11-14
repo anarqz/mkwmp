@@ -155,6 +155,9 @@ pub struct Lobby {
     /// One lobby token (a line of the seat server's lobby_tokens_file).
     #[serde(default)]
     pub roster_token_file: Option<PathBuf>,
+    /// Seconds between roster syncs (seat liveness, mutual friends, counts).
+    #[serde(default = "d_roster_secs")]
+    pub roster_secs: u64,
     /// Gamesync host advertised in match assignments: a dotted name the game
     /// patch redirects here and the TLS certificate covers.
     #[serde(default = "d_gamesync_host")]
@@ -191,6 +194,7 @@ pub struct LobbyPolicy {
     pub join_window_secs: Option<f64>,
 }
 
+fn d_roster_secs() -> u64 { 15 }
 fn d_gamesync_host() -> String { "gamesync.npln.nintendo.net".into() }
 
 fn d_host() -> String { "127.0.0.1".into() }

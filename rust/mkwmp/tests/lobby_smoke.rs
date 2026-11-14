@@ -21,6 +21,9 @@ const ISSUE: &str = "/nn.npln.gamesync.v1.Gamesync/IssueToken";
 
 struct Lobby {
     child: Child,
+    seat: Option<Child>,
+    log: Arc<std::sync::Mutex<String>>,
+    seat_port: u16,
     dir: std::path::PathBuf,
     npln: u16,
     gamesync: u16,
@@ -32,6 +35,10 @@ impl Drop for Lobby {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        if let Some(s) = self.seat.as_mut() {
+            let _ = s.kill();
+            let _ = s.wait();
+        }
         let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
@@ -45,13 +52,40 @@ fn free_udp() -> u16 {
 }
 
 fn start() -> (Lobby, rcgen::CertifiedKey) {
-    let dir = std::env::temp_dir().join(format!("mkwmp-lobby-smoke-{}", std::process::id()));
+    start_with(false)
+}
+
+/// `with_seat`: also run `mkwmp server` with signing keys and the roster
+/// enabled, and point the lobby at it (sync every second).
+fn start_with(with_seat: bool) -> (Lobby, rcgen::CertifiedKey) {
+    let dir = std::env::temp_dir().join(format!("mkwmp-lobby-smoke-{}-{with_seat}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let cert = rcgen::generate_simple_self_signed(vec!["lobby.test".into()]).unwrap();
     std::fs::write(dir.join("cert.pem"), cert.cert.pem()).unwrap();
     std::fs::write(dir.join("key.pem"), cert.key_pair.serialize_pem()).unwrap();
     std::fs::write(dir.join("secret"), [7u8; 32]).unwrap();
-    let (npln, gamesync, turn, nat) = (free_port(), free_port(), free_udp(), free_udp());
+    let (npln, gamesync, turn, nat, seat_port) = (free_port(), free_port(), free_udp(), free_udp(), free_port());
+    std::fs::write(dir.join("lobby-tokens.txt"), "lt-smoke\n").unwrap();
+    // A fixed test key pair (`mkwmp keygen t1`).
+    std::fs::write(dir.join("seat.key"), "G7pdXMxFuREdTbldNlub-3RQ2ihATuJMBrfdG9Tx7AY\n").unwrap();
+    let seat_cfg = if with_seat {
+        format!(
+            r#"lobby_tokens_file = "lobby-tokens.txt"
+[ticket]
+kid = "t1"
+private_key_file = "seat.key"
+public_keys = ["t1:ffHoVXEaR0CTOos3YCcffxs6uVsmPT7Vp2y3zcI025w"]
+[registry]
+"#
+        )
+    } else {
+        String::new()
+    };
+    let roster = if with_seat {
+        format!("roster_url = \"http://127.0.0.1:{seat_port}\"\nroster_token_file = \"lobby-tokens.txt\"\nroster_secs = 1\n")
+    } else {
+        String::new()
+    };
     let toml = format!(
         r#"
 [server]
@@ -59,9 +93,11 @@ name = "smoke"
 bind = "127.0.0.1:0"
 [seats]
 capacity = 10
-bind = "127.0.0.1:0"
+bind = "127.0.0.1:{seat_port}"
 lobby_endpoint = "127.0.0.1:{npln}"
+{seat_cfg}
 [lobby]
+{roster}
 npln_port = {npln}
 gamesync_port = {gamesync}
 turn_port = {turn}
@@ -76,19 +112,43 @@ key = "key.pem"
 "#
     );
     std::fs::write(dir.join("server.toml"), toml).unwrap();
-    let child = Command::new(env!("CARGO_BIN_EXE_mkwmp"))
-        .args(["lobby", dir.join("server.toml").to_str().unwrap()])
+    let cfg = dir.join("server.toml");
+    let seat = with_seat.then(|| {
+        let c = Command::new(env!("CARGO_BIN_EXE_mkwmp")).args(["server", cfg.to_str().unwrap()]).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+        for _ in 0..100 {
+            if std::net::TcpStream::connect(("127.0.0.1", seat_port)).is_ok() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        c
+    });
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mkwmp"))
+        .args(["lobby", cfg.to_str().unwrap()])
         .stdout(Stdio::null())
-        .stderr(if std::env::var_os("SMOKE_LOG").is_some() { Stdio::inherit() } else { Stdio::null() })
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    // Keep the lobby's log for assertions (and echo it with SMOKE_LOG=1).
+    let log = Arc::new(std::sync::Mutex::new(String::new()));
+    let (stderr, sink) = (child.stderr.take().unwrap(), log.clone());
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for line in std::io::BufReader::new(stderr).lines().map_while(Result::ok) {
+            if std::env::var_os("SMOKE_LOG").is_some() {
+                eprintln!("{line}");
+            }
+            sink.lock().unwrap().push_str(&line);
+            sink.lock().unwrap().push('\n');
+        }
+    });
     for _ in 0..100 {
         if std::net::TcpStream::connect(("127.0.0.1", gamesync)).is_ok() {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    (Lobby { child, dir, npln, gamesync, turn, nat }, cert)
+    (Lobby { child, seat, log, seat_port, dir, npln, gamesync, turn, nat }, cert)
 }
 
 async fn h2c(port: u16) -> SendRequest<Bytes> {
@@ -256,4 +316,46 @@ async fn two_players_reach_a_session_through_the_real_process() {
     let m = gateway::turn::parse(&buf[..n]).unwrap();
     assert_eq!(m.class, gateway::turn::SUCCESS);
     drop(b);
+}
+
+/// Seat server JSON over plain HTTP/1.1 (std only; the test needs nothing fancy).
+fn seat_call(port: u16, method: &str, path: &str, bearer: Option<&str>, body: &str) -> serde_json::Value {
+    use std::io::{Read, Write};
+    let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let auth = bearer.map(|b| format!("authorization: Bearer {b}\r\n")).unwrap_or_default();
+    write!(s, "{method} {path} HTTP/1.1\r\nhost: x\r\ncontent-type: application/json\r\n{auth}content-length: {}\r\nconnection: close\r\n\r\n{body}", body.len()).unwrap();
+    let mut out = String::new();
+    s.read_to_string(&mut out).unwrap();
+    let body = out.split_once("\r\n\r\n").map(|x| x.1).unwrap_or("");
+    serde_json::from_str(body).unwrap_or(serde_json::Value::Null)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn roster_sync_ends_a_dropped_seat() {
+    let (lobby, cert) = start_with(true);
+    let p = lobby.seat_port;
+    let mut tickets = vec![];
+    for (name, friend) in [("Ana", "bia"), ("Bia", "ana")] {
+        let pin = seat_call(p, "POST", "/seat/v1/profiles", None, &format!(r#"{{"name":"{name}"}}"#))["pin"].as_str().unwrap().to_string();
+        let v = seat_call(p, "POST", "/seat/v1/sessions", None, &format!(r#"{{"name":"{name}","pin":"{pin}","friends":["{friend}"]}}"#));
+        let ticket = v["ticket"]["token"].as_str().expect("seated with a ticket").to_string();
+        tickets.push((v["sessionId"].as_str().unwrap().to_string(), v["sessionKey"].as_str().unwrap().to_string(), ticket));
+    }
+    let _a = sign_in(&lobby, &cert, &tickets[0].2).await;
+    let _b = sign_in(&lobby, &cert, &tickets[1].2).await;
+    // A sync confirms both alive; then Ana's seat is dropped at the seat server.
+    tokio::time::sleep(Duration::from_millis(2500)).await;
+    assert!(!lobby.log.lock().unwrap().contains("seat no longer alive"));
+    seat_call(p, "DELETE", &format!("/seat/v1/sessions/{}", tickets[0].0), Some(&tickets[0].1), "");
+    for _ in 0..40 {
+        if lobby.log.lock().unwrap().contains("seat no longer alive") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let log = lobby.log.lock().unwrap().clone();
+    let kicked: Vec<&str> = log.lines().filter(|l| l.contains("seat no longer alive")).collect();
+    assert_eq!(kicked.len(), 1, "{log}");
+    assert!(kicked[0].contains("Ana"), "{}", kicked[0]);
+    assert!(!log.contains("roster call"), "roster errors: {log}");
 }
