@@ -22,7 +22,8 @@ async fn main() {
         Some("admin") => admin(&args[1..]).await,
         Some("server") | Some("lobby") => match config::ServerConfig::load(arg.unwrap_or("config/server.toml")) {
             Ok(cfg) if cmd == Some("server") => seat::serve(&cfg).await,
-            Ok(cfg) => lobby::serve(&cfg).await,
+            // Wired to gateway::serve + lobby::Core by the gateway owner.
+            Ok(cfg) => Err(format!("mkwmp lobby: not wired yet ({}:{})", cfg.lobby.host, cfg.lobby.npln_port).into()),
             Err(e) => Err(e.into()),
         },
         _ => {

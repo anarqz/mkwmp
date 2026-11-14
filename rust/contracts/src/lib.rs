@@ -20,6 +20,15 @@ pub mod nn {
         pub mod gamesync {
             package!(v1, "nn.npln.gamesync.v1");
         }
+        pub mod friends {
+            package!(v1, "nn.npln.friends.v1");
+        }
+        pub mod leaderboard {
+            package!(v1, "nn.npln.leaderboard.v1");
+        }
+        pub mod maintenance {
+            package!(v1, "nn.npln.maintenance.v1");
+        }
         pub mod ugcstore {
             package!(v1, "nn.npln.ugcstore.v1");
         }
