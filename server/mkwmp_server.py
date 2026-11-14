@@ -714,8 +714,31 @@ def referee_final(name, fields_body, now=None):
     for index in gs_int_list(doc_entries(fields_body).get("result", b"")):
         if index not in match["order"]:
             match["order"].append(index)
-    match["final"] = len(match["order"]) >= match["total"]
+    match.setdefault("reporters", set()).add(parts[2])
+    # Final only once every player has reported: in a timed battle the first device to reach
+    # time-up already lists everyone, but a slower device still a few seconds from its own end
+    # treats an early final verdict as a broken match (0x9b928162, live run 2026-11-13 21:14).
+    # referee_deadline() finalizes a complete list after REFEREE_GRACE s if a reporter is gone.
+    complete = len(match["order"]) >= match["total"]
+    if complete:
+        match.setdefault("complete_at", time.monotonic())
+    match["final"] = complete and len(match["reporters"]) >= match["total"]
     return result_name, referee_document(result_name, final=match["final"], now=now), match["final"]
+
+
+REFEREE_GRACE = 10.0   # seconds a complete result waits for the remaining players' reports
+
+
+def referee_deadline(result_name, now=None):
+    """Finalize a match whose finish order is complete but whose remaining players never
+    reported (crashed / left) once REFEREE_GRACE has passed. Returns (name, document) or None."""
+    match = REFEREE_MATCHES.get(result_name)
+    if not match or match.get("final") or "complete_at" not in match:
+        return None
+    if time.monotonic() - match["complete_at"] < REFEREE_GRACE:
+        return None
+    match["final"] = True
+    return result_name, referee_document(result_name, final=True, now=now)
 
 
 GS_FIXED_DOC = "docs/__gs/f"   # name checked by FUN_01267820 against "__gs" + "/" + "f"
@@ -1258,6 +1281,8 @@ class H2Protocol(asyncio.Protocol):
                     result_name, result_doc, final = update
                     log(f"<<< referee: {result_name} {'FINAL (status 1)' if final else 'updated (status 0)'} after {name}")
                     H2Protocol.publish(result_name, result_doc, CHANGE_MODIFIED)
+                    if not final:
+                        asyncio.get_running_loop().call_later(REFEREE_GRACE + 0.5, H2Protocol.referee_timeout, result_name)
             H2Protocol.release_pending()
             log(f"<<< WriteDocuments: {writes} -> upcsid by slot; stored {len(DOC_STORE)} docs")
         if st["path"] == CANCEL_TICKET:
@@ -1358,6 +1383,13 @@ class H2Protocol(asyncio.Protocol):
             peer.transport.write(peer.conn.data_to_send())
             log(f"    assignment frame stream {sid}: {frame[5:].hex()}")
         log(f"<<< assigned both tickets to local session {lobby.id}")
+
+    @classmethod
+    def referee_timeout(cls, result_name):
+        verdict = referee_deadline(result_name)
+        if verdict:
+            log(f"<<< referee: {result_name} FINAL (status 1) after {REFEREE_GRACE:.0f} s grace (missing reports)")
+            cls.publish(verdict[0], verdict[1], CHANGE_MODIFIED)
 
     def cancel_ticket(self, body):
         """CancelMatchmakingTicket {1 "tenants/current/matchmakingTickets/<id>"}: the player left

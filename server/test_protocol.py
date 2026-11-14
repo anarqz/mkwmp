@@ -354,16 +354,34 @@ class RefereeTest(unittest.TestCase):
         self.assertEqual((got, final), (result_name, False))
         self.assertEqual(_doc_fields(doc)["status"], capture.gs_int(0))
         self.assertEqual(_doc_fields(doc)["result"], capture.gs_list([capture.gs_int(1)]))
-        # The captured full report completes it: status 1, order [1, 0], ratings.
+        # The captured full report completes the order, but player 2 has not reported yet
+        # (its clock may still run): stay open.
         report = capture.decode_grpc_messages(bytes.fromhex(self.FULL_REPORT))[0][1]
         (_, rfields), = capture.write_updates(report)
         got, doc, final = capture.referee_final(rname, rfields, now=102)
+        self.assertFalse(final)
+        self.assertEqual(_doc_fields(doc)["status"], capture.gs_int(0))
+        # Player 2 reports too: final.
+        got, doc, final = capture.referee_final(rname.replace("/User/1", "/User/2"), rfields, now=103)
         self.assertTrue(final)
         out = _doc_fields(doc)
         self.assertEqual(out["status"], capture.gs_int(1))
         self.assertEqual(out["result"], capture.gs_list([capture.gs_int(1), capture.gs_int(0)]))
         self.assertIn(b"\x0a\x011", out["ratings"])
-        self.assertIsNone(capture.referee_final(rname, rfields, now=103))   # already final
+        self.assertIsNone(capture.referee_final(rname, rfields, now=104))   # already final
+
+    def test_a_complete_order_finalizes_after_the_grace_period(self):
+        capture.REFEREE_ANSWERED.clear()
+        capture.REFEREE_MATCHES.clear()
+        body = capture.decode_grpc_messages(self.REQUEST)[0][1]
+        (name, fields), = capture.write_updates(body)
+        result_name, _ = capture.referee_result(name, fields, now=100)
+        rname, rfields = self._report(result_name, [1, 0])   # full order, one reporter
+        self.assertFalse(capture.referee_final(rname, rfields, now=101)[2])
+        self.assertIsNone(capture.referee_deadline(result_name))   # grace not over yet
+        capture.REFEREE_MATCHES[result_name]["complete_at"] -= capture.REFEREE_GRACE + 1
+        got, doc = capture.referee_deadline(result_name)
+        self.assertEqual(_doc_fields(doc)["status"], capture.gs_int(1))
 
 
 class MergeWriteTest(unittest.TestCase):
