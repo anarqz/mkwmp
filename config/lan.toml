@@ -1,0 +1,62 @@
+## LAN test profile for this PC (P1) + the Steam Deck (P2): see docs/TESTING-RUST-LOBBY.md.
+## mkwmp server config (Rust side). Loaded by the seat server and the lobby.
+## Flow: the launcher joins the seat server -> a free seat gets a signed ticket
+## (else the player queues) -> the game presents the ticket to the lobby,
+## which checks the signature and, over the roster call, that the seat is live.
+## All state is in memory and dies with the process; nothing persists.
+
+[server]
+name = "mkwmp"                 # instance name shown to players; the ticket's `iss`
+bind = "127.0.0.1:8905"        # NPLN endpoint the game connects to (TLS)
+
+[seats]
+capacity = 50                  # players seated at once; the rest queue
+bind = "127.0.0.1:7000"        # seat HTTP API (point the Cloudflare tunnel here)
+max_queue = 500                # joins past this are refused
+heartbeat_secs = 20            # launcher heartbeat while seated
+seat_timeout_secs = 60         # no heartbeat for this long frees the seat
+queue_poll_secs = 5            # launcher poll while queued
+queue_timeout_secs = 30        # a queued player silent this long drops out
+lobby_endpoint = "127.0.0.1:8905"   # NPLN host:port handed to seated players
+# lobby_tokens_file = "../scratch/keys/lobby-tokens.txt"  # enables POST /seat/v1/lobby/roster
+
+[registry]
+# Registered profiles: a name + its 6-digit PIN. The only state kept across
+# restarts; PINs are stored hashed. Players register in the launcher.
+file = "../scratch/registry.json"
+reserved_names = []            # names only `mkwmp admin register <name>` can take
+expire_days = 180              # unused names become free again (0 = never)
+# admin_token_file = "../scratch/keys/admin-token.txt"  # enables `mkwmp admin` (loopback only)
+
+[ticket]
+kid = "dev1"
+private_key_file = "../scratch/keys/seat-ed25519.key"     # `seat keygen`; seat server only
+public_keys = []               # "kid:base64url" entries a lobby trusts
+ttl_secs = 43200               # 12 h; liveness is the roster's job
+
+[lobby]
+# `mkwmp lobby`: NPLN + Gamesync + TURN + Pia NAT. Lobbies are unlimited:
+# they open as players arrive and close when empty.
+host = "0.0.0.0"               # LAN test: PC + Steam Deck
+public_host = "192.168.68.238" # this PC on the LAN
+npln_port = 8905               # TLS + h2 (the [tls] pair)
+gamesync_port = 8906           # TLS or h2c, sniffed (0 = none)
+turn_port = 3478               # UDP TURN relay (0 = off)
+nat_port = 10025               # UDP Pia NAT responder (0 = off)
+relay_ports = "49152:49407"  # TURN relay sockets (firewall range); default ephemeral
+require_ticket = false         # true: sign-in needs a seat ticket
+# roster_url = "http://127.0.0.1:7000"                  # seat server, for seat liveness
+# roster_token_file = "../scratch/keys/lobby-token.txt"  # one line of its lobby_tokens_file
+gamesync_host = "gamesync.npln.nintendo.net"  # advertised; the patch redirects it, the cert covers it
+token_secret_file = "../scratch/keys/lobby-token-secret"  # 32 random bytes: restarts keep running games
+
+[lobby.policy]
+# Unset = the tested defaults: 24 players per lobby, start at 2, gather 10 s.
+# capacity = { Normal24 = 24, Battle24 = 24 }
+# min_start = 2
+# gather_secs = 10
+
+[tls]
+# Shared by both endpoints. Paths relative to this file.
+cert = "../scratch/certs/capture-cert.pem"
+key = "../scratch/certs/capture-key.pem"
