@@ -472,3 +472,23 @@ fn dev_ticket(name: &str) -> String {
     let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!(r#"{{"name":"{name}"}}"#));
     format!("mkw1.{payload}.sig")
 }
+
+#[test]
+fn roster_limits_friends_to_mutual_and_ends_dead_seats() {
+    let w = World::new(Policy::default());
+    let a = sign_in(&w, &dev_ticket("Ana"));
+    let _b = sign_in(&w, &dev_ticket("Bia"));
+    let _c = sign_in(&w, &dev_ticket("Cid"));
+    let (_, mut friends) = w.call(a.conn, "/nn.npln.friends.v1.Friends/SubscribeFriendUsers", Some(&a.token),
+        Some(&Msg::new().bytes(1, "tenants/current/users/current").0), true);
+    let count = |m: &Vec<u8>| wire::repeated_bytes(m, 1).unwrap().len();
+    assert_eq!(count(&messages(&mut friends)[0]), 2, "dev: everyone online");
+    let e = |name: &str, friends: &[&str]| lobby::RosterEntry {
+        session_id: format!("s-{name}"), name: name.into(), alive: true, friends: friends.iter().map(|s| s.to_string()).collect() };
+    w.core.roster(vec![e("Ana", &["Bia"]), e("Bia", &["Ana"]), e("Cid", &[])]);
+    let got = messages(&mut friends);
+    let last = got.last().unwrap();
+    assert_eq!(count(last), 1, "only the mutual friend");
+    let fu = wire::bytes_field(wire::repeated_bytes(last, 1).unwrap()[0], 2).unwrap().unwrap();
+    assert!(wire::str_field(fu, 2).unwrap().unwrap().ends_with(&lobby::users::ticket_user_id("bia")));
+}

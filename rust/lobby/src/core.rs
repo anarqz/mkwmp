@@ -2,7 +2,7 @@
 //! caller's lobby (token -> user -> seat). One mutex guards all state; handlers never block
 //! or do I/O, they only queue [`Out`]s on the transport's channels.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -16,7 +16,7 @@ use crate::social::{self, KeepAlive, Social};
 use crate::referee::Verdict;
 use crate::users::{self, Audience, Directory, Tokens};
 use crate::value::{Document, Fields, Value};
-use crate::{code, Call, ConnId, CoreConfig, Out, StreamId};
+use crate::{code, Call, ConnId, CoreConfig, Out, RosterEntry, StreamId};
 
 pub const AUTH_SIGN_IN: &str = "/nn.npln.auth.v1.Auth/IssuePrearrangedUserToken";
 pub const GS_ISSUE_TOKEN: &str = "/nn.npln.gamesync.v1.Gamesync/IssueToken";
@@ -120,6 +120,11 @@ struct State {
     pending_social: bool,
     /// Pushes produced where no send list is at hand (stream ends); sent at the next flush.
     deferred_sends: Sends,
+    /// Seat session id (ticket `sid`) per user id, for the seat roster.
+    seat_sessions: HashMap<String, String>,
+    /// Mutual friends (user ids) per user id, from the seat roster. `None` until a roster
+    /// arrives (development: everyone online is a friend).
+    friends: Option<HashMap<String, HashSet<String>>>,
 }
 
 struct Inner {
@@ -176,6 +181,8 @@ impl Core {
             social_refreshed: 0.0,
             pending_social: false,
             deferred_sends: Sends::new(),
+            seat_sessions: HashMap::new(),
+            friends: None,
             cfg,
         };
         Self { inner: Arc::new(Inner { state: Mutex::new(state), clock }) }
@@ -264,6 +271,53 @@ impl Core {
     /// Timers: gathering lobbies, referee grace, seats that left without a clean close.
     pub fn tick(&self) {
         self.run(|s, now| s.tick(now))
+    }
+
+    /// Seat session ids (ticket `sid`) of the players signed in now, to ask the seat roster about.
+    pub fn live_sessions(&self) -> Vec<String> {
+        self.run(|s, _| {
+            let online: HashSet<&str> = s.conn_user.values().map(|u| users::tail(u)).collect();
+            s.seat_sessions.iter().filter(|(uid, _)| online.contains(uid.as_str())).map(|(_, sid)| sid.clone()).collect()
+        })
+    }
+
+    /// The seat roster's answer for [`Core::live_sessions`]: friend lists become the mutual
+    /// friends (others' presence and rooms are no longer shown to a player), and a seat that
+    /// is no longer alive leaves its lobby.
+    pub fn roster(&self, entries: Vec<RosterEntry>) {
+        self.run(|s, now| {
+            let mut sends = Sends::new();
+            let mut friends = s.friends.take().unwrap_or_default();
+            for e in entries {
+                let uid = users::ticket_user_id(&e.name);
+                if !e.alive {
+                    info!(user = %uid, name = %e.name, "seat no longer alive");
+                    if let Some(lobby) = s.mm.lobby_of(&uid) {
+                        s.leave(lobby, &uid, "seat ended", now, &mut sends);
+                    }
+                    if let Some(t) = s.mm.ticket_of(&uid).map(|t| t.id) {
+                        s.end_trackers(t, code::CANCELLED, &mut sends);
+                        s.mm.cancel(t);
+                    }
+                    friends.remove(&uid);
+                    continue;
+                }
+                let set: HashSet<String> = e.friends.iter().map(|n| users::ticket_user_id(n)).collect();
+                if friends.get(&uid) != Some(&set) {
+                    s.pending_social = true;
+                }
+                friends.insert(uid, set);
+            }
+            s.friends = Some(friends);
+            if s.pending_social {
+                // Presence views changed too: resend every presence subscriber its snapshot.
+                let subs: Vec<StreamKey> = s.streams.iter().filter(|(_, st)| st.kind == Kind::Presences).map(|(k, _)| *k).collect();
+                for k in subs {
+                    sends.push((k, Out::Message(s.presence_snapshot(k))));
+                }
+            }
+            s.flush(sends);
+        })
     }
 
     /// Lobby counts per matchmaking config (for the seat roster and status).
@@ -367,8 +421,12 @@ impl State {
         let req = msgs::parse_sign_in(body).map_err(|e| Out::status(code::INVALID_ARGUMENT, e.to_string()))?;
         let token = req.token.unwrap_or_default();
         let (uid, name) = if token.starts_with(&format!("{}.", ticket::PREFIX)) {
-            let name = self.ticket_name(&token, now)?;
-            (users::ticket_user_id(&name), Some(name))
+            let (name, sid) = self.ticket_name(&token, now)?;
+            let uid = users::ticket_user_id(&name);
+            if let Some(sid) = sid {
+                self.seat_sessions.insert(uid.clone(), sid);
+            }
+            (uid, Some(name))
         } else if self.cfg.require_ticket {
             return Err(Out::status(code::UNAUTHENTICATED, "sign in through the mkwmp launcher"));
         } else {
@@ -391,13 +449,13 @@ impl State {
 
     /// Display name from a seat ticket. Verified when keys are configured (always in
     /// production); a development lobby without keys reads the name unverified.
-    fn ticket_name(&self, token: &str, now: f64) -> Result<String, Out> {
+    fn ticket_name(&self, token: &str, now: f64) -> Result<(String, Option<String>), Out> {
         if self.cfg.ticket_keys.is_empty() && !self.cfg.require_ticket {
             return unverified_ticket_name(token).ok_or_else(|| Out::status(code::UNAUTHENTICATED, "malformed seat ticket"));
         }
         self.verifier
             .verify(token, now as u64)
-            .map(|c| c.name)
+            .map(|c| (c.name, Some(c.sid).filter(|s| !s.is_empty())))
             .map_err(|e| Out::status(code::UNAUTHENTICATED, format!("seat ticket: {e}")))
     }
 
@@ -677,17 +735,23 @@ impl State {
 
     /// Everyone online except the caller. The game keeps only those that are also in its
     /// system friend list (the probe fills that with the player's mutual launcher friends).
+    /// Whether `other` may see `me`'s presence and rooms (mutual friends; everyone in dev).
+    fn are_friends(&self, me: &str, other: &str) -> bool {
+        me != other && self.friends.as_ref().map_or(true, |f| f.get(me).is_some_and(|s| s.contains(other)))
+    }
+
     fn friend_snapshot(&self, key: StreamKey) -> Vec<u8> {
-        let me = self.caller(key);
-        let mut online: Vec<&str> = self.conn_user.values().map(String::as_str).filter(|u| Some(*u) != me.as_deref()).collect();
+        let me = self.caller_uid(key).map(|(u, _)| u).unwrap_or_default();
+        let mut online: Vec<&str> = self.conn_user.values().map(String::as_str)
+            .filter(|u| self.are_friends(&me, users::tail(u))).collect();
         online.sort_unstable();
         online.dedup();
         social::friend_users(online)
     }
 
     fn presence_snapshot(&self, key: StreamKey) -> Vec<u8> {
-        let me = self.caller_uid(key).map(|(uid, _)| uid);
-        social::presence_batch(self.social.presences.iter().filter(|(uid, p)| p.online && Some(uid.as_str()) != me.as_deref()).map(|(_, p)| p))
+        let me = self.caller_uid(key).map(|(uid, _)| uid).unwrap_or_default();
+        social::presence_batch(self.social.presences.iter().filter(|(uid, p)| p.online && self.are_friends(&me, uid)).map(|(_, p)| p))
     }
 
     /// Push one player's presence to every other presence subscriber.
@@ -695,7 +759,7 @@ impl State {
         let Some(p) = self.social.presences.get(uid) else { return };
         let msg = social::presence_batch([p]);
         for (k, s) in &self.streams {
-            if s.kind == Kind::Presences && self.caller_uid(*k).map(|(u, _)| u).as_deref() != Some(uid) {
+            if s.kind == Kind::Presences && self.caller_uid(*k).is_some_and(|(u, _)| self.are_friends(&u, uid)) {
                 sends.push((*k, Out::Message(msg.clone())));
             }
         }
@@ -1135,12 +1199,14 @@ fn ticket_name(tenant: &str, id: &str) -> Vec<u8> {
 }
 
 /// Name claim of a seat ticket without checking its signature (development lobbies only).
-fn unverified_ticket_name(token: &str) -> Option<String> {
+fn unverified_ticket_name(token: &str) -> Option<(String, Option<String>)> {
     use base64::Engine;
     let payload = token.split('.').nth(1)?;
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload.trim_end_matches('=')).ok()?;
     let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    v.get("name")?.as_str().filter(|n| !n.is_empty()).map(str::to_owned)
+    let name = v.get("name")?.as_str().filter(|n| !n.is_empty())?.to_owned();
+    let sid = v.get("sid").and_then(|s| s.as_str()).filter(|s| !s.is_empty()).map(str::to_owned);
+    Some((name, sid))
 }
 
 #[cfg(test)]

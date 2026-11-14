@@ -40,6 +40,9 @@ the PC or the Deck.
 2. **Leave and search again** (last night's "COIN RACE" case): after a match, P2 quits to the menu and
    searches again. Expected now: P2's seat leaves the old lobby (P1 sees P2 removed), P2 lands in a new
    gathering lobby; when P1 also searches again they are matched together in a fresh lobby.
+   Then the experiment the user asked for: set `rejoin = true` under `[lobby.policy]`, restart, and
+   repeat. P2 should now land back in P1's lobby (free roam between events) instead of a new one.
+   If the game errors on either side, that is MULTI-LOBBY E2 failing: set it back to false.
 3. **Race** to the finish line (finish order instead of a timer).
 4. **Friend room**: P1 Online -> Create Room (with and without a password); read the Room ID; P2 enters
    it (Search by Room ID). Then a race in the room.

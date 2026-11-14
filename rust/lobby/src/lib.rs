@@ -67,6 +67,17 @@ impl Default for CoreConfig {
     }
 }
 
+/// One seat of the seat server's roster (`POST /seat/v1/lobby/roster`), as handed to
+/// [`Core::roster`].
+#[derive(Clone, Debug, Default)]
+pub struct RosterEntry {
+    pub session_id: String,
+    pub name: String,
+    pub alive: bool,
+    /// Names of the mutual friends that are seated now.
+    pub friends: Vec<String>,
+}
+
 /// An incoming RPC, as the transport saw its request headers.
 #[derive(Clone, Debug)]
 pub struct Call<'a> {
