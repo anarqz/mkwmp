@@ -43,6 +43,11 @@ async fn main() {
     };
     if let Err(e) = result {
         eprintln!("mkwmp: {e}");
+        // Double-clicked (no arguments): keep the window open to read it.
+        if cmd.is_none() && std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+            eprintln!("press Enter to close");
+            let _ = std::io::stdin().read_line(&mut String::new());
+        }
         std::process::exit(1);
     }
 }
@@ -62,7 +67,13 @@ async fn admin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let cfg = config::ServerConfig::load(&cfg_path)?;
     let token_file = cfg.registry.admin_token_file.as_ref().ok_or("set [registry] admin_token_file in the config")?;
     let token = std::fs::read_to_string(token_file)?.trim().to_string();
-    let base = format!("http://{}/seat/v1/admin/profiles", cfg.seats.bind);
+    // The admin API answers loopback only; a 0.0.0.0 bind is reached on
+    // 127.0.0.1 (Windows can't connect to 0.0.0.0).
+    let mut addr: std::net::SocketAddr = cfg.seats.bind.parse().map_err(|_| "bad [seats] bind")?;
+    if addr.ip().is_unspecified() {
+        addr.set_ip(std::net::Ipv4Addr::LOCALHOST.into());
+    }
+    let base = format!("http://{addr}/seat/v1/admin/profiles");
     let http = reqwest::Client::new();
     let res = match rest.as_slice() {
         ["list"] => http.get(&base).bearer_auth(&token).send().await?,

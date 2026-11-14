@@ -34,29 +34,96 @@ Step-by-step guides for Windows and the Steam Deck: <https://anarqz.github.io/mk
 
 ## Host your own server
 
-> **Not playable yet: needs rc.2.** Players need the **rc.2** launcher and game patch, which aren't released yet. They trust the certificate each server publishes; rc.1 can only reach the official server.
+> **Available from rc.2 (not released yet).** The server download arrives with rc.2. Players also need the rc.2 launcher and game patch, which trust each server's own certificate; rc.1 can only reach the official server.
 
-The server is one program, and a PC is enough to host for your friends.
+The whole server is one program, `mkwmp-server`. It runs gamertags, friends, seats and the game lobby, and it sets itself up on the first run. A normal PC is enough to host your friends.
 
-**On your PC (Windows or Linux).** Download `mkwmp-server-x86_64-windows.exe` or `mkwmp-server-x86_64-linux` from the [releases](https://github.com/anarqz/mkwmp/releases) (rc.2 onward) and run it. On Windows you can double-click it.
-- On the first run it asks for the address players reach you at and suggests your LAN address. It creates its keys, the lobby's certificate, the config and the SQLite registry in `mkwmp-data` next to itself.
-- It then runs everything in one window. Later runs reuse those settings.
-- From a terminal: `mkwmp-server host --public-ip <IPv4>`; see `mkwmp-server host --help`.
+### What you need
 
-**On a Linux server, with Docker:**
+- **A computer that stays on while you play.** Windows or Linux; 1 CPU core and 1 GB of memory are plenty. It can be one of the players' own PCs.
+- **For a LAN party:** nothing else.
+- **For friends over the internet:**
+  - a router where you can set up **port forwarding**;
+  - a **public IPv4 address**. Some internet providers share one address between customers (CGNAT). If the WAN address in your router's status page differs from the one "what is my IP" shows, you're behind CGNAT and can't host from home. Rent a small Linux VM instead, as in [Docker](#on-a-linux-server-with-docker) below.
+
+### 1. Start the server
+
+- **Windows:** download `mkwmp-server-x86_64-windows.exe` from the [releases](https://github.com/anarqz/mkwmp/releases) and put it in a folder of its own. Double-click it.
+- **Linux:** download `mkwmp-server-x86_64-linux`, then run `chmod +x mkwmp-server-x86_64-linux` and `./mkwmp-server-x86_64-linux`.
+
+On the first run it asks one question: **which address do players reach this machine at?**
+- **LAN party:** press Enter to accept the suggested LAN address, e.g. `192.168.1.20`.
+- **Over the internet:** type your public IP (search "what is my IP").
+
+It then creates a `mkwmp-data` folder next to itself and starts:
+
+```
+created the ticket signing key
+created the lobby certificate
+data folder: C:\Games\mkwmp-server\mkwmp-data
+players set the launcher's SERVER to: http://203.0.113.7:7000
+open (and on a home router, forward to this machine): TCP 7000, 8905, 8906; UDP 3478, 10025, 49152-49407
+running; stop with Ctrl-C or by closing this window (players' seats are freed, gamertags are kept)
+```
+
+Keep that window open while you play. Next time, just start it again: it remembers its settings.
+
+### 2. Open the ports
+
+| Port | Protocol | Used by |
+| --- | --- | --- |
+| 7000 | TCP | the launcher: gamertags, friends, seats |
+| 8905, 8906 | TCP | the game: sign-in, matchmaking, sessions |
+| 3478, 10025 | UDP | the game: relay and connection check |
+| 49152–49407 | UDP | the game: relayed race traffic |
+
+- **Windows firewall:** when Windows asks whether to allow `mkwmp-server`, allow it. If you missed the prompt, run this in an administrator terminal:
+  `netsh advfirewall firewall add rule name="mkwmp-server" dir=in action=allow program="<full path to mkwmp-server-x86_64-windows.exe>"`
+- **Linux firewall** (ufw): `sudo ufw allow 7000,8905,8906/tcp && sudo ufw allow 3478,10025/udp && sudo ufw allow 49152:49407/udp`.
+- **Router (internet only):** forward every port in the table to the hosting PC's LAN address. Give that PC a fixed LAN address (a DHCP reservation) so the forwarding keeps working.
+
+### 3. Players join
+
+Each player, including you, does three things in the launcher:
+1. Set **SERVER** to `http://<the address you entered>:7000`. The status bar shows your server's seats once it's reachable.
+2. Register a gamertag. Gamertags and friends belong to each server, so everyone registers again on yours, and friends are added again too.
+3. Press **PLAY**, and in the game pick Online Play → Race or Battle.
+
+### Day to day
+
+- **Change settings:** start it from a terminal with flags; they're saved for next time:
+  `mkwmp-server host --public-ip 203.0.113.7 --name "Friday kart" --capacity 12`
+  Other options: `--turn-port`, `--seat-bind`, `--data`. Run `mkwmp-server host --help` for the list.
+- **Forgotten PIN, reserved names:** run these on the hosting machine while the server runs:
+  `mkwmp-server admin reset-pin <gamertag> --config mkwmp-data/server.toml`. The other commands are `list`, `register <name>` (reserve it and get its PIN) and `release <name>`.
+- **Back up** the `mkwmp-data` folder while the server is stopped. Keep it private: it holds your server's keys.
+- **Update:** replace the program with the newer release and start it again. `mkwmp-data` stays.
+
+### If something doesn't work
+
+- **The launcher shows the server as offline:** check that the address is right, that TCP 7000 is open (and forwarded), and that the server window is running.
+- **The game says it can't connect after PLAY:** TCP 8905/8906 are blocked, or the player is still on rc.1.
+- **Players reach the lobby but races fail to start:** the UDP ports (3478, 10025, 49152–49407) are blocked or not forwarded.
+- **Your public IP changed:** start once with `--public-ip <new address>`, and players change SERVER in their launcher to match. A dynamic-DNS name for your IP doesn't help here: the game needs the address itself.
+
+### On a Linux server with Docker
+
+The same server runs in Docker, which suits a VM:
 
 ```sh
 git clone https://github.com/anarqz/mkwmp && cd mkwmp
-cp .env.example .env              # set MKWMP_PUBLIC_IP
+cp .env.example .env              # set MKWMP_PUBLIC_IP (name, seats and ports are optional)
 docker compose up -d --build
 ```
 
-Either way:
-- Open TCP 7000, 8905, 8906 and UDP 3478, 10025, 49152–49407. When friends play over the internet, also forward those ports on your router to the hosting machine.
-- Players set the launcher's **SERVER** to `http://<your IP>:7000`.
-- Over plain `http://`, PINs travel unencrypted. That's fine on a LAN; for a public server, use HTTPS (`docker compose --profile https up -d` with a domain).
+It needs a Linux host: on Docker Desktop for Windows or macOS, the lobby can't see players' real addresses, so use the program above there. With a domain, `docker compose --profile https up -d` adds HTTPS, and players then use `https://<domain>`.
 
-More in [docs/HOSTING.md](docs/HOSTING.md): HTTPS, admin commands and backups.
+### Security
+
+- The launcher talks to your server over plain `http://`, so gamertag PINs cross the network unencrypted. That's fine on a LAN. For a server open to the internet, put HTTPS in front of port 7000, with the Docker `https` profile or your own reverse proxy.
+- Never share `mkwmp-data`: anyone with its keys can impersonate your server.
+
+More detail, including running the two parts separately under systemd: [docs/HOSTING.md](docs/HOSTING.md).
 
 ## Build it yourself
 

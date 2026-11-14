@@ -331,6 +331,7 @@ pub async fn run(args: &[String]) -> Res<()> {
     if opts.init_only {
         return Ok(());
     }
+    println!("running; stop with Ctrl-C or by closing this window (players' seats are freed, gamertags are kept)");
     let cfg = config::ServerConfig::load(&cfg_path)?;
     crate::logging();
     tokio::select! {
