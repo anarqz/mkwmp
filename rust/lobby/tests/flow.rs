@@ -371,6 +371,101 @@ fn production_requires_a_valid_seat_ticket() {
     assert!(user.ends_with(&lobby::users::ticket_user_id("ana")));
 }
 
+const GSS: &str = "/nn.npln.matchmaking.v1.GameSessionService/";
+
+#[test]
+fn friend_room_create_room_id_and_join() {
+    let w = World::new(Policy::default());
+    let mut host = sign_in(&w, &dev_ticket("Ana"));
+    let mut guest = sign_in(&w, &dev_ticket("Bia"));
+    // Create (Private24, password "1234"), then track the creation ticket: state 2 + session.
+    let player = Msg::new().bytes(1, "tenants/current/users/current");
+    let session = Msg::new().bytes(6, "1234").msg(11, &Msg::new().bytes(1, "attrs"));
+    let ticket = Msg::new().bytes(2, "tenants/current/matchmakingConfigs/Private24").msg(3, &player).msg(6, &session);
+    let reply = w.unary(host.conn, &format!("{GSS}CreateGameSessionCreationTicket"), Some(&host.token),
+        &Msg::new().bytes(1, "tenants/current").msg(2, &ticket).0).unwrap();
+    let ct = wire::str_field(&reply, 1).unwrap().unwrap();
+    assert!(ct.contains("/gameSessionCreationTickets/"));
+    let (_, mut rx) = w.call(host.conn, &format!("{GSS}TrackGameSessionCreationTicket"), Some(&host.token),
+        Some(&Msg::new().bytes(1, &ct).0), true);
+    let out = drain(&mut rx);
+    assert!(out.contains(&Out::ok()));
+    let Out::Message(created) = &out[0] else { panic!() };
+    assert_eq!(wire::varint_field(created, 4).unwrap(), Some(2));
+    let gs = wire::bytes_field(created, 6).unwrap().unwrap();
+    let gs_name = wire::str_field(gs, 1).unwrap().unwrap();
+    assert_eq!(wire::str_field(gs, 6).unwrap().as_deref(), Some("*"), "password masked");
+    assert_eq!(wire::repeated_bytes(created, 5).unwrap().len(), 1);
+    join_session(&w, &mut host);
+
+    // Room ID: stable, six digits; resolvable by the guest.
+    let alias_req = Msg::new().bytes(1, "tenants/current").msg(2, &Msg::new().bytes(2, &gs_name));
+    let a1 = w.unary(host.gs_conn, &format!("{GSS}CreateGameSessionShortAlias"), Some(&host.token), &alias_req.0).unwrap();
+    let a2 = w.unary(host.gs_conn, &format!("{GSS}CreateGameSessionShortAlias"), Some(&host.token), &alias_req.0).unwrap();
+    let alias = wire::str_field(&a1, 1).unwrap().unwrap();
+    assert_eq!(alias, wire::str_field(&a2, 1).unwrap().unwrap());
+    let room_id = alias.rsplit('/').next().unwrap();
+    assert_eq!(room_id.len(), 6);
+    let got = w.unary(guest.conn, &format!("{GSS}GetGameSessionShortAlias"), Some(&guest.token),
+        &Msg::new().bytes(1, format!("tenants/current/GameSessionShortAliases/{room_id}")).0).unwrap();
+    assert_eq!(wire::str_field(&got, 2).unwrap().as_deref(), Some(gs_name.as_str()));
+    assert_eq!(w.unary(guest.conn, &format!("{GSS}GetGameSessionShortAlias"), Some(&guest.token),
+        &Msg::new().bytes(1, "tenants/current/GameSessionShortAliases/000000x").0), Err(5));
+
+    // Join: wrong password refused; right one seats the guest and announces it to the host.
+    let host_members = send_frame(&w, &mut host, Msg::new().bytes(1, "userSessions/current").msg(3, &listen(2, true, "docs/__us")));
+    assert_eq!(changes(&host_members).len(), 1);
+    let join = |pw: &str| Msg::new().bytes(1, &gs_name).bytes(2, pw).msg(3, &player).into_bytes();
+    assert_eq!(w.unary(guest.conn, &format!("{GSS}JoinGameSession"), Some(&guest.token), &join("0000")), Err(7));
+    let joined = w.unary(guest.conn, &format!("{GSS}JoinGameSession"), Some(&guest.token), &join("1234")).unwrap();
+    let mp = wire::bytes_field(&joined, 1).unwrap().unwrap();
+    assert_eq!(wire::str_field(mp, 3).unwrap().as_deref(), Some(guest.uid.as_str()));
+    let gs = wire::bytes_field(&joined, 2).unwrap().unwrap();
+    assert_eq!(wire::repeated_bytes(gs, 12).unwrap().len(), 2);
+    let c = changes(&pushes(&mut host));
+    assert_eq!(c[0].1, ChangeKind::Added as u64, "host sees the new member");
+    // The guest's Gamesync session is the room's.
+    join_session(&w, &mut guest);
+    assert_eq!(get(&w, &guest, "docs/__gs/f").unwrap().get("gsid"), get(&w, &host, "docs/__gs/f").unwrap().get("gsid"));
+}
+
+#[test]
+fn presence_reaches_friends_and_offline_is_announced() {
+    let w = World::new(Policy::default());
+    let a = sign_in(&w, &dev_ticket("Ana"));
+    let b = sign_in(&w, &dev_ticket("Bia"));
+    // B subscribes to friend users and presences.
+    let (_, mut friends) = w.call(b.conn, "/nn.npln.friends.v1.Friends/SubscribeFriendUsers", Some(&b.token),
+        Some(&Msg::new().bytes(1, "tenants/current/users/current").0), true);
+    let snap = messages(&mut friends);
+    let group = wire::repeated_bytes(&snap[0], 1).unwrap()[0];
+    let fu = wire::bytes_field(group, 2).unwrap().unwrap();
+    assert_eq!(wire::str_field(fu, 2).unwrap().as_deref(), Some(a.user.as_str()));
+    let (_, mut presences) = w.call(b.conn, "/nn.npln.friends.v1.PresenceService/SubscribePresences", Some(&b.token),
+        Some(&Msg::new().bytes(1, "tenants/current/users/current").0), true);
+    messages(&mut presences);
+    // A opens KeepAlive (ack), then publishes SessionId.
+    let (ka, mut acks) = w.call(a.conn, "/nn.npln.friends.v1.PresenceService/KeepAlive", Some(&a.token),
+        Some(&Msg::new().msg(3, &Msg::new().bytes(1, "tenants/current/users/current")).0), false);
+    assert!(wire::bytes_field(&messages(&mut acks)[0], 1).unwrap().is_some(), "ack");
+    let p = Msg::new().bytes(1, format!("{}/presence", a.user))
+        .msg(3, &Msg::new().bytes(1, "SessionId").msg(2, &Value::str("room-1").encode()));
+    w.core.message(a.conn, ka, &Msg::new().msg(1, &Msg::new().msg(1, &p).msg(2, &Msg::new().bytes(1, "attributes.SessionId"))).0);
+    let got = messages(&mut presences);
+    let last = got.last().unwrap();
+    let presence = wire::bytes_field(wire::bytes_field(last, 1).unwrap().unwrap(), 1).unwrap().unwrap();
+    assert_eq!(wire::varint_field(presence, 2).unwrap(), Some(1));
+    let attr = wire::bytes_field(presence, 3).unwrap().unwrap();
+    assert_eq!(wire::str_field(attr, 1).unwrap().as_deref(), Some("SessionId"));
+    // A goes away: offline (state 2) reaches B, and B's friend list drops A.
+    w.core.connection_closed(a.conn);
+    let got = messages(&mut presences);
+    let presence = wire::bytes_field(wire::bytes_field(got.last().unwrap(), 1).unwrap().unwrap(), 1).unwrap().unwrap();
+    assert_eq!(wire::varint_field(presence, 2).unwrap(), Some(2));
+    let snap = messages(&mut friends);
+    assert!(wire::repeated_bytes(snap.last().unwrap(), 1).unwrap().is_empty());
+}
+
 /// An unsigned seat ticket (accepted only by development lobbies without keys).
 fn dev_ticket(name: &str) -> String {
     use base64::Engine;

@@ -14,6 +14,7 @@ pub mod docs;
 pub mod lobbies;
 pub mod msgs;
 pub mod referee;
+pub mod social;
 pub mod users;
 pub mod value;
 pub mod wire;

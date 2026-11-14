@@ -10,8 +10,9 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, info, warn};
 
 use crate::docs::{ChangeKind, Write, WriteRequest};
-use crate::lobbies::{Assignment, Lobby, LobbyId, Matchmaker, ModeCounts, Policy, State as LobbyState, StreamKey, Watcher};
-use crate::msgs::{self, Member, OP_CURRENT, OP_SUCCEEDED};
+use crate::lobbies::{Assignment, Lobby, LobbyId, Matchmaker, ModeCounts, Policy, Room, State as LobbyState, StreamKey, Watcher};
+use crate::msgs::{self, Member, SessionView, OP_CURRENT, OP_SUCCEEDED};
+use crate::social::{self, KeepAlive, Social};
 use crate::referee::Verdict;
 use crate::users::{self, Audience, Directory, Tokens};
 use crate::value::{Document, Fields, Value};
@@ -29,12 +30,20 @@ pub const MM_CANCEL: &str = "/nn.npln.matchmaking.v1.Matchmaker/CancelMatchmakin
 pub const ICE_SERVER_SET: &str = "/nn.npln.matchmaking.v1.GameSessionService/AllocateIceServerSet";
 pub const BULK_GET: &str = "/nn.npln.ugcstore.v1.Ugcstore/BulkGetDocuments";
 pub const PRESENCE_KEEPALIVE: &str = "/nn.npln.friends.v1.PresenceService/KeepAlive";
+pub const SUBSCRIBE_PRESENCES: &str = "/nn.npln.friends.v1.PresenceService/SubscribePresences";
+pub const SUBSCRIBE_FRIEND_USERS: &str = "/nn.npln.friends.v1.Friends/SubscribeFriendUsers";
+pub const ROOM_CREATE: &str = "/nn.npln.matchmaking.v1.GameSessionService/CreateGameSessionCreationTicket";
+pub const ROOM_TRACK: &str = "/nn.npln.matchmaking.v1.GameSessionService/TrackGameSessionCreationTicket";
+pub const ROOM_CANCEL: &str = "/nn.npln.matchmaking.v1.GameSessionService/CancelGameSessionCreationTicket";
+pub const ALIAS_CREATE: &str = "/nn.npln.matchmaking.v1.GameSessionService/CreateGameSessionShortAlias";
+pub const ALIAS_GET: &str = "/nn.npln.matchmaking.v1.GameSessionService/GetGameSessionShortAlias";
+pub const SESSION_GET: &str = "/nn.npln.matchmaking.v1.GameSessionService/GetGameSession";
+pub const SESSION_BATCH_GET: &str = "/nn.npln.matchmaking.v1.GameSessionService/BatchGetGameSessions";
+pub const SESSION_JOIN: &str = "/nn.npln.matchmaking.v1.GameSessionService/JoinGameSession";
 /// Server-streaming subscriptions answered with an empty snapshot and kept open.
-pub const SUBSCRIPTIONS: [&str; 3] = [
-    "/nn.npln.friends.v1.PresenceService/SubscribePresences",
-    "/nn.npln.friends.v1.Friends/SubscribeFriendUsers",
-    "/nn.npln.maintenance.v1.MaintenanceScheduleService/SubscribeMaintenanceSchedules",
-];
+pub const SUBSCRIPTIONS: [&str; 1] = ["/nn.npln.maintenance.v1.MaintenanceScheduleService/SubscribeMaintenanceSchedules"];
+/// Seconds between refreshes of the friends/presence streams (client watchdog: 60 s).
+const SOCIAL_REFRESH_SECS: f64 = 20.0;
 
 const GS_FIXED: &str = "docs/__gs/f";
 const US_PREFIX: &str = "docs/__us/";
@@ -55,8 +64,11 @@ enum Kind {
     Subscription,
     Track,
     KeepUserSession,
-    /// Every client message gets an empty reply.
+    /// Own presence: every client message gets an ack.
     PresenceKeepAlive,
+    Presences,
+    FriendUsers,
+    RoomTrack,
 }
 
 fn kind_of(path: &str) -> Kind {
@@ -64,6 +76,9 @@ fn kind_of(path: &str) -> Kind {
         MM_TRACK => Kind::Track,
         GS_KEEP_USER_SESSION => Kind::KeepUserSession,
         PRESENCE_KEEPALIVE => Kind::PresenceKeepAlive,
+        SUBSCRIBE_PRESENCES => Kind::Presences,
+        SUBSCRIBE_FRIEND_USERS => Kind::FriendUsers,
+        ROOM_TRACK => Kind::RoomTrack,
         p if SUBSCRIPTIONS.contains(&p) => Kind::Subscription,
         _ => Kind::Unary,
     }
@@ -99,6 +114,12 @@ struct State {
     conn_user: HashMap<ConnId, String>,
     /// KeepUserSession stream -> user id (from its own `docs/__us/<uid>` listen or bearer).
     session_user: HashMap<StreamKey, String>,
+    social: Social,
+    social_refreshed: f64,
+    /// The set of online players changed: refresh every friend-users stream at the next flush.
+    pending_social: bool,
+    /// Pushes produced where no send list is at hand (stream ends); sent at the next flush.
+    deferred_sends: Sends,
 }
 
 struct Inner {
@@ -151,6 +172,10 @@ impl Core {
             streams: HashMap::new(),
             conn_user: HashMap::new(),
             session_user: HashMap::new(),
+            social: Social::default(),
+            social_refreshed: 0.0,
+            pending_social: false,
+            deferred_sends: Sends::new(),
             cfg,
         };
         Self { inner: Arc::new(Inner { state: Mutex::new(state), clock }) }
@@ -182,7 +207,7 @@ impl Core {
             let mut sends = Sends::new();
             match kind {
                 Kind::KeepUserSession => s.session_frame(key, body, now, &mut sends),
-                Kind::PresenceKeepAlive => sends.push((key, Out::Message(Vec::new()))),
+                Kind::PresenceKeepAlive => s.keepalive(key, body, &mut sends),
                 _ => s.streams.get_mut(&key).expect("checked").messages.push(body.to_vec()),
             }
             s.flush(sends);
@@ -201,6 +226,9 @@ impl Core {
                 Kind::Unary => s.unary(key, &path, &body, now, &mut sends),
                 Kind::Subscription => sends.push((key, Out::Message(Vec::new()))),
                 Kind::Track => s.track(key, &body, now, &mut sends),
+                Kind::Presences => sends.push((key, Out::Message(s.presence_snapshot(key)))),
+                Kind::FriendUsers => sends.push((key, Out::Message(s.friend_snapshot(key)))),
+                Kind::RoomTrack => s.room_track(key, &body, now, &mut sends),
                 Kind::KeepUserSession | Kind::PresenceKeepAlive => {
                     sends.push((key, Out::ok()));
                     s.stream_ended(key, now);
@@ -215,6 +243,7 @@ impl Core {
         self.run(|s, now| {
             s.stream_ended((conn, stream), now);
             s.streams.remove(&(conn, stream));
+            s.flush(Sends::new());
         })
     }
 
@@ -225,7 +254,10 @@ impl Core {
                 s.stream_ended(key, now);
                 s.streams.remove(&key);
             }
-            s.conn_user.remove(&conn);
+            if let Some(user) = s.conn_user.remove(&conn) {
+                s.pending_social |= !s.conn_user.values().any(|u| *u == user);
+            }
+            s.flush(Sends::new());
         })
     }
 
@@ -241,7 +273,14 @@ impl Core {
 }
 
 impl State {
-    fn flush(&mut self, sends: Sends) {
+    fn flush(&mut self, mut sends: Sends) {
+        sends.extend(std::mem::take(&mut self.deferred_sends));
+        if std::mem::take(&mut self.pending_social) {
+            let subs: Vec<StreamKey> = self.streams.iter().filter(|(_, s)| s.kind == Kind::FriendUsers).map(|(k, _)| *k).collect();
+            for k in subs {
+                sends.push((k, Out::Message(self.friend_snapshot(k))));
+            }
+        }
         for (key, out) in sends {
             let end = matches!(out, Out::End { .. });
             if let Some(st) = self.streams.get(&key) {
@@ -290,6 +329,16 @@ impl State {
                 Ok(Vec::new())
             }
             ICE_SERVER_SET => Ok(msgs::ice_server_set(&self.cfg.public_host, self.cfg.turn_port, now as u64)),
+            ROOM_CREATE => self.room_create(key, body, now),
+            ROOM_CANCEL => {
+                self.room_cancel(body, now, sends);
+                Ok(Vec::new())
+            }
+            ALIAS_CREATE => self.alias_create(body, now),
+            ALIAS_GET => self.alias_get(body, now),
+            SESSION_GET => self.session_get(body, now),
+            SESSION_BATCH_GET => Ok(self.session_batch_get(body, now)),
+            SESSION_JOIN => self.session_join(key, body, now, sends),
             BULK_GET => {
                 let names = msgs::bulk_get_names(body).unwrap_or_default();
                 if names.is_empty() {
@@ -331,8 +380,12 @@ impl State {
             self.users.set_name(&uid, name);
         }
         let access = self.tokens.mint(&user, Audience::Npln, now as u64);
+        let new_online = !self.conn_user.values().any(|u| *u == user);
         self.conn_user.insert(key.0, user.clone());
         info!(user = %uid, name = ?name, number, "signed in");
+        if new_online {
+            self.pending_social = true;
+        }
         Ok(msgs::sign_in_response(&user, &access, number))
     }
 
@@ -616,6 +669,227 @@ impl State {
         }
     }
 
+    // ---- friends and presence ---------------------------------------------------------------
+
+    fn caller_uid(&self, key: StreamKey) -> Option<(String, String)> {
+        self.caller(key).map(|u| (users::tail(&u).to_owned(), u))
+    }
+
+    /// Everyone online except the caller. The game keeps only those that are also in its
+    /// system friend list (the probe fills that with the player's mutual launcher friends).
+    fn friend_snapshot(&self, key: StreamKey) -> Vec<u8> {
+        let me = self.caller(key);
+        let mut online: Vec<&str> = self.conn_user.values().map(String::as_str).filter(|u| Some(*u) != me.as_deref()).collect();
+        online.sort_unstable();
+        online.dedup();
+        social::friend_users(online)
+    }
+
+    fn presence_snapshot(&self, key: StreamKey) -> Vec<u8> {
+        let me = self.caller_uid(key).map(|(uid, _)| uid);
+        social::presence_batch(self.social.presences.iter().filter(|(uid, p)| p.online && Some(uid.as_str()) != me.as_deref()).map(|(_, p)| p))
+    }
+
+    /// Push one player's presence to every other presence subscriber.
+    fn push_presence(&self, uid: &str, sends: &mut Sends) {
+        let Some(p) = self.social.presences.get(uid) else { return };
+        let msg = social::presence_batch([p]);
+        for (k, s) in &self.streams {
+            if s.kind == Kind::Presences && self.caller_uid(*k).map(|(u, _)| u).as_deref() != Some(uid) {
+                sends.push((*k, Out::Message(msg.clone())));
+            }
+        }
+    }
+
+    fn keepalive(&mut self, key: StreamKey, body: &[u8], sends: &mut Sends) {
+        sends.push((key, Out::Message(social::keepalive_ack())));
+        let Some((uid, user)) = self.caller_uid(key) else { return };
+        let changed = match social::parse_keepalive(body) {
+            Ok(KeepAlive::Open) | Ok(KeepAlive::Heartbeat) => self.social.set_online(&uid, &user, true),
+            Ok(KeepAlive::Update { attributes, mask }) => {
+                let online = self.social.set_online(&uid, &user, true);
+                self.social.update(&uid, &user, attributes, &mask) || online
+            }
+            Ok(KeepAlive::Other) => false,
+            Err(e) => {
+                warn!(user = %uid, "unparseable presence frame: {e}");
+                false
+            }
+        };
+        if changed {
+            debug!(user = %uid, session = ?self.social.presences.get(&uid).and_then(|p| p.session_id()), "presence");
+            self.push_presence(&uid, sends);
+        }
+    }
+
+    // ---- friend rooms (docs/RE-MAP.md 3.2-3.4, 6a) -----------------------------------------
+
+    fn session_view_msg(&self, lobby: &Lobby, tenant: &str, now: f64) -> crate::wire::Msg {
+        let members: Vec<(String, Vec<u8>)> = lobby
+            .seats
+            .iter()
+            .map(|s| (s.user.clone(), self.mm.tickets.get(&s.ticket).map(|t| t.player.clone()).unwrap_or_default()))
+            .collect();
+        let refs: Vec<Member<'_>> = members.iter().map(|(u, p)| Member { user: u, player: p }).collect();
+        let room = lobby.room.as_ref();
+        msgs::game_session(&SessionView {
+            tenant,
+            lobby: &lobby.id.to_string(),
+            players: lobby.players(),
+            capacity: lobby.capacity,
+            joinable: lobby.accepts_join(&self.mm.policy, 1),
+            password: room.is_some_and(|r| !r.password.is_empty()),
+            attributes: room.map_or(&[][..], |r| &r.attributes),
+            members: &refs,
+            gamesync: (&self.cfg.gamesync_host, self.cfg.gamesync_port),
+            now: now as u64,
+        })
+    }
+
+    /// Leave whatever the user is in before they create or join another session.
+    fn leave_current(&mut self, uid: &str, now: f64, sends: &mut Sends) {
+        if let Some(old) = self.mm.ticket_of(uid).map(|t| t.id) {
+            self.end_trackers(old, code::CANCELLED, sends);
+            if let Some((lobby, uid)) = self.mm.cancel(old) {
+                self.leave(lobby, &uid, "joined another session", now, sends);
+            }
+        }
+    }
+
+    fn room_create(&mut self, key: StreamKey, body: &[u8], now: f64) -> Result<Vec<u8>, Out> {
+        let user = self.caller(key).ok_or_else(|| Out::status(code::UNAUTHENTICATED, "not signed in"))?;
+        let req = msgs::parse_room_request(body).ok_or_else(|| Out::status(code::INVALID_ARGUMENT, "invalid room request"))?;
+        let uid = users::tail(&user).to_owned();
+        let mut sends = Sends::new();
+        self.leave_current(&uid, now, &mut sends);
+        self.deferred_sends.extend(sends);
+        let ussid = self.users.number(&uid);
+        let creation = uuid::Uuid::new_v4();
+        let room = Room { password: req.password, attributes: req.attributes, creation_ticket: creation, alias: None };
+        let player = req.players.first().cloned().unwrap_or_default();
+        let (lobby, _) = self.mm.create_room(&user, &req.mode, player, req.players.len(), room, ussid, now);
+        info!(lobby = %lobby, user = %uid, "friend room created");
+        let name = format!("{}/gameSessionCreationTickets/{creation}", users::tenant(&user));
+        Ok(crate::wire::Msg::new().bytes(1, name).into_bytes())
+    }
+
+    fn room_track(&mut self, key: StreamKey, body: &[u8], now: f64, sends: &mut Sends) {
+        let ticket = msgs::resource_id(body, 1).and_then(|id| uuid::Uuid::parse_str(&id).ok());
+        let Some(lobby) = ticket.and_then(|t| self.mm.room_by_ticket(t)) else {
+            sends.push((key, Out::status(code::NOT_FOUND, "no such room ticket")));
+            return;
+        };
+        let Some(creator) = lobby.seats.first() else { return };
+        let tenant = users::tenant(&creator.user).to_owned();
+        let player = self.mm.tickets.get(&creator.ticket).map(|t| t.player.clone()).unwrap_or_default();
+        let session = self.session_view_msg(lobby, &tenant, now);
+        let name = msgs::session_name(&tenant, &lobby.id.to_string());
+        let matched = msgs::matched_player(&name, &Member { user: &creator.user, player: &player });
+        let msg = msgs::room_created(&tenant, &ticket.expect("found").to_string(), &lobby.mode, &[matched], &session);
+        sends.push((key, Out::Message(msg)));
+        sends.push((key, Out::ok()));
+    }
+
+    fn room_cancel(&mut self, body: &[u8], now: f64, sends: &mut Sends) {
+        let ticket = msgs::resource_id(body, 1).and_then(|id| uuid::Uuid::parse_str(&id).ok());
+        let Some(lobby) = ticket.and_then(|t| self.mm.room_by_ticket(t)) else { return };
+        let (id, seats): (LobbyId, Vec<String>) = (lobby.id, lobby.seats.iter().map(|s| s.uid().to_owned()).collect());
+        for uid in seats {
+            self.leave(id, &uid, "room cancelled", now, sends);
+        }
+    }
+
+    /// The Room ID: six digits, unique among live rooms, stable per room.
+    fn alias_create(&mut self, body: &[u8], now: f64) -> Result<Vec<u8>, Out> {
+        let session = crate::wire::bytes_field(body, 2).ok().flatten().unwrap_or_default();
+        let lobby_id = msgs::resource_id(session, 2).and_then(|id| uuid::Uuid::parse_str(&id).ok())
+            .ok_or_else(|| Out::status(code::INVALID_ARGUMENT, "no game session"))?;
+        let taken: Vec<String> = self.mm.lobbies.values().filter_map(|l| l.room.as_ref()?.alias.clone()).collect();
+        let lobby = self.mm.lobbies.get_mut(&lobby_id).ok_or_else(|| Out::status(code::NOT_FOUND, "no such game session"))?;
+        let tenant = lobby.seats.first().map_or("tenants/current".to_owned(), |s| users::tenant(&s.user).to_owned());
+        let room = lobby.room.get_or_insert_with(Room::default);
+        let alias = room.alias.get_or_insert_with(|| loop {
+            let candidate = format!("{:06}", rand::random::<u32>() % 1_000_000);
+            if !taken.contains(&candidate) {
+                break candidate;
+            }
+        });
+        info!(lobby = %lobby_id, room_id = %alias, "room id");
+        Ok(msgs::short_alias(&tenant, alias, &lobby_id.to_string(), now as u64))
+    }
+
+    fn alias_get(&self, body: &[u8], now: f64) -> Result<Vec<u8>, Out> {
+        let alias = msgs::resource_id(body, 1).unwrap_or_default();
+        let lobby = self.mm.room_by_alias(&alias).ok_or_else(|| Out::status(code::NOT_FOUND, "no room with this id"))?;
+        let tenant = lobby.seats.first().map_or("tenants/current".to_owned(), |s| users::tenant(&s.user).to_owned());
+        Ok(msgs::short_alias(&tenant, &alias, &lobby.id.to_string(), now as u64))
+    }
+
+    fn lobby_by_name(&self, body: &[u8], field: u32) -> Option<&Lobby> {
+        let id = msgs::resource_id(body, field).and_then(|id| uuid::Uuid::parse_str(&id).ok())?;
+        self.mm.lobbies.get(&id)
+    }
+
+    fn session_get(&self, body: &[u8], now: f64) -> Result<Vec<u8>, Out> {
+        let lobby = self.lobby_by_name(body, 1).ok_or_else(|| Out::status(code::NOT_FOUND, "no such game session"))?;
+        let tenant = lobby.seats.first().map_or("tenants/current".to_owned(), |s| users::tenant(&s.user).to_owned());
+        Ok(self.session_view_msg(lobby, &tenant, now).into_bytes())
+    }
+
+    /// Friends' sessions by the ids they publish as `SessionId`; unknown ids are omitted.
+    fn session_batch_get(&self, body: &[u8], now: f64) -> Vec<u8> {
+        let names = crate::wire::repeated_bytes(body, 2).unwrap_or_default();
+        let mut out = crate::wire::Msg::new();
+        for n in names {
+            let id = users::tail(&String::from_utf8_lossy(n)).to_owned();
+            let Some(lobby) = uuid::Uuid::parse_str(&id).ok().and_then(|id| self.mm.lobbies.get(&id)) else { continue };
+            let tenant = lobby.seats.first().map_or("tenants/current".to_owned(), |s| users::tenant(&s.user).to_owned());
+            out = out.msg(1, &self.session_view_msg(lobby, &tenant, now));
+        }
+        out.into_bytes()
+    }
+
+    fn session_join(&mut self, key: StreamKey, body: &[u8], now: f64, sends: &mut Sends) -> Result<Vec<u8>, Out> {
+        let user = self.caller(key).ok_or_else(|| Out::status(code::UNAUTHENTICATED, "not signed in"))?;
+        let req = msgs::parse_join(body).ok_or_else(|| Out::status(code::INVALID_ARGUMENT, "invalid join request"))?;
+        let lobby_id = uuid::Uuid::parse_str(&req.lobby).map_err(|_| Out::status(code::NOT_FOUND, "no such game session"))?;
+        let uid = users::tail(&user).to_owned();
+        let players = req.players.len().max(1);
+        {
+            let lobby = self.mm.lobbies.get(&lobby_id).ok_or_else(|| Out::status(code::NOT_FOUND, "no such game session"))?;
+            if lobby.seat(&uid).is_none() {
+                if let Some(room) = &lobby.room {
+                    if !room.password.is_empty() && room.password != req.password {
+                        return Err(Out::status(code::PERMISSION_DENIED, "wrong password"));
+                    }
+                }
+                if !lobby.accepts_join(&self.mm.policy, players) {
+                    return Err(Out::status(code::FAILED_PRECONDITION, "this session is not taking players now"));
+                }
+            }
+        }
+        if self.mm.lobby_of(&uid) != Some(lobby_id) {
+            self.leave_current(&uid, now, sends);
+            let ussid = self.users.number(&uid);
+            let player = req.players.first().cloned().unwrap_or_default();
+            self.mm.join(lobby_id, &user, player, players, ussid, now);
+            self.solos.remove(&uid);
+            let lobby = self.mm.lobbies.get(&lobby_id).expect("exists");
+            if let Some(seat) = lobby.seat(&uid) {
+                let doc = user_session_document(&format!("{US_PREFIX}{}", seat.ussid), &uid, seat.ussid, &lobby_id.to_string(), now as u64);
+                publish(lobby, &doc, ChangeKind::Added, sends);
+            }
+            info!(lobby = %lobby_id, user = %uid, players = lobby.players(), "joined by id");
+        }
+        let lobby = self.mm.lobbies.get(&lobby_id).expect("exists");
+        let tenant = users::tenant(&user).to_owned();
+        let name = msgs::session_name(&tenant, &lobby_id.to_string());
+        let player = self.mm.ticket_of(&uid).map(|t| t.player.clone()).unwrap_or_default();
+        let matched = msgs::matched_player(&name, &Member { user: &user, player: &player });
+        let session = self.session_view_msg(lobby, &tenant, now);
+        Ok(crate::wire::Msg::new().msg(1, &matched).msg(2, &session).into_bytes())
+    }
+
     // ---- leaving ----------------------------------------------------------------------------
 
     fn stream_ended(&mut self, key: StreamKey, now: f64) {
@@ -639,6 +913,16 @@ impl State {
                 }
                 if !self.session_user.values().any(|u| *u == uid) {
                     self.solos.remove(&uid);
+                }
+            }
+            Kind::PresenceKeepAlive => {
+                let Some((uid, user)) = self.caller_uid(key) else { return };
+                let others = self.streams.iter().any(|(k, s)| *k != key && s.kind == Kind::PresenceKeepAlive
+                    && self.caller_uid(*k).is_some_and(|(u, _)| u == uid));
+                if !others && self.social.set_online(&uid, &user, false) {
+                    let mut sends = Sends::new();
+                    self.push_presence(&uid, &mut sends);
+                    self.deferred_sends.extend(sends);
                 }
             }
             _ => {}
@@ -723,6 +1007,18 @@ impl State {
         }
         for (lobby, uid, reason) in leaving {
             self.leave(lobby, &uid, reason, now, &mut sends);
+        }
+        // Friends/presence streams: refresh before the client's 60 s watchdog fires.
+        if now - self.social_refreshed >= SOCIAL_REFRESH_SECS {
+            self.social_refreshed = now;
+            let timing = social::presence_timing();
+            for (k, s) in &self.streams {
+                match s.kind {
+                    Kind::Presences => sends.push((*k, Out::Message(timing.clone()))),
+                    Kind::FriendUsers => sends.push((*k, Out::Message(self.friend_snapshot(*k)))),
+                    _ => {}
+                }
+            }
         }
         self.flush(sends);
     }

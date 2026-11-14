@@ -45,6 +45,9 @@ pub struct Policy {
     pub leave_grace_secs: f64,
     /// Seconds an assigned seat may take to open its first KeepUserSession stream.
     pub connect_timeout_secs: f64,
+    /// Friends may join a public (matchmade) lobby through its `SessionId` between events
+    /// (MULTI-LOBBY E1/E2, not verified yet). Friend rooms always accept joins between events.
+    pub friend_join_public: bool,
 }
 
 impl Default for Policy {
@@ -59,6 +62,7 @@ impl Default for Policy {
             maxu: None,
             leave_grace_secs: 5.0,
             connect_timeout_secs: 120.0,
+            friend_join_public: false,
         }
     }
 }
@@ -168,6 +172,21 @@ pub struct Lobby {
     pub watchers: Vec<Watcher>,
     /// Deferred `__pus` collection listens (answered once earlier members wrote theirs).
     pub pending: Vec<Watcher>,
+    /// Friend room (created with CreateGameSessionCreationTicket, not matchmade).
+    pub room: Option<Room>,
+}
+
+/// What a friend room adds to a lobby.
+#[derive(Debug, Default)]
+pub struct Room {
+    /// Empty = no password.
+    pub password: String,
+    /// The creator's GameSession attributes (field 11, encoded), shown to joiners.
+    pub attributes: Vec<u8>,
+    /// GameSessionCreationTicket id.
+    pub creation_ticket: TicketId,
+    /// Room ID shown to players (GameSessionShortAlias).
+    pub alias: Option<String>,
 }
 
 impl Lobby {
@@ -190,7 +209,15 @@ impl Lobby {
             referee: Referee::new(id.to_string()),
             watchers: Vec::new(),
             pending: Vec::new(),
+            room: None,
         }
+    }
+
+    /// Whether a JoinGameSession (friend room by Room ID, or a friend's `SessionId`) may enter.
+    pub fn accepts_join(&self, policy: &Policy, players: usize) -> bool {
+        let between_events = matches!(self.state, State::Open | State::Intermission);
+        let allowed = if self.room.is_some() { true } else { policy.friend_join_public };
+        allowed && between_events && !self.closed && self.players() + players <= self.capacity
     }
 
     /// A private one-player space for a user who is not seated anywhere (documents written
@@ -392,6 +419,48 @@ impl Matchmaker {
         }
         tracing::info!(lobby = %lobby_id, mode = %lobby.mode, players = lobby.players(), "lobby assigned");
         Some(Assignment { lobby: lobby_id, recipients: lobby.seats.iter().map(|s| s.ticket).collect(), late: false })
+    }
+
+    /// A friend room with its creator seated (no gathering: assigned at once).
+    pub fn create_room(&mut self, user: &str, mode: &str, player: Vec<u8>, players: usize, room: Room, ussid: u32, now: f64) -> (LobbyId, TicketId) {
+        let mut lobby = Lobby::new(mode, self.policy.capacity(mode), now);
+        lobby.state = State::Open;
+        lobby.assigned_at = Some(now);
+        lobby.room = Some(room);
+        let id = lobby.id;
+        let ticket = self.create(user, mode, player, players);
+        let t = self.tickets.get_mut(&ticket).expect("created");
+        t.lobby = Some(id);
+        let t = t.clone();
+        lobby.add_seat(&t, ussid);
+        lobby.seats[0].assigned_at = Some(now);
+        tracing::info!(lobby = %id, mode, "room created");
+        self.lobbies.insert(id, lobby);
+        (id, ticket)
+    }
+
+    /// Seat a user in an existing lobby (JoinGameSession). The caller checked `accepts_join`.
+    pub fn join(&mut self, lobby_id: LobbyId, user: &str, player: Vec<u8>, players: usize, ussid: u32, now: f64) -> Option<TicketId> {
+        let lobby = self.lobbies.get(&lobby_id)?;
+        let mode = lobby.mode.clone();
+        let ticket = self.create(user, &mode, player, players);
+        let t = self.tickets.get_mut(&ticket).expect("created");
+        t.lobby = Some(lobby_id);
+        let t = t.clone();
+        let lobby = self.lobbies.get_mut(&lobby_id).expect("exists");
+        lobby.add_seat(&t, ussid);
+        lobby.seat_mut(t.uid()).expect("seated").assigned_at = Some(now);
+        Some(ticket)
+    }
+
+    /// The room with this creation ticket.
+    pub fn room_by_ticket(&self, ticket: TicketId) -> Option<&Lobby> {
+        self.lobbies.values().find(|l| l.room.as_ref().is_some_and(|r| r.creation_ticket == ticket))
+    }
+
+    /// The room with this Room ID.
+    pub fn room_by_alias(&self, alias: &str) -> Option<&Lobby> {
+        self.lobbies.values().find(|l| l.room.as_ref().and_then(|r| r.alias.as_deref()) == Some(alias))
     }
 
     /// Gathering lobbies whose wait is over.

@@ -146,6 +146,123 @@ pub fn assignment(
     out.msg(7, &session).into_bytes()
 }
 
+// ---- GameSessionService: rooms, short aliases, friend sessions (docs/RE-MAP.md 3.2-3.5) ------
+
+/// A GameSession as the room / friend-session RPCs show it (serializer main+0x140b440):
+/// 1 name, 2 players, 3 capacity, 4 joinable, 5 visible, 6 "*" when password-protected (never
+/// the password), 8/9 Gamesync endpoint, 10 Timestamp, 11 creator attributes, 12 Member*.
+pub struct SessionView<'a> {
+    pub tenant: &'a str,
+    pub lobby: &'a str,
+    pub players: usize,
+    pub capacity: usize,
+    pub joinable: bool,
+    pub password: bool,
+    /// Encoded `Attributes` message (GameSession field 11 as the creator sent it).
+    pub attributes: &'a [u8],
+    pub members: &'a [Member<'a>],
+    pub gamesync: (&'a str, u16),
+    pub now: u64,
+}
+
+pub fn session_name(tenant: &str, lobby: &str) -> String {
+    format!("{tenant}/gameSessions/{lobby}")
+}
+
+pub fn game_session(v: &SessionView<'_>) -> Msg {
+    let name = session_name(v.tenant, v.lobby);
+    let mut m = Msg::new()
+        .bytes(1, &name)
+        .varint(2, v.players as u64)
+        .varint(3, v.capacity as u64)
+        .varint(4, u64::from(v.joinable))
+        .varint(5, 1);
+    if v.password {
+        m = m.bytes(6, "*");
+    }
+    m = m.bytes(8, v.gamesync.0).varint(9, v.gamesync.1.into()).msg(10, &wire::seconds(v.now + 600));
+    if !v.attributes.is_empty() {
+        m = m.bytes(11, v.attributes);
+    }
+    for mem in v.members {
+        let uid = crate::users::tail(mem.user);
+        m = m.msg(12, &Msg::new().bytes(1, format!("{name}/userSessions/{uid}")).bytes(2, mem.user).msg(4, &wire::seconds(v.now)));
+    }
+    m
+}
+
+/// MatchedPlayer (main+0x140c708): `{1 Player, 2 userSession, 3 user id}`.
+pub fn matched_player(session: &str, m: &Member<'_>) -> Msg {
+    let uid = crate::users::tail(m.user);
+    Msg::new().bytes(1, player_for(m.user, m.player)).bytes(2, format!("{session}/userSessions/{uid}")).bytes(3, uid)
+}
+
+/// `CreateGameSessionCreationTicket` request (FUN_0136d600):
+/// `{1 parent, 2 GameSessionCreationTicket{2 config, 3 Player*, 6 GameSession{6 password, 11 attrs}}}`.
+pub struct RoomRequest {
+    pub mode: String,
+    pub players: Vec<Vec<u8>>,
+    pub password: String,
+    pub attributes: Vec<u8>,
+}
+
+pub fn parse_room_request(buf: &[u8]) -> Option<RoomRequest> {
+    let ticket = wire::bytes_field(buf, 2).ok()??;
+    let config = wire::str_field(ticket, 2).ok()?.unwrap_or_default();
+    let mode = config.strip_prefix(CONFIG_PREFIX).filter(|m| !m.is_empty()).unwrap_or("Private24").to_owned();
+    let players = wire::repeated_bytes(ticket, 3).ok()?.into_iter().map(<[u8]>::to_vec).collect();
+    let session = wire::bytes_field(ticket, 6).ok()?.unwrap_or_default();
+    let password = wire::str_field(session, 6).ok()?.unwrap_or_default();
+    let attributes = wire::bytes_field(session, 11).ok()?.unwrap_or_default().to_vec();
+    Some(RoomRequest { mode, players, password, attributes })
+}
+
+pub const CREATION_TICKET_PREFIX: &str = "tenants/current/gameSessionCreationTickets/";
+pub const ALIAS_PREFIX: &str = "tenants/current/GameSessionShortAliases/";
+
+/// The last path component of field `number` (an id inside a resource name).
+pub fn resource_id(buf: &[u8], number: u32) -> Option<String> {
+    let name = wire::str_field(buf, number).ok()??;
+    Some(crate::users::tail(&name).to_owned()).filter(|s| !s.is_empty())
+}
+
+/// Final `TrackGameSessionCreationTicket` message: state 2 (created) with the matched players
+/// and the GameSession (consumer FUN_01395860).
+pub fn room_created(tenant: &str, ticket: &str, mode: &str, matched: &[Msg], session: &Msg) -> Vec<u8> {
+    let mut m = Msg::new()
+        .bytes(1, format!("{tenant}/gameSessionCreationTickets/{ticket}"))
+        .bytes(2, format!("{tenant}/matchmakingConfigs/{mode}"))
+        .varint(4, 2);
+    for p in matched {
+        m = m.msg(5, p);
+    }
+    m.msg(6, session).into_bytes()
+}
+
+/// GameSessionShortAlias (main+0x1407230): `{1 alias name, 2 game session, 3 Timestamp}`.
+pub fn short_alias(tenant: &str, alias: &str, lobby: &str, now: u64) -> Vec<u8> {
+    Msg::new()
+        .bytes(1, format!("{tenant}/GameSessionShortAliases/{alias}"))
+        .bytes(2, session_name(tenant, lobby))
+        .msg(3, &wire::seconds(now + 24 * 3600))
+        .into_bytes()
+}
+
+/// `JoinGameSession` request: `{1 session name, 2 password, 3 Player*}`.
+pub struct JoinRequest {
+    pub lobby: String,
+    pub password: String,
+    pub players: Vec<Vec<u8>>,
+}
+
+pub fn parse_join(buf: &[u8]) -> Option<JoinRequest> {
+    Some(JoinRequest {
+        lobby: resource_id(buf, 1)?,
+        password: wire::str_field(buf, 2).ok()?.unwrap_or_default(),
+        players: wire::repeated_bytes(buf, 3).ok()?.into_iter().map(<[u8]>::to_vec).collect(),
+    })
+}
+
 /// `BulkGetDocuments` request names (field 2, repeated).
 pub fn bulk_get_names(buf: &[u8]) -> Result<Vec<String>> {
     Ok(wire::repeated_bytes(buf, 2)?.into_iter().map(|b| String::from_utf8_lossy(b).into_owned()).collect())
