@@ -45,7 +45,7 @@
     <p>The official server has <b>50 seats</b>. When it's full you wait in a queue and the launcher shows your place in line. Your seat stays yours while the launcher runs.</p>
     <ol class="steps">
       <li><b>Install</b> the game and the MKWMP patch: <a href="#install">Windows</a> or <a href="#steamos">Steam Deck / SteamOS</a>.</li>
-      <li><b>Open the launcher.</b> Its window shows the server's free seats and queue. Type your <b>name</b>, press <b>REGISTER</b> (you get a 6-digit PIN), and pick the <b>game folder</b>; the server is already set to the official one (<code>https://mkw.anarqz.dev</code>). Add friends by their profile name; they accept, and you see each other online and in the game.</li>
+      <li><b>Open the launcher.</b> Its window shows the server's free seats and queue. Type your <b>gamertag</b>, press <b>REGISTER</b> (you get a 6-digit PIN), and pick the <b>game folder</b>; the server is already set to the official one (<code>https://mkw.anarqz.dev</code>). Add friends by their gamertag; they accept, and you see each other online and in the game.</li>
       <li><b>Press PLAY.</b> The launcher updates itself and the game patch, takes a seat (or shows your place in the queue), and starts the game. Closing the game frees your seat.</li>
       <li><b>In the game</b>, choose <b>Online Play → Race</b> or <b>Online Play → Battle</b> (1P). Players who pick the same mode are matched together. Until you click Online Play, the game behaves exactly like the normal offline game.</li>
     </ol>
@@ -75,7 +75,7 @@
       <li><b>Add to Steam.</b> Add <code>mkw.exe</code> as a <b>non-Steam game</b>. Under <b>Properties → Compatibility</b>, force <b>Proton 10.0</b> (install it from Steam if needed). Proton 11 can't see the controller.</li>
       <li><b>Launch options</b> (Properties → General):
 <pre><code>WINEDLLOVERRIDES="winmm=n,b" GRPC_DNS_RESOLVER=native MKW_MESH_COMPUTE=1 MKW_ASSUME_FOCUS=1 %command% --play</code></pre></li>
-      <li><b>Launcher.</b> Download <code>mkwmp-launcher-x86_64-linux</code> from the <a href="https://github.com/anarqz/mkwmp/releases">latest release</a>, make it executable (right-click → Properties → Permissions, or <code>chmod +x</code>), and open it. In the window, set your name and the game folder, and tick <b>"I start the game from Steam"</b>. The first PLAY installs the patch and copies Proton 10.0's <code>winmm.dll</code> in as <code>winmm_host.dll</code>.</li>
+      <li><b>Launcher.</b> Download <code>mkwmp-launcher-x86_64-linux</code> from the <a href="https://github.com/anarqz/mkwmp/releases">latest release</a>, make it executable (right-click → Properties → Permissions, or <code>chmod +x</code>), and open it. In the window, register your gamertag, set the game folder, and tick <b>"I start the game from Steam"</b>. The first PLAY installs the patch and copies Proton 10.0's <code>winmm.dll</code> in as <code>winmm_host.dll</code>.</li>
       <li><b>Play.</b> Press <b>PLAY</b> in the launcher, then start the game from Steam. Keep the launcher open while you play; <b>STOP</b> or closing it frees your seat. You can also add the launcher to Steam as a non-Steam game: in Game Mode it opens fullscreen with large text.</li>
     </ol>
     <p class="hint">The controller wakes up 20–50 seconds after the game starts; MKWMP fixes up Steam Input under Proton by itself. Both a Steam Deck and a ROG Ally X running SteamOS have been tested.</p>
