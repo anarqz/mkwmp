@@ -1,0 +1,9 @@
+# HTTPS in front of the seat API (compose profile "https").
+{$MKWMP_DOMAIN} {
+	reverse_proxy 127.0.0.1:7000 {
+		# The seat server rate-limits per player address; it reads this
+		# header from loopback peers only. Caddy overwrites any value a
+		# client sent.
+		header_up Cf-Connecting-Ip {remote_host}
+	}
+}

@@ -1,0 +1,6 @@
+# Only rust/ and contracts/ go into the server image.
+*
+!rust/
+!contracts/
+!deploy/docker/
+rust/target/
