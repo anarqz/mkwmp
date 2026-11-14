@@ -185,6 +185,10 @@ pub struct LobbyPolicy {
     pub maxu: Option<u32>,
     /// Friends may join a matchmade lobby between events (unverified).
     pub friend_join_public: Option<bool>,
+    /// Lobbies between events take new players (unverified).
+    pub rejoin: Option<bool>,
+    /// Seconds after assignment an open lobby still takes players (0 = never).
+    pub join_window_secs: Option<f64>,
 }
 
 fn d_gamesync_host() -> String { "gamesync.npln.nintendo.net".into() }

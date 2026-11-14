@@ -78,6 +78,12 @@ fn policy(p: &config::LobbyPolicy) -> lobby::Policy {
     if let Some(v) = p.friend_join_public {
         out.friend_join_public = v;
     }
+    if let Some(v) = p.rejoin {
+        out.rejoin = v;
+    }
+    if let Some(v) = p.join_window_secs {
+        out.join_window_secs = v;
+    }
     out
 }
 

@@ -56,6 +56,8 @@ gamesync_host = "gamesync.npln.nintendo.net"  # advertised; the patch redirects 
 # gather_secs = 10
 # maxu = 2                     # __gs/f maxu; default = capacity (try 2 if a match fails right after assignment)
 # friend_join_public = false   # friends may join a matchmade lobby between events (unverified)
+# rejoin = false               # a lobby between events takes new searchers (unverified)
+# join_window_secs = 0         # an assigned lobby still takes players this long (0 = never)
 
 [tls]
 # Shared by both endpoints. Paths relative to this file.
