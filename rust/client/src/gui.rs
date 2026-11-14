@@ -53,9 +53,13 @@ const INNER: f32 = CARD_W - 44.0;
 /// Both cards' content height (fixed by design, so they always match).
 const CARD_H: f32 = 258.0;
 
-/// Steam Deck Game Mode (gamescope): open fullscreen.
+/// Steam Deck Game Mode (gamescope): open fullscreen, and no tray (gamescope
+/// has none, so closing the window really closes). Not `SteamDeck=1`: Desktop
+/// Mode sets it too.
 pub fn game_mode() -> bool {
-    std::env::var_os("SteamGamepadUI").is_some() || std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
+    std::env::var_os("SteamGamepadUI").is_some()
+        || std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.eq_ignore_ascii_case("gamescope"))
 }
 
 pub fn run(core: Arc<Core>, start_in_tray: bool) -> Result<(), String> {
@@ -74,7 +78,7 @@ pub fn run(core: Arc<Core>, start_in_tray: bool) -> Result<(), String> {
         options,
         Box::new(move |cc| {
             setup_style(&cc.egui_ctx);
-            let tray = if crate::tray::available() { crate::tray::start() } else { None };
+            let tray = if crate::tray::available() && !game_mode() { crate::tray::start() } else { None };
             Ok(Box::new(App::new(core, tray, start_in_tray)))
         }),
     )
