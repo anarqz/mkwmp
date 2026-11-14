@@ -1244,12 +1244,17 @@ fn apply_verdict(lobby: &mut Lobby, v: Verdict, sends: &mut Sends) {
     lobby.refresh_state();
 }
 
-/// Every member who joined before `uid` (and is still here) has its document in `collection`,
-/// so the newcomer's snapshot contains them: the earlier member initiates the P2P handshake.
+/// Every member with a lower user-session number (`upcsid` = ussid) than `uid` (and still here) has
+/// its document in `collection`, so the newcomer's snapshot contains them. The game makes the lowest
+/// `upcsid` among the `__pus` documents it holds the mesh host (FUN_0162a360, resources/docs/
+/// MESH-RUST-DIFF.md): ordering by join order instead let two players both see themselves as the
+/// lowest and both host (deadlock: "waiting for other players"). Same rule as the Python reference
+/// (`lower_members_present`). A late joiner with a lower number than the host would still elect
+/// itself; the full fix is a per-lobby number (open item in MESH-RUST-DIFF.md).
 fn earlier_members_present(lobby: &Lobby, uid: &str, collection: &str) -> bool {
     let Some(me) = lobby.seat(uid) else { return true };
     let have = lobby.docs.ids_in(collection);
-    lobby.seats.iter().filter(|s| s.join_seq < me.join_seq).all(|s| have.contains(&s.uid()))
+    lobby.seats.iter().filter(|s| s.ussid < me.ussid).all(|s| have.contains(&s.uid()))
 }
 
 fn release_pending(lobby: &mut Lobby, sends: &mut Sends) {

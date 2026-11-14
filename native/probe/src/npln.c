@@ -305,7 +305,20 @@ static const char kSecondDummyToken[] =
     "eyJhbGciOiJub25lIn0.eyJzdWIiOiJta3dtcC1sb2NhbC0yIiwiaXNzIjoibWt3bXAifQ.";
 static int g_second_player;
 static void ov_nsa_available(Cpu *c) { uint8_t *o = arg_p(c, 0); if (o) *o = 1; ret_x(c, 0); }
-static void ov_nsa_get_id(Cpu *c) { uint64_t *o = arg_p(c, 0); if (o) *o = FAKE_NSA_ID + g_second_player; ret_x(c, 0); }
+// Each player needs its own account id: Pia's mesh join fails with 2318-0540 (result 0x647e,
+// main+0x1577c6c) when the joiner's station id equals the host's. A launcher player gets the
+// id the lobby derives for its name (the one its friends see); local tests keep FAKE_NSA_ID(+1).
+static uint64_t nsa_id(void) {
+    const char *name = mkwmp_config()->name;
+    return name[0] ? friends_account_id(name) : FAKE_NSA_ID + g_second_player;
+}
+static void ov_nsa_get_id(Cpu *c) {
+    uint64_t *o = arg_p(c, 0);
+    if (o) *o = nsa_id();
+    static volatile LONG announced;
+    if (InterlockedCompareExchange(&announced, 1, 0) == 0) mlog("account id %#llx", (unsigned long long)nsa_id());
+    ret_x(c, 0);
+}
 static void ov_nsa_load_token(Cpu *c) {
     uint64_t *out_len = arg_p(c, 0);
     char *buf = arg_p(c, 1);
@@ -908,7 +921,11 @@ static void ov_pia_sendto(Cpu *c) {
     if (len != 16) {
         struct sockaddr_in local; int ll = sizeof local;
         unsigned lport = getsockname(s, (struct sockaddr *)&local, &ll) ? 0 : ntohs(local.sin_port);
-        mlog("Pia UDP send %u -> %u (%u bytes)", lport, ntohs(sa.sin_port), (unsigned)len);
+        int has_guest = guest && arg_x(c, 5) >= 16;
+        mlog("Pia UDP send %u -> %s:%u (%u bytes; guest fam %u %u.%u.%u.%u:%u)", lport, inet_ntoa(sa.sin_addr),
+             ntohs(sa.sin_port), (unsigned)len, has_guest ? guest[1] : 0xff, has_guest ? guest[4] : 0,
+             has_guest ? guest[5] : 0, has_guest ? guest[6] : 0, has_guest ? guest[7] : 0,
+             has_guest ? (unsigned)((guest[2] << 8) | guest[3]) : 0);
     }
     rhex(">>> Pia UDP", buf, (size_t)len);
     int sent =sendto(s, buf, (int)len, 0, (struct sockaddr *)&sa, sizeof sa);
@@ -935,7 +952,7 @@ static void ov_pia_recvfrom(Cpu *c) {
         if (got != 16) {
             struct sockaddr_in local; int ll = sizeof local;
             unsigned lport = getsockname(s, (struct sockaddr *)&local, &ll) ? 0 : ntohs(local.sin_port);
-            mlog("Pia UDP recv %u <- %u (%d bytes)", lport, ntohs(sa.sin_port), got);
+            mlog("Pia UDP recv %u <- %s:%u (%d bytes)", lport, inet_ntoa(sa.sin_addr), ntohs(sa.sin_port), got);
         }
         memset(out, 0, 16);
         out[0] = 16; out[1] = 2;

@@ -297,6 +297,32 @@ fn two_players_match_play_and_leave() {
     assert!(w.core.counts().is_empty());
 }
 
+/// MESH-RUST-DIFF.md H2: the game's mesh host is the lowest `upcsid` it sees in `__pus`, so the
+/// lower-numbered member must be listening first even when the other one searched (joined) first.
+#[test]
+fn pus_deferral_follows_the_user_session_number_not_the_search_order() {
+    let w = World::new(Policy::default());
+    let mut a = sign_in(&w, "dev");
+    let mut b = sign_in(&w, lobby::users::SECOND_LOCAL_TOKEN);
+    search(&w, &mut b, "Battle24"); // B is seated first
+    search(&w, &mut a, "Battle24");
+    w.advance(11.0);
+    assignment(&mut a).expect("assigned");
+    assignment(&mut b).expect("assigned");
+    let ussid_a = ussid_of(&join_session(&w, &mut a));
+    let ussid_b = ussid_of(&join_session(&w, &mut b));
+    let pus = "docs/__pgn/All/__pus";
+    let (low, high) = if ussid_a < ussid_b { (&mut a, &mut b) } else { (&mut b, &mut a) };
+    // the higher number waits for the lower one, whatever the search order was
+    let got = send_frame(&w, high, Msg::new().bytes(1, "userSessions/current").msg(3, &listen(3, true, pus)));
+    assert!(got.is_empty(), "higher number deferred");
+    let got = send_frame(&w, low, Msg::new().bytes(1, "userSessions/current").msg(3, &listen(3, true, pus)));
+    assert_eq!(got.len(), 2, "lowest number: answered at once (it hosts)");
+    write(&w, low, &format!("{pus}/{}", low.uid), Fields::new().with("uid", Value::str(&low.uid)), None);
+    let got = pushes(high);
+    assert_eq!(changes(&got)[0].2, format!("{pus}/{}", low.uid), "released with the host's document");
+}
+
 #[test]
 fn lobbies_are_isolated_and_unlimited() {
     let mut policy = Policy::default();
