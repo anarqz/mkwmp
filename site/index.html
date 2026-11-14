@@ -37,7 +37,7 @@
 
   <section class="panel note">
     <h2><span class="coin">!</span> STATUS</h2>
-    <p><b>Developer preview</b> (<a href="https://github.com/anarqz/mkwmp/releases">v0.0.1-rc.1</a>). Online <b>races and battles</b> work end to end: full matches, from the vote to the results and back to the lobby, were played on the first lobby server. The new lobby server, with any number of lobbies, is <b>being tested</b> now. <b>Friend rooms</b> (Room ID and password) are being tested too.</p>
+    <p><b>Developer preview</b> (<a href="https://github.com/anarqz/mkwmp/releases">v0.0.1-rc.2</a>). Online <b>races and battles</b> work end to end: full matches, from the vote to the results and back to the lobby, were played on the first lobby server. The new lobby server, with any number of lobbies, is <b>being tested</b> now. <b>Friend rooms</b> (Room ID and password) and <b>self-hosted servers</b> with the real game are being tested too.</p>
   </section>
 
   <section id="launcher" class="panel">
@@ -108,7 +108,7 @@ docker compose up -d --build</code></pre>
       <div class="card blue"><h3>PORTS</h3><p>Open TCP <code>7000</code>, <code>8905</code>, <code>8906</code> and UDP <code>3478</code>, <code>10025</code>, <code>49152–49407</code>. For friends over the internet, forward them on your router.</p></div>
       <div class="card green"><h3>SQLITE</h3><p>Gamertags, hashed PINs and friends live in one SQLite file in the server's data folder. Seats are in memory: after a restart, launchers rejoin on their own.</p></div>
     </div>
-    <p class="hint"><b>Coming with rc.2 (not released yet):</b> the server download, and the launcher and game patch players need to join a server like this (they trust each server's own certificate; rc.1 only reaches the official server). Over plain <code>http://</code>, PINs travel unencrypted: fine on a LAN; for a public server use HTTPS (see the hosting guide).</p>
+    <p class="hint"><b>Needs rc.2 or later</b>, for the server and for every player: the rc.2 launcher and game patch trust each server's own certificate (rc.1 only reaches the official server). Launchers update themselves when you press PLAY. Over plain <code>http://</code>, PINs travel unencrypted: fine on a LAN; for a public server use HTTPS (see the hosting guide).</p>
     <nav class="buttons small">
       <a class="btn yellow" href="https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md">Full hosting guide</a>
       <a class="btn blue" href="https://github.com/anarqz/mkwmp">Source code</a>

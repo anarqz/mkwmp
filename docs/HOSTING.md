@@ -11,7 +11,7 @@ How the parts fit together: [ARCHITECTURE.md](ARCHITECTURE.md). Seat API and tic
 
 Gamertags, hashed PINs and friendships are kept in one SQLite file. Seats and queues live in memory: after a restart, launchers rejoin on their own.
 
-> **Needs rc.2 (not released yet).** A server with its own lobby certificate (every server except the official one) needs players on the **rc.2** launcher and game patch. Those versions trust the certificate each server publishes; rc.1 can only reach the official server.
+> **Needs rc.2 or later.** A server with its own lobby certificate (every server except the official one) needs players on the **rc.2** launcher and game patch. Those versions trust the certificate each server publishes; rc.1 can only reach the official server.
 
 ## 1. On your PC: `mkwmp host`
 

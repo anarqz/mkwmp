@@ -6,7 +6,7 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 
 > MKWMP is an unofficial community project, not affiliated with or endorsed by Nintendo. You need your own copy of the game.
 >
-> **Status: developer preview** ([v0.0.1-rc.1](https://github.com/anarqz/mkwmp/releases)). Online races and battles work end to end. The new lobby server and friend rooms are being tested.
+> **Status: developer preview** ([v0.0.1-rc.2](https://github.com/anarqz/mkwmp/releases)). Online races and battles work end to end. The new lobby server, friend rooms and self-hosted servers with the real game are being tested.
 
 ![The MKWMP launcher: gamertag and PIN, server, game folder, friends with requests and who is playing, and the PLAY button](site/img/launcher-main.png)
 
@@ -18,7 +18,7 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 - **Seats and a queue.** Each server has a fixed number of seats. PLAY takes one, or puts you in line. Having the launcher open doesn't take a seat.
 - **Background mode.** Close the launcher and it stays in the system tray, with notifications when a friend comes online, starts playing or sends you a request.
 - **Signed updates.** The launcher updates itself and the game patch from GitHub releases, and checks each download against the release signature.
-- **Host your own** on a PC with one program, or on a Linux server with Docker Compose (players need rc.2, not released yet).
+- **Host your own** on a PC with one program, or on a Linux server with Docker Compose.
 
 ![Launcher settings: background mode and notifications](site/img/launcher-settings.png)
 
@@ -34,7 +34,7 @@ Step-by-step guides for Windows and the Steam Deck: <https://anarqz.github.io/mk
 
 ## Host your own server
 
-> **Available from rc.2 (not released yet).** The server download arrives with rc.2. Players also need the rc.2 launcher and game patch, which trust each server's own certificate; rc.1 can only reach the official server.
+> **Needs rc.2 or later**, for the server and for every player. The rc.2 launcher and game patch trust each server's own certificate; rc.1 can only reach the official server. Launchers update themselves when you press PLAY. Self-hosted servers have been tested end to end without the real game; the first real-game runs are coming.
 
 The whole server is one program, `mkwmp-server`. It runs gamertags, friends, seats and the game lobby, and it sets itself up on the first run. A normal PC is enough to host your friends.
 
