@@ -41,6 +41,21 @@ pub fn write_probe_toml(game_dir: &Path, contents: &str) -> std::io::Result<Path
     Ok(path)
 }
 
+/// Drop the `ticket` line from `<game>/mkwmp.toml`, if there is one (the
+/// profile it belongs to is gone).
+pub fn forget_ticket(game_dir: &Path) -> std::io::Result<()> {
+    let text = match std::fs::read_to_string(game_dir.join("mkwmp.toml")) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    let kept: String = text.lines().filter(|l| !l.trim_start().starts_with("ticket")).map(|l| format!("{l}\n")).collect();
+    if kept != text {
+        write_probe_toml(game_dir, &kept)?;
+    }
+    Ok(())
+}
+
 /// The lobby certificate the probe trusts, next to `mkwmp.toml` (the
 /// probe's default `lobby_ca` name). Without it the probe trusts its
 /// built-in certificate.

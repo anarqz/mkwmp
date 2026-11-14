@@ -141,6 +141,8 @@ struct App {
     confirm_delete: bool,
     /// DELETE was confirmed; waiting for the server.
     deleting: bool,
+    /// Put the cursor in the GAMERTAG field (after a delete).
+    focus_name: bool,
     /// The tray icon (None: no tray on this desktop; closing quits).
     tray: Option<crate::tray::Tray>,
     /// Started with --tray: hide after the first frames.
@@ -162,6 +164,7 @@ impl App {
             error: None,
             confirm_delete: false,
             deleting: false,
+            focus_name: false,
             tray,
             start_in_tray,
             frames: 0,
@@ -263,8 +266,12 @@ impl eframe::App for App {
         }
         if self.deleting && st.register != RegisterView::Working {
             self.deleting = false;
-            if st.cfg.pin.is_empty() {
-                self.draft.pin.clear(); // deleted: REGISTER is back
+            if st.register == RegisterView::Deleted {
+                // Forgotten: an empty GAMERTAG field and REGISTER, ready for a new one.
+                self.draft.name.clear();
+                self.draft.pin.clear();
+                self.pin_entry.clear();
+                self.focus_name = true;
             }
         }
         let busy = !matches!(st.session, SessionView::Idle | SessionView::Failed(_));
@@ -346,6 +353,9 @@ impl App {
                         .margin(vec2(8.0, 6.0))
                         .desired_width(INNER - 214.0), // room for PIN badge + X
                 );
+                if std::mem::take(&mut self.focus_name) {
+                    r.request_focus();
+                }
                 if r.changed() {
                     self.draft.name.retain(|ch| !ch.is_whitespace()); // gamertags have no spaces
                     self.draft.pin.clear(); // a PIN belongs to one name
@@ -397,6 +407,8 @@ impl App {
                 ("3-16 letters, digits, - or _ (no spaces)".to_string(), RED_D)
             } else if let RegisterView::Failed(m) = &st.register {
                 (m.clone(), RED_D)
+            } else if st.register == RegisterView::Deleted && self.draft.name.is_empty() {
+                ("Profile deleted. Pick a gamertag to create a new one.".to_string(), MUTED)
             } else if st.register == RegisterView::Taken && self.draft.pin.len() != 6 {
                 ("That gamertag is registered. If it's yours, enter its PIN.".to_string(), RED_D)
             } else if self.draft.pin.len() == 6 {
@@ -720,7 +732,11 @@ impl App {
         let problem = self.draft.problem();
         let enabled = busy || problem.is_none();
         let (label, fill, dark) = if busy { ("STOP", BLUE, BLUE_D) } else { ("PLAY", RED, RED_D) };
-        let clicked = pixel_button_at(ui, play, "play", label, fill, dark, PAPER, 26.0, enabled).clicked();
+        let mut resp = pixel_button_at(ui, play, "play", label, fill, dark, PAPER, 26.0, enabled);
+        if let (false, Some(p)) = (busy, &problem) {
+            resp = resp.on_hover_text(p);
+        }
+        let clicked = resp.clicked();
         let enter = enabled && !busy && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !ui.ctx().egui_wants_keyboard_input();
         if clicked || enter {
             if busy {

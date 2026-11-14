@@ -108,6 +108,18 @@ fn wait_text(secs: u64) -> String {
     }
 }
 
+/// What the player sees for the two refusals they can fix.
+pub const WRONG_PIN: &str = "Wrong PIN for this gamertag";
+pub const NOT_REGISTERED: &str = "Register this gamertag first";
+
+/// DELETE /seat/v1/profiles/{name} went through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Deleted {
+    Removed,
+    /// The server has no such profile (another server's, or deleted elsewhere).
+    Absent,
+}
+
 pub struct Api {
     http: reqwest::Client,
     base: String,
@@ -136,8 +148,8 @@ impl Api {
             return Err(ApiError::Gone);
         }
         let msg = match code {
-            "PIN_WRONG" => "wrong PIN for this gamertag".to_string(),
-            "PROFILE_NOT_FOUND" => "this gamertag isn't registered: press REGISTER".to_string(),
+            "PIN_WRONG" => WRONG_PIN.to_string(),
+            "PROFILE_NOT_FOUND" => NOT_REGISTERED.to_string(),
             _ => body["error"]["message"].as_str().unwrap_or("server error").to_string(),
         };
         if status.is_client_error() {
@@ -181,7 +193,9 @@ impl Api {
     }
 
     /// Delete the profile `name` (needs its PIN). The name becomes free.
-    pub async fn delete_profile(&self, name: &str, pin: &str) -> Result<(), ApiError> {
+    /// A profile the server doesn't have is as good as deleted
+    /// ([`Deleted::Absent`]); a wrong PIN and server trouble are errors.
+    pub async fn delete_profile(&self, name: &str, pin: &str) -> Result<Deleted, ApiError> {
         let url = format!("{}/seat/v1/profiles/{name}", self.base);
         let res = self
             .http
@@ -190,15 +204,22 @@ impl Api {
             .send()
             .await
             .map_err(|e| ApiError::Transient(format!("cannot reach the server: {e}")))?;
-        if res.status().is_success() {
-            return Ok(());
+        let status = res.status();
+        if status.is_success() {
+            return Ok(Deleted::Removed);
         }
         let v: serde_json::Value = res.json().await.unwrap_or_default();
-        Err(ApiError::Refused(match v["error"]["code"].as_str() {
-            Some("PIN_WRONG") => "wrong PIN for this gamertag".into(),
-            Some("PROFILE_NOT_FOUND") => "this gamertag isn't registered".into(),
-            _ => v["error"]["message"].as_str().unwrap_or("could not delete the profile").to_string(),
-        }))
+        let code = v["error"]["code"].as_str().unwrap_or("");
+        let msg = v["error"]["message"].as_str().unwrap_or("could not delete the profile").to_string();
+        match code {
+            "PROFILE_NOT_FOUND" => Ok(Deleted::Absent),
+            "PIN_WRONG" => Err(ApiError::Refused(WRONG_PIN.into())),
+            _ if status == reqwest::StatusCode::NOT_FOUND => Ok(Deleted::Absent),
+            _ if matches!(status.as_u16(), 401 | 403) => Err(ApiError::Refused(WRONG_PIN.into())),
+            _ if status == reqwest::StatusCode::TOO_MANY_REQUESTS => Err(ApiError::Transient(msg)),
+            _ if status.is_client_error() => Err(ApiError::Refused(msg)),
+            _ => Err(ApiError::Transient(msg)),
+        }
     }
 
     /// Register `name`; returns its PIN.
@@ -252,8 +273,8 @@ impl Api {
         let msg = v["error"]["message"].as_str().unwrap_or("server error").to_string();
         match code {
             "PRESENCE_NOT_FOUND" => Err(ApiError::SignedOut),
-            "PIN_WRONG" => Err(ApiError::Refused("wrong PIN for this gamertag".into())),
-            "PROFILE_NOT_FOUND" => Err(ApiError::Refused("this gamertag isn't registered".into())),
+            "PIN_WRONG" => Err(ApiError::Refused(WRONG_PIN.into())),
+            "PROFILE_NOT_FOUND" => Err(ApiError::Refused(NOT_REGISTERED.into())),
             _ if status.is_client_error() => Err(ApiError::Refused(msg)),
             _ => Err(ApiError::Transient(msg)),
         }

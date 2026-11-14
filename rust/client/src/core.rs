@@ -11,11 +11,25 @@ use std::time::Duration;
 use rand::RngCore;
 use tokio::sync::{Notify, RwLock};
 
-use crate::api::{Api, ApiError, Friends};
+use crate::api::{Api, ApiError, Deleted, Friends};
 use crate::config::{ClientConfig, SeatMode, Voice};
 use crate::log::note;
-use crate::seat::{Phase, Seat};
+use crate::seat::{Answer, Phase, Seat};
 use crate::{launch, probe, update};
+
+/// PLAY could not reach the server (the details go to the log).
+pub const UNREACHABLE: &str = "Server unreachable: retry";
+
+/// What PLAY shows for an API error.
+fn reason(e: &ApiError) -> String {
+    match e {
+        ApiError::Transient(m) => {
+            note(m.clone());
+            UNREACHABLE.into()
+        }
+        e => e.to_string(),
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerView {
@@ -39,6 +53,9 @@ pub enum RegisterView {
     Working,
     /// The name is registered already: if it's yours, enter its PIN.
     Taken,
+    /// The profile was deleted (or the server never had it): the launcher
+    /// forgot it, and the GAMERTAG field waits for a new one.
+    Deleted,
     Failed(String),
 }
 
@@ -185,29 +202,56 @@ impl Core {
         });
     }
 
-    /// Delete the configured profile from the server; on success the PIN is
-    /// cleared so the name (or another) can be registered again.
+    /// Delete the configured profile from the server. Deleted, or not on
+    /// this server at all: the launcher forgets it ([`Core::forget_profile`]).
+    /// A wrong PIN or server trouble keeps everything (the X stays, to retry).
     pub fn delete_profile(self: &Arc<Self>) {
+        if self.busy() {
+            self.set(|u| u.register = RegisterView::Failed("Stop playing before deleting the profile".into()));
+            return;
+        }
         self.set(|u| u.register = RegisterView::Working);
         let core = self.clone();
         tokio::spawn(async move {
             let cfg = core.ui().cfg;
             let outcome = match core.api().delete_profile(&cfg.name, &cfg.pin).await {
-                Ok(()) => {
-                    let mut c = cfg.clone();
-                    c.pin.clear();
-                    match core.set_config(c) {
-                        Ok(()) => {
-                            note(format!("deleted the profile {}", cfg.name));
-                            RegisterView::Idle
-                        }
-                        Err(e) => RegisterView::Failed(e),
+                Ok(how) => match core.forget_profile() {
+                    Ok(()) => {
+                        note(match how {
+                            Deleted::Removed => format!("deleted the profile {}", cfg.name),
+                            Deleted::Absent => format!("the server has no profile {}; forgot it", cfg.name),
+                        });
+                        RegisterView::Deleted
                     }
-                }
+                    Err(e) => RegisterView::Failed(e),
+                },
                 Err(e) => RegisterView::Failed(e.to_string()),
             };
             core.set(|u| u.register = outcome);
         });
+    }
+
+    /// Forget the profile: name, PIN, its voice mutes, its friends and
+    /// presence, and the ticket in the game's mkwmp.toml.
+    fn forget_profile(&self) -> Result<(), String> {
+        {
+            let _g = self.cfg_write.lock().unwrap_or_else(|p| p.into_inner());
+            let mut cfg = self.ui().cfg;
+            cfg.name.clear();
+            cfg.pin.clear();
+            cfg.voice.mutes.clear();
+            cfg.save(&self.config_path)?;
+            if let Err(e) = launch::forget_ticket(&cfg.game) {
+                note(format!("clearing the ticket in mkwmp.toml: {e}"));
+            }
+            self.set(|u| {
+                u.cfg = cfg;
+                u.friends = FriendsUi::default();
+            });
+        }
+        *self.presence.lock().unwrap() = None;
+        self.friends_wake.notify_one();
+        Ok(())
     }
 
     /// Forget the last REGISTER outcome (the name changed).
@@ -252,7 +296,7 @@ impl Core {
             return Err(p);
         }
         let seat = Arc::new(Seat::new(&cfg));
-        let (lobby, lobby_ca, voice_port) = seat.api().lobby().await.map_err(|e| e.to_string())?;
+        let (lobby, lobby_ca, voice_port) = seat.api().lobby().await.map_err(|e| reason(&e))?;
         // Always the current server's: a stale file from another server
         // would make the game reject this one's lobby.
         launch::write_lobby_ca(&cfg.game, lobby_ca.as_deref()).map_err(|e| format!("writing {}: {e}", launch::LOBBY_CA))?;
@@ -270,12 +314,25 @@ impl Core {
             );
             launch::write_probe_toml(&cfg.game, &toml).map_err(|e| format!("writing mkwmp.toml: {e}"))
         };
-        write(None, &lobby)?;
+        write(None, &lobby)?; // never a stale ticket
         *self.seat.write().await = Some(seat.clone());
-        note(match cfg.seat {
-            SeatMode::Start => format!("taking a seat on {}", cfg.server),
-            SeatMode::Online => "you'll get a seat when you go online in the game".into(),
-        });
+        match cfg.seat {
+            SeatMode::Start => {
+                note(format!("taking a seat on {}", cfg.server));
+                // The game starts only once seated.
+                match self.take_seat(&seat, &cfg).await? {
+                    Some((ticket, seated_lobby)) => {
+                        write(Some(&ticket), &seated_lobby)?;
+                    }
+                    None => return Ok(()), // STOP while queued
+                }
+            }
+            SeatMode::Online => {
+                // No seat until the game goes online, but the profile must be good.
+                self.presence_token().await.map_err(|e| reason(&e))?;
+                note("you'll get a seat when you go online in the game");
+            }
+        }
 
         let mut game: Option<Child> = None;
         if cfg.launch {
@@ -311,6 +368,44 @@ impl Core {
                     note("stopped; seat released");
                     seat.release().await;
                     return Ok(());
+                }
+            }
+        }
+    }
+
+    /// seat = "start": join and wait (queued) until seated. The seated
+    /// ticket and lobby; None if STOP was pressed while waiting. A refusal or
+    /// an unreachable server is an error (the game is not started).
+    async fn take_seat(&self, seat: &Seat, cfg: &ClientConfig) -> Result<Option<(String, String)>, String> {
+        match seat.want().await {
+            Answer::Seated { ticket, lobby, .. } => return Ok(Some((ticket, lobby))),
+            Answer::Refused(m) => return Err(m),
+            Answer::Unavailable(m) => {
+                note(format!("no seat: {m}"));
+                return Err(UNREACHABLE.into());
+            }
+            Answer::Queued { .. } => {}
+        }
+        loop {
+            let changed = seat.tick().await;
+            let snap = seat.snapshot().await;
+            match (&snap.phase, changed) {
+                (Phase::Refused(m), _) => return Err(m.clone()),
+                (_, Some(t)) => return Ok(Some(t)),
+                (Phase::Seated, None) => {
+                    if let Answer::Seated { ticket, lobby, .. } = seat.want().await {
+                        return Ok(Some((ticket, lobby)));
+                    }
+                }
+                _ => {}
+            }
+            self.set(|u| u.session = SessionView::Running { phase: snap.phase, game_running: false, steam: !cfg.launch });
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                _ = self.stop.notified() => {
+                    note("stopped; seat released");
+                    seat.release().await;
+                    return Ok(None);
                 }
             }
         }
@@ -572,3 +667,6 @@ pub async fn sync_probe(cfg: &ClientConfig) {
         Err(e) => note(format!("voice chat download failed: {e}")),
     }
 }
+
+#[cfg(test)]
+mod tests;
