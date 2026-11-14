@@ -246,6 +246,9 @@ fn state_down_on_subscribe_change_and_every_second() {
     assert!(r.tick(0.7).is_empty());
     let n = (8..=16).filter(|t| !r.tick(*t as f64 / 10.0).is_empty()).count();
     assert_eq!(n, 1);
+    // A keepalive answers only the sender.
+    let out = r.handle(1.9, ep(1), &sub("a", OP_SUBSCRIBE, 0, vec![]));
+    assert_eq!((states_to(&out, ep(1)).len(), states_to(&out, ep(2)).len()), (1, 0));
     // A lone subscriber without a room gets room = 0.
     let out = r.handle(2.0, ep(3), &sub("z", OP_SUBSCRIBE, 0, vec![]));
     assert_eq!(states_to(&out, ep(3)), vec![(false, BUNDLE, vec![])]);

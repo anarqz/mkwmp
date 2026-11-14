@@ -340,6 +340,7 @@ impl<R: Rooms> Relay<R> {
             self.drop_sub(&other);
         }
         let account = self.rooms.account(&uid);
+        let fresh = self.subs.get(&uid).is_none_or(|s| s.endpoint != from);
         let s = self.subs.entry(uid.clone()).or_insert_with(|| Sub {
             endpoint: from,
             account,
@@ -364,12 +365,13 @@ impl<R: Rooms> Relay<R> {
         s.self_flags = c.self_flags;
         s.mutes = c.mutes.into_iter().collect();
         self.refresh_room(&uid, now);
-        // The subscriber learns its room at once.
+        // The subscriber learns its room at once; the room hears about it only
+        // when the binding is new (a seat change dirties the room by itself).
         match self.subs[&uid].room_id() {
-            Some(r) => {
+            Some(r) if fresh => {
                 self.dirty.insert(r);
             }
-            None => {
+            _ => {
                 self.due.insert(uid);
             }
         }
@@ -486,27 +488,35 @@ impl<R: Rooms> Relay<R> {
 
     fn flush(&mut self, now: f64, out: &mut Datagrams) {
         let bundle = self.bundle(now);
-        for room in std::mem::take(&mut self.dirty) {
-            let mut seats: Vec<SeatState> = self
-                .subs
-                .values()
-                .filter(|s| s.room_id() == Some(room))
-                .filter_map(|s| {
-                    let state = if s.talking_at(now) { STATE_TALKING } else { 0 };
-                    s.seat.map(|seat| SeatState { seat, account: s.account, state })
-                })
-                .collect();
-            seats.sort_by_key(|s| s.seat);
-            let msg = write_state(true, bundle, &seats, &rand::random());
+        let dirty = std::mem::take(&mut self.dirty);
+        for &room in &dirty {
+            let msg = self.room_state(room, bundle, now);
             for s in self.subs.values().filter(|s| s.room_id() == Some(room)) {
                 out.push((s.endpoint, msg.clone()));
             }
         }
         for uid in std::mem::take(&mut self.due) {
-            if let Some(s) = self.subs.get(&uid).filter(|s| s.room.is_none()) {
-                out.push((s.endpoint, write_state(false, bundle, &[], &rand::random())));
+            let Some(s) = self.subs.get(&uid) else { continue };
+            match s.room_id() {
+                None => out.push((s.endpoint, write_state(false, bundle, &[], &rand::random()))),
+                Some(r) if !dirty.contains(&r) => out.push((s.endpoint, self.room_state(r, bundle, now))),
+                Some(_) => {} // just sent with its room
             }
         }
+    }
+
+    fn room_state(&self, room: Room, bundle: u8, now: f64) -> Vec<u8> {
+        let mut seats: Vec<SeatState> = self
+            .subs
+            .values()
+            .filter(|s| s.room_id() == Some(room))
+            .filter_map(|s| {
+                let state = if s.talking_at(now) { STATE_TALKING } else { 0 };
+                s.seat.map(|seat| SeatState { seat, account: s.account, state })
+            })
+            .collect();
+        seats.sort_by_key(|s| s.seat);
+        write_state(true, bundle, &seats, &rand::random())
     }
 }
 

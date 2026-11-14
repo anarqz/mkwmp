@@ -537,39 +537,38 @@ impl Core {
 /// Bring the game patch in line with this launcher's release. Never fatal.
 pub async fn sync_probe(cfg: &ClientConfig) {
     let u = update::Updater::new();
-    match update::own_release(&u).await {
-        Ok((r, sums)) => match u.asset(&r, &sums, update::PROBE_ASSET).await {
-            Ok(bytes) => match probe::install_probe(&cfg.game, &bytes, probe::game_running()) {
-                Ok(probe::ProbeAction::UpToDate) => {}
-                Ok(probe::ProbeAction::Installed { backup }) => {
-                    note(format!("installed the game patch {}", r.tag_name));
-                    if let Some(b) = backup {
-                        note(format!("your previous winmm.dll is saved as {}", b.display()));
-                    }
-                }
-                Ok(probe::ProbeAction::GameRunning) => note("a game patch update is ready; close the game first"),
-                Err(e) => note(format!("installing the game patch failed: {e}")),
-            },
-            Err(e) => note(format!("game patch download failed: {e}")),
-        },
+    let (r, sums) = match update::own_release(&u).await {
+        Ok(x) => x,
         Err(e) => {
             note(format!("game patch check failed: {e}"));
             return;
         }
+    };
+    match u.asset(&r, &sums, update::PROBE_ASSET).await {
+        Ok(bytes) => match probe::install_probe(&cfg.game, &bytes, probe::game_running()) {
+            Ok(probe::ProbeAction::UpToDate) => {}
+            Ok(probe::ProbeAction::Installed { backup }) => {
+                note(format!("installed the game patch {}", r.tag_name));
+                if let Some(b) = backup {
+                    note(format!("your previous winmm.dll is saved as {}", b.display()));
+                }
+            }
+            Ok(probe::ProbeAction::GameRunning) => note("a game patch update is ready; close the game first"),
+            Err(e) => note(format!("installing the game patch failed: {e}")),
+        },
+        Err(e) => note(format!("game patch download failed: {e}")),
     }
     // Voice chat's engine, from the same release (older releases have none).
-    if let Ok((r, sums)) = update::own_release(&u).await {
-        if !r.assets.iter().any(|a| a.name == update::VOICE_ASSET) {
-            return;
-        }
-        match u.asset(&r, &sums, update::VOICE_ASSET).await {
-            Ok(bytes) => match probe::install_file(&cfg.game, probe::VOICE, &bytes, probe::game_running()) {
-                Ok(probe::ProbeAction::Installed { .. }) => note(format!("installed voice chat {}", r.tag_name)),
-                Ok(probe::ProbeAction::GameRunning) => note("a voice chat update is ready; close the game first"),
-                Ok(probe::ProbeAction::UpToDate) => {}
-                Err(e) => note(format!("installing voice chat failed: {e}")),
-            },
-            Err(e) => note(format!("voice chat download failed: {e}")),
-        }
+    if !r.assets.iter().any(|a| a.name == update::VOICE_ASSET) {
+        return;
+    }
+    match u.asset(&r, &sums, update::VOICE_ASSET).await {
+        Ok(bytes) => match probe::install_file(&cfg.game, probe::VOICE, &bytes, probe::game_running()) {
+            Ok(probe::ProbeAction::Installed { .. }) => note(format!("installed voice chat {}", r.tag_name)),
+            Ok(probe::ProbeAction::GameRunning) => note("a voice chat update is ready; close the game first"),
+            Ok(probe::ProbeAction::UpToDate) => {}
+            Err(e) => note(format!("installing voice chat failed: {e}")),
+        },
+        Err(e) => note(format!("voice chat download failed: {e}")),
     }
 }
