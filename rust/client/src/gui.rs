@@ -323,18 +323,19 @@ impl App {
         let min_h = CARD_H;
         card(ui, "PLAYER", BLUE, BLUE_D, min_h, |ui| {
             // Name + PIN (or REGISTER).
-            field_label(ui, "NAME");
+            field_label(ui, "GAMETAG");
             ui.horizontal(|ui| {
                 let has_pin = self.draft.pin.len() == 6;
                 let r = ui.add_enabled(
                     !busy,
                     TextEdit::singleline(&mut self.draft.name)
-                        .hint_text("your name")
+                        .hint_text("your gametag")
                         .char_limit(16)
                         .margin(vec2(8.0, 6.0))
                         .desired_width(INNER - 214.0), // room for PIN badge + X
                 );
                 if r.changed() {
+                    self.draft.name.retain(|ch| !ch.is_whitespace()); // gametags have no spaces
                     self.draft.pin.clear(); // a PIN belongs to one name
                     self.core.reset_register();
                 }
@@ -381,15 +382,15 @@ impl App {
             });
             // Exactly one message line, whatever the state (fixed card height).
             let (msg, color) = if !self.draft.name.is_empty() && !valid_name(&self.draft.name) {
-                ("3-16 letters, digits, - or _".to_string(), RED_D)
+                ("3-16 letters, digits, - or _ (no spaces)".to_string(), RED_D)
             } else if let RegisterView::Failed(m) = &st.register {
                 (m.clone(), RED_D)
             } else if st.register == RegisterView::Taken && self.draft.pin.len() != 6 {
-                ("That name is registered. If it's yours, enter its PIN.".to_string(), RED_D)
+                ("That gametag is registered. If it's yours, enter its PIN.".to_string(), RED_D)
             } else if self.draft.pin.len() == 6 {
-                ("Your PIN: keep it to use this name on another device.".to_string(), MUTED)
+                ("Your PIN: keep it to use this gametag on another device.".to_string(), MUTED)
             } else {
-                ("Register a name to play. You'll get a 6-digit PIN.".to_string(), MUTED)
+                ("Register a gametag to play. You'll get a 6-digit PIN.".to_string(), MUTED)
             };
             hint(ui, &msg, color);
 
@@ -432,16 +433,19 @@ impl App {
         let f = &st.friends;
         let signed = self.draft.pin.len() == 6 && valid_name(&self.draft.name);
         card(ui, "FRIENDS", GREEN, GREEN_D, min_h, |ui| {
-            // Add by profile name.
+            // Add by gametag.
             ui.horizontal(|ui| {
                 let r = ui.add_enabled(
                     signed,
                     TextEdit::singleline(&mut self.friend_entry)
-                        .hint_text("add a friend by profile name")
+                        .hint_text("add a friend by gametag")
                         .char_limit(16)
                         .margin(vec2(8.0, 6.0))
                         .desired_width(INNER - 104.0),
                 );
+                if r.changed() {
+                    self.friend_entry.retain(|ch| !ch.is_whitespace()); // gametags have no spaces
+                }
                 let entry = self.friend_entry.trim().to_string();
                 let ok = signed && !f.working && valid_name(&entry);
                 let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -452,7 +456,7 @@ impl App {
             });
             // Exactly one message line (fixed card height).
             let (msg, color) = if !signed {
-                ("Register your name to add friends.".to_string(), MUTED)
+                ("Register your gametag to add friends.".to_string(), MUTED)
             } else if let Some((m, err)) = &f.note {
                 (m.clone(), if *err { RED_D } else { GREEN_D })
             } else if f.list.is_none() {
@@ -470,7 +474,7 @@ impl App {
                 let Some(list) = &f.list else { return };
                 if list.friends.is_empty() && list.incoming.is_empty() && list.outgoing.is_empty() {
                     ui.add_space(6.0);
-                    hint(ui, "No friends yet. Add someone by their profile name above.", MUTED);
+                    hint(ui, "No friends yet. Add someone by their gametag above.", MUTED);
                     return;
                 }
                 if !list.incoming.is_empty() {
@@ -608,7 +612,7 @@ impl App {
             ui.add_space(6.0);
             ui.label(
                 RichText::new(format!(
-                    "\"{}\" and its PIN will be removed. Anyone can then register this name.",
+                    "\"{}\" and its PIN will be removed. Anyone can then register this gametag.",
                     self.draft.name
                 ))
                 .size(13.0)
@@ -862,7 +866,7 @@ fn pin_badge(ui: &mut egui::Ui, pin: &str) {
             ui.label(RichText::new(format!("PIN {pin}")).font(pixel(10.0)).color(INK));
         })
         .response
-        .on_hover_text("Your name's PIN. It's also in client.toml.");
+        .on_hover_text("Your gametag's PIN. It's also in client.toml.");
 }
 
 fn light(ui: &mut egui::Ui, color: Color32) -> Response {

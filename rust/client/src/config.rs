@@ -150,10 +150,10 @@ impl ClientConfig {
     /// What is missing before PLAY can work.
     pub fn problem(&self) -> Option<String> {
         if !valid_name(&self.name) {
-            return Some("Pick a name: 3-16 letters, digits, - or _".into());
+            return Some("Pick a gametag: 3-16 letters, digits, - or _ (no spaces)".into());
         }
         if !(self.pin.len() == 6 && self.pin.bytes().all(|b| b.is_ascii_digit())) {
-            return Some("Register your name, or enter its 6-digit PIN".into());
+            return Some("Register your gametag, or enter its 6-digit PIN".into());
         }
         if self.server.trim().is_empty() {
             return Some("Set the server URL".into());
