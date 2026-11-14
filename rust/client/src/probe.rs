@@ -119,8 +119,11 @@ pub fn ensure_host(game: &Path) -> Option<String> {
 pub fn game_running() -> bool {
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW: from the windowed launcher a console program would flash a terminal window.
         std::process::Command::new("tasklist")
             .args(["/FI", "IMAGENAME eq mkw.exe", "/NH"])
+            .creation_flags(0x0800_0000)
             .output()
             .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).to_ascii_lowercase().contains("mkw.exe"))
     }

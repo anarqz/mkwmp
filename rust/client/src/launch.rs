@@ -80,8 +80,9 @@ pub fn spawn_game(game_dir: &Path, launch_command: &str) -> std::io::Result<Chil
     };
     #[cfg(windows)]
     let mut c = {
+        use std::os::windows::process::CommandExt;
         let mut c = Command::new("cmd");
-        c.arg("/C").arg(cmd);
+        c.arg("/C").arg(cmd).creation_flags(0x0800_0000); // CREATE_NO_WINDOW: no console flash
         c
     };
     c.current_dir(game_dir).spawn()

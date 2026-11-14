@@ -199,3 +199,7 @@ Two tests start the real `mkwmp` binary. One plays two clients from sign-in to a
 ## Support
 
 MKWMP is made by players, for players. If you'd like to help keep the official server running: [Ko-fi](https://ko-fi.com/anarqz).
+
+## License
+
+mkwmp is free software under the GNU General Public License, version 3 or later (`LICENSE`). Third-party components and their licenses are listed in `NOTICE.md`.
