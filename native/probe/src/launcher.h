@@ -14,4 +14,8 @@
 // no `launcher` key. Blocks for up to 5 s per socket operation; calls are serialized.
 int launcher_request(const char *method, const char *path, char *buf, size_t cap, const char **body);
 
+// The same with a JSON request body (`json` may be NULL: no body).
+int launcher_request_json(const char *method, const char *path, const char *json, char *buf, size_t cap,
+                          const char **body);
+
 #endif

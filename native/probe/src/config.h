@@ -17,6 +17,7 @@ typedef struct {
     char launcher_token[96]; // bearer for the local seat API
     char lobby_ca[96];       // file (in the game dir) with the lobby's TLS CA, PEM or DER;
                              // default "mkwmp-lobby-ca.pem" (see lobby_ca.h)
+    int voice_port;          // lobby voice relay UDP port (default 8907, 0 = voice off; VOICE_API.md)
 } MkwmpConfig;
 
 // Parse the minimal `key = "value"` / `key = N` format. Pure; unit-tested.

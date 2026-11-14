@@ -15,6 +15,7 @@
 #include "lobby_ca.h"
 #include "seat.h"
 #include "friends.h"
+#include "voice.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -256,6 +257,7 @@ static void ov_nifm_submit_wait(Cpu *c) {
         if (seat_acquire(&r, 10 * 60 * 1000) == SEAT_SEATED) {
             seat_keepalive_resume();
             friends_online(FRIENDS_WAIT_MS);
+            voice_online(g_lobby_host);
         }
     }
 }
@@ -265,6 +267,7 @@ static void ov_nifm_cancel(Cpu *c) {
     if (!stock) stock = stock_handler("_ZN2nn4nifm20CancelNetworkRequestEv");
     if (stock) stock(c);
     if (seat_keepalive_pause()) mlog("left online: seat keepalive paused (the launcher frees the seat in 90 s)");
+    voice_offline();
 }
 // In-game player name: the launcher's `name` (mkw-recomp hardcodes "Local").
 static void ov_nickname(Cpu *c) {
@@ -1319,6 +1322,7 @@ static void try_activate(void) {
         SeatReply r;
         if (!cfg->launcher_port) {
             mlog("online requested: no launcher in mkwmp.toml, going active without a seat");
+            voice_online(cfg->host);
             InterlockedExchange(&g_active, 1);
         } else if (seat_acquire(&r, 10 * 60 * 1000) == SEAT_SEATED) {
             char *colon = strrchr(r.lobby, ':');
@@ -1330,6 +1334,7 @@ static void try_activate(void) {
             seat_keepalive_start();
             friends_online(FRIENDS_WAIT_MS);
             mlog("online requested: seated, going active");
+            voice_online(g_lobby_host);
             InterlockedExchange(&g_active, 1);
         } else {
             mlog("online requested: no seat, staying offline (stock no-network)");
