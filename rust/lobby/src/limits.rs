@@ -63,7 +63,7 @@ impl Rule {
             Rule::Write => rate(300.0, 60.0),
             Rule::Read => rate(200.0, 40.0),
             Rule::SessionFrame => rate(300.0, 60.0),
-            Rule::Presence => rate(30.0, 5.0),
+            Rule::Presence => rate(200.0, 20.0), // the game sends a burst of ~30+ on match assignment
             Rule::Subscribe => rate(60.0, 1.0),
             Rule::Other => rate(100.0, 20.0),
         }

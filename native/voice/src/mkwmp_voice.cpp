@@ -215,8 +215,10 @@ void NetLoop() {
                         if (audio::Running()) audio::Receive(v.seat, v.seq, v.ts, v.flags, v.opus, v.size);
                     } else if (wire::DecodeStateDown(d, static_cast<size_t>(n), st)) {
                         std::lock_guard lock(g.lock);
-                        if (!g.subscribed) Logf("voice: in a voice room (%zu seats, bundle %u)", st.seats.size(), st.bundle);
-                        g.subscribed = (st.room & wire::kRoomVoice) != 0;
+                        const bool room = (st.room & wire::kRoomVoice) != 0;
+                        if (room != g.subscribed || st.seats.size() != g.state.seats.size())
+                            Logf("voice: %s (%zu seats, bundle %u)", room ? "in a voice room" : "not in a voice room yet", st.seats.size(), st.bundle);
+                        g.subscribed = room;
                         g.state = std::move(st);
                         last_rx_state = NowMs();
                     }
