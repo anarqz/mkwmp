@@ -1,0 +1,251 @@
+// nn.npln.friends.v1: friend list and presence (who is online, in which room).
+// Recovered from mkw-recomp main.bin. Message classes (serializer = vtable
+// slot 12):
+//   friends    vtables main+0x30eb9c0..0x30ebc40 (6 classes)
+//   presence   vtables main+0x30ebcc0..0x30ec1c0 (11 classes)
+//   resources  vtables main+0x30ec240..0x30ec4d0 (5 classes + map entry)
+//
+// Field numbers and wire types come from the serializers named on each
+// message. Names are inferred (the binary has no descriptors) unless a
+// comment says otherwise. "captured" = seen in client frames logged by the
+// reference server (scratch/presence-stream.log). Consumer analysis:
+// docs/RE-MAP.md part A.2.
+//
+// How the game uses this (docs/RE-MAP.md 2.3):
+//   1. The friend list itself comes from the console (nn::friends). A user
+//      that is not a console friend can never appear.
+//   2. SubscribeFriendUsers maps console account ids to NPLN users.
+//   3. SubscribePresences delivers each friend's state and attributes; the
+//      attribute `SessionId` names the room the friend is in.
+//   4. The game then calls matchmaking BatchGetGameSessions with those ids
+//      and joins with JoinGameSession.
+//   5. The game publishes its own `SessionId` (plus `DriverId`, `StickerId`)
+//      over KeepAlive.
+//
+// ListFriendUsers and ListBlockingUsers are in the stub but have no caller
+// and no message classes in the binary, so they have no contract.
+syntax = "proto3";
+
+package nn.npln.friends.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "nn/npln/gamesync/v1/values.proto";
+
+service Friends {
+  // live with an empty reply. Once at sign-in.
+  rpc ActivateUser(ActivateUserRequest) returns (ActivateUserResponse);
+  // Server stream; handler FUN_01213f40 -> FUN_01206a40. Shape only: the
+  // reference server sends one empty message and keeps the stream open
+  // (live: accepted, friend list stays empty).
+  rpc SubscribeFriendUsers(SubscribeFriendUsersRequest) returns (stream SubscribeFriendUsersResponse);
+}
+
+service PresenceService {
+  // Bidi. Writer FUN_012294c0, reader FUN_01227d20. The client sends
+  // `open` first and then WAITS for an `ack` before it sends anything else;
+  // an empty reply is not an ack (live: with empty replies the client only
+  // ever repeats `open`).
+  rpc KeepAlive(stream KeepAliveRequest) returns (stream KeepAliveResponse);
+  // Server stream; handler FUN_012215c0. Shape only: the reference server
+  // sends one empty message and keeps the stream open.
+  rpc SubscribePresences(SubscribePresencesRequest) returns (stream SubscribePresencesResponse);
+}
+
+// ---------------------------------------------------------------- friends
+
+// Serializer main+0x122d8d8.
+message ActivateUserRequest {
+  // captured: "tenants/current/users/current".
+  string name = 1;   // inferred name
+}
+
+// Serializer main+0x122ddc0 (no fields).
+message ActivateUserResponse {}
+
+// Serializer main+0x122e4b8.
+message SubscribeFriendUsersRequest {
+  // captured: "tenants/current/users/current".
+  string parent = 1;   // inferred name
+}
+
+// Serializer main+0x12309e0.
+message SubscribeFriendUsersResponse {
+  repeated FriendUserGroup friend_user_groups = 1;       // inferred name
+  repeated BlockingUserGroup blocking_user_groups = 2;   // inferred name
+  // Serialized by the Duration serializer main+0x11b2768. Arms the client's
+  // stream watchdog.
+  google.protobuf.Duration unknown_3 = 3;
+}
+
+// Serializer main+0x122ef20.
+message FriendUserGroup {
+  // The console account id in hexadecimal: the client runs
+  // strtoull(value, NULL, 16) and matches it against
+  // nn::friends::Friend::GetAccountId() (FUN_01206a40, FUN_022288b8).
+  string account_id = 1;   // inferred name
+  // The NPLN users of that account.
+  repeated FriendUser friend_users = 2;   // inferred name
+}
+
+// Serializer main+0x122fae0.
+message BlockingUserGroup {
+  string account_id = 1;   // inferred, by symmetry with FriendUserGroup
+  repeated BlockingUser blocking_users = 2;   // inferred name
+}
+
+// Serializer main+0x123b2a4.
+message FriendUser {
+  string unknown_1 = 1;
+  // "tenants/<t>/users/<id>": the only field the client reads (parsed as a
+  // user resource name, FUN_00f18090). Must be the same user string as the
+  // Presence name and the auth token's user.
+  string user = 2;   // inferred name
+  string unknown_3 = 3;
+  FriendUserFlags flags = 4;   // inferred name
+}
+
+// Serializer main+0x123a92c.
+message FriendUserFlags {
+  bool unknown_1 = 1;
+  bool unknown_2 = 2;
+  bool unknown_3 = 3;
+}
+
+// Serializer main+0x123bfd4.
+message BlockingUser {
+  string unknown_1 = 1;
+  string unknown_2 = 2;
+  string unknown_3 = 3;
+}
+
+// --------------------------------------------------------------- presence
+
+// Serializer main+0x123d5a0. Names of fields 1, 2, 3 and 5 are the real
+// ones: the client sends them as field-mask paths
+// (`name`, `state`, `unsubscribed`, `attributes`).
+message Presence {
+  // "tenants/<t>/users/<u>/presence" (parser FUN_0122cb20, builder
+  // FUN_0122cfa0).
+  string name = 1;
+  PresenceState state = 2;
+  // Map entry writer main+0xf1b9b4 (the shared map<string, Value> entry).
+  // Keys the game publishes and reads: "SessionId" (string: the game
+  // session id, "" when not in a room), "DriverId" (int), "StickerId" (int).
+  // The client keeps attributes only for state ONLINE.
+  map<string, nn.npln.gamesync.v1.Value> attributes = 3;
+  google.protobuf.Timestamp unknown_4 = 4;
+  // true removes the user from the client's presence cache (FUN_0122c00c).
+  bool unsubscribed = 5;
+  PresenceFlag unknown_6 = 6;
+}
+
+// Conversion FUN_0122b7e0.
+enum PresenceState {
+  // A presence with state 0 is ignored by the client.
+  PRESENCE_STATE_UNSPECIFIED = 0;
+  // Game state 1: online; the only state whose attributes are kept, and the
+  // only one for which the game looks up the friend's room.
+  PRESENCE_STATE_ONLINE = 1;    // inferred name
+  // Game state 0. Send this when a friend goes offline.
+  PRESENCE_STATE_OFFLINE = 2;   // inferred name
+  // Game state 2; meaning unknown.
+  PRESENCE_STATE_3 = 3;
+}
+
+// Serializer main+0x123c948.
+message PresenceFlag {
+  bool unknown_1 = 1;
+}
+
+// Serializer main+0x1233910. Oneof case at object +0x1c.
+message KeepAliveRequest {
+  oneof request {
+    // Publish own presence: presence.name = own presence resource,
+    // presence.attributes, and a mask of "attributes.<key>" paths
+    // (FUN_0122c880). Sent only after an ack.
+    UpdatePresence update = 1;   // inferred name
+    // Periodic heartbeat. Sent only after an ack.
+    Heartbeat heartbeat = 2;     // inferred name
+    // captured: the first frame, {3: {1: "tenants/current/users/current"}}.
+    OpenPresence open = 3;       // inferred name
+  }
+}
+
+// Serializer main+0x1232404.
+message UpdatePresence {
+  Presence presence = 1;
+  // google.protobuf.FieldMask (serializer main+0x12012a0).
+  google.protobuf.FieldMask update_mask = 2;   // inferred name
+}
+
+// Serializer main+0x1239758.
+message Heartbeat {
+  string name = 1;   // inferred name
+}
+
+// Serializer main+0x1232c58.
+message OpenPresence {
+  // captured: "tenants/current/users/current".
+  string parent = 1;   // inferred name
+}
+
+// Serializer main+0x1234c64. Oneof case at object +0x1c.
+message KeepAliveResponse {
+  oneof response {
+    // Sets the client's "acked" flag, which lets its writer continue, and
+    // re-arms its timer from ack.unknown_2. Answer every client frame with
+    // this.
+    KeepAliveTiming ack = 1;   // inferred name
+    // Ends the client's read loop. Send only when closing. Empty class
+    // main+0x1234400.
+    KeepAliveClose close = 2;  // inferred name
+  }
+}
+
+// Serializer main+0x1234400 (no fields).
+message KeepAliveClose {}
+
+// Serializer main+0x1239040. Both fields use the Duration serializer
+// main+0x11b2768.
+message KeepAliveTiming {
+  google.protobuf.Duration unknown_1 = 1;
+  // The client reads this one, as seconds, for its timer / watchdog.
+  google.protobuf.Duration unknown_2 = 2;
+}
+
+// Serializer main+0x1235d80.
+message SubscribePresencesRequest {
+  // captured: "tenants/current/users/current".
+  string parent = 1;   // inferred name
+  repeated string unknown_2 = 2;
+  // captured: paths name, state, unsubscribed, attributes.
+  google.protobuf.FieldMask read_mask = 3;   // inferred name
+  int32 unknown_4 = 4;
+  // Meaning inferred: the resume token last received in PresenceBatch.
+  string unknown_5 = 5;
+}
+
+// Serializer main+0x1238090. Oneof case at object +0x1c.
+message SubscribePresencesResponse {
+  oneof response {
+    // Push the full presence of a user again on every change.
+    PresenceBatch presences = 1;   // inferred name
+    // Sets a flag on the client (client +0x170); meaning unknown. Empty
+    // class main+0x1237640.
+    SubscribePresencesNotice unknown_2 = 2;
+    // Re-arms the stream watchdog with timing.unknown_2 seconds.
+    KeepAliveTiming timing = 3;    // inferred name
+  }
+}
+
+// Serializer main+0x1237640 (no fields).
+message SubscribePresencesNotice {}
+
+// Serializer main+0x1236d40.
+message PresenceBatch {
+  repeated Presence presences = 1;
+  // Saved by the client. Meaning inferred: resume token.
+  string unknown_2 = 2;
+}

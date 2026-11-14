@@ -1,0 +1,78 @@
+// Value types shared by every NPLN service. Recovered from mkw-recomp main.bin.
+//
+// In the binary these classes live in one common translation unit
+// (main+0xf15000..0xf1d000, vtables main+0x30b3fe8..0x30b43b8) and are used by
+// gamesync, matchmaking, ugcstore, friends and leaderboard alike. Their real
+// package name is stripped. They are declared in package nn.npln.gamesync.v1
+// because Gamesync documents are their main user; the other services import
+// this file.
+//
+// Field numbers and wire types: from the serializers named on each message.
+// Names: inferred (the binary has no descriptors), unless a comment says the
+// name was seen on the wire.
+syntax = "proto3";
+
+package nn.npln.gamesync.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+
+// Serializer main+0xf19724, parser main+0xf18f60. Oneof case at object +0x1c.
+// Game-side builders: int32/uint32 -> 3 (FUN_00f12c64 / FUN_00f12cdc),
+// bool -> 2 (FUN_00f12b78), float -> 4 (FUN_00f06f84), C string -> 7
+// (FUN_00f12d54), list -> 9 (FUN_00f12db4), map -> 10 (FUN_00f12e78).
+// Game-side readers: bool 0xf082f0, int 0xf08408, number 0xf0851c, string
+// 0xf0873c, bytes 0xf08a28, list 0xf08bcc, map 0xf08d10; a missing key reads
+// as 0 / "".
+message Value {
+  oneof kind {
+    // inferred. Varint written sign-extended (int32 or enum); never observed.
+    int32 null_value = 1;
+    // inferred name. Seen on the wire: `rating_enabled`, `retired`.
+    bool boolean_value = 2;
+    // inferred name. int64 varint; -1 is sent as ten 0xff.. bytes. Seen:
+    // `ussid`, `p2p_sid`, `status`.
+    int64 integer_value = 3;
+    // inferred name. fixed32. What the client writes for its own floats
+    // (`rating_point_raw_value`).
+    float float_value = 4;
+    // inferred name. fixed64. Accepted by the client for `Rating` (ugcstore)
+    // and for `ratings` in @@RefereeResult.
+    double double_value = 5;
+    // inferred name. Serialized by the Timestamp serializer main+0x11ddd08.
+    // NOT a struct: nested maps are field 10.
+    google.protobuf.Timestamp timestamp_value = 6;
+    // inferred name. UTF-8 checked.
+    string string_value = 7;
+    // inferred name. Not UTF-8 checked. Seen: `play_history_key`, `rs`, `pl`.
+    bytes bytes_value = 8;
+    // inferred name. Seen: `users`, `result`.
+    ArrayValue array_value = 9;
+    // inferred name. Seen: `ussid_map`, `option`, `ratings`.
+    MapValue map_value = 10;
+    // inferred. UTF-8 checked string; never observed (a document reference in
+    // the Firestore model this type follows).
+    string reference_value = 11;
+  }
+}
+
+// Serializer main+0xf1ac60.
+message ArrayValue {
+  repeated Value values = 1;   // inferred name
+}
+
+// Serializer main+0xf1b700; map entry writer main+0xf1b9b4 (entry class
+// main+0xf1c9d8: 1 key, 2 Value). Also the type of Document.fields and of the
+// matchmaking / leaderboard / presence attribute maps.
+message MapValue {
+  map<string, Value> fields = 1;   // inferred name
+}
+
+// google.rpc.Status. Serializer main+0xf15680; the UTF-8 check names the field
+// "google.rpc.Status.message", so this one is the real type. Local copy
+// because protoc does not ship google/rpc/status.proto.
+message Status {
+  int32 code = 1;
+  string message = 2;
+  repeated google.protobuf.Any details = 3;
+}

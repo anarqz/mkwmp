@@ -1,90 +1,513 @@
-// Recovered from mkw-recomp main.bin. Field numbers verified; names inferred.
-// Serializer addresses: see docs/NETCODE.md section 2.
+// nn.npln.matchmaking.v1: automatch tickets, private rooms, room ids.
+// Recovered from mkw-recomp main.bin. Message classes (serializer = vtable
+// slot 12):
+//   game session service  vtables main+0x30ff328..0x30ffc28 (19 classes)
+//   matchmaker            vtables main+0x30ffca8..0x30ffe28 (4 classes)
+//   resources             vtables main+0x30ffea8..0x3100638 (16 classes)
+// GameSessionService stub constructor main+0x14180ac; per-method stub
+// references are listed in docs/contracts/rpcs.tsv.
+//
+// Field numbers and wire types come from the serializers named on each
+// message. Names are inferred (the binary has no descriptors) unless a
+// comment says otherwise. "captured" = seen in client frames logged by the
+// reference server; "live" = accepted by the game. Consumer analysis:
+// docs/RE-MAP.md section 3.
+//
+// There is no Leave or Update RPC: a player leaves by ending the Gamesync
+// KeepUserSession stream. ListUserSessions and GetUserSession are in the stub
+// but have no caller and no message classes, so they have no contract.
 syntax = "proto3";
 
 package nn.npln.matchmaking.v1;
 
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "nn/npln/gamesync/v1/values.proto";
+
+// Resource names (builders main+0x13eb220..0x13ebae0):
+//   tenants/current                                   parent
+//   tenants/current/users/current                     the calling user
+//   tenants/<t>/matchmakingConfigs/<config>           Normal24, Battle24,
+//       Survival24, World96, Attraction6, Streamer, Private24 (rooms)
+//   tenants/<t>/matchmakingTickets/<id>
+//   tenants/<t>/gameSessionCreationTickets/<id>
+//   tenants/<t>/gameSessions/<id>
+//   tenants/<t>/gameSessions/<g>/userSessions/<u>
+//   tenants/<t>/GameSessionShortAliases/<room id>     (capital G, plural)
+//   tenants/<t>/gameSessionSearchConfigs/<name>
 
 service Matchmaker {
+  // live. The reply needs only `name`.
   rpc CreateMatchmakingTicket(CreateMatchmakingTicketRequest) returns (MatchmakingTicket);
+  // live. Every message replaces the client's copy of the ticket; only the
+  // last state counts once the stream ends. End every stream with a final
+  // state (MATCHED, TIMED_OUT, FAILED, CANCELLED or DECLINED) and OK
+  // trailers: OK without a final state is "Unknown error" (2321-0384). The
+  // client gives up after 150 s without a message.
   rpc TrackMatchmakingTicket(TrackMatchmakingTicketRequest) returns (stream MatchmakingTicket);
+  // Sent when the player backs out of a search (callback FUN_01392a60).
+  // The client does not read the reply; its class was not identified
+  // (inferred Empty). Answer, then finish the Track stream with CANCELLED.
+  rpc CancelMatchmakingTicket(CancelMatchmakingTicketRequest) returns (google.protobuf.Empty);
+  // Sent only in reaction to state ACCEPTANCE_REQUIRED. Reply class not
+  // identified (inferred Empty).
+  rpc CreateAcceptance(CreateAcceptanceRequest) returns (google.protobuf.Empty);
 }
 
+service GameSessionService {
+  // Private room, step 1. The reply needs only `name`.
+  rpc CreateGameSessionCreationTicket(CreateGameSessionCreationTicketRequest) returns (GameSessionCreationTicket);
+  // Private room, step 2. Finish with state CREATED carrying game_session
+  // and one MatchedPlayer per local user, then OK trailers. The client
+  // gives up after 120 s without a message.
+  rpc TrackGameSessionCreationTicket(TrackGameSessionCreationTicketRequest) returns (stream GameSessionCreationTicket);
+  // 120 s deadline or user cancel. Reply class not identified (inferred Empty).
+  rpc CancelGameSessionCreationTicket(CancelGameSessionCreationTicketRequest) returns (google.protobuf.Empty);
+  // Join by Room ID, after GetGameSessionShortAlias.
+  rpc GetGameSession(GetGameSessionRequest) returns (GameSession);
+  // Friend list: the sessions named by friends' presence attribute
+  // `SessionId`, at most every 10 s.
+  rpc BatchGetGameSessions(BatchGetGameSessionsRequest) returns (BatchGetGameSessionsResponse);
+  rpc QueryGameSessions(QueryGameSessionsRequest) returns (QueryGameSessionsResponse);
+  // Errors are gRPC statuses; there is no in-band "wrong password".
+  rpc JoinGameSession(JoinGameSessionRequest) returns (JoinGameSessionResponse);
+  // Join through a reservation (companion flow).
+  rpc IssueMatchmakingIdToken(IssueMatchmakingIdTokenRequest) returns (IssueMatchmakingIdTokenResponse);
+  rpc IssueUserDelegationToken(IssueUserDelegationTokenRequest) returns (IssueUserDelegationTokenResponse);
+  // Room ID: the server invents the id and returns it in `name`.
+  rpc CreateGameSessionShortAlias(CreateGameSessionShortAliasRequest) returns (GameSessionShortAlias);
+  // Called twice per join by id (check, then join). NOT_FOUND when unknown.
+  rpc GetGameSessionShortAlias(GetGameSessionShortAliasRequest) returns (GameSessionShortAlias);
+  // live. After a session is obtained, before Gamesync.
+  rpc AllocateIceServerSet(AllocateIceServerSetRequest) returns (IceServerSet);
+  // live with an empty reply. Before automatch / create / join.
+  rpc ListLatencyMeasurementServers(ListLatencyMeasurementServersRequest) returns (ListLatencyMeasurementServersResponse);
+}
+
+// ------------------------------------------------------------- matchmaker
+
+// Serializer main+0x13febe0.
 message CreateMatchmakingTicketRequest {
-  string parent = 1;              // "tenants/current"
+  // captured: "tenants/current".
+  string parent = 1;
+  // captured: config (2) and one Player (4).
   MatchmakingTicket ticket = 2;
+  // Strings supplied by the game (FUN_0223b418); content not identified.
+  repeated string unknown_3 = 3;
 }
 
+// Serializer main+0x13ffcc0.
 message TrackMatchmakingTicketRequest {
-  string name = 1;                // "tenants/current/matchmakingTickets/<uuid>"
-  string user = 2;                // "tenants/current/users/current"
+  // captured: "tenants/current/matchmakingTickets/<id>".
+  string name = 1;
+  // captured: ["tenants/current/users/current"] (FUN_013de500).
+  repeated string users = 2;   // inferred name
+  repeated string unknown_3 = 3;
+  repeated string unknown_4 = 4;
 }
 
-// Serializer main+0x1408a40. Create reply needs only `name`.
+// Serializer main+0x1400938.
+message CancelMatchmakingTicketRequest {
+  // "tenants/current/matchmakingTickets/<id>".
+  string name = 1;
+}
+
+// Serializer main+0x1401240. Builder FUN_013d7380.
+message CreateAcceptanceRequest {
+  // Ticket name.
+  string parent = 1;   // inferred name
+  Acceptance acceptance = 2;
+}
+
+// Serializer main+0x140f3c0.
+message Acceptance {
+  string name = 1;                 // inferred
+  repeated string unknown_2 = 2;
+  // The client sends true when it has no acceptance handler.
+  bool accepted = 3;               // inferred name
+  repeated string unknown_4 = 4;
+}
+
+// Serializer main+0x1408a40, parser main+0x14081a0. Consumer FUN_0138fea0.
 message MatchmakingTicket {
   string name = 1;
-  string config = 2;              // ".../matchmakingConfigs/Normal24"
-  bytes unknown_3 = 3;            // {1 str, 2 str, 3 varint}, main+0x140a0d8
+  // "tenants/<t>/matchmakingConfigs/<config>".
+  string config = 2;   // inferred name
+  // Read only when state == FAILED.
+  FailureCause failure = 3;   // inferred name
   repeated Player players = 4;
-  int32 state = 5;                // 3 = session found
+  MatchmakingTicketState state = 5;
+  // Read when state == MATCHED. Every local user must be listed with a
+  // parseable user_session, or the client reports FAILED_PRECONDITION
+  // (2321-3072, check main+0x138dea0).
   repeated MatchedPlayer matched_players = 6;
+  // Read when state == MATCHED.
   GameSession game_session = 7;
+  // google.rpc.Status (serializer main+0xf15680); not read by the client.
+  nn.npln.gamesync.v1.Status unknown_8 = 8;
+  // Varint; not read by the client.
+  int32 unknown_9 = 9;
 }
 
-// main+0x140d68c
+// Final states are decided by the switch at main+0x139183c once the stream
+// has ended with OK; state 7 is handled per message.
+enum MatchmakingTicketState {
+  MATCHMAKING_TICKET_STATE_UNSPECIFIED = 0;
+  // 1 and 2 have no client code: "not final yet". Names unknown.
+  MATCHMAKING_TICKET_STATE_PENDING_1 = 1;
+  MATCHMAKING_TICKET_STATE_PENDING_2 = 2;
+  // Success: game_session and matched_players are converted.
+  MATCHMAKING_TICKET_STATE_MATCHED = 3;
+  // "The request has been timed out." Result code 4.
+  MATCHMAKING_TICKET_STATE_TIMED_OUT = 4;
+  // "The request has failed. cause message: <failure.message>". Result code
+  // = failure.code.
+  MATCHMAKING_TICKET_STATE_FAILED = 5;
+  // "The request has been cancelled." Result code 1; treated as a user cancel.
+  MATCHMAKING_TICKET_STATE_CANCELLED = 6;
+  // Not final. The client answers with CreateAcceptance (accepted = true
+  // when the game installed no handler). Do not send unless CreateAcceptance
+  // is implemented.
+  MATCHMAKING_TICKET_STATE_ACCEPTANCE_REQUIRED = 7;
+  // "The match has been declined." Result code 10.
+  MATCHMAKING_TICKET_STATE_DECLINED = 8;
+}
+
+// Serializer main+0x140a0d8.
+message FailureCause {
+  string unknown_1 = 1;
+  // Shown in the client's failure text.
+  string message = 2;   // inferred name
+  // gRPC-style status code the client reports.
+  int32 code = 3;       // inferred name
+}
+
+// Serializer main+0x140d68c.
 message Player {
+  // captured: "tenants/current/users/current" from the client. Peers need
+  // the resolved "tenants/<t>/users/<id>".
   string user = 1;
-  Attributes attributes = 2;
-  map<string, string> properties = 3;   // type of map value unverified
+  // captured keys: rom_id (string), batching_key (string), course_id (int).
+  nn.npln.gamesync.v1.MapValue attributes = 2;
+  // captured empty.
+  Latencies latencies = 3;   // inferred name
   string unknown_4 = 4;
 }
 
-// main+0x140c708. Join check main+0x138dea0 needs user_session.
-message MatchedPlayer {
-  Player player = 1;
-  string user_session = 2;        // ".../gameSessions/<g>/userSessions/<u>"
-  string user_session_id = 3;     // Gamesync document "__us/<id>"
+// Serializer main+0x140e2a0; map entry writer main+0x140e554. The entry
+// value is written as {1: int64 varint, 2: int32 varint} with the layout of
+// a protobuf well-known time type; Duration and Timestamp are identical on
+// the wire. Meaning inferred: measured latency per latency server.
+message Latencies {
+  map<string, google.protobuf.Duration> values = 1;   // inferred name
 }
 
-// main+0x140b440
+// Serializer main+0x140c708.
+message MatchedPlayer {
+  Player player = 1;
+  // "tenants/<t>/gameSessions/<g>/userSessions/<u>". Must parse.
+  string user_session = 2;   // inferred name
+  // live: the id the client then passes to Gamesync IssueToken (field 2)
+  // and listens on as "docs/__us/<id>".
+  string user_session_id = 3;   // inferred name
+}
+
+// ----------------------------------------------------------- game session
+
+// Serializer main+0x140b440, converter main+0x13dc320 (docs/RE-MAP.md 3.4).
 message GameSession {
-  string name = 1;                // "tenants/<t>/gameSessions/<uuid>"
+  // "tenants/<t>/gameSessions/<id>". Must parse.
+  string name = 1;
+  // int32, copied to the client's session info. Meaning inferred: current
+  // player count.
   int32 unknown_2 = 2;
+  // int32, copied. Meaning inferred: maximum player count.
   int32 unknown_3 = 3;
+  // bool, copied. Meaning inferred: open / joinable.
   bool unknown_4 = 4;
+  // bool, copied. Meaning inferred: searchable.
   bool unknown_5 = 5;
-  string unknown_6 = 6;           // "*" sets a flag
+  // The creator sends the room password here (builder main+0x136dbc8).
+  // Reading, the client only tests == "*" ("has a password"). Never echo
+  // the real password: send "*" or "".
+  string password = 6;   // inferred name
+  // Varint; not copied by the client.
   int32 unknown_7 = 7;
-  string gamesync_host = 8;       // verified: channel target host
-  uint32 gamesync_port = 9;       // verified: channel target port
+  // live: Gamesync channel host.
+  string gamesync_host = 8;   // inferred name
+  // live: Gamesync channel port (read as u16).
+  uint32 gamesync_port = 9;   // inferred name
+  // Copied; never compared with the clock. The reference server sends
+  // now + 600 s.
   google.protobuf.Timestamp unknown_10 = 10;
-  Attributes attributes = 11;
+  // Creator's attributes: rom_id, course_id, user_name.
+  nn.npln.gamesync.v1.MapValue attributes = 11;
   repeated Member members = 12;
 }
 
-// main+0x1405fec
+// Serializer main+0x1405fec, converter FUN_013e94c8.
 message Member {
-  string user = 1;
-  string user_session = 2;
-  map<string, string> properties = 3;
+  // "tenants/<t>/gameSessions/<g>/userSessions/<u>": parsed with the
+  // user-session name parser (main+0x13ea200).
+  string user_session = 1;   // inferred name
+  // "tenants/<t>/users/<u>": parsed with the user parser (main+0xf183d0).
+  string user = 2;           // inferred name
+  Latencies latencies = 3;   // inferred name
   google.protobuf.Timestamp unknown_4 = 4;
+  // Varint enum; values 1 and 2 are converted.
   int32 unknown_5 = 5;
   string unknown_6 = 6;
-  Attributes attributes = 7;
+  nn.npln.gamesync.v1.MapValue attributes = 7;
 }
 
-message Attributes {
-  repeated Entry entries = 1;
-  message Entry {
-    string key = 1;
-    Value value = 2;
-  }
+// Serializer main+0x13ed2c0. Builder FUN_0136d600.
+message CreateGameSessionCreationTicketRequest {
+  // "tenants/current".
+  string parent = 1;
+  // config = ".../matchmakingConfigs/Private24", players, and game_session
+  // {6: password or "", 11: attributes rom_id / course_id / user_name}.
+  GameSessionCreationTicket ticket = 2;
+  // Strings supplied by the game (FUN_0223b418); content not identified.
+  repeated string unknown_3 = 3;
+  bool unknown_4 = 4;
+  string unknown_5 = 5;
 }
 
-// Seen: int (3), double (5), string (7).
-message Value {
-  int64 int_value = 3;
-  double double_value = 5;
-  string string_value = 7;
+// Serializer main+0x13ee540.
+message TrackGameSessionCreationTicketRequest {
+  // "tenants/current/gameSessionCreationTickets/<id>".
+  string name = 1;
+  repeated string unknown_2 = 2;
+  // ["tenants/current/users/current"] (FUN_013ddf08).
+  repeated string users = 3;   // inferred name
+  repeated string unknown_4 = 4;
+}
+
+// Serializer main+0x13ef1b8.
+message CancelGameSessionCreationTicketRequest {
+  string name = 1;
+}
+
+// Serializer main+0x14032e0. Consumer FUN_01395860.
+message GameSessionCreationTicket {
+  // "tenants/<t>/gameSessionCreationTickets/<id>".
+  string name = 1;
+  string config = 2;   // inferred name
+  repeated Player players = 3;
+  GameSessionCreationTicketState state = 4;
+  // Read when state == CREATED; one per local user.
+  repeated MatchedPlayer matched_players = 5;
+  // Read when state == CREATED.
+  GameSession game_session = 6;
+}
+
+// Numbering differs from MatchmakingTicketState (done is 2 here, 3 there).
+enum GameSessionCreationTicketState {
+  GAME_SESSION_CREATION_TICKET_STATE_UNSPECIFIED = 0;
+  // No client code: "not final yet". Name unknown.
+  GAME_SESSION_CREATION_TICKET_STATE_PENDING_1 = 1;
+  // Success.
+  GAME_SESSION_CREATION_TICKET_STATE_CREATED = 2;
+  // "The request has been cancelled." Result code 1.
+  GAME_SESSION_CREATION_TICKET_STATE_CANCELLED = 3;
+  // "The request has been timed out." Result code 4.
+  GAME_SESSION_CREATION_TICKET_STATE_TIMED_OUT = 4;
+  // "The request has failed." Result code 13.
+  GAME_SESSION_CREATION_TICKET_STATE_FAILED = 5;
+}
+
+// Serializer main+0x13ef970.
+message GetGameSessionRequest {
+  // "tenants/current/gameSessions/<id>".
+  string name = 1;
+  // Varint enum, values 1..3.
+  int32 view = 2;   // inferred name
+}
+
+// Serializer main+0x13f04a0.
+message BatchGetGameSessionsRequest {
+  string parent = 1;
+  repeated string names = 2;
+  // Varint enum, as in GetGameSessionRequest.
+  int32 view = 3;   // inferred name
+}
+
+// Serializer main+0x13f0ea0. Leave unknown sessions out.
+message BatchGetGameSessionsResponse {
+  repeated GameSession game_sessions = 1;
+}
+
+// Serializer main+0x13f2020.
+message QueryGameSessionsRequest {
+  string parent = 1;
+  int32 unknown_2 = 2;
+  // "tenants/current/gameSessionSearchConfigs/<name>".
+  string search_config = 3;   // inferred name
+  int32 unknown_4 = 4;
+  // Never set by the client.
+  int32 unknown_5 = 5;
+  nn.npln.gamesync.v1.MapValue attributes = 6;
+  repeated string users = 7;   // inferred name
+  int32 page_size = 8;         // inferred name
+  string page_token = 9;       // inferred name
+}
+
+// Serializer main+0x13f32c0.
+message QueryGameSessionsResponse {
+  repeated GameSession game_sessions = 1;
+  string next_page_token = 2;   // inferred name
+}
+
+// Serializer main+0x13f47e0. Builder FUN_013b2da0.
+message JoinGameSessionRequest {
+  // "tenants/current/gameSessions/<id>".
+  string name = 1;
+  // The string typed by the player (join params +0x20).
+  string password = 2;   // inferred name
+  // Own player, then extra local users.
+  repeated Player players = 3;
+  // Strings supplied by the game; content not identified.
+  repeated string unknown_4 = 4;
+  // ["tenants/current/users/current"].
+  repeated string users = 5;   // inferred name
+}
+
+// Serializer main+0x13f5960.
+message JoinGameSessionResponse {
+  // One per joining local user (same check as the automatch reply).
+  repeated MatchedPlayer matched_players = 1;
+  GameSession game_session = 2;
+}
+
+// Serializer main+0x13f6b80.
+message IssueMatchmakingIdTokenRequest {
+  // "tenants/current/gameSessions/<reservation>".
+  string name = 1;
+  repeated string users = 2;       // inferred name
+  repeated string unknown_3 = 3;
+  repeated string unknown_4 = 4;
+}
+
+// Serializer main+0x13f79c0. Same layout as JoinGameSessionResponse.
+message IssueMatchmakingIdTokenResponse {
+  repeated MatchedPlayer matched_players = 1;
+  GameSession game_session = 2;
+}
+
+// Serializer main+0x13f89c0. Field 5 per docs/RE-MAP.md 2.2.
+message IssueUserDelegationTokenRequest {
+  string parent = 1;
+  string unknown_2 = 2;   // a user resource
+  string unknown_3 = 3;   // a user resource
+  nn.npln.gamesync.v1.MapValue attributes = 4;
+  // Packed varint enum, values 1..3.
+  repeated int32 unknown_5 = 5;
+}
+
+// Serializer main+0x13f973c.
+message IssueUserDelegationTokenResponse {
+  UserDelegationToken token = 1;
+}
+
+// Serializer main+0x1404b80. Field 4 per docs/RE-MAP.md 2.2.
+message UserDelegationToken {
+  string unknown_1 = 1;
+  string unknown_2 = 2;
+  nn.npln.gamesync.v1.MapValue attributes = 3;
+  // Packed varint enum.
+  repeated int32 unknown_4 = 4;
+  string unknown_5 = 5;
+  // Serialized by the Duration serializer main+0x11b2768.
+  google.protobuf.Duration unknown_6 = 6;
+}
+
+// ---------------------------------------------------------------- room id
+
+// Serializer main+0x13fa1c0.
+message CreateGameSessionShortAliasRequest {
+  // "tenants/current".
+  string parent = 1;
+  // The client fills game_session only.
+  GameSessionShortAlias alias = 2;   // inferred name
+}
+
+// Serializer main+0x13faad8.
+message GetGameSessionShortAliasRequest {
+  // "tenants/current/GameSessionShortAliases/<typed id>".
+  string name = 1;
+}
+
+// Serializer main+0x1407230, converter FUN_013dca4c.
+message GameSessionShortAlias {
+  // "tenants/<t>/GameSessionShortAliases/<room id>": the last component is
+  // the Room ID shown to players. It is an opaque string to the client.
+  string name = 1;
+  // "tenants/<t>/gameSessions/<id>".
+  string game_session = 2;   // inferred name
+  // Meaning inferred: expiry.
+  google.protobuf.Timestamp expire_time = 3;   // inferred name
+}
+
+// -------------------------------------------------------------------- ICE
+
+// Serializer main+0x13fb380. captured: {1: "tenants/current"}.
+message AllocateIceServerSetRequest {
+  string parent = 1;      // inferred name
+  string unknown_2 = 2;
+}
+
+// Serializer main+0x1410640, converter FUN_013cf8e0, consumer FUN_016297a0.
+// live: every field below is what the reference server sends.
+message IceServerSet {
+  // live: "tenants/current/iceServerSets/local".
+  string name = 1;
+  // live: the TURN host and port again.
+  IceEndpoint unknown_2 = 2;
+  repeated IceServer ice_servers = 3;   // inferred name
+  // Serialized by the Duration serializer main+0x11b2768. live: 3600 s.
+  google.protobuf.Duration unknown_4 = 4;
+  // live: now + 3600 s. Meaning inferred: expiry.
+  google.protobuf.Timestamp expire_time = 5;   // inferred name
+  // Duration serializer. live: 3600 s.
+  google.protobuf.Duration unknown_6 = 6;
+}
+
+// Serializer main+0x14117fc.
+message IceEndpoint {
+  string host = 1;       // inferred name
+  uint32 port = 2;       // inferred name
+  int32 unknown_3 = 3;
+}
+
+// Serializer main+0x14121fc.
+message IceServer {
+  string host = 1;       // inferred name
+  uint32 port = 2;       // inferred name
+  // live: 1 = TURN.
+  int32 type = 3;        // inferred name
+  string username = 4;   // inferred name
+  string credential = 5; // inferred name
+}
+
+// Serializer main+0x13fbd94. captured: {1: "tenants/current", 2: 20}.
+message ListLatencyMeasurementServersRequest {
+  string parent = 1;
+  int32 page_size = 2;     // inferred name
+  string page_token = 3;   // inferred name
+}
+
+// Serializer main+0x13fc8c0. live: an empty reply is accepted.
+message ListLatencyMeasurementServersResponse {
+  repeated LatencyMeasurementServer servers = 1;   // inferred name
+  string next_page_token = 2;                      // inferred name
+}
+
+// Serializer main+0x1412f7c.
+message LatencyMeasurementServer {
+  string unknown_1 = 1;
+  string unknown_2 = 2;
+  string unknown_3 = 3;
+  int32 unknown_4 = 4;
+  int32 unknown_5 = 5;
 }

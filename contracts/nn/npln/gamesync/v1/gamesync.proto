@@ -1,99 +1,366 @@
-// Recovered from mkw-recomp main.bin. Field numbers verified; names inferred.
-// Stub main+0x12bae9c; message catalogue in docs/NETCODE.md section 4.
+// nn.npln.gamesync.v1: the document store behind a game session.
+// Recovered from mkw-recomp main.bin. Message classes: vtables
+// main+0x30f1cd0..0x30f2cd0 (33 classes, serializer = vtable slot 12);
+// stub main+0x12bae9c.
+//
+// Field numbers and wire types come from the serializers named on each
+// message. Names are inferred (the binary has no descriptors) unless a
+// comment says otherwise. "captured" = seen in client frames logged by the
+// reference server (scratch/run-lan*.log). "live" = accepted by the game.
+//
+// The model follows Google Firestore (documents, writes, field transforms,
+// listen targets), renumbered.
+//
+// Only the five RPCs below have call sites in the game. ReadDocuments,
+// ListDocuments, QueryCollectionIds, BeginTransaction, CommitTransaction,
+// RollbackTransaction and CreateRound exist in the stub but have no caller
+// and no message classes in the binary, so they have no contract.
 syntax = "proto3";
 
 package nn.npln.gamesync.v1;
 
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
-import "nn/npln/auth/v1/auth.proto";
+import "nn/npln/gamesync/v1/values.proto";
 
 service Gamesync {
-  rpc IssueToken(IssueTokenRequest) returns (IssueTokenResponse);          // live
+  // live.
+  rpc IssueToken(IssueTokenRequest) returns (IssueTokenResponse);
+  // Shape only; same messages as IssueToken.
   rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
-  // Bidi, same message both ways (class 8, main+0x12a8064). Verified live
-  // 2026-11-13: client subscribes Ops; server answers Change ADDED + CURRENT.
-  rpc KeepUserSession(stream SessionMessage) returns (stream SessionMessage);
+  // live. The response is the Document itself (FUN_012a0c00 parses its
+  // field 1 as the document name). A document that does not exist is
+  // answered with an empty message by the reference server.
+  rpc GetDocument(GetDocumentRequest) returns (Document);
+  // live.
+  rpc WriteDocuments(WriteDocumentsRequest) returns (WriteDocumentsResponse);
+  // live. Bidi; reader FUN_01271c00, call site main+0x1273d20.
+  rpc KeepUserSession(stream KeepUserSessionRequest) returns (stream KeepUserSessionResponse);
 }
 
-// class 8 (main+0x12a8064)
-message SessionMessage {
-  string session = 1;            // "userSessions/current"
-  Change change = 2;             // server -> client
-  repeated Op ops = 3;           // client -> server
+// ---------------------------------------------------------------- tokens
+
+// Serializer main+0x12a1ee0. Both fields are UTF-8 strings.
+message IssueTokenRequest {
+  // inferred name. captured: "userSessions/<user id>".
+  string name = 1;
+  // inferred name. captured: the user-session id the matchmaker handed out
+  // (matchmaking MatchedPlayer field 3).
+  string user_session_id = 2;
 }
 
-// class 31 (main+0x12b8840)
-message Op {
-  bytes target = 1;              // serialized Target
-  int32 kind = 2;                // inferred
-  Status status = 3;             // google.rpc.Status shape (main+0xf15680)
+// Serializer main+0x12a26fc.
+message IssueTokenResponse {
+  Token token = 1;
 }
 
+// Serializer main+0x12a3120. Same layout as IssueTokenRequest; not captured.
+message RefreshTokenRequest {
+  string name = 1;            // inferred
+  string refresh_token = 2;   // inferred
+}
+
+// Serializer main+0x12a393c.
+message RefreshTokenResponse {
+  Token token = 1;
+}
+
+// Serializer main+0x12b94c4, parser main+0x12b9100. Same layout as
+// nn.npln.auth.v1.Token but a separate class in the binary.
+message Token {
+  // inferred name. live: the request's `name` echoed back.
+  string name = 1;
+  string access_token = 2;    // inferred name
+  string refresh_token = 3;   // inferred name
+  // Serialized by the Duration serializer main+0x11b2768.
+  google.protobuf.Duration expires_in = 4;   // inferred name
+}
+
+// -------------------------------------------------------------- documents
+
+// Serializer main+0x12ab0e8, parser main+0x12aac80.
+message Document {
+  // "docs/<collection>/<id>[/<collection>/<id>...]".
+  string name = 1;
+  MapValue fields = 2;
+  google.protobuf.Timestamp create_time = 3;   // inferred name
+  google.protobuf.Timestamp update_time = 4;   // inferred name
+}
+
+// Serializer main+0x12a4510. captured: only `name` is sent.
+message GetDocumentRequest {
+  string name = 1;
+  // inferred name. google.protobuf.FieldMask (serializer main+0x12012a0).
+  google.protobuf.FieldMask mask = 2;
+  // inferred name. bytes (no UTF-8 check); never observed.
+  bytes transaction = 3;
+}
+
+// ----------------------------------------------------------------- writes
+
+// Serializer main+0x12a5420. Built by FUN_01298560.
+message WriteDocumentsRequest {
+  repeated Write writes = 1;
+  // Writes the server must apply when this user session ends.
+  repeated DefermentOp deferment_ops = 2;   // inferred name
+}
+
+// Serializer main+0x12a6020. Converter FUN_012a00a0.
+message WriteDocumentsResponse {
+  // One per request write, same order.
+  repeated WriteResult write_results = 1;
+  google.protobuf.Timestamp commit_time = 2;   // inferred name
+}
+
+// Serializer main+0x12ae3a4. Oneof case at object +0x1c.
+message Write {
+  oneof operation {
+    // captured. Every game write.
+    Update update = 1;
+    // inferred name. A bare Document; never observed.
+    DocumentWrite set = 2;
+    // captured: the `upcsid` counter of docs/__pgn/<pgn>/__pus/<uid>.
+    Transform transform = 3;
+    // captured: docs/__pgn/All/__pus/<uid> on leave, and inside deferments.
+    Delete delete = 4;
+  }
+}
+
+// Serializer main+0x12b137c.
+message Update {
+  Document document = 1;
+  // google.protobuf.FieldMask (serializer main+0x12012a0). captured:
+  //   paths list the written fields, backtick-quoted ("`name`") -> merge
+  //     those fields into the stored document (the reference server also
+  //     removes a listed field that is absent from `document`);
+  //   ["*"] -> replace the whole document;
+  //   present but empty, with no fields -> touch only (@@KeepAlive);
+  //   absent -> replace (sent together with precondition exists = false).
+  google.protobuf.FieldMask update_mask = 2;   // inferred name
+  Precondition precondition = 3;               // inferred name
+}
+
+// Serializer main+0x12b1dbc.
+message DocumentWrite {
+  Document document = 1;
+}
+
+// Serializer main+0x12b26a0.
+message Transform {
+  // Document name.
+  string document = 1;   // inferred name
+  repeated FieldTransform field_transforms = 2;   // inferred name
+}
+
+// Serializer main+0x12b435c. Oneof case at object +0x24.
+// captured, in this order, for `upcsid`:
+//   {1: "`upcsid`", 6: "__upcsidn"}, {1, 4: Value{3: 20000}},
+//   {1, 3: Value{3: 1}}, {1, 7: "__upcsidn"}
+// i.e. a per-collection server counter named "__upcsidn", incremented by 1,
+// capped at 20000, whose result becomes the field value. The response
+// carries one transform result per FieldTransform.
+message FieldTransform {
+  // Backtick-quoted field path.
+  string field_path = 1;   // inferred name
+  oneof transform_type {
+    // inferred. Varint (enum); never observed.
+    int32 set_to_server_value = 2;
+    Value increment = 3;   // inferred name
+    Value maximum = 4;     // inferred name
+    // inferred; never observed.
+    Value minimum = 5;
+    // Meaning inferred: load the named server counter into the field.
+    string counter_load = 6;
+    // Meaning inferred: store the field back into the named server counter.
+    string counter_store = 7;
+    // UTF-8 string; never observed.
+    string unknown_8 = 8;
+  }
+}
+
+// Serializer main+0x12b2f60.
+message Delete {
+  // Document name.
+  string document = 1;   // inferred name
+  // Never observed.
+  Precondition precondition = 2;   // inferred name
+}
+
+// Serializer main+0x12b38dc. Oneof case at object +0x1c.
+message Precondition {
+  oneof condition_type {
+    // captured: false on create-if-absent writes (@@RefereeRequest,
+    // Global/Session).
+    bool exists = 1;
+    // inferred name; never observed.
+    google.protobuf.Timestamp update_time = 2;
+  }
+}
+
+// Serializer main+0x12b0430. Oneof case at object +0x1c.
+message WriteResult {
+  oneof result {
+    // live: the ack of an update write. Empty class main+0x12aef20.
+    UpdateResult update = 1;       // inferred name
+    // live: one Value per request FieldTransform (FUN_012a0440).
+    TransformResult transform = 2; // inferred name
+    // inferred name. Empty class main+0x12af280; never sent by the
+    // reference server.
+    DeleteResult delete = 3;
+  }
+}
+
+// Serializer main+0x12aef20 (no fields).
+message UpdateResult {}
+
+// Serializer main+0x12af860.
+message TransformResult {
+  repeated Value values = 1;   // inferred name
+}
+
+// Serializer main+0x12af280 (no fields).
+message DeleteResult {}
+
+// ------------------------------------------------------------- deferments
+
+// Serializer main+0x12b58a4. Oneof case at object +0x1c.
+message DefermentOp {
+  oneof operation {
+    // captured.
+    SetDeferment set = 1;        // inferred name
+    // Never observed.
+    RemoveDeferment remove = 2;  // inferred name
+  }
+}
+
+// Serializer main+0x12b625c.
+message SetDeferment {
+  Deferment deferment = 1;
+}
+
+// Serializer main+0x12b68f8.
+message RemoveDeferment {
+  // Deferment name.
+  string name = 1;   // inferred name
+}
+
+// Serializer main+0x12abfa0. Name builder FUN_012a0f70.
+// "Do these writes when my user session ends" (stream closed or expired).
+// The client re-registers the same names every session; registration must
+// be idempotent.
+message Deferment {
+  // "userSessions/current/deferments/<document path without docs/>".
+  string name = 1;
+  // captured: one Delete of the matching document.
+  repeated Write writes = 2;
+}
+
+// -------------------------------------------------------- KeepUserSession
+
+// Serializer main+0x12a6f98. Oneof case at object +0x24.
+message KeepUserSessionRequest {
+  // captured: "userSessions/current" in every frame.
+  string name = 1;
+  oneof operation {
+    // UTF-8 string; never observed.
+    string unknown_2 = 2;
+    // captured: start listening.
+    AddTarget add_target = 3;
+    // captured: stop listening.
+    RemoveTarget remove_target = 4;
+  }
+}
+
+// Serializer main+0x12a8bfc.
+message AddTarget {
+  Target target = 1;
+}
+
+// Serializer main+0x12a9198.
+message RemoveTarget {
+  // captured: "userSessions/current/targets/<n>".
+  string name = 1;
+}
+
+// Serializer main+0x12ace70. Oneof case at object +0x24.
 message Target {
-  string name = 1;               // "userSessions/current/targets/1"
-  DocumentsTarget documents = 2;
+  // captured: "userSessions/current/targets/<n>", n counted per stream from 1.
+  string name = 1;
+  oneof target_type {
+    // captured: one document, e.g. "docs/__us/<user id>".
+    DocumentsTarget documents = 2;
+    // captured: a collection, e.g. "docs/__us" (no trailing slash): the
+    // direct children of that path.
+    CollectionTarget collection = 3;   // inferred name
+  }
 }
 
+// Serializer main+0x12b6f40.
 message DocumentsTarget {
-  string document = 1;           // "docs/__us/<user-id>"
+  repeated string documents = 1;
 }
 
-// class 30 (main+0x12b7d00)
+// Serializer main+0x12b7558.
+message CollectionTarget {
+  string parent = 1;   // inferred name
+}
+
+// Serializer main+0x12a8064. Oneof case at object +0x1c; reader
+// FUN_01271c00 handles cases 2 and 3 only.
+//
+// The reference server sends field 1 (the session name) together with
+// field 2 or 3 in one message. All three are members of one oneof, so the
+// client keeps only the last one; sending the change or the op alone is
+// equivalent.
+message KeepUserSessionResponse {
+  oneof event {
+    // UTF-8 string; not read by the client.
+    string unknown_1 = 1;
+    Change change = 2;
+    Op op = 3;
+  }
+}
+
+// Serializer main+0x12b7d00.
 message Change {
-  string target = 1;             // target name
-  int32 kind = 2;                // 1 = added, 3 = current (completes the listen)
+  // The decimal target number ("5" for ".../targets/5"); the client
+  // strtoul()s it to find the listener.
+  string target = 1;
+  ChangeKind kind = 2;
+  // REMOVED needs only `name`.
   Document document = 3;
 }
 
-// class 11 (main+0x12ab0e8)
-message Document {
-  string name = 1;
-  Fields fields = 2;             // main+0xf1b700
-  google.protobuf.Timestamp create_time = 3;
-  google.protobuf.Timestamp update_time = 4;
+// Consumer FUN_01271c00.
+enum ChangeKind {
+  CHANGE_KIND_UNSPECIFIED = 0;
+  // Snapshot with data (FUN_0126643c).
+  CHANGE_KIND_ADDED = 1;
+  // Same client path as ADDED.
+  CHANGE_KIND_MODIFIED = 2;
+  // Delivers a not-exists snapshot for Change.document.name (FUN_012663c0).
+  CHANGE_KIND_REMOVED = 3;
 }
 
-message Fields {
-  repeated Entry entries = 1;
-  message Entry {
-    string key = 1;
-    Value value = 2;
-  }
+// Serializer main+0x12b8840.
+message Op {
+  // The decimal target number, as in Change.target.
+  string target = 1;
+  OpKind kind = 2;
+  // Read for FAILED.
+  Status status = 3;
 }
 
-// Oneof, main+0xf19724. Field 10 (list) not yet typed.
-message Value {
-  oneof kind {
-    int64 int_value = 3;
-    double double_value = 5;
-    Fields struct_value = 6;
-    string string_value = 7;
-  }
+// Consumer FUN_01271c00. Value 3 is not handled by the client.
+enum OpKind {
+  OP_KIND_UNSPECIFIED = 0;
+  // Completes the client's pending add-target future.
+  OP_KIND_SUCCEEDED = 1;
+  // The target is in sync: the listener's "current" callback runs. The
+  // reference server sends CURRENT, then SUCCEEDED, after the initial
+  // ADDED changes.
+  OP_KIND_CURRENT = 2;
+  // Fails the target with Op.status.
+  OP_KIND_FAILED = 4;
 }
-
-// google.rpc.Status shape (main+0xf15680); local copy, details omitted.
-message Status {
-  int32 code = 1;
-  string message = 2;
-}
-
-// main+0x12a1ee0
-message IssueTokenRequest {
-  string unknown_1 = 1;
-  string unknown_2 = 2;
-}
-
-// main+0x12a26fc
-message IssueTokenResponse {
-  nn.npln.auth.v1.Token token = 1;
-}
-
-message RefreshTokenRequest {
-  string unknown_1 = 1;
-  string unknown_2 = 2;
-}
-
-message RefreshTokenResponse {
-  nn.npln.auth.v1.Token token = 1;
-}
-

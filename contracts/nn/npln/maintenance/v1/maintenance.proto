@@ -1,0 +1,60 @@
+// nn.npln.maintenance.v1: maintenance announcements, subscribed at sign-in.
+// Recovered from mkw-recomp main.bin. Message classes: vtables
+// main+0x30f80a0..0x30f82a0 (5 classes, serializer = vtable slot 12).
+//
+// Field numbers and wire types come from the serializers named on each
+// message. Names are inferred (the binary has no descriptors). The
+// response consumer was not analysed: everything below the request is
+// shape only.
+syntax = "proto3";
+
+package nn.npln.maintenance.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service MaintenanceScheduleService {
+  // live: the reference server sends one empty message and keeps the stream
+  // open; the game signs in normally.
+  rpc SubscribeMaintenanceSchedules(SubscribeMaintenanceSchedulesRequest) returns (stream SubscribeMaintenanceSchedulesResponse);
+}
+
+// Serializer main+0x13650f8.
+message SubscribeMaintenanceSchedulesRequest {
+  // captured: "tenants/current".
+  string parent = 1;   // inferred name
+}
+
+// Serializer main+0x1365bc4. Oneof case at object +0x1c.
+message SubscribeMaintenanceSchedulesResponse {
+  oneof response {
+    MaintenanceScheduleSnapshot snapshot = 1;   // inferred name
+    // Empty class main+0x1366580; meaning unknown.
+    MaintenanceScheduleNotice unknown_2 = 2;
+  }
+}
+
+// Serializer main+0x1366580 (no fields).
+message MaintenanceScheduleNotice {}
+
+// Serializer main+0x1366d00.
+message MaintenanceScheduleSnapshot {
+  // Serialized by the Timestamp serializer main+0x11ddd08.
+  google.protobuf.Timestamp unknown_1 = 1;
+  repeated MaintenanceSchedule schedules = 2;   // inferred name
+}
+
+// Serializer main+0x1367e24. Oneof case at object +0x44.
+message MaintenanceSchedule {
+  string unknown_1 = 1;
+  string unknown_2 = 2;
+  google.protobuf.Timestamp unknown_3 = 3;
+  google.protobuf.Timestamp unknown_4 = 4;
+  google.protobuf.Timestamp unknown_5 = 5;
+  // Four alternative UTF-8 strings.
+  oneof unknown_oneof {
+    string unknown_6 = 6;
+    string unknown_7 = 7;
+    string unknown_8 = 8;
+    string unknown_9 = 9;
+  }
+}

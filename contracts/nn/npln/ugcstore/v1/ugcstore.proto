@@ -1,25 +1,52 @@
+// nn.npln.ugcstore.v1: the player profile read at sign-in.
 // Recovered from mkw-recomp main.bin. Verified live for the profile read.
+//
+// Field numbers and wire types come from the serializers named on each
+// message. Names are inferred unless a comment says otherwise.
 syntax = "proto3";
 
 package nn.npln.ugcstore.v1;
 
-import "nn/npln/matchmaking/v1/matchmaking.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "nn/npln/gamesync/v1/values.proto";
 
 service Ugcstore {
+  // live. One result per requested name.
   rpc BulkGetDocuments(BulkGetDocumentsRequest) returns (stream BulkGetDocumentsResult);
 }
 
+// Serializer main+0x1491e60.
 message BulkGetDocumentsRequest {
-  repeated string names = 2;      // ".../documents/{normal,battle,survival}"
+  // captured: "tenants/current".
+  string parent = 1;   // inferred name
+  // captured: "tenants/current/documents/@@drppr_ga_scopes/<normal|battle|
+  // survival>/@@drppr_ga_users/<user id>/@@drppr_ga_profiles/Data".
+  repeated string names = 2;
+  // google.protobuf.FieldMask (serializer main+0x12012a0). captured: ["*"].
+  google.protobuf.FieldMask mask = 3;   // inferred name
+  // captured empty.
+  nn.npln.gamesync.v1.MapValue unknown_4 = 4;
 }
 
-// main+0x1492980
+// Serializer main+0x1492d78, parser main+0x1492980. Oneof case at object
+// +0x24.
 message BulkGetDocumentsResult {
-  Document document = 1;
+  oneof result {
+    // live.
+    Document document = 1;
+    // inferred: the name of a document that does not exist. Never sent by
+    // the reference server.
+    string missing = 2;
+  }
+  google.protobuf.Timestamp unknown_4 = 4;
 }
 
-// main+0x14903c0. The game reads double "Rating" (default 1500).
+// Serializer main+0x1490828, parser main+0x14903c0. The game reads the
+// double "Rating" (default 1500).
 message Document {
   string name = 1;
-  map<string, nn.npln.matchmaking.v1.Value> fields = 2;
+  nn.npln.gamesync.v1.MapValue fields = 2;
+  google.protobuf.Timestamp unknown_3 = 3;   // inferred: create time
+  google.protobuf.Timestamp unknown_4 = 4;   // inferred: update time
 }

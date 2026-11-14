@@ -1,0 +1,47 @@
+// nn.npln.leaderboard.v1: only what the game calls during sign-in.
+// Recovered from mkw-recomp main.bin. The binary keeps 11 leaderboard
+// message classes (vtables main+0x30f5748..0x30f5c48); only the two used by
+// UpdateHolder are declared here. The other 17 RPCs of the service
+// (docs/contracts/rpcs.tsv) have never been observed.
+//
+// Field numbers and wire types come from the serializers named on each
+// message. Names are inferred unless a comment says otherwise.
+syntax = "proto3";
+
+package nn.npln.leaderboard.v1;
+
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "nn/npln/gamesync/v1/values.proto";
+
+service LeaderboardService {
+  // live with an empty reply (the game continues signing in). The reply
+  // class was not identified; Holder is inferred from the request shape
+  // (update returns the resource). An empty Holder is what is verified.
+  rpc UpdateHolder(UpdateHolderRequest) returns (Holder);
+}
+
+// Serializer main+0x1306fc4.
+message UpdateHolderRequest {
+  // captured: {1: "tenants/current/holders/default", 3: "<player name>",
+  // 4: {}}.
+  Holder holder = 1;
+  // google.protobuf.FieldMask (serializer main+0x12012a0).
+  // captured: paths "display_name", "fields".
+  google.protobuf.FieldMask update_mask = 2;   // inferred name
+}
+
+// Serializer main+0x130ce0c. Names of fields 3 and 4 are the real ones (the
+// client sends them as field-mask paths).
+message Holder {
+  // captured: "tenants/current/holders/default".
+  string name = 1;
+  // 64-bit varint.
+  uint64 unknown_2 = 2;
+  string display_name = 3;
+  nn.npln.gamesync.v1.MapValue fields = 4;
+  string unknown_5 = 5;
+  string unknown_6 = 6;
+  google.protobuf.Timestamp unknown_7 = 7;
+  google.protobuf.Timestamp unknown_8 = 8;
+}
