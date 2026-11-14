@@ -206,7 +206,9 @@ impl Api {
         let v: serde_json::Value = res.json().await.unwrap_or_default();
         match (ok, v["pin"].as_str(), v["error"]["code"].as_str()) {
             (true, Some(pin), _) => Ok(pin.to_string()),
-            (_, _, Some("NAME_REGISTERED")) => Err(ApiError::Taken),
+            // A reserved gamertag is also someone's (the admin registered it for them): ask
+            // for its PIN the same way. A reserved one never registered fails at sign-in.
+            (_, _, Some("NAME_REGISTERED" | "NAME_RESERVED")) => Err(ApiError::Taken),
             _ => Err(ApiError::Refused(v["error"]["message"].as_str().unwrap_or("could not register").to_string())),
         }
     }

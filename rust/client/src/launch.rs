@@ -61,8 +61,27 @@ pub fn write_lobby_ca(game_dir: &Path, pem: Option<&str>) -> std::io::Result<()>
 }
 
 /// Start mkw.exe in the game directory.
-pub fn spawn_game(game_dir: &Path) -> std::io::Result<Child> {
-    Command::new(game_dir.join("mkw.exe")).arg("--play").current_dir(game_dir).spawn()
+/// Start the game: `launch_command` when set (e.g. through Proton on the Steam
+/// Deck, where the launcher itself is the Steam shortcut), else `mkw.exe --play`.
+/// The command runs in the game folder (`sh -c` on Unix, `cmd /C` on Windows).
+pub fn spawn_game(game_dir: &Path, launch_command: &str) -> std::io::Result<Child> {
+    let cmd = launch_command.trim();
+    if cmd.is_empty() {
+        return Command::new(game_dir.join("mkw.exe")).arg("--play").current_dir(game_dir).spawn();
+    }
+    #[cfg(unix)]
+    let mut c = {
+        let mut c = Command::new("sh");
+        c.arg("-c").arg(cmd);
+        c
+    };
+    #[cfg(windows)]
+    let mut c = {
+        let mut c = Command::new("cmd");
+        c.arg("/C").arg(cmd);
+        c
+    };
+    c.current_dir(game_dir).spawn()
 }
 
 #[cfg(test)]
@@ -81,6 +100,7 @@ mod tests {
             local_port: 47820,
             update: true,
             slot,
+            launch_command: String::new(),
             background: Default::default(),
         }
     }

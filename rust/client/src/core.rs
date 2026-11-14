@@ -255,7 +255,7 @@ impl Core {
         let mut game: Option<Child> = None;
         if cfg.launch {
             note("starting the game");
-            game = Some(launch::spawn_game(&cfg.game).map_err(|e| format!("starting mkw.exe: {e}"))?);
+            game = Some(launch::spawn_game(&cfg.game, &cfg.launch_command).map_err(|e| format!("starting mkw.exe: {e}"))?);
         } else {
             note("ready: start the game from Steam");
         }

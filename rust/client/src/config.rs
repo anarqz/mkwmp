@@ -42,6 +42,11 @@ pub struct ClientConfig {
     /// Loopback testing only: player two sets slot = 2.
     #[serde(default = "one")]
     pub slot: u8,
+    /// How to start the game when `launch` is on. Empty: `mkw.exe --play`.
+    /// Steam Deck (the launcher is the Steam shortcut): a script that runs the
+    /// game through Proton, e.g. "~/mkwmp/run-game.sh".
+    #[serde(default)]
+    pub launch_command: String,
     /// Tray, notifications and start-up behaviour (`[background]`).
     #[serde(default)]
     pub background: Background,
@@ -118,6 +123,7 @@ impl Default for ClientConfig {
             local_port: local_port(),
             update: true,
             slot: 1,
+            launch_command: String::new(),
             background: Background::default(),
         }
     }
