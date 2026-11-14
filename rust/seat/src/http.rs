@@ -26,10 +26,16 @@ pub fn system_clock() -> Clock {
     Arc::new(|| SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64)
 }
 
+/// Concurrent PIN hashes (each ~8 MiB and a few ms of one core).
+const HASH_SLOTS: usize = 4;
+
 #[derive(Clone)]
 pub struct AppState {
     roster: Arc<Mutex<Roster>>,
-    registry: Arc<Mutex<Registry>>,
+    registry: Arc<Registry>,
+    /// Argon2 hashes in flight (8 MiB each): a burst of registrations queues
+    /// here instead of exhausting memory or the async workers.
+    hashing: Arc<tokio::sync::Semaphore>,
     limiter: Arc<Mutex<Limiter>>,
     lobby_tokens: Arc<Vec<String>>,
     admin_token: Arc<Option<String>>,
@@ -46,7 +52,8 @@ impl AppState {
     ) -> Self {
         Self {
             roster: Arc::new(Mutex::new(roster)),
-            registry: Arc::new(Mutex::new(registry)),
+            registry: Arc::new(registry),
+            hashing: Arc::new(tokio::sync::Semaphore::new(HASH_SLOTS)),
             limiter: Arc::new(Mutex::new(Limiter::default())),
             lobby_tokens: Arc::new(lobby_tokens),
             admin_token: Arc::new(admin_token),
@@ -54,8 +61,16 @@ impl AppState {
         }
     }
 
-    pub fn registry(&self) -> &Arc<Mutex<Registry>> {
+    pub fn registry(&self) -> &Arc<Registry> {
         &self.registry
+    }
+
+    /// Run a registry call that hashes or verifies a PIN on a blocking
+    /// thread, at most HASH_SLOTS at once.
+    async fn hashing<T: Send + 'static>(&self, f: impl FnOnce(&Registry) -> Result<T, RegistryError> + Send + 'static) -> Result<T, RegistryError> {
+        let _permit = self.hashing.acquire().await.map_err(|e| RegistryError::Io(e.to_string()))?;
+        let r = self.registry.clone();
+        tokio::task::spawn_blocking(move || f(&r)).await.map_err(|e| RegistryError::Io(e.to_string()))?
     }
 
     pub fn limiter(&self) -> &Arc<Mutex<Limiter>> {
@@ -194,7 +209,8 @@ async fn create(
         }
     }
     // The name must be registered and the PIN must match.
-    let login = s.registry.lock().unwrap().login(&b.name, &b.pin, now / 1000);
+    let (name, pin) = (b.name.clone(), b.pin.clone());
+    let login = s.hashing(move |r| r.login(&name, &pin, now / 1000)).await;
     let name = match login {
         Ok(display) => display,
         Err(RegistryError::WrongPin) => {
@@ -234,7 +250,8 @@ async fn register(
     if wait > 0 {
         return too_many(wait);
     }
-    let result = s.registry.lock().unwrap().register(&b.name, now / 1000, false);
+    let name = b.name.clone();
+    let result = s.hashing(move |r| r.register(&name, now / 1000, false)).await;
     match result {
         Ok(pin) => {
             s.limiter.lock().unwrap().record(&format!("register:{ip}"), limits::REGISTER_PER_IP, now);
@@ -271,7 +288,8 @@ async fn delete_profile(
             return too_many(w);
         }
     }
-    let result = s.registry.lock().unwrap().delete(&name, &b.pin, now / 1000);
+    let (n, pin) = (name.clone(), b.pin.clone());
+    let result = s.hashing(move |r| r.delete(&n, &pin, now / 1000)).await;
     match result {
         Ok(()) => {
             s.roster.lock().unwrap().drop_name(&name, now);
@@ -290,7 +308,7 @@ async fn delete_profile(
 /// Is a name registered? (Names are public; PINs never leave a register answer.)
 async fn profile(State(s): State<AppState>, Path(name): Path<String>) -> Response {
     let now = s.now() / 1000;
-    let r = s.registry.lock().unwrap();
+    let r = &s.registry;
     no_store(json!({"name": name, "registered": r.exists(&name, now), "reserved": r.is_reserved(&name)}))
 }
 
@@ -308,8 +326,6 @@ async fn admin_list(State(s): State<AppState>, ConnectInfo(peer): ConnectInfo<So
     }
     let list: Vec<_> = s
         .registry
-        .lock()
-        .unwrap()
         .list()
         .into_iter()
         .map(|(name, created, last_seen, reserved)| json!({"name": name, "created": created, "lastSeen": last_seen, "reserved": reserved}))
@@ -333,11 +349,11 @@ async fn admin_action(
         return error(StatusCode::FORBIDDEN, "FORBIDDEN", "admin only");
     }
     let now = s.now() / 1000;
-    let mut r = s.registry.lock().unwrap();
+    let name = b.name.clone();
     let result = match b.action.as_str() {
-        "register" => r.register(&b.name, now, true).map(Some),
-        "reset-pin" => r.reset_pin(&b.name).map(Some),
-        "release" => r.release(&b.name).map(|_| None),
+        "register" => s.hashing(move |r| r.register(&name, now, true).map(Some)).await,
+        "reset-pin" => s.hashing(move |r| r.reset_pin(&name).map(Some)).await,
+        "release" => s.registry.release(&b.name).map(|_| None),
         _ => return error(StatusCode::BAD_REQUEST, "BAD_ACTION", "action: register | reset-pin | release"),
     };
     match result {

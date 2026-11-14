@@ -78,7 +78,7 @@ fn d_ttl() -> u64 { 12 * 3600 }
 /// Registered profiles (name + PIN). The only state kept across restarts.
 #[derive(Debug, Deserialize)]
 pub struct RegistryCfg {
-    /// JSON file of profiles (hashed PINs). Absent: in memory only.
+    /// SQLite database of profiles (hashed PINs); an old .json is imported once. Absent: in memory only.
     #[serde(default)]
     pub file: Option<PathBuf>,
     /// Names only the admin can register (`mkwmp admin register <name>`).

@@ -58,7 +58,8 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn std::error:
     let boot = roster.boot_id().to_string();
     let reg = &cfg.registry;
     let registry = Registry::open(reg.file.as_deref(), &reg.reserved_names, reg.expire_days).map_err(|e| e.to_string())?;
-    let profiles = registry.list().len();
+    let profiles = registry.count();
+    let db = registry.path().map(|p| p.display().to_string());
     let admin_token = match &reg.admin_token_file {
         Some(p) => Some(
             std::fs::read_to_string(p).map_err(|e| format!("reading {}: {e}", p.display()))?.trim().to_string(),
@@ -76,7 +77,8 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn std::error:
             let now = sweeper.now();
             sweeper.roster().lock().unwrap().sweep(now);
             sweeper.limiter().lock().unwrap().sweep(now);
-            sweeper.registry().lock().unwrap().sweep(now / 1000);
+            let reg = sweeper.registry().clone();
+            let _ = tokio::task::spawn_blocking(move || reg.sweep(now / 1000)).await;
         }
     });
 
@@ -88,7 +90,7 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn std::error:
     println!("ticket key {public}; lobby roster {}", if lobby_tokens.is_empty() { "disabled" } else { "enabled" });
     println!(
         "registry: {profiles} profiles in {}",
-        reg.file.as_ref().map_or("memory (no [registry] file!)".to_string(), |p| p.display().to_string())
+        db.unwrap_or_else(|| "memory (no [registry] file!)".to_string())
     );
     axum::serve(listener, router(state).into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(async {
