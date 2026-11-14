@@ -35,7 +35,13 @@ draft)
 publish)
   : "${MKWMP_RELEASE_KEY:?set MKWMP_RELEASE_KEY to the release seed file}"
   rm -rf "$out/dl" && mkdir -p "$out/dl"
-  for a in $assets; do gh release download "$tag" -p "$a" -D "$out/dl"; done
+  # A draft has no tag yet, so `gh release download <tag>` can't find it: fetch by asset id.
+  rel="$(gh api "repos/{owner}/{repo}/releases" --jq ".[] | select(.tag_name == \"$tag\") | .id" | head -1)"
+  for a in $assets; do
+    id="$(gh api "repos/{owner}/{repo}/releases/$rel/assets" --jq ".[] | select(.name == \"$a\") | .id")"
+    [ -n "$id" ] || { echo "missing asset $a" >&2; exit 1; }
+    gh api -H "Accept: application/octet-stream" "repos/{owner}/{repo}/releases/assets/$id" > "$out/dl/$a"
+  done
   (cd "$out/dl" && python3 "$OLDPWD/tools/release/sign_sums.py" "$version" "$MKWMP_RELEASE_KEY" $assets)
   gh release upload "$tag" --clobber "$out/dl/SHA256SUMS" "$out/dl/SHA256SUMS.sig"
   gh release edit "$tag" --draft=false --prerelease
