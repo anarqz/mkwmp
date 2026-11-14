@@ -35,6 +35,10 @@ pub struct Status {
     pub seated: usize,
     pub queued: usize,
     pub lobby_endpoint: Option<String>,
+    /// The lobby's certificate (PEM) for the game patch to trust; servers
+    /// that hold the built-in one may leave it out.
+    #[serde(default)]
+    pub lobby_ca: Option<String>,
 }
 
 /// One friend and what they're doing.
@@ -145,12 +149,13 @@ impl Api {
         res.json().await.map_err(|e| ApiError::Transient(format!("not an mkwmp server: {e}")))
     }
 
-    /// Where the game connects: the server's lobby.
-    pub async fn lobby_endpoint(&self) -> Result<String, ApiError> {
-        self.status()
-            .await?
-            .lobby_endpoint
-            .ok_or_else(|| ApiError::Transient("the server is too old (no lobbyEndpoint)".into()))
+    /// Where the game connects: the server's lobby, and the certificate the
+    /// game should trust for it.
+    pub async fn lobby(&self) -> Result<(String, Option<String>), ApiError> {
+        let s = self.status().await?;
+        let endpoint =
+            s.lobby_endpoint.ok_or_else(|| ApiError::Transient("the server is too old (no lobbyEndpoint)".into()))?;
+        Ok((endpoint, s.lobby_ca))
     }
 
     pub async fn join(&self, name: &str, pin: &str) -> Result<View, ApiError> {

@@ -227,7 +227,10 @@ impl Core {
             return Err(p);
         }
         let seat = Arc::new(Seat::new(&cfg));
-        let lobby = seat.api().lobby_endpoint().await.map_err(|e| e.to_string())?;
+        let (lobby, lobby_ca) = seat.api().lobby().await.map_err(|e| e.to_string())?;
+        // Always the current server's: a stale file from another server
+        // would make the game reject this one's lobby.
+        launch::write_lobby_ca(&cfg.game, lobby_ca.as_deref()).map_err(|e| format!("writing {}: {e}", launch::LOBBY_CA))?;
         if cfg.update {
             sync_probe(&cfg).await;
         }

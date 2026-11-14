@@ -25,6 +25,9 @@ pub struct Rules {
     pub server_name: String,
     /// NPLN endpoint (`host:port`) of the lobby the seated game connects to.
     pub lobby_endpoint: String,
+    /// The lobby's TLS certificate(s), PEM, for the game patch to trust
+    /// (a self-hosted lobby has its own; see [`lobby_ca_from_pem`]).
+    pub lobby_ca: Option<String>,
 }
 
 impl Default for Rules {
@@ -39,8 +42,27 @@ impl Default for Rules {
             ticket_ttl_secs: 12 * 3600,
             server_name: "mkwmp".into(),
             lobby_endpoint: "127.0.0.1:8905".into(),
+            lobby_ca: None,
         }
     }
+}
+
+/// Largest `lobbyCa` the status carries (the patch reads at most 16 KiB).
+pub const MAX_LOBBY_CA: usize = 16 * 1024;
+
+/// Only the `CERTIFICATE` blocks of a PEM file: whatever else the file
+/// holds (a private key by mistake, comments) never leaves the server.
+pub fn lobby_ca_from_pem(pem: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut rest = pem;
+    while let Some(start) = rest.find("-----BEGIN CERTIFICATE-----") {
+        let block = &rest[start..];
+        let end = block.find("-----END CERTIFICATE-----")? + "-----END CERTIFICATE-----".len();
+        out.push_str(&block[..end]);
+        out.push('\n');
+        rest = &block[end..];
+    }
+    (!out.is_empty() && out.len() <= MAX_LOBBY_CA).then_some(out)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -133,6 +155,10 @@ pub struct Status {
     pub name: String,
     /// NPLN `host:port` of this server's lobby.
     pub lobby_endpoint: String,
+    /// The lobby's certificate(s), PEM: the launcher hands them to the game
+    /// patch, which trusts them for this server's lobby.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lobby_ca: Option<String>,
     pub seats_total: usize,
     pub seated: usize,
     pub queued: usize,
@@ -399,6 +425,7 @@ impl Roster {
             boot_id: self.boot_id.clone(),
             name: self.rules.server_name.clone(),
             lobby_endpoint: self.rules.lobby_endpoint.clone(),
+            lobby_ca: self.rules.lobby_ca.clone(),
             seats_total: self.rules.capacity,
             seated: self.seated,
             queued: self.queue.len(),
@@ -548,5 +575,15 @@ mod tests {
         r.report_lobbies(&l, 1_000);
         assert_eq!(r.status(2_000).lobbies.into_iter().collect::<Vec<_>>(), vec![("Normal24".to_string(), 3)]);
         assert!(r.status(1_000 + LOBBIES_STALE_MS).lobbies.is_empty());
+    }
+
+    #[test]
+    fn lobby_ca_keeps_only_certificates() {
+        let pem = "junk\n-----BEGIN CERTIFICATE-----\nAAA\n-----END CERTIFICATE-----\n-----BEGIN PRIVATE KEY-----\nSECRET\n-----END PRIVATE KEY-----\n-----BEGIN CERTIFICATE-----\nBBB\n-----END CERTIFICATE-----\n";
+        let ca = lobby_ca_from_pem(pem).unwrap();
+        assert!(!ca.contains("SECRET") && !ca.contains("junk"));
+        assert_eq!(ca.matches("BEGIN CERTIFICATE").count(), 2);
+        assert!(lobby_ca_from_pem("-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n").is_none());
+        assert!(lobby_ca_from_pem(&format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", "A".repeat(MAX_LOBBY_CA))).is_none());
     }
 }

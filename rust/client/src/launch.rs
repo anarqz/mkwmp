@@ -38,6 +38,28 @@ pub fn write_probe_toml(game_dir: &Path, contents: &str) -> std::io::Result<Path
     Ok(path)
 }
 
+/// The lobby certificate the probe trusts, next to `mkwmp.toml` (the
+/// probe's default `lobby_ca` name). Without it the probe trusts its
+/// built-in certificate.
+pub const LOBBY_CA: &str = "mkwmp-lobby-ca.pem";
+
+/// Write the server's lobby certificate for the probe, or remove the file
+/// when the server has none.
+pub fn write_lobby_ca(game_dir: &Path, pem: Option<&str>) -> std::io::Result<()> {
+    let path = game_dir.join(LOBBY_CA);
+    match pem {
+        Some(pem) => {
+            let tmp = game_dir.join(format!("{LOBBY_CA}.tmp"));
+            std::fs::write(&tmp, pem)?;
+            std::fs::rename(&tmp, &path)
+        }
+        None => match std::fs::remove_file(&path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        },
+    }
+}
+
 /// Start mkw.exe in the game directory.
 pub fn spawn_game(game_dir: &Path) -> std::io::Result<Child> {
     Command::new(game_dir.join("mkw.exe")).arg("--play").current_dir(game_dir).spawn()
@@ -89,5 +111,17 @@ mod tests {
         write_probe_toml(&dir, "a = 1\n").unwrap();
         let p = write_probe_toml(&dir, "b = 2\n").unwrap();
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "b = 2\n");
+    }
+
+    #[test]
+    fn lobby_ca_follows_the_server() {
+        let dir = std::env::temp_dir().join(format!("mkwmp-ca-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        write_lobby_ca(&dir, Some("-----BEGIN CERTIFICATE-----\n")).unwrap();
+        assert!(dir.join(LOBBY_CA).exists());
+        write_lobby_ca(&dir, None).unwrap();
+        assert!(!dir.join(LOBBY_CA).exists());
+        write_lobby_ca(&dir, None).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

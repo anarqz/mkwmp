@@ -146,6 +146,7 @@ struct App {
     /// Started with --tray: hide after the first frames.
     start_in_tray: bool,
     frames: u32,
+    shot_taken: bool,
     settings_open: bool,
 }
 
@@ -164,6 +165,7 @@ impl App {
             tray,
             start_in_tray,
             frames: 0,
+            shot_taken: false,
             settings_open: false,
         }
     }
@@ -175,7 +177,10 @@ impl App {
         if self.frames == 2 && std::env::var_os("MKWMP_GUI_SETTINGS").is_some() {
             self.settings_open = true;
         }
-        if self.frames == 90 {
+        // Frames alone are not enough: without vsync (a locked display) 90
+        // frames pass before fades end, so wait for 2 s as well.
+        if self.frames >= 90 && ctx.input(|i| i.time) >= 2.0 && !self.shot_taken {
+            self.shot_taken = true;
             let path = std::path::PathBuf::from(path);
             ctx.request_screenshot(move |img| {
                 let rgba: Vec<u8> = img.pixels.iter().flat_map(|p| p.to_array()).collect();
@@ -661,7 +666,8 @@ impl App {
         }
 
         let gh_text = match stars {
-            Some(n) => format!("GITHUB · {n}"),
+            Some(n) if n > 0 => format!("GITHUB · {n}"),
+            Some(_) => "GITHUB".to_string(),
             None => "GITHUB".to_string(),
         };
         if icon_button(ui, gh, &gh_text, &STAR, INK, Color32::from_rgb(0x3a, 0x2f, 0x66), YELLOW).clicked() {
