@@ -11,13 +11,20 @@
 //!
 //! The call is idempotent and doubles as the keepalive: in seat = "online"
 //! mode the seat is released after 90 s without one.
+//!
+//!   GET http://127.0.0.1:<local_port>/local/v1/friends   (same token)
+//!
+//! 200 {"friends":[{"name":"Ana"}, ...]}: friends online now who listed you
+//! back (mutual), as the seat server spells them; at most 100. The probe
+//! puts them in the game's system friend list.
+//! 503 before PLAY; 401 as above.
 
 use std::sync::Arc;
 
 use axum::extract::State;
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::json;
 
@@ -25,17 +32,44 @@ use crate::core::Core;
 use crate::seat::Answer;
 
 pub fn router(core: Arc<Core>) -> Router {
-    Router::new().route("/local/v1/seat", post(want)).with_state(core)
+    Router::new().route("/local/v1/seat", post(want)).route("/local/v1/friends", get(friends)).with_state(core)
+}
+
+fn authorized(core: &Core, h: &HeaderMap) -> bool {
+    h.get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .is_some_and(|t| t == core.token())
+}
+
+fn unauthorized() -> Response {
+    (StatusCode::UNAUTHORIZED, Json(json!({"state": "unauthorized"}))).into_response()
+}
+
+const MAX_FRIENDS: usize = 100;
+
+async fn friends(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
+    if !authorized(&core, &h) {
+        return unauthorized();
+    }
+    if core.seat().await.is_none() {
+        let m = "press PLAY in the mkwmp launcher";
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"state": "unavailable", "message": m}))).into_response();
+    }
+    let list: Vec<_> = core
+        .ui()
+        .friends
+        .into_iter()
+        .filter(|f| f.online && f.mutual)
+        .take(MAX_FRIENDS)
+        .map(|f| json!({"name": f.name}))
+        .collect();
+    Json(json!({"friends": list})).into_response()
 }
 
 async fn want(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
-    let ok = h
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|t| t == core.token());
-    if !ok {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"state": "unauthorized"}))).into_response();
+    if !authorized(&core, &h) {
+        return unauthorized();
     }
     let Some(seat) = core.seat().await else {
         let m = "press PLAY in the mkwmp launcher";

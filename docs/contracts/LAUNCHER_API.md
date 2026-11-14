@@ -41,3 +41,15 @@ Send `Authorization: Bearer <launcher_token>` with no body. The listener is boun
 - `"online"`: joins on the first POST.
 
 **Rejoining.** After a seat-server restart, the launcher rejoins on its own. A renewed or re-issued ticket shows up on the next POST, so re-POST after a lobby auth error.
+
+## GET /local/v1/friends
+
+Same `Authorization: Bearer <launcher_token>` as `/seat`. The probe polls it (at most every 15 s while online) and fills `nn::friends::GetFriendList` with the names, so the game shows the lobby's `SubscribeFriendUsers` entries.
+
+| Status | Body | Meaning |
+|---|---|---|
+| 200 | `{"friends":[{"name":"Bia"}, ...]}` | Friends online right now (seated) who listed this player back (mutual), spelled as the seat server shows them. At most 100 entries; never the caller. |
+| 401 | `{"state":"unauthorized"}` | Wrong or missing token. |
+| 503 | `{"state":"unavailable","message"}` | PLAY not pressed yet. |
+
+Served from the launcher's cached roster: the seat server's mutual friends, refreshed with every heartbeat. Account ids follow the lobby's rule: user id = uuid5(NAMESPACE_URL, "mkwmp-user/" + lower(name)); account id = its first 8 bytes big-endian, top bit cleared, 0 → 1.
