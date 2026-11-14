@@ -5,7 +5,7 @@ members = ["config", "contracts", "ticket", "seat", "lobby", "gateway", "client"
 [workspace.package]
 version = "0.0.1-rc.3"
 edition = "2021"
-license = "MIT"
+license = "GPL-3.0-or-later"
 
 [workspace.dependencies]
 tonic = "0.12"
