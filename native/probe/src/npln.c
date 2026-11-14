@@ -1,7 +1,7 @@
 // NPLN interception overrides.
 //
 // Local capture bridge. The observed NPLN gRPC path uses embedded OpenSSL via
-// SendMsg/RecvMsg, so the server must offer TLS with capture_cert.h's certificate.
+// SendMsg/RecvMsg; it trusts the CA the probe returns (lobby_ca.h: the server's own, else capture_cert.h).
 // nn::ssl stubs below cover other SDK paths, not the captured gRPC transport.
 //
 // Gates, completed local async prerequisites and runtime fiber fixes start NPLN.
@@ -12,7 +12,7 @@
 #include "recomp.h"
 #include "log.h"
 #include "config.h"
-#include "capture_cert.h"
+#include "lobby_ca.h"
 #include "seat.h"
 #include "friends.h"
 
@@ -1247,23 +1247,28 @@ typedef struct {
     uint32_t id, status, size, pad;
     const unsigned char *data;
 } GCertificateInfo;
+// The one trusted CA: the server's own (lobby_ca.h), else the built-in capture certificate.
 static void ov_ssl_cert_bufsize(Cpu *c) {
     uint32_t *out = arg_p(c, 0);
-    if (out) *out = (uint32_t)sizeof(GCertificateInfo) + (uint32_t)sizeof(kCaptureCert);
+    size_t ca_len;
+    lobby_ca(&ca_len);
+    if (out) *out = (uint32_t)(sizeof(GCertificateInfo) + ca_len);
     ret_x(c, 0);
 }
 static void ov_ssl_certificates(Cpu *c) {
     GCertificateInfo **out = arg_p(c, 0);
     GCertificateInfo *info = arg_p(c, 1);
     uint32_t *ids = arg_p(c, 3);
-    if (!out || !info || arg_x(c, 2) < sizeof(*info) + sizeof(kCaptureCert)) {
+    size_t ca_len;
+    const unsigned char *ca = lobby_ca(&ca_len);
+    if (!out || !info || arg_x(c, 2) < sizeof(*info) + ca_len) {
         ret_x(c, (uint64_t)-1); return;
     }
     memset(info, 0, sizeof(*info));
     info->id = ids ? ids[0] : 0;
-    info->size = sizeof(kCaptureCert);
+    info->size = (uint32_t)ca_len;
     info->data = (unsigned char *)(info + 1);
-    memcpy((void *)info->data, kCaptureCert, sizeof(kCaptureCert));
+    memcpy((void *)info->data, ca, ca_len);
     *out = info;
     ret_x(c, 0);
 }

@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include "../src/npln.c"
+#include "../src/capture_cert.h"
 #include "../src/config.h"
 #include "../src/notify.h"
 

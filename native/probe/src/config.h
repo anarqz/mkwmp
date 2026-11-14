@@ -15,6 +15,8 @@ typedef struct {
     char launcher_host[64];  // launcher local seat API (`launcher = "127.0.0.1:47820"`)
     int launcher_port;       // 0 = no launcher configured
     char launcher_token[96]; // bearer for the local seat API
+    char lobby_ca[96];       // file (in the game dir) with the lobby's TLS CA, PEM or DER;
+                             // default "mkwmp-lobby-ca.pem" (see lobby_ca.h)
 } MkwmpConfig;
 
 // Parse the minimal `key = "value"` / `key = N` format. Pure; unit-tested.

@@ -9,6 +9,7 @@ static void defaults(MkwmpConfig *c) {
     strcpy(c->host, "127.0.0.1");
     c->port = 8900;
     c->slot = 1;
+    strcpy(c->lobby_ca, "mkwmp-lobby-ca.pem");
 }
 
 // Copy a trimmed, unquoted value into dst (size n, always NUL-terminated).
@@ -65,6 +66,8 @@ void mkwmp_config_parse(const char *text, MkwmpConfig *out) {
             }
         } else if (klen == 14 && !strncmp(line, "launcher_token", 14)) {
             store_str(out->launcher_token, sizeof out->launcher_token, val, eol);
+        } else if (klen == 8 && !strncmp(line, "lobby_ca", 8)) {
+            store_str(out->lobby_ca, sizeof out->lobby_ca, val, eol);
         } else if (klen == 4 && !strncmp(line, "slot", 4)) {
             char buf[16];
             store_str(buf, sizeof buf, val, eol);

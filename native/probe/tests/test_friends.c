@@ -132,11 +132,29 @@ static void test_page(void) {
     assert(friends_list(owner, 0, 10, page) == 0);
 }
 
+static void test_lobby_ca_decode(void);
 int main(void) {
     test_sha1();
+    test_lobby_ca_decode();
     test_account_id();
     test_parse();
     test_page();
     puts("friends: sha1, uuid5, account ids, roster parsing and Friend paging passed");
     return 0;
+}
+
+// ---- lobby_ca.c: PEM -> DER ---------------------------------------------------
+#include <stdlib.h>
+#include "../src/lobby_ca.h"
+static void test_lobby_ca_decode(void) {
+    // "MIIB" = 30 82 01 ..; a tiny fake cert body is enough for the decoder.
+    const char pem[] = "junk\n-----BEGIN CERTIFICATE-----\nMIIBAAEC\nAwQ=\n-----END CERTIFICATE-----\n";
+    unsigned char der[64];
+    size_t n = lobby_ca_decode((const unsigned char *)pem, sizeof pem - 1, der, sizeof der);
+    if (n != 8 || der[0] != 0x30 || der[1] != 0x82 || der[7] != 0x04) { printf("lobby_ca: pem decode failed (%u)\n", (unsigned)n); exit(1); }
+    unsigned char raw[] = {0x30, 0x82, 0x00, 0x01, 0x05};
+    if (lobby_ca_decode(raw, sizeof raw, der, sizeof der) != sizeof raw) { printf("lobby_ca: der passthrough failed\n"); exit(1); }
+    if (lobby_ca_decode((const unsigned char *)"hello", 5, der, sizeof der) != 0) { printf("lobby_ca: junk accepted\n"); exit(1); }
+    if (lobby_ca_decode((const unsigned char *)pem, sizeof pem - 1, der, 3) != 0) { printf("lobby_ca: overflow not refused\n"); exit(1); }
+    printf("lobby_ca: decode passed\n");
 }
