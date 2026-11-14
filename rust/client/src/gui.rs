@@ -1132,6 +1132,7 @@ fn status_pill(ui: &mut egui::Ui, st: &crate::core::Ui, draft: &ClientConfig, er
         SessionView::Failed(e) => (e.clone(), BAD),
         SessionView::Running { phase, game_running, steam } => match phase {
             Phase::Refused(m) => (m.clone(), BAD),
+            Phase::Busy(m) => (m.clone(), YELLOW),
             Phase::Joining => ("TAKING A SEAT…".into(), SKY_TEXT),
             Phase::Queued(n) => (format!("SERVER FULL · YOU ARE #{n} IN THE QUEUE"), YELLOW),
             Phase::WaitingForGame if *steam && !game_running => ("START THE GAME FROM STEAM".into(), SKY_TEXT),

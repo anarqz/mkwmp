@@ -13,7 +13,7 @@ use axum::{Json, Router};
 use serde_json::{json, Value};
 
 use super::*;
-use crate::api::{NOT_REGISTERED, WRONG_PIN};
+use crate::api::{IN_USE, NOT_REGISTERED, WRONG_PIN};
 use crate::config::Voice;
 
 /// How the fake server answers.
@@ -24,6 +24,8 @@ enum Seat {
     QueuedFor(usize),
     Refused(u16, &'static str),
     Down,
+    /// 409 NAME_TAKEN for this many joins, then seated.
+    TakenFor(usize),
 }
 
 #[derive(Clone)]
@@ -31,6 +33,7 @@ struct Fake {
     seat: Seat,
     delete: (u16, &'static str),
     polls: Arc<AtomicUsize>,
+    joins: Arc<AtomicUsize>,
     deletes: Arc<Mutex<Vec<String>>>,
 }
 
@@ -49,7 +52,10 @@ fn view(state: &str, position: Option<usize>) -> Value {
 }
 
 async fn join(State(f): State<Fake>) -> Response {
+    let n = f.joins.fetch_add(1, Ordering::SeqCst) + 1;
     match f.seat {
+        Seat::TakenFor(k) if n <= k => err(409, "NAME_TAKEN"),
+        Seat::TakenFor(_) => Json(view("seated", None)).into_response(),
         Seat::Seated => Json(view("seated", None)).into_response(),
         Seat::QueuedFor(_) => Json(view("queued", Some(2))).into_response(),
         Seat::Refused(s, c) => err(s, c),
@@ -101,7 +107,7 @@ async fn serve(f: Fake) -> String {
 }
 
 fn fake(seat: Seat, delete: (u16, &'static str)) -> Fake {
-    Fake { seat, delete, polls: Arc::default(), deletes: Arc::default() }
+    Fake { seat, delete, polls: Arc::default(), joins: Arc::default(), deletes: Arc::default() }
 }
 
 static N: AtomicUsize = AtomicUsize::new(0);
@@ -300,4 +306,39 @@ async fn play_online_checks_the_profile_first() {
         }
         core.stop();
     }
+}
+
+#[tokio::test]
+async fn a_gamertag_in_use_is_retried_not_refused() {
+    let f = fake(Seat::TakenFor(1), (204, ""));
+    let (core, game) = setup(&serve(f.clone()).await);
+    core.play();
+    until("the busy phase", || {
+        matches!(&core.ui().session, SessionView::Running { phase: Phase::Busy(m), .. } if m == IN_USE)
+    })
+    .await;
+    assert!(!game.join("started").exists(), "not while the name is in use");
+    for _ in 0..140 {
+        if game.join("started").exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(game.join("started").exists(), "seated on the retry");
+    assert_eq!(f.joins.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn online_mode_does_not_cache_a_gamertag_in_use() {
+    let f = fake(Seat::TakenFor(1), (204, ""));
+    let (core, _game) = setup(&serve(f.clone()).await);
+    let mut cfg = core.ui().cfg;
+    cfg.seat = SeatMode::Online;
+    let seat = crate::seat::Seat::new(&cfg);
+    assert_eq!(seat.want().await, Answer::Unavailable(IN_USE.into()));
+    // Asked again at once: no new join (retries are spaced), still busy, not refused.
+    assert_eq!(seat.want().await, Answer::Unavailable(IN_USE.into()));
+    assert_eq!(f.joins.load(Ordering::SeqCst), 1);
+    tokio::time::sleep(crate::seat::BUSY_RETRY).await;
+    assert!(matches!(seat.want().await, Answer::Seated { .. }));
 }

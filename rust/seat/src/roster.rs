@@ -197,6 +197,10 @@ pub struct Created {
     pub view: View,
 }
 
+/// How far past its poll interval a session must be silent before a
+/// correct-PIN join of the same name takes it over.
+pub const STALE_GRACE_MS: u64 = 5_000;
+
 fn random_hex(bytes: usize) -> String {
     let mut b = vec![0u8; bytes];
     rand::rngs::OsRng.fill_bytes(&mut b);
@@ -231,12 +235,21 @@ impl Roster {
         &self.rules
     }
 
-    /// A player asks for a seat. Seated at once if one is free, else queued.
+    /// A player asks for a seat (their PIN already checked). Seated at once if
+    /// one is free, else queued. The name's own session, silent past its poll
+    /// interval (+ [`STALE_GRACE_MS`]: a launcher that crashed or was killed),
+    /// is taken over: the new session keeps its seat or place in line. A live
+    /// one (another launcher heartbeating) is `NameTaken`.
     pub fn join(&mut self, name: &str, now: u64) -> Result<Created, RosterError> {
         self.sweep(now);
         names::validate(name)?;
-        if self.by_name.contains_key(&names::key(name)) {
-            return Err(RosterError::NameTaken);
+        if let Some(old) = self.by_name.get(&names::key(name)).cloned() {
+            let s = &self.sessions[&old];
+            let poll = if s.seat.is_some() { self.rules.heartbeat_ms } else { self.rules.queue_poll_ms };
+            if now.saturating_sub(s.last_seen) <= poll + STALE_GRACE_MS {
+                return Err(RosterError::NameTaken);
+            }
+            return Ok(self.take_over(&old, name, now));
         }
         if self.queue.len() >= self.rules.max_queue && self.seated >= self.rules.capacity {
             return Err(RosterError::QueueFull);
@@ -252,6 +265,25 @@ impl Roster {
         self.changes += 1;
         self.promote(now);
         Ok(Created { session_key: key, view: self.view(&sid) })
+    }
+
+    /// Replace the stale session `old` with a new one (new id and key) in the
+    /// same seat or place in line.
+    fn take_over(&mut self, old: &str, name: &str, now: u64) -> Created {
+        let prev = self.sessions.remove(old).expect("by_name points at a session");
+        let sid = random_hex(16);
+        let key = random_hex(32);
+        let seated = prev.seat.is_some();
+        self.sessions.insert(sid.clone(), Session { key: key.clone(), name: name.to_string(), seat: None, last_seen: now });
+        self.by_name.insert(names::key(name), sid.clone());
+        if seated {
+            let seat = self.sign(&sid, now); // the ticket names the new session
+            self.sessions.get_mut(&sid).expect("just inserted").seat = Some(seat);
+        } else if let Some(q) = self.queue.iter_mut().find(|q| *q == old) {
+            *q = sid.clone();
+        }
+        self.changes += 1;
+        Created { session_key: key, view: self.view(&sid) }
     }
 
     fn session_mut(&mut self, sid: &str, key: &str) -> Result<&mut Session, RosterError> {
@@ -498,6 +530,30 @@ mod tests {
         assert_eq!(r.join("ANA", 0).err(), Some(RosterError::NameTaken));
         r.leave(&a.view.session_id, &a.session_key, 0);
         assert!(r.join("ana", 0).is_ok());
+    }
+
+    #[test]
+    fn a_stale_session_of_the_name_is_taken_over() {
+        let mut r = roster(1);
+        let a = r.join("Ana", 0).unwrap();
+        let q = r.join("Bia", 0).unwrap();
+        assert_eq!(q.view.state, "queued");
+        // Ana's launcher heartbeats on time: a second launcher is refused.
+        let hb = Rules::default().heartbeat_ms;
+        assert_eq!(r.join("ana", hb + STALE_GRACE_MS).err(), Some(RosterError::NameTaken));
+        // Silent past heartbeat + grace (killed): the new join keeps the seat, ahead of Bia.
+        let b = r.join("ana", hb + STALE_GRACE_MS + 1).unwrap();
+        assert_eq!(b.view.state, "seated");
+        assert_ne!(b.view.session_id, a.view.session_id);
+        assert!(r.touch(&a.view.session_id, &a.session_key, hb + STALE_GRACE_MS + 2).is_err(), "the old session is gone");
+        assert_eq!(r.state_of("Bia"), Some("queued"));
+        let (sid, _) = r.seated("Ana").unwrap();
+        assert_eq!(sid, b.view.session_id);
+        // Bia (queued) is replaced in her place in line.
+        r.touch(&b.view.session_id, &b.session_key, 30_000).unwrap();
+        let qp = Rules::default().queue_poll_ms;
+        let q2 = r.join("Bia", 30_000.max(qp + STALE_GRACE_MS + 1)).unwrap();
+        assert_eq!((q2.view.state, q2.view.position), ("queued", Some(1)));
     }
 
     #[test]

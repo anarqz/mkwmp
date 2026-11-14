@@ -15,6 +15,9 @@ use crate::config::{ClientConfig, SeatMode};
 /// The game stops asking (left Online Play, quit) → the seat goes after this.
 pub const IDLE_RELEASE: Duration = Duration::from_secs(90);
 
+/// A join that failed (busy, unreachable) is retried after this.
+pub const BUSY_RETRY: Duration = Duration::from_secs(5);
+
 /// The seat as the window shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Phase {
@@ -23,6 +26,8 @@ pub enum Phase {
     Joining,
     Queued(usize),
     Seated,
+    /// The join waits and retries (gamertag in use, queue full).
+    Busy(String),
     Refused(String),
 }
 
@@ -51,7 +56,10 @@ struct State {
     view: Option<View>,
     next_poll: Instant,
     last_want: Option<Instant>,
+    /// Only refusals the player must fix (wrong PIN, unregistered...) stick
+    /// for the session; a busy join is retried.
     refused: Option<String>,
+    busy: Option<String>,
     shown_position: Option<usize>,
 }
 
@@ -80,6 +88,7 @@ impl Seat {
                 next_poll: Instant::now(),
                 last_want: None,
                 refused: None,
+                busy: None,
                 shown_position: None,
             }),
         }
@@ -97,6 +106,10 @@ impl Seat {
             return Answer::Refused(msg.clone());
         }
         if st.session.is_none() {
+            // A busy join retries at most every BUSY_RETRY.
+            if let (Some(m), true) = (&st.busy, Instant::now() < st.next_poll) {
+                return Answer::Unavailable(m.clone());
+            }
             if let Err(a) = self.join(&mut st).await {
                 return a;
             }
@@ -122,7 +135,16 @@ impl Seat {
                 st.next_poll = Instant::now() + Duration::from_millis(v.next_poll_ms.clamp(1_000, 30_000));
                 Self::show(st, &v);
                 st.view = Some(v);
+                st.busy = None;
                 Ok(())
+            }
+            Err(ApiError::Busy(m)) => {
+                if st.busy.as_ref() != Some(&m) {
+                    crate::log::note(m.clone());
+                }
+                st.busy = Some(m.clone());
+                st.next_poll = Instant::now() + BUSY_RETRY;
+                Err(Answer::Unavailable(m))
             }
             Err(ApiError::Refused(m)) => {
                 crate::log::note(format!("the server refused: {m}"));
@@ -152,7 +174,7 @@ impl Seat {
         }
         if st.session.is_none() {
             if Instant::now() >= st.next_poll && self.join(&mut st).await.is_err() {
-                st.next_poll = Instant::now() + Duration::from_secs(5);
+                st.next_poll = Instant::now() + BUSY_RETRY;
             }
         } else if Instant::now() >= st.next_poll {
             self.heartbeat(&mut st).await;
@@ -220,6 +242,7 @@ impl Seat {
             match &st.view {
                 Some(v) if v.ticket.is_some() => Phase::Seated,
                 Some(v) => Phase::Queued(v.position.unwrap_or(0)),
+                None if st.session.is_none() && st.busy.is_some() => Phase::Busy(st.busy.clone().unwrap_or_default()),
                 None if st.session.is_none() && self.mode == SeatMode::Online => Phase::WaitingForGame,
                 None => Phase::Joining,
             }

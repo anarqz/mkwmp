@@ -82,6 +82,9 @@ pub enum ApiError {
     Taken,
     /// Network or server trouble: retry.
     Transient(String),
+    /// The seat server can't seat this name right now (the gamertag is in
+    /// use by a live session, the queue is full): retry in a while.
+    Busy(String),
     /// The launcher's presence is gone (server restart, new PIN): sign in again.
     SignedOut,
     /// Too many tries: wait this many seconds.
@@ -93,7 +96,7 @@ impl std::fmt::Display for ApiError {
         match self {
             ApiError::Gone => f.write_str("session expired"),
             ApiError::Taken => f.write_str("that gamertag is already registered"),
-            ApiError::Refused(m) | ApiError::Transient(m) => f.write_str(m),
+            ApiError::Refused(m) | ApiError::Transient(m) | ApiError::Busy(m) => f.write_str(m),
             ApiError::SignedOut => f.write_str("signed out"),
             ApiError::Limited(secs) => write!(f, "too many tries; wait {}", wait_text(*secs)),
         }
@@ -111,6 +114,9 @@ fn wait_text(secs: u64) -> String {
 /// What the player sees for the two refusals they can fix.
 pub const WRONG_PIN: &str = "Wrong PIN for this gamertag";
 pub const NOT_REGISTERED: &str = "Register this gamertag first";
+/// Joins that wait and retry.
+pub const IN_USE: &str = "This gamertag is in use (another launcher, or a seat not expired yet): retrying";
+pub const QUEUE_FULL: &str = "The server and its queue are full: retrying";
 
 /// DELETE /seat/v1/profiles/{name} went through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,6 +152,11 @@ impl Api {
         // Only a lost session means "rejoin"; a missing profile is the player's to fix.
         if status == reqwest::StatusCode::NOT_FOUND && (code == "SESSION_NOT_FOUND" || code.is_empty()) {
             return Err(ApiError::Gone);
+        }
+        match code {
+            "NAME_TAKEN" => return Err(ApiError::Busy(IN_USE.into())),
+            "QUEUE_FULL" => return Err(ApiError::Busy(QUEUE_FULL.into())),
+            _ => {}
         }
         let msg = match code {
             "PIN_WRONG" => WRONG_PIN.to_string(),

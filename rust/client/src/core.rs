@@ -382,7 +382,10 @@ impl Core {
             Answer::Refused(m) => return Err(m),
             Answer::Unavailable(m) => {
                 note(format!("no seat: {m}"));
-                return Err(UNREACHABLE.into());
+                if !matches!(seat.snapshot().await.phase, Phase::Busy(_)) {
+                    return Err(UNREACHABLE.into());
+                }
+                // Busy (gamertag in use, queue full): wait here, retrying.
             }
             Answer::Queued { .. } => {}
         }

@@ -138,6 +138,16 @@ fn main() {
     if a.headless {
         headless(&rt, core);
     } else {
+        // Killed (systemd stop, session logout, `kill`): free the seat first.
+        rt.spawn({
+            let core = core.clone();
+            async move {
+                terminated().await;
+                log::note("terminated; releasing the seat");
+                wait_idle(&core, Duration::from_secs(5)).await;
+                std::process::exit(0);
+            }
+        });
         // Updates run beside the window; a new launcher replaces this one.
         rt.spawn({
             let core = core.clone();
@@ -197,7 +207,7 @@ fn headless(rt: &tokio::runtime::Runtime, core: Arc<Core>) {
         loop {
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_millis(500)) => {}
-                _ = tokio::signal::ctrl_c() => {
+                _ = terminated() => {
                     core.stop();
                     wait_idle(&core, Duration::from_secs(5)).await;
                     return;
@@ -210,6 +220,27 @@ fn headless(rt: &tokio::runtime::Runtime, core: Arc<Core>) {
             }
         }
     });
+}
+
+/// Ctrl-C, or SIGTERM / SIGHUP on Unix (what `systemctl stop` and a logout send).
+async fn terminated() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let (Ok(mut term), Ok(mut hup)) = (signal(SignalKind::terminate()), signal(SignalKind::hangup())) else {
+            let _ = tokio::signal::ctrl_c().await;
+            return;
+        };
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = term.recv() => {}
+            _ = hup.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 async fn wait_idle(core: &Arc<Core>, max: Duration) {
