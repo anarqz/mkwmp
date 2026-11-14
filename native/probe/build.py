@@ -17,7 +17,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 SRC = HERE / "src"
 BUILD = HERE / "build"
 DEFAULT_ZIG = r"C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"
-SOURCES = ["dllmain.c", "coff.c", "log.c", "config.c", "notify.c", "seat.c", "npln.c"]
+SOURCES = ["dllmain.c", "coff.c", "log.c", "config.c", "notify.c", "launcher.c", "seat.c", "uuid5.c", "friends.c",
+           "npln.c"]
 DEF = SRC / "winmm.def"
 HOST_DLL = BUILD / "winmm_host.dll"
 

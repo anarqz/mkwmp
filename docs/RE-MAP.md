@@ -335,6 +335,43 @@ To make a roster member appear online and joinable (field numbers VERIFIED; valu
 The user id string must be identical in three places: FriendUser field 2, the Presence name, and the auth token's
 user (the game compares the parsed strings; that both parsers yield the same component is INFERRED).
 
+#### 2.6 `nn::friends::Friend` layout and the probe's system friend list
+
+Layout, VERIFIED by disassembling the accessors exported by `exefs/sdk` (NSO image offsets):
+
+| Offset | Field | Evidence |
+|---|---|---|
+| 0x000 | owner `nn::account::Uid` (16 bytes) | `Friend::Update` 0x3c1c2c and `GetProfileImage` 0x3c1b44 pass `this` as the Uid and `this+0x10` as the account id |
+| 0x010 | account id, u64 | `GetAccountId` 0x3c1b34: `ldr x0, [x0, #0x10]` |
+| 0x018 | nickname, NUL-terminated | `GetNickname` 0x3c1b3c: `add x0, x0, #0x18`; the game takes its length with a strlen loop (main 0x2135bf0) |
+| 0x040 | presence block | `GetPresence` 0x3c1c14: `add x0, x0, #0x40` |
+| 0x120 / 0x121 | favorite / newly, bytes | `IsFavorite` 0x3c1c1c, `IsNewly` 0x3c1c24 |
+| 0x128 | valid, byte | `IsValid` 0x3c1c3c: `ldrb w0, [x0, #0x128]` |
+| size 0x200 | | `Friend::Friend()` 0x3c1b28 = `memset(this, 0, 0x200)` |
+
+INFERRED: the nickname is `nn::account::Nickname` (`char[33]`, so 32 bytes of text; the gap up to 0x40 fits) and
+the presence block runs to 0x120.
+
+- **What main uses** (VERIFIED, its import table): only `Friend::Friend()`, `GetAccountId` (6 call sites),
+  `GetNickname` (1, `FUN_02135b4c`) and `IsValid` (2, `FUN_022288b8` and `FUN_02228934`). `GetPresence`,
+  `IsFavorite`, `IsNewly` and `GetProfileImage` are not imported.
+- **Accessors are guest code** (VERIFIED absent from mkw.exe's `.ovr` host-override table and from its COFF symbols,
+  which only have `ov_friend_list`, `ov_friend_list_available`, `ov_friends_unavailable`; INFERRED that they therefore
+  run as the recompiled `sdk` functions). Filling the struct in `GetFriendList` is enough.
+- **Stock `GetFriendList`** (mkw.exe `ov_friend_list`, VERIFIED): `*outCount = 0`, result 0.
+- **The game's read loop** `FUN_022283e8` (VERIFIED): `GetFriendList(&n, Friend[10], uid, offset, 10, filter)` with
+  an 8-byte zero filter; stops when `n < 1` or `n < 10`, otherwise `offset += n`; entries are capped by the
+  manager's pool (`+0x9c`).
+- **When it runs** (VERIFIED in `FUN_0040e860`, the manager's tick): once per init, when `FUN_02227fe8` set the
+  flag at `+0x465ba`. In `scratch\game\mkwmp.log` init ran at boot (dormant, stock "unavailable") and again 2.5 s
+  after the probe went active, then on a later sign-in. INFERRED: a player who appears in the roster after that
+  read is only listed after the next sign-in.
+- **The probe** (`native/probe/src/friends.c`): the roster comes from the launcher (`GET /local/v1/friends`), and
+  each name gets the lobby's account id (first 8 bytes of `uuid5(URL, "mkwmp-user/" + lower(name))`, top bit
+  cleared, 0 -> 1), the name as nickname and valid = 1.
+- **Override budget** (VERIFIED, mkw.exe 1.0.8 and 0.1.10): `hostfn_add_override` appends to a fixed table of 64
+  `{name, fn}` pairs and ends the process on the 65th (`cmp rax, 0x40`, "hostfn_add_override: more than %d").
+
 ---
 
 ## 1. Post-match flow and the referee (priorities 1 and B)

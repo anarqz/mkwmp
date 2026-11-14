@@ -14,6 +14,7 @@
 #include "config.h"
 #include "capture_cert.h"
 #include "seat.h"
+#include "friends.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -144,10 +145,22 @@ static void ov_cond_timedwait(Cpu *c) {
 static void ov_ok(Cpu *c) { ret_x(c, 0); }
 static void ov_friend_list_available(Cpu *c) {
     // The Online Play gate at main+0x2228120 requires a ready list.
-    // The existing recomp GetFriendList override supplies zero friends.
     uint8_t *available = arg_p(c, 0);
     if (available) *available = 1;
-    rlog("friends list available (empty local list)");
+    rlog("friends list available");
+    ret_x(c, 0);
+}
+// Result GetFriendList(int *outCount, Friend *out, const Uid &uid, int offset, int count,
+// const FriendFilter &filter): the launcher's roster, so the lobby's NPLN friends have a
+// system friend to attach to. The game reads it once after each sign-in, 10 at a time, until
+// a page comes back short (main+0x22283e8); its filter is all zero (no presence filter).
+static void ov_friend_list(Cpu *c) {
+    int32_t *out_count = arg_p(c, 0);
+    int offset = (int)arg_x(c, 3), count = (int)arg_x(c, 4);
+    int n = friends_list(arg_p(c, 2), offset, count, arg_p(c, 1));
+    if (out_count) *out_count = n;
+    static volatile LONG last = -1;
+    if (offset == 0 && InterlockedExchange(&last, n) != n) mlog("friend list: %d friends from offset 0", n);
     ret_x(c, 0);
 }
 
@@ -231,13 +244,19 @@ static void ov_fiber_initialize(Cpu *c) {
 }
 static void ov_nifm_is_network_available(Cpu *c) { ret_x(c, 1); }
 static GuestFn stock_handler(const char *name);
+// Going online may wait this long for the launcher's friend roster: the game reads its friend
+// list once, about 2.5 s after the sign-in, and a roster that arrives later is not shown.
+enum { FRIENDS_WAIT_MS = 1000 };
 // Online again after leaving: take the seat back (the launcher freed it 90 s after the
 // keepalives stopped; with a live seat this is just an immediate POST).
 static void ov_nifm_submit_wait(Cpu *c) {
     (void)c;
     if (seat_keepalive_paused()) {
         SeatReply r;
-        if (seat_acquire(&r, 10 * 60 * 1000) == SEAT_SEATED) seat_keepalive_resume();
+        if (seat_acquire(&r, 10 * 60 * 1000) == SEAT_SEATED) {
+            seat_keepalive_resume();
+            friends_online(FRIENDS_WAIT_MS);
+        }
     }
 }
 // The player left online: stop the seat keepalive so the launcher frees the seat.
@@ -1304,6 +1323,7 @@ static void try_activate(void) {
                 g_lobby_port = atoi(colon + 1);
             }
             seat_keepalive_start();
+            friends_online(FRIENDS_WAIT_MS);
             mlog("online requested: seated, going active");
             InterlockedExchange(&g_active, 1);
         } else {
@@ -1365,7 +1385,8 @@ static const Reg kRegs[] = {
     {"_ZN2nn7account12AsyncContext9GetResultEv", ov_ok},
     {"_ZN2nn4time39AsyncEnsureNetworkClockAvailabilityTask10InitializeENS_2os14EventClearModeE", ov_clock_init},
     {"_ZN2nn4time39AsyncEnsureNetworkClockAvailabilityTask9StartTaskEv", ov_ok},
-    {"_ZN2nn4time39AsyncEnsureNetworkClockAvailabilityTask9GetResultEv", ov_ok},
+    // (AsyncEnsureNetworkClockAvailabilityTask::GetResult is left to the runtime: its stock
+    //  handler already returns success, in 1.0.8 and 0.1.10 alike. Its slot went to GetFriendList.)
     {"_ZN2nn4time39AsyncEnsureNetworkClockAvailabilityTask14GetFinishEventEv", ov_clock_event},
     {"_ZN2nn4time39AsyncEnsureNetworkClockAvailabilityTaskD1Ev", ov_clock_destroy},
     {"_ZN2nn3nsd24GetEnvironmentIdentifierEPNS0_21EnvironmentIdentifierE", ov_nsd_env_id},
@@ -1397,6 +1418,7 @@ static const Reg kRegs[] = {
     {"_ZN2nn3err9ShowErrorERKNS0_18ErrorResultVariantE", ov_show_error_variant},
     {"_ZN2nn6socket6SendToEiPKvmNS0_7MsgFlagEPKNS0_8SockAddrEj", ov_pia_sendto},
     {"_ZN2nn7friends27CheckFriendListAvailabilityEPbRKNS_7account3UidE", ov_friend_list_available},
+    {"_ZN2nn7friends13GetFriendListEPiPNS0_6FriendERKNS_7account3UidEiiRKNS0_12FriendFilterE", ov_friend_list},
     {"pthread_cond_timedwait", ov_cond_timedwait},
     {"_ZN2nn6socket8RecvFromEiPvmNS0_7MsgFlagEPNS0_8SockAddrEPj", ov_pia_recvfrom},
     {"_ZN2nn6socket12GetLastErrorEv", ov_pia_errno},
@@ -1423,7 +1445,20 @@ static const Reg kRegs[] = {
     {"__errno_location", ov_errno_location},
     {"nnsocketGetAddrInfo", ov_sock_getaddrinfo},
 };
-_Static_assert(sizeof(kRegs) / sizeof(kRegs[0]) <= 64, "runtime override limit");
+// The runtime keeps overrides in a fixed table of 64: its hostfn_add_override ends the
+// process past that ("hostfn_add_override: more than 64"; cmp rax, 0x40 in mkw.exe 1.0.8 and
+// 0.1.10). Every hostfn_add_override call of npln_register counts: kRegs, where the two
+// *Fiber entries are registered only with MKWMP_NO_FIBER=0, and otherwise the core-mask pair
+// in their place. Both ways must fit, and each kRegs entry needs its own gate.
+enum {
+    RUNTIME_OVERRIDE_MAX = 64,
+    N_REGS = sizeof(kRegs) / sizeof(kRegs[0]),
+    N_FIBER_REGS = 2,       // SwitchToFiber, InitializeFiber
+    N_CORE_MASK_REGS = 2,   // nnosGetThreadCoreMask, nnosSetThreadCoreMask
+};
+_Static_assert(N_REGS <= NREG, "one gate per kRegs entry");
+_Static_assert(N_REGS <= RUNTIME_OVERRIDE_MAX, "runtime override limit (MKWMP_NO_FIBER=0)");
+_Static_assert(N_REGS - N_FIBER_REGS + N_CORE_MASK_REGS <= RUNTIME_OVERRIDE_MAX, "runtime override limit");
 
 int npln_register(void) {
     // Opt-in: engage only if mkwmp.toml is present (or MKWMP_ENABLE=1 for tests).
@@ -1447,7 +1482,7 @@ int npln_register(void) {
         log_line("npln_register: required fiber delegates missing; capture disabled"); return -1;
     }
     if (g_rt.ldr_count() != 0) { log_line("npln_register: TOO LATE"); return -1; }
-    int n = (int)(sizeof(kRegs) / sizeof(kRegs[0]));
+    int n = N_REGS;
     // Fibers are left to the runtime by default (mkw-recomp 0.1.10, whose fiber
     // internals differ from the 1.0.8 build the fiber workaround targets); the freed
     // override slots take the core-mask pair. MKWMP_NO_FIBER=0 restores the fiber
@@ -1457,7 +1492,7 @@ int npln_register(void) {
     const char *eager = getenv("MKWMP_EAGER");
     if (eager && !strcmp(eager, "1")) { g_active = 1; log_line("MKWMP_EAGER=1: active from start"); }
     int gated = 0;
-    for (int i = 0; i < n && i < NREG; i++) {
+    for (int i = 0; i < n; i++) {
         if (skip_fiber && strstr(kRegs[i].name, "Fiber")) { log_line(kRegs[i].name); continue; }
         g_ours[i] = kRegs[i].fn;
         g_gate_name[i] = kRegs[i].name;

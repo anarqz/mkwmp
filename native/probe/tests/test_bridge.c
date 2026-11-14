@@ -220,6 +220,17 @@ int main(void) {
     assert(notify_drain(nbuf, 32) == 16);
     assert(nbuf[0].id == 7);  // first 4 of 20 dropped (ids 3..6)
 
+    // GetFriendList before any launcher roster: success with zero friends, buffer untouched.
+    int32_t friend_count = -1;
+    GFriend friend_buf[2];
+    memset(friend_buf, 0xee, sizeof friend_buf);
+    uint64_t friend_owner[2] = {1, 2};
+    Cpu fc = {0};
+    fc.x[0] = (uintptr_t)&friend_count; fc.x[1] = (uintptr_t)friend_buf; fc.x[2] = (uintptr_t)friend_owner;
+    fc.x[3] = 0; fc.x[4] = 2;
+    ov_friend_list(&fc);
+    assert(fc.x[0] == 0 && friend_count == 0 && friend_buf[0].is_valid == 0xee);
+
     puts("bridge: eventfd, addrinfo ABI, TCP, loopback peer UDP, certificate, config and notify passed");
     return 0;
 }
