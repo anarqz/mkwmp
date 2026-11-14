@@ -28,6 +28,8 @@ pub const REPO: &str = "anarqz/mkwmp";
 /// release machine.
 pub const RELEASE_KEYS: &[&str] = &["release1:Zuvb-AuF9DcXEzXRSu49EFrb2ilCQnJl1e4ApQJI9Dw"];
 pub const PROBE_ASSET: &str = "mkwmp-probe-winmm.dll";
+/// The voice engine (native/voice), installed as `<game>/mkwmp-voice.dll`.
+pub const VOICE_ASSET: &str = "mkwmp-voice.dll";
 
 pub fn launcher_asset() -> Option<&'static str> {
     match (std::env::consts::OS, std::env::consts::ARCH) {

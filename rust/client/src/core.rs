@@ -12,7 +12,7 @@ use rand::RngCore;
 use tokio::sync::{Notify, RwLock};
 
 use crate::api::{Api, ApiError, Friends};
-use crate::config::{ClientConfig, SeatMode};
+use crate::config::{ClientConfig, SeatMode, Voice};
 use crate::log::note;
 use crate::seat::{Phase, Seat};
 use crate::{launch, probe, update};
@@ -77,6 +77,8 @@ pub struct Core {
     presence: Mutex<Option<(Ident, String)>>,
     /// Wakes the friends loop (an action, or the name/PIN changed).
     friends_wake: Notify,
+    /// One config write at a time (the window and the local API both save).
+    cfg_write: std::sync::Mutex<()>,
 }
 
 impl Core {
@@ -99,6 +101,7 @@ impl Core {
             stop: Notify::new(),
             presence: Mutex::new(None),
             friends_wake: Notify::new(),
+            cfg_write: std::sync::Mutex::new(()),
         })
     }
 
@@ -120,11 +123,33 @@ impl Core {
     }
 
     /// Save the window's edits. Friends edits reach a running seat through the
-    /// file (the heartbeat re-reads it).
-    pub fn set_config(&self, cfg: ClientConfig) -> Result<(), String> {
+    /// file (the heartbeat re-reads it). The voice lists the game owns (its
+    /// devices, its mutes) are kept as they are now: change them with
+    /// [`Core::edit_voice`].
+    pub fn set_config(&self, mut cfg: ClientConfig) -> Result<(), String> {
+        let _g = self.cfg_write.lock().unwrap_or_else(|p| p.into_inner());
+        let now = self.ui().cfg.voice;
+        cfg.voice.mutes = now.mutes;
+        cfg.voice.inputs = now.inputs;
+        cfg.voice.outputs = now.outputs;
         cfg.save(&self.config_path)?;
         self.set(|u| u.cfg = cfg);
         self.friends_wake.notify_one();
+        Ok(())
+    }
+
+    /// Change the voice settings in place (the local API, an unmute in the
+    /// window), saved at once when something changed.
+    pub fn edit_voice<F: FnOnce(&mut Voice)>(&self, f: F) -> Result<(), String> {
+        let _g = self.cfg_write.lock().unwrap_or_else(|p| p.into_inner());
+        let mut cfg = self.ui().cfg;
+        let before = cfg.voice.clone();
+        f(&mut cfg.voice);
+        if cfg.voice == before {
+            return Ok(());
+        }
+        cfg.save(&self.config_path)?;
+        self.set(|u| u.cfg = cfg);
         Ok(())
     }
 
@@ -227,7 +252,7 @@ impl Core {
             return Err(p);
         }
         let seat = Arc::new(Seat::new(&cfg));
-        let (lobby, lobby_ca) = seat.api().lobby().await.map_err(|e| e.to_string())?;
+        let (lobby, lobby_ca, voice_port) = seat.api().lobby().await.map_err(|e| e.to_string())?;
         // Always the current server's: a stale file from another server
         // would make the game reject this one's lobby.
         launch::write_lobby_ca(&cfg.game, lobby_ca.as_deref()).map_err(|e| format!("writing {}: {e}", launch::LOBBY_CA))?;
@@ -241,7 +266,7 @@ impl Core {
         let write = |ticket: Option<&str>, lobby: &str| {
             let toml = launch::probe_toml(
                 &cfg,
-                &launch::ProbeConfig { lobby, launcher: &addr, launcher_token: &self.token, ticket },
+                &launch::ProbeConfig { lobby, launcher: &addr, launcher_token: &self.token, ticket, voice_port },
             );
             launch::write_probe_toml(&cfg.game, &toml).map_err(|e| format!("writing mkwmp.toml: {e}"))
         };
@@ -527,6 +552,24 @@ pub async fn sync_probe(cfg: &ClientConfig) {
             },
             Err(e) => note(format!("game patch download failed: {e}")),
         },
-        Err(e) => note(format!("game patch check failed: {e}")),
+        Err(e) => {
+            note(format!("game patch check failed: {e}"));
+            return;
+        }
+    }
+    // Voice chat's engine, from the same release (older releases have none).
+    if let Ok((r, sums)) = update::own_release(&u).await {
+        if !r.assets.iter().any(|a| a.name == update::VOICE_ASSET) {
+            return;
+        }
+        match u.asset(&r, &sums, update::VOICE_ASSET).await {
+            Ok(bytes) => match probe::install_file(&cfg.game, probe::VOICE, &bytes, probe::game_running()) {
+                Ok(probe::ProbeAction::Installed { .. }) => note(format!("installed voice chat {}", r.tag_name)),
+                Ok(probe::ProbeAction::GameRunning) => note("a voice chat update is ready; close the game first"),
+                Ok(probe::ProbeAction::UpToDate) => {}
+                Err(e) => note(format!("installing voice chat failed: {e}")),
+            },
+            Err(e) => note(format!("voice chat download failed: {e}")),
+        }
     }
 }

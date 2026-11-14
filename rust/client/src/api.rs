@@ -39,6 +39,14 @@ pub struct Status {
     /// that hold the built-in one may leave it out.
     #[serde(default)]
     pub lobby_ca: Option<String>,
+    /// UDP port of the lobby's voice relay (0 = voice off); servers older
+    /// than voice leave it out.
+    #[serde(default = "default_voice_port")]
+    pub voice_port: u16,
+}
+
+fn default_voice_port() -> u16 {
+    8907
 }
 
 /// One friend and what they're doing.
@@ -151,11 +159,12 @@ impl Api {
 
     /// Where the game connects: the server's lobby, and the certificate the
     /// game should trust for it.
-    pub async fn lobby(&self) -> Result<(String, Option<String>), ApiError> {
+    /// Also the voice relay's UDP port.
+    pub async fn lobby(&self) -> Result<(String, Option<String>, u16), ApiError> {
         let s = self.status().await?;
         let endpoint =
             s.lobby_endpoint.ok_or_else(|| ApiError::Transient("the server is too old (no lobbyEndpoint)".into()))?;
-        Ok((endpoint, s.lobby_ca))
+        Ok((endpoint, s.lobby_ca, s.voice_port))
     }
 
     pub async fn join(&self, name: &str, pin: &str) -> Result<View, ApiError> {

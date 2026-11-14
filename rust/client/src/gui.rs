@@ -254,6 +254,13 @@ impl eframe::App for App {
         if st.cfg.name.eq_ignore_ascii_case(&self.draft.name) && st.cfg.pin != self.draft.pin && !st.cfg.pin.is_empty() {
             self.draft.pin = st.cfg.pin.clone();
         }
+        // The game's voice devices and mutes arrive through the local API.
+        let v = &st.cfg.voice;
+        if (&self.draft.voice.mutes, &self.draft.voice.inputs, &self.draft.voice.outputs) != (&v.mutes, &v.inputs, &v.outputs) {
+            self.draft.voice.mutes = v.mutes.clone();
+            self.draft.voice.inputs = v.inputs.clone();
+            self.draft.voice.outputs = v.outputs.clone();
+        }
         if self.deleting && st.register != RegisterView::Working {
             self.deleting = false;
             if st.cfg.pin.is_empty() {
@@ -536,32 +543,42 @@ impl App {
     fn settings_dialog(&mut self, ctx: &egui::Context) {
         let has_tray = self.tray.is_some();
         let r = pixel_modal("settings").show(ctx, |ui| {
-            ui.set_width(440.0);
+            ui.set_width(820.0);
             ui.label(RichText::new("SETTINGS").font(pixel(13.0)).color(INK));
             ui.add_space(8.0);
-            let b = &mut self.draft.background;
             let mut changed = false;
-            section(ui, "IN THE BACKGROUND");
-            ui.add_enabled_ui(has_tray, |ui| {
-                changed |= ui.checkbox(&mut b.close_to_tray, "Keep running in the system tray when I close the window").changed();
-            });
-            if !has_tray {
-                hint(ui, "No system tray here (Steam Deck Game Mode): closing quits.", MUTED);
-            }
-            if crate::autostart::supported() {
-                if ui.checkbox(&mut b.start_with_system, "Start with my computer, in the tray").changed() {
-                    changed = true;
-                    if let Err(e) = crate::autostart::apply(b.start_with_system) {
-                        self.error = Some(e);
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(390.0);
+                    let b = &mut self.draft.background;
+                    section(ui, "IN THE BACKGROUND");
+                    ui.add_enabled_ui(has_tray, |ui| {
+                        changed |= ui.checkbox(&mut b.close_to_tray, "Keep running in the system tray when I close the window").changed();
+                    });
+                    if !has_tray {
+                        hint(ui, "No system tray here (Steam Deck Game Mode): closing quits.", MUTED);
                     }
-                }
-            }
-            hint(ui, "Running in the background never takes a seat: you get one only when you play.", MUTED);
-            ui.add_space(6.0);
-            section(ui, "NOTIFY ME WHEN");
-            changed |= ui.checkbox(&mut b.notify_online, "a friend comes online").changed();
-            changed |= ui.checkbox(&mut b.notify_playing, "a friend starts playing").changed();
-            changed |= ui.checkbox(&mut b.notify_requests, "someone sends me a friend request").changed();
+                    if crate::autostart::supported() {
+                        if ui.checkbox(&mut b.start_with_system, "Start with my computer, in the tray").changed() {
+                            changed = true;
+                            if let Err(e) = crate::autostart::apply(b.start_with_system) {
+                                self.error = Some(e);
+                            }
+                        }
+                    }
+                    hint(ui, "Running in the background never takes a seat: you get one only when you play.", MUTED);
+                    ui.add_space(6.0);
+                    section(ui, "NOTIFY ME WHEN");
+                    changed |= ui.checkbox(&mut b.notify_online, "a friend comes online").changed();
+                    changed |= ui.checkbox(&mut b.notify_playing, "a friend starts playing").changed();
+                    changed |= ui.checkbox(&mut b.notify_requests, "someone sends me a friend request").changed();
+                });
+                ui.add_space(20.0);
+                ui.vertical(|ui| {
+                    ui.set_width(390.0);
+                    changed |= self.voice_settings(ui);
+                });
+            });
             if changed {
                 self.save();
             }
@@ -582,6 +599,55 @@ impl App {
         if r.should_close() {
             self.settings_open = false;
         }
+    }
+
+    /// The VOICE CHAT column of SETTINGS; true when a setting changed.
+    fn voice_settings(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut changed = false;
+        let v = &mut self.draft.voice;
+        section(ui, "VOICE CHAT");
+        changed |= ui.checkbox(&mut v.enabled, "Talk with the players in my lobby").changed();
+        let (inputs, outputs) = (v.inputs.clone(), v.outputs.clone());
+        ui.add_enabled_ui(v.enabled, |ui| {
+            field_label(ui, "MICROPHONE");
+            changed |= device_combo(ui, "voice-input", &mut v.input, &inputs);
+            field_label(ui, "OUTPUT");
+            changed |= device_combo(ui, "voice-output", &mut v.output, &outputs);
+            if inputs.is_empty() && outputs.is_empty() {
+                hint(ui, "Your devices show up here once the game has run.", MUTED);
+            }
+            field_label(ui, "MIC VOLUME");
+            changed |= volume(ui, &mut v.input_gain);
+            field_label(ui, "VOICE VOLUME");
+            changed |= volume(ui, &mut v.output_gain);
+        });
+        ui.add_space(6.0);
+        section(ui, "MUTED PLAYERS");
+        let mut unmute = None;
+        if v.mutes.is_empty() {
+            hint(ui, "Nobody. Mute a player from their menu in the game's lobby.", MUTED);
+        } else {
+            egui::ScrollArea::vertical().id_salt("voice-mutes").max_height(112.0).show(ui, |ui| {
+                for m in &v.mutes {
+                    ui.push_id(("mute", &m.account), |ui| {
+                        friend_row(ui, MUTED, &m.name, "", |ui| {
+                            ui.add_space(12.0);
+                            if small_button(ui, "UNMUTE", 80.0, BLUE, BLUE_D, true).clicked() {
+                                unmute = Some(m.account.clone());
+                            }
+                        });
+                    });
+                }
+            });
+        }
+        if let Some(account) = unmute {
+            // The game's list: changed in place, not through the draft.
+            if let Err(e) = self.core.edit_voice(|v| v.mutes.retain(|m| m.account != account)) {
+                self.error = Some(e);
+            }
+            self.draft.voice.mutes.retain(|m| m.account != account);
+        }
+        changed
     }
 
     fn unfriend_dialog(&mut self, ctx: &egui::Context) {
@@ -701,7 +767,7 @@ fn gear_button(ui: &mut egui::Ui, rect: Rect) -> Response {
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    resp.on_hover_text("Settings: tray, notifications, start-up")
+    resp.on_hover_text("Settings: tray, notifications, start-up, voice chat")
 }
 
 const STAR: [&str; 7] = ["...#...", "...#...", "#######", ".#####.", "..###..", ".##.##.", ".#...#."];
@@ -829,6 +895,38 @@ fn pixel_modal(id: &str) -> egui::Modal {
             .shadow(Shadow { offset: [8, 8], blur: 0, spread: 0, color: Color32::from_black_alpha(120) })
             .inner_margin(20),
     )
+}
+
+/// A device picker: "System default" (empty id) first, then what the game reported.
+fn device_combo(ui: &mut egui::Ui, id: &str, selected: &mut String, devices: &[crate::config::VoiceDevice]) -> bool {
+    let before = selected.clone();
+    let text = if selected.is_empty() {
+        "System default".to_string()
+    } else {
+        devices.iter().find(|d| d.id == *selected).map(|d| d.name.clone()).unwrap_or_else(|| "(not connected)".into())
+    };
+    egui::ComboBox::from_id_salt(id).width(370.0).selected_text(text).show_ui(ui, |ui| {
+        ui.selectable_value(selected, String::new(), "System default");
+        for d in devices {
+            ui.selectable_value(selected, d.id.clone(), &d.name);
+        }
+    });
+    *selected != before
+}
+
+/// A 1-100 volume slider; saved when the drag ends (not on every step).
+fn volume(ui: &mut egui::Ui, value: &mut u8) -> bool {
+    ui.scope(|ui| {
+        // The theme's white widget fill would hide the rail on PAPER.
+        let v = ui.visuals_mut();
+        v.widgets.inactive.bg_fill = MUTED;
+        v.selection.bg_fill = BLUE;
+        v.slider_trailing_fill = true;
+        ui.spacing_mut().slider_width = 290.0;
+        let r = ui.add(egui::Slider::new(value, 1..=100).suffix("%"));
+        r.drag_stopped() || (r.changed() && !r.dragged())
+    })
+    .inner
 }
 
 /// A small heading inside a card list.

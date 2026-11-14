@@ -11,6 +11,8 @@ pub struct ProbeConfig<'a> {
     pub launcher: &'a str,
     pub launcher_token: &'a str,
     pub ticket: Option<&'a str>,
+    /// The lobby host's voice relay port (seat status `voicePort`; 0 = off).
+    pub voice_port: u16,
 }
 
 pub fn probe_toml(cfg: &ClientConfig, p: &ProbeConfig) -> String {
@@ -20,6 +22,7 @@ pub fn probe_toml(cfg: &ClientConfig, p: &ProbeConfig) -> String {
     s.push_str(&format!("name = \"{}\"\n", cfg.name));
     s.push_str(&format!("launcher = \"{}\"\n", p.launcher));
     s.push_str(&format!("launcher_token = \"{}\"\n", p.launcher_token));
+    s.push_str(&format!("voice_port = {}\n", p.voice_port));
     if let Some(t) = p.ticket {
         s.push_str(&format!("ticket = \"{t}\"\n"));
     }
@@ -102,12 +105,13 @@ mod tests {
             slot,
             launch_command: String::new(),
             background: Default::default(),
+            voice: Default::default(),
         }
     }
 
     #[test]
     fn probe_toml_carries_everything_the_probe_reads() {
-        let p = ProbeConfig { lobby: "mkwlb.example:8905", launcher: "127.0.0.1:47820", launcher_token: "abc", ticket: Some("mkw1.x.y") };
+        let p = ProbeConfig { lobby: "mkwlb.example:8905", launcher: "127.0.0.1:47820", launcher_token: "abc", ticket: Some("mkw1.x.y"), voice_port: 8907 };
         let t = probe_toml(&cfg(2), &p);
         for line in [
             "server = \"mkwlb.example:8905\"",
@@ -116,6 +120,7 @@ mod tests {
             "launcher_token = \"abc\"",
             "ticket = \"mkw1.x.y\"",
             "slot = 2",
+            "voice_port = 8907",
         ] {
             assert!(t.contains(line), "{line} in {t}");
         }

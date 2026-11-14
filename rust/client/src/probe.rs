@@ -8,6 +8,8 @@ use crate::update::sha256_hex;
 
 pub const PROBE: &str = "winmm.dll";
 pub const HOST: &str = "winmm_host.dll";
+/// The voice engine the probe loads (native/voice), next to winmm.dll.
+pub const VOICE: &str = "mkwmp-voice.dll";
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ProbeAction {
@@ -46,6 +48,22 @@ pub fn install_probe(game: &Path, bytes: &[u8], running: bool) -> std::io::Resul
     std::fs::rename(&tmp, &path)?;
     std::fs::write(&marker, sha256_hex(bytes))?;
     Ok(ProbeAction::Installed { backup })
+}
+
+/// Put `bytes` (already verified) at `<game>/<name>` unless it is there: a
+/// file only mkwmp ships (the voice engine), so nothing is backed up.
+pub fn install_file(game: &Path, name: &str, bytes: &[u8], running: bool) -> std::io::Result<ProbeAction> {
+    let path = game.join(name);
+    if std::fs::read(&path).ok().as_deref().map(sha256_hex) == Some(sha256_hex(bytes)) {
+        return Ok(ProbeAction::UpToDate);
+    }
+    if running {
+        return Ok(ProbeAction::GameRunning);
+    }
+    let tmp = game.join(format!("{name}.mkwmp-new"));
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, &path)?;
+    Ok(ProbeAction::Installed { backup: None })
 }
 
 /// Where the real winmm.dll can be copied from on this machine.
@@ -139,6 +157,16 @@ mod tests {
         assert_eq!(install_probe(&d, b"probe v2", false).unwrap(), ProbeAction::Installed { backup: None });
         assert_eq!(std::fs::read(d.join(PROBE)).unwrap(), b"probe v2");
         assert_eq!(std::fs::read(d.join("winmm.dll.bak")).unwrap(), b"someone else's dll");
+    }
+
+    #[test]
+    fn voice_dll_installs_and_updates() {
+        let d = dir("voice");
+        assert_eq!(install_file(&d, VOICE, b"v1", false).unwrap(), ProbeAction::Installed { backup: None });
+        assert_eq!(install_file(&d, VOICE, b"v1", false).unwrap(), ProbeAction::UpToDate);
+        assert_eq!(install_file(&d, VOICE, b"v2", true).unwrap(), ProbeAction::GameRunning);
+        install_file(&d, VOICE, b"v2", false).unwrap();
+        assert_eq!(std::fs::read(d.join(VOICE)).unwrap(), b"v2");
     }
 
     #[test]

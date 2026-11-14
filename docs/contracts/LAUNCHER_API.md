@@ -12,6 +12,7 @@ The game patch (probe, `winmm.dll`) asks the launcher for a seat. Owners:
     launcher = "127.0.0.1:47820"        # client.toml local_port
     launcher_token = "<64 hex>"         # random per launcher start
     ticket = "mkw1..."                  # seat = "start" only, once seated
+    voice_port = 8907                   # seat status voicePort: the voice relay on the lobby host (0 = off)
     slot = 2                            # loopback testing only
 
 The file is replaced atomically, and rewritten when the ticket or token changes. The probe is dormant until the game's first network request (Online Play).
@@ -53,3 +54,11 @@ Same `Authorization: Bearer <launcher_token>` as `/seat`. The probe polls it (at
 | 503 | `{"state":"unavailable","message"}` | PLAY not pressed yet. |
 
 Served from the launcher's friends cache, which the launcher keeps current with the seat server's friends long-poll (`GET /seat/v1/friends`). Account ids follow the lobby's rule: user id = uuid5(NAMESPACE_URL, "mkwmp-user/" + lower(name)); account id = its first 8 bytes big-endian, top bit cleared, 0 → 1.
+
+## Voice chat: GET /local/v1/voice, POST /local/v1/voice/devices, POST /local/v1/voice/mute
+
+Same bearer. Specified in docs/contracts/VOICE_API.md §4; work without PLAY. `GET` answers
+`{"enabled","input","output","inputGain","outputGain","mutes":[{"account","name"}]}` (gains 1-100,
+account a u64 in decimal); the two POSTs answer `204`, `400` for a malformed body. Limits: GET burst
+10 then 2/s; the POSTs share a bucket, burst 20 then 2/s. Saved in client.toml `[voice]`; the
+launcher keeps at most 64 devices per list and 500 mutes.

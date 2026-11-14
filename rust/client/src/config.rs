@@ -50,6 +50,71 @@ pub struct ClientConfig {
     /// Tray, notifications and start-up behaviour (`[background]`).
     #[serde(default)]
     pub background: Background,
+    /// Voice chat (`[voice]`, docs/contracts/VOICE_API.md §4).
+    #[serde(default)]
+    pub voice: Voice,
+}
+
+/// Lobby voice chat. The window edits the switches, devices and volumes; the
+/// game (through the local API) reports its devices and the players muted from
+/// its menus.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Voice {
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// Microphone device id as the game sees it; empty = system default.
+    #[serde(default)]
+    pub input: String,
+    /// Output device id; empty = system default.
+    #[serde(default)]
+    pub output: String,
+    /// Mic volume, 1-100.
+    #[serde(default = "hundred")]
+    pub input_gain: u8,
+    /// Voice volume, 1-100.
+    #[serde(default = "hundred")]
+    pub output_gain: u8,
+    /// Players muted from the game's menus, by account id.
+    #[serde(default)]
+    pub mutes: Vec<VoiceMute>,
+    /// The devices the game last reported (a native launcher on the Deck cannot
+    /// see Wine's).
+    #[serde(default)]
+    pub inputs: Vec<VoiceDevice>,
+    #[serde(default)]
+    pub outputs: Vec<VoiceDevice>,
+}
+
+impl Default for Voice {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            input: String::new(),
+            output: String::new(),
+            input_gain: 100,
+            output_gain: 100,
+            mutes: vec![],
+            inputs: vec![],
+            outputs: vec![],
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoiceMute {
+    /// The account id (u64), decimal.
+    pub account: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoiceDevice {
+    pub id: String,
+    pub name: String,
+}
+
+fn hundred() -> u8 {
+    100
 }
 
 /// Running in the background: closing the window keeps the launcher in the
@@ -125,6 +190,7 @@ impl Default for ClientConfig {
             slot: 1,
             launch_command: String::new(),
             background: Background::default(),
+            voice: Voice::default(),
         }
     }
 }
@@ -199,6 +265,20 @@ mod tests {
     fn save_round_trips() {
         let p = std::env::temp_dir().join("mkwmp_client_save.toml");
         let c = ClientConfig { name: "Ana".into(), ..Default::default() };
+        c.save(p.to_str().unwrap()).unwrap();
+        assert_eq!(ClientConfig::load(p.to_str().unwrap()).unwrap(), c);
+    }
+
+    #[test]
+    fn voice_defaults_and_round_trip() {
+        let c: ClientConfig = toml::from_str("server=\"x\"\nname=\"Ana\"\ngame=\"g\"\n").unwrap();
+        assert_eq!(c.voice, Voice::default());
+        assert!(c.voice.enabled && c.voice.input_gain == 100 && c.voice.output_gain == 100);
+        let p = std::env::temp_dir().join("mkwmp_client_voice.toml");
+        let mut c = ClientConfig { name: "Ana".into(), ..Default::default() };
+        c.voice.input = "{0.0.1.00000000}.{abc}".into();
+        c.voice.mutes.push(VoiceMute { account: "123".into(), name: "Bia".into() });
+        c.voice.inputs.push(VoiceDevice { id: "a".into(), name: "Mic".into() });
         c.save(p.to_str().unwrap()).unwrap();
         assert_eq!(ClientConfig::load(p.to_str().unwrap()).unwrap(), c);
     }
