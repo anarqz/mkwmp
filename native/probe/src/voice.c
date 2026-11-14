@@ -5,6 +5,7 @@
 #include "launcher.h"
 #include "log.h"
 #include "seat.h"
+#include "voice_ui.h"
 #include "../../voice/src/mkwmp_voice.h"
 
 #include <windows.h>
@@ -279,6 +280,7 @@ void voice_online(const char *lobby_host) {
         g_online = 1;
         snprintf(g_host, sizeof g_host, "%s", lobby_host && *lobby_host ? lobby_host : cfg->host);
         if (!g_thread) g_thread = CreateThread(NULL, 0, voice_thread, NULL, 0, NULL);
+        voice_ui_install();
         mkwmp_log("voice: online (relay %s:%d)", g_host, cfg->voice_port);
     }
     ReleaseSRWLockExclusive(&g_lock);

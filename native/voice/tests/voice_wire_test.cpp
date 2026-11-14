@@ -48,6 +48,29 @@ int main() {
     Check(st.size() == 24 + 244 && DecodeStateDown(st.data(), st.size(), got) && got.room == 1 && got.seats.size() == 24 &&
               got.seats[23].account == 1023 && got.seats[23].state == 1,
           "state down, 24 seats");
+    // VOICE_API.md §2.1: the relay's golden vectors (rust/gateway/src/voice/tests.rs contract_vectors)
+    {
+        auto hex = [](const std::vector<uint8_t> &v) {
+            std::string s;
+            char b[3];
+            for (uint8_t x : v) { std::snprintf(b, sizeof b, "%02x", x); s += b; }
+            return s;
+        };
+        const uint8_t o[3] = {0xf8, 0xff, 0xfe}, dead[4] = {0xde, 0xad, 0xbe, 0xef}, r[3] = {0x11, 0x22, 0x33}, zero[12] = {};
+        Check(hex(EncodeVoiceUp(0, 42, 126, o, 3, dead)) == "3e9300082112a4420100002a0000007edeadbeefc0f30003f8fffe00", "vector: voice up");
+        auto vd = EncodeVoiceDown(0, 42, 126, 5, o, 3, r);
+        Check(hex(vd) == "3e9300082112a4420100002a0000007e05112233c0f40003f8fffe00", "vector: voice down");
+        Check(DecodeVoiceDown(vd.data(), vd.size(), v) && v.seat == 5 && v.size == 3, "vector: voice down decodes");
+        Check(hex(EncodeControlUp(kSubscribe, kSelfDeafened, {0x0123456789abcdefull}, "mkw1.a.b", zero)) ==
+                  "3e94001c2112a442000000000000000000000000c0f50016010102010123456789abcdef00086d6b77312e612e620000",
+              "vector: control up");
+        StateDown one;
+        one.room = 1;
+        one.bundle = 3;
+        one.seats.push_back({2, 0x0123456789abcdefull, 1});
+        auto sd = EncodeStateDown(one, zero);
+        Check(hex(sd) == "3e9400142112a442000000000000000000000000c0f6000e01010301020123456789abcdef010000", "vector: state down");
+    }
     std::printf("voice_wire_test: %s\n", failures ? "FAIL" : "PASS");
     return failures ? 1 : 0;
 }

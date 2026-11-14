@@ -31,8 +31,18 @@ static const char *const kNames[] = {
     "kern_cpu",
     "kern_core_away",
     "kern_core_back",
+    // optional: the dispatch host registry (guesthook.c)
+    "g_host",
 };
 enum { N_RT = 6, N_SYMS = sizeof(kNames) / sizeof(kNames[0]) };
+static void *g_slots[N_SYMS];
+
+// Any resolved name of kNames (NULL if absent or not resolved yet).
+void *coff_symbol(const char *name) {
+    for (int k = 0; k < N_SYMS; k++)
+        if (!strcmp(kNames[k], name)) return g_slots[k];
+    return NULL;
+}
 
 static uint8_t *read_own_image(uint32_t *out_size) {
     wchar_t path[MAX_PATH];
@@ -82,7 +92,7 @@ int coff_resolve_runtime(void) {
     }
 
     int ok = 0;
-    void *slots[N_SYMS] = {0};
+    void **slots = g_slots;
 
     do {
         if (size < 0x40 || d[0] != 'M' || d[1] != 'Z') break;
