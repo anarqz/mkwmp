@@ -48,10 +48,10 @@ impl std::fmt::Display for RegistryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RegistryError::Invalid(m) => f.write_str(m),
-            RegistryError::Taken => f.write_str("that gametag is already registered"),
-            RegistryError::Reserved => f.write_str("that gametag is reserved"),
-            RegistryError::NotFound => f.write_str("that gametag is not registered yet"),
-            RegistryError::WrongPin => f.write_str("wrong PIN for that gametag"),
+            RegistryError::Taken => f.write_str("that gamertag is already registered"),
+            RegistryError::Reserved => f.write_str("that gamertag is reserved"),
+            RegistryError::NotFound => f.write_str("that gamertag is not registered yet"),
+            RegistryError::WrongPin => f.write_str("wrong PIN for that gamertag"),
             RegistryError::Friend(_, m) => f.write_str(m),
             RegistryError::Io(m) => write!(f, "registry: {m}"),
         }
@@ -387,14 +387,14 @@ impl Registry {
     pub fn request_friend(&self, me: &str, other: &str, now: u64) -> Result<(Requested, String), RegistryError> {
         let (mk, ok) = (names::key(me), names::key(other));
         if mk == ok {
-            return Err(friend_err("FRIEND_SELF", "that's your own gametag"));
+            return Err(friend_err("FRIEND_SELF", "that's your own gamertag"));
         }
         let mut db = self.db.lock().unwrap();
         let tx = db.transaction()?;
         self.live_name(&tx, &mk, now)?.ok_or(RegistryError::NotFound)?;
         let other_name = self
             .live_name(&tx, &ok, now)?
-            .ok_or_else(|| friend_err("FRIEND_UNKNOWN", format!("no player has the gametag {other}")))?;
+            .ok_or_else(|| friend_err("FRIEND_UNKNOWN", format!("no player has the gamertag {other}")))?;
         let existing: Option<(String, String)> = tx
             .query_row(
                 "SELECT requester, status FROM friendships

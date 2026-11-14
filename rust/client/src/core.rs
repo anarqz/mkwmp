@@ -295,7 +295,7 @@ impl Core {
 
     /// The presence token for the current name + PIN, signing in if needed.
     async fn presence_token(&self) -> Result<String, ApiError> {
-        let id = Self::ident(&self.ui().cfg).ok_or_else(|| ApiError::Refused("register your gametag first".into()))?;
+        let id = Self::ident(&self.ui().cfg).ok_or_else(|| ApiError::Refused("register your gamertag first".into()))?;
         if let Some((who, t)) = self.presence.lock().unwrap().clone() {
             if who == id {
                 return Ok(t);

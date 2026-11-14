@@ -55,7 +55,7 @@ impl std::fmt::Display for RosterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RosterError::Name(e) => e.fmt(f),
-            RosterError::NameTaken => f.write_str("that gametag is in use on this server"),
+            RosterError::NameTaken => f.write_str("that gamertag is in use on this server"),
             RosterError::QueueFull => f.write_str("the queue is full, try again later"),
             RosterError::NotFound => f.write_str("session not found or expired"),
         }
