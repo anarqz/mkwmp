@@ -58,9 +58,11 @@ pub fn game_mode() -> bool {
     std::env::var_os("SteamGamepadUI").is_some() || std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
 }
 
-pub fn run(core: Arc<Core>) -> Result<(), String> {
+pub fn run(core: Arc<Core>, start_in_tray: bool) -> Result<(), String> {
+    let icon = egui::IconData { rgba: crate::icon::rgba(64), width: 64, height: 64 };
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("MKWMP")
+        .with_icon(Arc::new(icon))
         .with_inner_size([CANVAS.x * 0.9, CANVAS.y * 0.9])
         .with_min_inner_size([CANVAS.x * 0.6, CANVAS.y * 0.6]);
     if game_mode() {
@@ -72,7 +74,8 @@ pub fn run(core: Arc<Core>) -> Result<(), String> {
         options,
         Box::new(move |cc| {
             setup_style(&cc.egui_ctx);
-            Ok(Box::new(App::new(core)))
+            let tray = if crate::tray::available() { crate::tray::start() } else { None };
+            Ok(Box::new(App::new(core, tray, start_in_tray)))
         }),
     )
     .map_err(|e| format!("window: {e}"))
@@ -138,10 +141,16 @@ struct App {
     confirm_delete: bool,
     /// DELETE was confirmed; waiting for the server.
     deleting: bool,
+    /// The tray icon (None: no tray on this desktop; closing quits).
+    tray: Option<crate::tray::Tray>,
+    /// Started with --tray: hide after the first frames.
+    start_in_tray: bool,
+    frames: u32,
+    settings_open: bool,
 }
 
 impl App {
-    fn new(core: Arc<Core>) -> Self {
+    fn new(core: Arc<Core>, tray: Option<crate::tray::Tray>, start_in_tray: bool) -> Self {
         let draft = core.ui().cfg;
         Self {
             core,
@@ -152,6 +161,55 @@ impl App {
             error: None,
             confirm_delete: false,
             deleting: false,
+            tray,
+            start_in_tray,
+            frames: 0,
+            settings_open: false,
+        }
+    }
+
+    /// Development: MKWMP_GUI_SHOT=<file.png> saves a screenshot of the window
+    /// after it settled (MKWMP_GUI_SETTINGS=1 opens SETTINGS first), then quits.
+    fn dev_screenshot(&mut self, ctx: &egui::Context) {
+        let Some(path) = std::env::var_os("MKWMP_GUI_SHOT") else { return };
+        if self.frames == 2 && std::env::var_os("MKWMP_GUI_SETTINGS").is_some() {
+            self.settings_open = true;
+        }
+        if self.frames == 90 {
+            let path = std::path::PathBuf::from(path);
+            ctx.request_screenshot(move |img| {
+                let rgba: Vec<u8> = img.pixels.iter().flat_map(|p| p.to_array()).collect();
+                let png = crate::icon::encode_png(img.size[0] as u32, img.size[1] as u32, &rgba);
+                let _ = std::fs::write(&path, png);
+                crate::tray::WINDOW.quit();
+            });
+        }
+        ctx.request_repaint();
+    }
+
+    /// The window's close button: into the tray (if there is one and the
+    /// setting is on), otherwise really close.
+    fn handle_close(&mut self, ctx: &egui::Context) {
+        use crate::tray::WINDOW;
+        if self.start_in_tray && self.tray.is_some() && self.frames == 2 {
+            WINDOW.hide();
+        }
+        if !ctx.input(|i| i.viewport().close_requested()) || WINDOW.quitting() {
+            return;
+        }
+        if self.tray.is_none() || !self.draft.background.close_to_tray {
+            return;
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        self.save();
+        WINDOW.hide();
+        if !self.draft.background.tray_hint_shown {
+            self.draft.background.tray_hint_shown = true;
+            self.save();
+            crate::notify::show(
+                "MKWMP is still running".into(),
+                "It's in the system tray, so friends can see you online. Quit from the tray icon.".into(),
+            );
         }
     }
 
@@ -173,8 +231,12 @@ fn fit_zoom(ctx: &egui::Context) {
 }
 
 impl eframe::App for App {
-    fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, root: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = root.ctx().clone();
+        crate::tray::WINDOW.attach(&ctx, frame);
+        self.frames = self.frames.saturating_add(1);
+        self.handle_close(&ctx);
+        self.dev_screenshot(&ctx);
         fit_zoom(&ctx);
         // ~30 fps for the sky and the karts while focused; nearly still in
         // the background (the game is usually in front).
@@ -222,6 +284,15 @@ impl eframe::App for App {
             self.play_row(ui, busy, st.stars);
             status_pill(ui, &st, &self.draft, &self.error);
         });
+
+        // SETTINGS, top right of the canvas.
+        let gear = Rect::from_min_size(pos2(col.right() - 48.0, col.top() + 12.0), vec2(44.0, 40.0));
+        if gear_button(root, gear).clicked() {
+            self.settings_open = true;
+        }
+        if self.settings_open {
+            self.settings_dialog(&ctx);
+        }
 
         if self.confirm_delete {
             self.delete_dialog(&ctx);
@@ -451,6 +522,57 @@ impl App {
         })
     }
 
+    fn settings_dialog(&mut self, ctx: &egui::Context) {
+        let has_tray = self.tray.is_some();
+        let r = pixel_modal("settings").show(ctx, |ui| {
+            ui.set_width(440.0);
+            ui.label(RichText::new("SETTINGS").font(pixel(13.0)).color(INK));
+            ui.add_space(8.0);
+            let b = &mut self.draft.background;
+            let mut changed = false;
+            section(ui, "IN THE BACKGROUND");
+            ui.add_enabled_ui(has_tray, |ui| {
+                changed |= ui.checkbox(&mut b.close_to_tray, "Keep running in the system tray when I close the window").changed();
+            });
+            if !has_tray {
+                hint(ui, "No system tray here (Steam Deck Game Mode): closing quits.", MUTED);
+            }
+            if crate::autostart::supported() {
+                if ui.checkbox(&mut b.start_with_system, "Start with my computer, in the tray").changed() {
+                    changed = true;
+                    if let Err(e) = crate::autostart::apply(b.start_with_system) {
+                        self.error = Some(e);
+                    }
+                }
+            }
+            hint(ui, "Running in the background never takes a seat: you get one only when you play.", MUTED);
+            ui.add_space(6.0);
+            section(ui, "NOTIFY ME WHEN");
+            changed |= ui.checkbox(&mut b.notify_online, "a friend comes online").changed();
+            changed |= ui.checkbox(&mut b.notify_playing, "a friend starts playing").changed();
+            changed |= ui.checkbox(&mut b.notify_requests, "someone sends me a friend request").changed();
+            if changed {
+                self.save();
+            }
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if pixel_button(ui, "TEST", vec2(150.0, 36.0), YELLOW, YELLOW_D, INK, 11.0, true)
+                    .on_hover_text("Show a sample notification")
+                    .clicked()
+                {
+                    crate::notify::show("Ana is online".into(), "This is how news about your friends will look.".into());
+                }
+                ui.add_space(8.0);
+                if pixel_button(ui, "DONE", vec2(150.0, 36.0), BLUE, BLUE_D, PAPER, 11.0, true).clicked() {
+                    self.settings_open = false;
+                }
+            });
+        });
+        if r.should_close() {
+            self.settings_open = false;
+        }
+    }
+
     fn unfriend_dialog(&mut self, ctx: &egui::Context) {
         let name = self.confirm_unfriend.clone().unwrap_or_default();
         let r = pixel_modal("remove-friend").show(ctx, |ui| {
@@ -546,6 +668,29 @@ impl App {
 }
 
 // ---- pieces -----------------------------------------------------------------
+
+const GEAR: [&str; 7] = ["..#.#..", ".#####.", "##...##", ".#...#.", "##...##", ".#####.", "..#.#.."];
+
+/// The square SETTINGS button (a gear), placed at `rect`.
+fn gear_button(ui: &mut egui::Ui, rect: Rect) -> Response {
+    let resp = ui.interact(rect, ui.scope_id().with("settings"), Sense::click());
+    let pressed = resp.is_pointer_button_down_on();
+    let r = if pressed { rect.translate(vec2(3.0, 3.0)) } else { rect };
+    let p = ui.painter();
+    if !pressed {
+        p.rect_filled(rect.translate(vec2(3.0, 3.0)), 0.0, INK);
+    }
+    let fill = if resp.hovered() { PAPER } else { YELLOW };
+    p.rect_filled(r, 0.0, fill);
+    p.rect_filled(Rect::from_min_max(pos2(r.left(), r.bottom() - 3.0), r.max), 0.0, YELLOW_D);
+    p.rect_stroke(r, 0.0, Stroke::new(3.0, INK), StrokeKind::Inside);
+    let cell = 3.0;
+    paint_icon(p, r.center() - vec2(3.5 * cell, 3.5 * cell), &GEAR, cell, INK);
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    resp.on_hover_text("Settings: tray, notifications, start-up")
+}
 
 const STAR: [&str; 7] = ["...#...", "...#...", "#######", ".#####.", "..###..", ".##.##.", ".#...#."];
 const HEART: [&str; 6] = [".##.##.", "#######", "#######", ".#####.", "..###..", "...#..."];

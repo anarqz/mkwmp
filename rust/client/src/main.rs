@@ -1,6 +1,7 @@
 //! mkwmp launcher: a small window to play on an mkwmp server.
 //!
 //!   mkwmp-launcher [client.toml]                 the window
+//!   mkwmp-launcher --tray [client.toml]          the window, started in the tray
 //!   mkwmp-launcher --headless [--no-launch] [--no-update] [client.toml]
 //!   mkwmp-launcher --version
 //!
@@ -11,14 +12,18 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod api;
+mod autostart;
 mod config;
 mod core;
 mod gui;
+mod icon;
 mod launch;
 mod local;
 mod log;
+mod notify;
 mod probe;
 mod seat;
+mod tray;
 mod update;
 
 use std::path::PathBuf;
@@ -33,15 +38,17 @@ struct Args {
     headless: bool,
     no_launch: bool,
     no_update: bool,
+    tray: bool,
 }
 
 fn args() -> Args {
-    let mut a = Args { path: None, headless: false, no_launch: false, no_update: false };
+    let mut a = Args { path: None, headless: false, no_launch: false, no_update: false, tray: false };
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "--headless" => a.headless = true,
             "--no-launch" => a.no_launch = true,
             "--no-update" => a.no_update = true,
+            "--tray" => a.tray = true,
             "--version" | "-V" => {
                 console();
                 println!("mkwmp-launcher {}", update::VERSION);
@@ -49,7 +56,7 @@ fn args() -> Args {
             }
             "-h" | "--help" => {
                 console();
-                println!("usage: mkwmp-launcher [--headless] [--no-launch] [--no-update] [--version] [client.toml]");
+                println!("usage: mkwmp-launcher [--headless | --tray] [--no-launch] [--no-update] [--version] [client.toml]");
                 std::process::exit(0);
             }
             _ => a.path = Some(arg),
@@ -118,6 +125,14 @@ fn main() {
     rt.spawn(core.clone().friends_loop());
     if !a.headless {
         rt.spawn(core.clone().stars_loop());
+        notify::register();
+        rt.spawn(notify::watch_loop(core.clone()));
+        // Keep the start-up entry pointing at this launcher (it may have moved).
+        if cfg.background.start_with_system {
+            if let Err(e) = autostart::apply(true) {
+                log::note(e);
+            }
+        }
     }
 
     if a.headless {
@@ -138,7 +153,7 @@ fn main() {
             }
         });
         let _guard = rt.enter();
-        if let Err(e) = gui::run(core.clone()) {
+        if let Err(e) = gui::run(core.clone(), a.tray) {
             fatal(&e);
         }
         // Window closed: free the seat before leaving.

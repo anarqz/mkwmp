@@ -19,8 +19,12 @@
 //! system friend list once per sign-in, so offline friends are there too;
 //! who's online in the game comes from the lobby's presence.
 //! 503 before PLAY; 401 as above.
+//!
+//! Both are rate-limited (burst 10, then 1/s per endpoint): the probe calls
+//! seat every <= 20 s and friends every 15 s. Over the limit: 429.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use axum::extract::State;
 use axum::http::{header, HeaderMap, StatusCode};
@@ -34,6 +38,36 @@ use crate::seat::Answer;
 
 pub fn router(core: Arc<Core>) -> Router {
     Router::new().route("/local/v1/seat", post(want)).route("/local/v1/friends", get(friends)).with_state(core)
+}
+
+/// A token bucket per endpoint (one client: the game on this machine).
+struct Bucket {
+    tokens: f64,
+    at: Option<Instant>,
+}
+
+const BURST: f64 = 10.0;
+const PER_SEC: f64 = 1.0;
+static SEAT_LIMIT: Mutex<Bucket> = Mutex::new(Bucket { tokens: BURST, at: None });
+static FRIENDS_LIMIT: Mutex<Bucket> = Mutex::new(Bucket { tokens: BURST, at: None });
+
+fn allow(bucket: &Mutex<Bucket>) -> bool {
+    let mut b = bucket.lock().unwrap_or_else(|p| p.into_inner());
+    let now = Instant::now();
+    if let Some(at) = b.at {
+        b.tokens = (b.tokens + now.duration_since(at).as_secs_f64() * PER_SEC).min(BURST);
+    }
+    b.at = Some(now);
+    if b.tokens >= 1.0 {
+        b.tokens -= 1.0;
+        true
+    } else {
+        false
+    }
+}
+
+fn limited() -> Response {
+    (StatusCode::TOO_MANY_REQUESTS, [(header::RETRY_AFTER, "1")], Json(json!({"state": "limited"}))).into_response()
 }
 
 fn authorized(core: &Core, h: &HeaderMap) -> bool {
@@ -50,6 +84,9 @@ fn unauthorized() -> Response {
 const MAX_FRIENDS: usize = 100;
 
 async fn friends(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
+    if !allow(&FRIENDS_LIMIT) {
+        return limited();
+    }
     if !authorized(&core, &h) {
         return unauthorized();
     }
@@ -64,6 +101,9 @@ async fn friends(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
 }
 
 async fn want(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
+    if !allow(&SEAT_LIMIT) {
+        return limited();
+    }
     if !authorized(&core, &h) {
         return unauthorized();
     }

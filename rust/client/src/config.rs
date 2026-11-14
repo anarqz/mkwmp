@@ -42,6 +42,45 @@ pub struct ClientConfig {
     /// Loopback testing only: player two sets slot = 2.
     #[serde(default = "one")]
     pub slot: u8,
+    /// Tray, notifications and start-up behaviour (`[background]`).
+    #[serde(default)]
+    pub background: Background,
+}
+
+/// Running in the background: closing the window keeps the launcher in the
+/// system tray (friends online, notifications); it never holds a seat by itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Background {
+    /// Closing the window hides it to the tray instead of quitting.
+    #[serde(default = "yes")]
+    pub close_to_tray: bool,
+    /// Start with the system, straight into the tray.
+    #[serde(default)]
+    pub start_with_system: bool,
+    /// System notifications: a friend comes online / starts playing / asks to
+    /// be your friend.
+    #[serde(default = "yes")]
+    pub notify_online: bool,
+    #[serde(default = "yes")]
+    pub notify_playing: bool,
+    #[serde(default = "yes")]
+    pub notify_requests: bool,
+    /// The "still running in the tray" hint was shown once.
+    #[serde(default)]
+    pub tray_hint_shown: bool,
+}
+
+impl Default for Background {
+    fn default() -> Self {
+        Self {
+            close_to_tray: true,
+            start_with_system: false,
+            notify_online: true,
+            notify_playing: true,
+            notify_requests: true,
+            tray_hint_shown: false,
+        }
+    }
 }
 
 fn yes() -> bool {
@@ -79,6 +118,7 @@ impl Default for ClientConfig {
             local_port: local_port(),
             update: true,
             slot: 1,
+            background: Background::default(),
         }
     }
 }

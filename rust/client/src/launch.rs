@@ -59,6 +59,7 @@ mod tests {
             local_port: 47820,
             update: true,
             slot,
+            background: Default::default(),
         }
     }
 
