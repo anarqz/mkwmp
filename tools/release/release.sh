@@ -1,7 +1,7 @@
 #!/bin/sh
 # Manual client release, run on the MacBook. Nothing is released by CI.
 #
-#   tools/release/release.sh draft    build both launchers, create the DRAFT
+#   tools/release/release.sh draft    build both launchers and both servers, create the DRAFT
 #                                     release v<version> and upload them
 #   (Windows then builds the game patch and uploads it to the draft:
 #      python native/probe/build.py --version <version>
@@ -16,7 +16,7 @@ export PATH="$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$HOME/.car
 version="$(sed -n 's/^version = "\(.*\)"/\1/p' rust/Cargo.toml | head -1)"
 tag="v$version"
 out="rust/target/release-assets/$tag"
-assets="mkwmp-launcher-x86_64-windows.exe mkwmp-launcher-x86_64-linux mkwmp-probe-winmm.dll"
+assets="mkwmp-launcher-x86_64-windows.exe mkwmp-launcher-x86_64-linux mkwmp-server-x86_64-windows.exe mkwmp-server-x86_64-linux mkwmp-probe-winmm.dll"
 
 case "${1:-}" in
 draft)
@@ -26,10 +26,16 @@ draft)
   cargo zigbuild --release --manifest-path rust/Cargo.toml -p client --target x86_64-unknown-linux-gnu.2.31
   cp rust/target/x86_64-pc-windows-gnu/release/mkwmp-launcher.exe "$out/mkwmp-launcher-x86_64-windows.exe"
   cp rust/target/x86_64-unknown-linux-gnu/release/mkwmp-launcher "$out/mkwmp-launcher-x86_64-linux"
+  # The server (`mkwmp host` for players hosting on their own PC): static on Linux.
+  cargo zigbuild --release --manifest-path rust/Cargo.toml -p mkwmp --target x86_64-pc-windows-gnu
+  cargo zigbuild --release --manifest-path rust/Cargo.toml -p mkwmp --target x86_64-unknown-linux-musl
+  cp rust/target/x86_64-pc-windows-gnu/release/mkwmp.exe "$out/mkwmp-server-x86_64-windows.exe"
+  cp rust/target/x86_64-unknown-linux-musl/release/mkwmp "$out/mkwmp-server-x86_64-linux"
   # A draft is private and creates no tag; publishing tags the commit below.
   gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --prerelease \
     --target "$(git rev-parse HEAD)" --title "mkwmp $version" --notes-file tools/release/notes.md
-  gh release upload "$tag" --clobber "$out/mkwmp-launcher-x86_64-windows.exe" "$out/mkwmp-launcher-x86_64-linux"
+  gh release upload "$tag" --clobber "$out/mkwmp-launcher-x86_64-windows.exe" "$out/mkwmp-launcher-x86_64-linux" \
+    "$out/mkwmp-server-x86_64-windows.exe" "$out/mkwmp-server-x86_64-linux"
   echo "draft $tag ready; Windows uploads mkwmp-probe-winmm.dll next"
   ;;
 publish)

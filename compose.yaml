@@ -1,58 +1,35 @@
-# Your own mkwmp server: seats, gamertags, friends and the game lobby.
+# Your own mkwmp server: gamertags, friends, seats and the game lobby, in one
+# container (`mkwmp host`).
 #
 #   cp .env.example .env      # set MKWMP_PUBLIC_IP
 #   docker compose up -d --build
 #
 # Players then set the launcher's SERVER to http://<MKWMP_PUBLIC_IP>:7000.
 # Needs a Linux host (host networking: the lobby must see players' real
-# addresses). Ports and HTTPS: docs/HOSTING.md.
+# addresses). On a Windows or macOS PC, run the release's mkwmp-server
+# binary instead. Ports and HTTPS: docs/HOSTING.md.
 
 name: mkwmp
 
-x-mkwmp: &mkwmp
-  build:
-    context: .
-    dockerfile: deploy/docker/Dockerfile
-  image: mkwmp-server:local
-  network_mode: host
-  volumes:
-    - mkwmp-data:/data
-  restart: unless-stopped
-  # From .env (or the shell): see .env.example.
-  environment:
-    MKWMP_PUBLIC_IP: ${MKWMP_PUBLIC_IP:-}
-    MKWMP_NAME: ${MKWMP_NAME:-mkwmp}
-    MKWMP_CAPACITY: ${MKWMP_CAPACITY:-50}
-    MKWMP_DOMAIN: ${MKWMP_DOMAIN:-}
-    MKWMP_SEAT_BIND: ${MKWMP_SEAT_BIND:-0.0.0.0:7000}
-    MKWMP_TURN_PORT: ${MKWMP_TURN_PORT:-3478}
-
 services:
-  # One-shot: keys, the lobby certificate and server.toml (kept in the volume).
-  setup:
-    <<: *mkwmp
-    command: ["mkwmp-setup"]
-    restart: "no"
-
-  # Seat server: gamertags (SQLite in the volume), friends, seats and the queue.
-  seat:
-    <<: *mkwmp
-    command: ["mkwmp", "server", "/data/server.toml"]
-    depends_on:
-      setup:
-        condition: service_completed_successfully
-
-  # The lobby the game connects to: matchmaking, Gamesync, TURN relay, NAT check.
-  lobby:
-    <<: *mkwmp
-    command: ["mkwmp", "lobby", "/data/server.toml"]
+  server:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    image: mkwmp-server:local
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - mkwmp-data:/data
     ulimits:
       nofile: 65536
-    depends_on:
-      setup:
-        condition: service_completed_successfully
-      seat:
-        condition: service_started
+    # From .env (or the shell): see .env.example.
+    environment:
+      MKWMP_PUBLIC_IP: ${MKWMP_PUBLIC_IP:?set MKWMP_PUBLIC_IP in .env}
+      MKWMP_NAME: ${MKWMP_NAME:-mkwmp}
+      MKWMP_CAPACITY: ${MKWMP_CAPACITY:-50}
+      MKWMP_SEAT_BIND: ${MKWMP_SEAT_BIND:-0.0.0.0:7000}
+      MKWMP_TURN_PORT: ${MKWMP_TURN_PORT:-3478}
 
   # Optional HTTPS for the seat API: `docker compose --profile https up -d`
   # with MKWMP_DOMAIN set (its DNS pointing here, ports 80 and 443 open).
@@ -67,7 +44,7 @@ services:
       - ./deploy/docker/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
     depends_on:
-      - seat
+      - server
 
 volumes:
   mkwmp-data:

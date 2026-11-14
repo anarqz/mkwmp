@@ -3,8 +3,8 @@
 ## (else the player queues) -> the game presents the ticket to the lobby,
 ## which checks the signature and, over the roster call, that the seat is live.
 ## Gamertags, PINs (hashed) and friends persist in [registry] file (SQLite);
-## seats and the queue are in memory. Docker: deploy/docker/setup.sh writes
-## this file. Guide: docs/HOSTING.md.
+## seats and the queue are in memory. `mkwmp host` (and Docker) write their
+## own copy of this file in the data folder. Guide: docs/HOSTING.md.
 
 [server]
 name = "mkwmp"                 # instance name shown to players; the ticket's `iss`

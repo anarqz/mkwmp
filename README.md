@@ -18,7 +18,7 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 - **Seats and a queue.** Each server has a fixed number of seats. PLAY takes one, or puts you in line. Having the launcher open doesn't take a seat.
 - **Background mode.** Close the launcher and it stays in the system tray, with notifications when a friend comes online, starts playing or sends you a request.
 - **Signed updates.** The launcher updates itself and the game patch from GitHub releases, and checks each download against the release signature.
-- **Host your own** with one Docker Compose command (players need rc.2, not released yet).
+- **Host your own** on a PC with one program, or on a Linux server with Docker Compose (players need rc.2, not released yet).
 
 ![Launcher settings: background mode and notifications](site/img/launcher-settings.png)
 
@@ -34,7 +34,16 @@ Step-by-step guides for Windows and the Steam Deck: <https://anarqz.github.io/mk
 
 ## Host your own server
 
-You need a Linux machine with Docker: a small VM, or a PC on your LAN.
+> **Not playable yet: needs rc.2.** Players need the **rc.2** launcher and game patch, which aren't released yet. They trust the certificate each server publishes; rc.1 can only reach the official server.
+
+The server is one program, and a PC is enough to host for your friends.
+
+**On your PC (Windows or Linux).** Download `mkwmp-server-x86_64-windows.exe` or `mkwmp-server-x86_64-linux` from the [releases](https://github.com/anarqz/mkwmp/releases) (rc.2 onward) and run it. On Windows you can double-click it.
+- On the first run it asks for the address players reach you at and suggests your LAN address. It creates its keys, the lobby's certificate, the config and the SQLite registry in `mkwmp-data` next to itself.
+- It then runs everything in one window. Later runs reuse those settings.
+- From a terminal: `mkwmp-server host --public-ip <IPv4>`; see `mkwmp-server host --help`.
+
+**On a Linux server, with Docker:**
 
 ```sh
 git clone https://github.com/anarqz/mkwmp && cd mkwmp
@@ -42,13 +51,12 @@ cp .env.example .env              # set MKWMP_PUBLIC_IP
 docker compose up -d --build
 ```
 
-Then open TCP 7000, 8905, 8906 and UDP 3478, 10025, 49152–49407. Players set the launcher's **SERVER** to `http://<your IP>:7000`.
+Either way:
+- Open TCP 7000, 8905, 8906 and UDP 3478, 10025, 49152–49407. When friends play over the internet, also forward those ports on your router to the hosting machine.
+- Players set the launcher's **SERVER** to `http://<your IP>:7000`.
+- Over plain `http://`, PINs travel unencrypted. That's fine on a LAN; for a public server, use HTTPS (`docker compose --profile https up -d` with a domain).
 
-The first start creates the keys, the lobby's TLS certificate, the config and the SQLite registry, all in a Docker volume. To serve the seat API over HTTPS on your own domain, run `docker compose --profile https up -d`.
-
-> **Not playable yet: needs rc.2.** Players need the **rc.2** launcher and game patch, which aren't released yet. They trust the certificate each server publishes; rc.1 can only reach the official server. Over plain `http://`, PINs travel unencrypted, so for a server on the internet use the HTTPS profile.
-
-More in [docs/HOSTING.md](docs/HOSTING.md): HTTPS, admin commands, backups, and running it without Docker.
+More in [docs/HOSTING.md](docs/HOSTING.md): HTTPS, admin commands and backups.
 
 ## Build it yourself
 
@@ -76,7 +84,7 @@ A launcher you build yourself still updates itself from GitHub releases. To keep
 
 ```sh
 cargo build --release --manifest-path rust/Cargo.toml -p mkwmp
-# -> rust/target/release/mkwmp   (mkwmp server | lobby | keygen | admin)
+# -> rust/target/release/mkwmp   (mkwmp host | server | lobby | keygen | admin)
 
 # Static Linux binary for a VM:
 cargo zigbuild --release --manifest-path rust/Cargo.toml -p mkwmp --target x86_64-unknown-linux-musl
@@ -109,7 +117,7 @@ Two tests start the real `mkwmp` binary. One plays two clients from sign-in to a
 | `rust/seat` | seat server: gamertags and PINs (SQLite), friends, presence, seats, queue, signed tickets |
 | `rust/lobby` | the game-facing lobby logic: matchmaking, sessions, referee, friend rooms |
 | `rust/gateway` | gRPC over HTTP/2 + TLS, TURN relay, NAT responder, rate limits |
-| `rust/mkwmp` | the server binary: `mkwmp server`, `mkwmp lobby`, `keygen`, `admin` |
+| `rust/mkwmp` | the server binary: `mkwmp host` (everything, set up on first run), `server`, `lobby`, `keygen`, `admin` |
 | `rust/{config,contracts,ticket}` | server config, NPLN protobuf types, seat ticket signing |
 | `native/probe` | the game patch (`winmm.dll`): redirects the game's online services to an mkwmp server |
 | `contracts/` | the game's NPLN service definitions (`.proto`) |

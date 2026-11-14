@@ -97,17 +97,18 @@
 
   <section id="host" class="panel">
     <h2><span class="coin yellow">4</span> HOST YOUR OWN SERVER</h2>
-    <p>Play with your friends on your own server: one <b>Docker Compose</b> command on any Linux machine (a small VM with 1 vCPU and 1 GB is plenty, or a PC on your LAN).</p>
+    <p>Play with your friends on your own server. A PC is enough: download <code>mkwmp-server-x86_64-windows.exe</code> (or the Linux one) from the <a href="https://github.com/anarqz/mkwmp/releases">releases</a> and run it. On the first run it asks for the address your friends reach you at, then sets everything up by itself.</p>
+    <p>On a Linux server you can use Docker Compose instead:</p>
 <pre><code>git clone https://github.com/anarqz/mkwmp && cd mkwmp
 cp .env.example .env        # set MKWMP_PUBLIC_IP
 docker compose up -d --build</code></pre>
     <p>Then everyone sets the launcher's <b>SERVER</b> to <code>http://&lt;your IP&gt;:7000</code>, registers a gamertag there and presses PLAY.</p>
     <div class="cards">
-      <div class="card red"><h3>WHAT RUNS</h3><p>The seat server (gamertags, friends, seats and queue) and the lobby (matchmaking, Gamesync, TURN relay). First start creates every key and the lobby's certificate.</p></div>
-      <div class="card blue"><h3>PORTS</h3><p>Open TCP <code>7000</code>, <code>8905</code>, <code>8906</code> and UDP <code>3478</code>, <code>10025</code>, <code>49152–49407</code>. Optional HTTPS with a domain: <code>--profile https</code>.</p></div>
-      <div class="card green"><h3>SQLITE</h3><p>Gamertags, hashed PINs and friends live in one SQLite file in the Docker volume. Seats are in memory: after a restart, launchers rejoin on their own.</p></div>
+      <div class="card red"><h3>WHAT RUNS</h3><p>The seat server (gamertags, friends, seats and queue) and the lobby (matchmaking, Gamesync, TURN relay). All in one program; the first start creates every key and the lobby's certificate.</p></div>
+      <div class="card blue"><h3>PORTS</h3><p>Open TCP <code>7000</code>, <code>8905</code>, <code>8906</code> and UDP <code>3478</code>, <code>10025</code>, <code>49152–49407</code>. For friends over the internet, forward them on your router.</p></div>
+      <div class="card green"><h3>SQLITE</h3><p>Gamertags, hashed PINs and friends live in one SQLite file in the server's data folder. Seats are in memory: after a restart, launchers rejoin on their own.</p></div>
     </div>
-    <p class="hint"><b>Coming with rc.2 (not released yet):</b> players need the rc.2 launcher and game patch to play on a server like this, since they trust each server's own certificate; rc.1 only reaches the official server. Over plain <code>http://</code>, PINs travel unencrypted: for a server on the internet, use the HTTPS profile. Without Docker, or behind a Cloudflare tunnel: see the full hosting guide.</p>
+    <p class="hint"><b>Coming with rc.2 (not released yet):</b> the server download, and the launcher and game patch players need to join a server like this (they trust each server's own certificate; rc.1 only reaches the official server). Over plain <code>http://</code>, PINs travel unencrypted: fine on a LAN; for a public server use HTTPS (see the hosting guide).</p>
     <nav class="buttons small">
       <a class="btn yellow" href="https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md">Full hosting guide</a>
       <a class="btn blue" href="https://github.com/anarqz/mkwmp">Source code</a>

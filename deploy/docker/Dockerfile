@@ -13,13 +13,15 @@ RUN --mount=type=cache,id=mkwmp-cargo-registry,target=/usr/local/cargo/registry 
 
 FROM debian:bookworm-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssl ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10001 --home-dir /data mkwmp \
  && install -d -o mkwmp -g mkwmp /data
 COPY --from=build /usr/local/bin/mkwmp /usr/local/bin/mkwmp
-COPY deploy/docker/setup.sh /usr/local/bin/mkwmp-setup
 USER mkwmp
 WORKDIR /data
 VOLUME /data
-CMD ["mkwmp", "server", "/data/server.toml"]
+# First start creates keys, certificate, config and registry in /data;
+# settings come from MKWMP_* (see .env.example).
+ENV MKWMP_DATA=/data
+CMD ["mkwmp", "host"]

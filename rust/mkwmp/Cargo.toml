@@ -17,6 +17,13 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 tokio.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 serde_json = "1"
+ticket = { path = "../ticket" }
+# `mkwmp host`: keys and the lobby's certificate
+rand = "0.8"
+rsa = "0.9"
+rcgen = { version = "0.13", default-features = false, features = ["pem", "ring"] }
+rustls-pki-types = "1"
+time = "0.3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -25,5 +32,3 @@ http = "1"
 bytes = "1"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
-rustls-pki-types = "1"
-rcgen = { version = "0.13", default-features = false, features = ["pem", "ring"] }

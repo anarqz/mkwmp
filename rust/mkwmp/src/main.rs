@@ -2,14 +2,17 @@
 //!
 //!   mkwmp server [config/server.toml]   seats, queue and signed tickets (HTTP)
 //!   mkwmp lobby  [config/server.toml]   the game-facing lobby (matches)
+//!   mkwmp host [--public-ip IP] ...     both parts in one process, set up
+//!                                       on first run (also: no arguments)
 //!   mkwmp keygen [kid]                  print a new ticket signing key
 //!   mkwmp admin <list|register|reset-pin|release> [name] [--config config.toml]
 //!                                       manage registered profiles on the
 //!                                       running server (same machine)
 
+mod host;
 mod lobby;
 
-const USAGE: &str = "usage: mkwmp <server|lobby> [config.toml] | mkwmp keygen [kid] | mkwmp admin <list|register|reset-pin|release> [name] [--config file]";
+const USAGE: &str = "usage: mkwmp host [options] (see mkwmp host --help) | mkwmp <server|lobby> [config.toml] | mkwmp keygen [kid] | mkwmp admin <list|register|reset-pin|release> [name] [--config file]";
 
 #[tokio::main]
 async fn main() {
@@ -17,6 +20,9 @@ async fn main() {
     let cmd = args.first().map(String::as_str);
     let arg = args.get(1).map(String::as_str);
     let result: Result<(), Box<dyn std::error::Error>> = match cmd {
+        // No arguments (e.g. double-clicked): host a server.
+        None => host::run(&[]).await,
+        Some("host") => host::run(&args[1..]).await,
         Some("keygen") => {
             seat::keygen(arg.unwrap_or("k1"));
             Ok(())

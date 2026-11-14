@@ -19,6 +19,7 @@ There is **one server binary, `mkwmp`, with two parts**. Both run on one machine
  └──────────────────┘                      └───────────────────────────────┘
 ```
 
+    mkwmp host   [--public-ip IP ...]   both parts in one process; sets itself up on first run
     mkwmp server [config/server.toml]   gamertags, friends, seats, queue, tickets (HTTP)
     mkwmp lobby  [config/server.toml]   the game-facing lobby
     mkwmp keygen [kid]                  new ticket signing key
@@ -52,7 +53,7 @@ This is the game-facing side: NPLN Auth, Matchmaker, GameSessionService and Game
 - From rc.2, that root is the certificate the server publishes as `lobbyCa`, which the launcher writes to `<game>/mkwmp-lobby-ca.pem`.
 - Without that file, the patch trusts its built-in certificate.
 
-A self-hosted lobby uses a self-signed certificate for the host names the game asks for; `deploy/docker/setup.sh` creates one.
+A self-hosted lobby uses a self-signed certificate for the host names the game asks for; `mkwmp host` creates one on its first run.
 
 **Networking:**
 - The seat API (`[seats] bind`, HTTP) runs directly, or behind a TLS reverse proxy or a Cloudflare tunnel.
@@ -72,7 +73,7 @@ The game patch (`native/probe`, `winmm.dll`) stays dormant until the player open
 
 ```
 rust/
-  mkwmp/       the server binary: server, lobby, keygen, admin
+  mkwmp/       the server binary: host, server, lobby, keygen, admin
   seat/        seat server: registry (SQLite), friends, presence, roster, HTTP API
   lobby/       lobby core: matchmaking, sessions, documents, referee, friend rooms
   gateway/     gRPC/HTTP2 + TLS front, TURN relay, NAT responder, rate limits
