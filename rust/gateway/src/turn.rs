@@ -23,6 +23,7 @@ use sha1::Sha1;
 use tokio::net::UdpSocket;
 use tokio::task::JoinHandle;
 
+use crate::limits::{self, Bucket, PerIp};
 use crate::log::line;
 
 pub const MAGIC: u32 = 0x2112_A442;
@@ -198,6 +199,8 @@ pub struct Options {
 
 struct Allocation {
     relay: Arc<UdpSocket>,
+    /// Relayed bytes, both directions (limits::TURN_BYTES_PER_SEC).
+    bytes: Arc<Mutex<Bucket>>,
     relay_addr: SocketAddrV4,
     channels: Arc<Mutex<Channels>>,
     expires: Instant,
@@ -218,6 +221,8 @@ impl Drop for Allocation {
 
 pub struct Relay {
     sock: Arc<UdpSocket>,
+    /// STUN requests per client IP.
+    requests: Mutex<PerIp>,
     opts: Options,
     nonce: Vec<u8>,
     allocations: Mutex<HashMap<SocketAddr, Allocation>>,
@@ -238,6 +243,7 @@ impl Relay {
         ));
         Ok(Arc::new(Self {
             sock,
+            requests: Mutex::new(PerIp::new(50.0, 100.0)),
             opts,
             nonce: n.iter().map(|b| format!("{b:02x}")).collect::<String>().into_bytes(),
             allocations: Mutex::new(HashMap::new()),
@@ -301,7 +307,9 @@ impl Relay {
             if let Some(alloc) = a.get(&client) {
                 if let Some(peer) = alloc.channels.lock().unwrap().by_channel.get(&channel) {
                     let end = (4 + len).min(data.len());
-                    return vec![(Dest::Peer(alloc.relay.clone(), *peer), data[4..end].to_vec())];
+                    if alloc.bytes.lock().unwrap().take((end - 4) as f64) {
+                        return vec![(Dest::Peer(alloc.relay.clone(), *peer), data[4..end].to_vec())];
+                    }
                 }
             }
             return vec![];
@@ -312,11 +320,13 @@ impl Relay {
             if let (Some(alloc), Some(peer), Some(d)) =
                 (a.get(&client), msg.get(A_PEER).and_then(unxor_addr), msg.get(A_DATA))
             {
-                return vec![(Dest::Peer(alloc.relay.clone(), SocketAddr::V4(peer)), d.to_vec())];
+                if alloc.bytes.lock().unwrap().take(d.len() as f64) {
+                    return vec![(Dest::Peer(alloc.relay.clone(), SocketAddr::V4(peer)), d.to_vec())];
+                }
             }
             return vec![];
         }
-        if msg.class != REQUEST {
+        if msg.class != REQUEST || !self.requests.lock().unwrap().allow(client.ip()) {
             return vec![];
         }
         let SocketAddr::V4(client4) = client else { return vec![] };
@@ -337,6 +347,11 @@ impl Relay {
         let ok = |method: u16, attrs: &[(u16, &[u8])]| vec![(Dest::Client, build(msg_type(method, SUCCESS), &tid, attrs, Some(&key)))];
         match msg.method {
             ALLOCATE => match self.allocate(client, client4).await {
+                Err(e) if e.kind() == std::io::ErrorKind::QuotaExceeded => {
+                    line(format!("TURN allocation for {client} refused: {e}"));
+                    let err = error_code(4, 86, "Allocation Quota Reached");
+                    vec![(Dest::Client, build(msg_type(ALLOCATE, ERROR), &tid, &[(A_ERROR, &err)], Some(&key)))]
+                }
                 Ok(relay_addr) => ok(
                     ALLOCATE,
                     &[
@@ -374,6 +389,15 @@ impl Relay {
             CREATE_PERMISSION => ok(CREATE_PERMISSION, &[]),
             CHANNEL_BIND => {
                 let a = self.allocations.lock().unwrap();
+                let full = a.get(&client).is_some_and(|al| {
+                    let c = al.channels.lock().unwrap();
+                    c.by_channel.len() >= limits::TURN_CHANNELS
+                        && msg.get(A_CHANNEL).and_then(|v| v.get(..2)).is_none_or(|v| !c.by_channel.contains_key(&u16::from_be_bytes([v[0], v[1]])))
+                });
+                if full {
+                    let err = error_code(5, 8, "Insufficient Capacity");
+                    return vec![(Dest::Client, build(msg_type(CHANNEL_BIND, ERROR), &tid, &[(A_ERROR, &err)], Some(&key)))];
+                }
                 if let (Some(alloc), Some(ch), Some(peer)) = (
                     a.get(&client),
                     msg.get(A_CHANNEL).and_then(|v| v.get(..2)).map(|v| u16::from_be_bytes([v[0], v[1]])),
@@ -393,16 +417,23 @@ impl Relay {
 
     /// The client's allocation (reused if it has one); returns the relayed address.
     async fn allocate(self: &Arc<Self>, client: SocketAddr, client4: SocketAddrV4) -> std::io::Result<SocketAddrV4> {
-        if let Some(a) = self.allocations.lock().unwrap().get_mut(&client) {
-            a.expires = Instant::now() + KEEP;
-            return Ok(a.relay_addr);
+        {
+            let mut a = self.allocations.lock().unwrap();
+            if let Some(x) = a.get_mut(&client) {
+                x.expires = Instant::now() + KEEP;
+                return Ok(x.relay_addr);
+            }
+            if a.keys().filter(|c| c.ip() == client.ip()).count() >= limits::TURN_ALLOCATIONS_PER_IP {
+                return Err(std::io::Error::new(std::io::ErrorKind::QuotaExceeded, "too many allocations from this address"));
+            }
         }
         let relay = Arc::new(self.bind_relay().await?);
         let port = relay.local_addr()?.port();
         let relay_addr = SocketAddrV4::new(self.opts.public_host, port);
         let channels = Arc::new(Mutex::new(Channels::default()));
-        let task = tokio::spawn(from_peers(relay.clone(), channels.clone(), self.sock.clone(), client4));
-        let alloc = Allocation { relay, relay_addr, channels, expires: Instant::now() + KEEP, task };
+        let bytes = Arc::new(Mutex::new(Bucket::new(limits::TURN_BYTES_PER_SEC, 2.0 * limits::TURN_BYTES_PER_SEC)));
+        let task = tokio::spawn(from_peers(relay.clone(), channels.clone(), bytes.clone(), self.sock.clone(), client4));
+        let alloc = Allocation { relay, bytes, relay_addr, channels, expires: Instant::now() + KEEP, task };
         let mut a = self.allocations.lock().unwrap();
         // Two Allocates raced: keep the first.
         if let Some(existing) = a.get(&client) {
@@ -439,13 +470,22 @@ enum Dest {
 
 /// Peer traffic on a relay socket → the client, as ChannelData when the peer
 /// has a channel, else a Data indication.
-async fn from_peers(relay: Arc<UdpSocket>, channels: Arc<Mutex<Channels>>, server: Arc<UdpSocket>, client: SocketAddrV4) {
+async fn from_peers(
+    relay: Arc<UdpSocket>,
+    channels: Arc<Mutex<Channels>>,
+    bytes: Arc<Mutex<Bucket>>,
+    server: Arc<UdpSocket>,
+    client: SocketAddrV4,
+) {
     let mut buf = vec![0u8; 65536];
     loop {
         let (n, peer) = match relay.recv_from(&mut buf).await {
             Ok(x) => x,
             Err(_) => continue,
         };
+        if !bytes.lock().unwrap().take(n as f64) {
+            continue;
+        }
         let channel = channels.lock().unwrap().by_peer.get(&peer).copied();
         let frame = match (channel, peer) {
             (Some(ch), _) => channel_data(ch, &buf[..n]),

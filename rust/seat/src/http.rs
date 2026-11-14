@@ -154,8 +154,11 @@ fn no_store(body: impl serde::Serialize) -> Response {
 }
 
 /// Public and read-only, so any page may read it (the project site shows it).
-async fn status(State(s): State<AppState>) -> Response {
+async fn status(State(s): State<AppState>, ConnectInfo(peer): ConnectInfo<SocketAddr>, h: HeaderMap) -> Response {
     let now = s.now();
+    if let Err(w) = s.limiter.lock().unwrap().take(&format!("read:{}", client_ip(peer, &h)), limits::READS_PER_IP, now) {
+        return too_many(w);
+    }
     let mut r = no_store(s.roster.lock().unwrap().status(now));
     r.headers_mut().insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
     r
@@ -340,7 +343,15 @@ async fn delete_profile(
 }
 
 /// Is a name registered? (Names are public; PINs never leave a register answer.)
-async fn profile(State(s): State<AppState>, Path(name): Path<String>) -> Response {
+async fn profile(
+    State(s): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Path(name): Path<String>,
+    h: HeaderMap,
+) -> Response {
+    if let Err(w) = s.limiter.lock().unwrap().take(&format!("read:{}", client_ip(peer, &h)), limits::READS_PER_IP, s.now()) {
+        return too_many(w);
+    }
     let now = s.now() / 1000;
     let r = &s.registry;
     no_store(json!({"name": name, "registered": r.exists(&name, now), "reserved": r.is_reserved(&name)}))
@@ -402,6 +413,9 @@ async fn admin_action(
 
 async fn poll(State(s): State<AppState>, Path(id): Path<String>, h: HeaderMap) -> Response {
     let now = s.now();
+    if let Err(w) = s.limiter.lock().unwrap().take(&format!("poll:{id}"), limits::POLL_PER_SESSION, now) {
+        return too_many(w);
+    }
     let key = bearer(&h).unwrap_or("");
     match s.roster.lock().unwrap().touch(&id, key, now) {
         Ok(v) => no_store(v),
@@ -431,6 +445,10 @@ async fn lobby_roster(State(s): State<AppState>, h: HeaderMap, Json(b): Json<Ros
     let ok = bearer(&h).is_some_and(|t| s.lobby_tokens.iter().any(|k| k == t));
     if !ok {
         return error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED", "bad lobby token");
+    }
+    let token_key = format!("roster:{}", bearer(&h).unwrap_or(""));
+    if let Err(w) = s.limiter.lock().unwrap().take(&token_key, limits::ROSTER_PER_TOKEN, s.now()) {
+        return too_many(w);
     }
     if b.session_ids.len() > MAX_ROSTER_IDS {
         return error(StatusCode::BAD_REQUEST, "TOO_MANY", format!("at most {MAX_ROSTER_IDS} ids"));

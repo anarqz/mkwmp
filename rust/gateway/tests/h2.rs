@@ -72,7 +72,7 @@ async fn start(tls: Option<tokio_rustls::TlsAcceptor>) -> (Arc<Fake>, SocketAddr
     let fake = Arc::new(Fake::default());
     let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = l.local_addr().unwrap();
-    tokio::spawn(gateway::h2conn::accept_loop(l, tls, fake.clone(), Arc::new(AtomicU64::new(1))));
+    tokio::spawn(gateway::h2conn::accept_loop(l, tls, fake.clone(), Arc::new(AtomicU64::new(1)), Default::default()));
     (fake, addr)
 }
 

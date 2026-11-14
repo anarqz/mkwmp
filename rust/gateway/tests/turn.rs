@@ -132,3 +132,16 @@ async fn full_port_range_refuses_with_508() {
     assert_eq!(allocate(&a, server).await.unwrap().port(), port);
     assert_eq!(allocate(&b, server).await, Err(508));
 }
+
+#[tokio::test]
+async fn allocations_per_ip_are_capped() {
+    let (_r, server) = relay(None).await;
+    let mut socks = vec![];
+    for _ in 0..gateway::limits::TURN_ALLOCATIONS_PER_IP {
+        let c = UdpSocket::bind((LO, 0)).await.unwrap();
+        allocate(&c, server).await.unwrap();
+        socks.push(c);
+    }
+    let one_more = UdpSocket::bind((LO, 0)).await.unwrap();
+    assert_eq!(allocate(&one_more, server).await, Err(486));
+}

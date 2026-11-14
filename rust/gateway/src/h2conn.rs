@@ -25,19 +25,21 @@ use tokio::sync::mpsc;
 use tokio_rustls::TlsAcceptor;
 
 use crate::grpc::{self, Deframer};
+use crate::limits::{self, Bucket, Connections};
 use crate::log::line;
 use crate::{Backend, Call, ConnId, Out, StreamId};
 
 /// How long a new connection may take to send its first byte.
 const SNIFF_TIMEOUT: Duration = Duration::from_secs(10);
-const TLS_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub async fn accept_loop<B: Backend>(
     listener: TcpListener,
     tls: Option<TlsAcceptor>,
     backend: Arc<B>,
     ids: Arc<AtomicU64>,
+    conns: Arc<Connections>,
 ) -> std::io::Result<()> {
+    let mut refusals = Bucket::new(1.0, 5.0); // log at most ~1 refusal a second
     loop {
         let (tcp, peer) = match listener.accept().await {
             Ok(x) => x,
@@ -48,6 +50,15 @@ pub async fn accept_loop<B: Backend>(
                 continue;
             }
         };
+        let guard = match conns.admit(peer.ip()) {
+            Ok(g) => g,
+            Err(why) => {
+                if refusals.take(1.0) {
+                    line(format!("refused {peer}: {why}"));
+                }
+                continue; // dropping the stream closes it
+            }
+        };
         let _ = tcp.set_nodelay(true);
         // A crashed game never sends FIN: keepalive closes its connection
         // (and so frees its seat) within about a minute.
@@ -56,7 +67,11 @@ pub async fn accept_loop<B: Backend>(
         let ka = ka.with_retries(3);
         let _ = socket2::SockRef::from(&tcp).set_tcp_keepalive(&ka);
         let conn = ids.fetch_add(1, Ordering::Relaxed);
-        tokio::spawn(connection(tcp, peer, conn, tls.clone(), backend.clone()));
+        let (tls, backend) = (tls.clone(), backend.clone());
+        tokio::spawn(async move {
+            connection(tcp, peer, conn, tls, backend).await;
+            drop(guard);
+        });
     }
 }
 
@@ -69,7 +84,7 @@ async fn connection<B: Backend>(tcp: TcpStream, peer: SocketAddr, conn: ConnId, 
     };
     let port = tcp.local_addr().map(|a| a.port()).unwrap_or(0);
     match (is_tls, tls) {
-        (true, Some(acceptor)) => match tokio::time::timeout(TLS_TIMEOUT, acceptor.accept(tcp)).await {
+        (true, Some(acceptor)) => match tokio::time::timeout(limits::HANDSHAKE_TIMEOUT, acceptor.accept(tcp)).await {
             Ok(Ok(stream)) => {
                 let alpn = stream.get_ref().1.alpn_protocol().map(|a| String::from_utf8_lossy(a).into_owned());
                 line(format!("conn {conn} from {peer} on :{port} (TLS, ALPN {})", alpn.as_deref().unwrap_or("none")));
@@ -95,21 +110,32 @@ where
     builder
         .initial_window_size(1 << 20)
         .initial_connection_window_size(4 << 20)
-        .max_concurrent_streams(512)
+        .max_concurrent_streams(limits::MAX_STREAMS)
+        .max_header_list_size(limits::MAX_HEADER_LIST)
         .max_send_buffer_size(4 << 20);
-    let mut h2 = match builder.handshake::<_, Bytes>(io).await {
-        Ok(c) => c,
-        Err(e) => {
+    let mut h2 = match tokio::time::timeout(limits::HANDSHAKE_TIMEOUT, builder.handshake::<_, Bytes>(io)).await {
+        Ok(Ok(c)) => c,
+        Ok(Err(e)) => {
             line(format!("conn {conn}: HTTP/2 handshake failed: {e}"));
+            backend.connection_closed(conn);
+            return;
+        }
+        Err(_) => {
+            line(format!("conn {conn}: no HTTP/2 preface in time"));
             backend.connection_closed(conn);
             return;
         }
     };
     let mut streams = tokio::task::JoinSet::new();
+    let mut last_activity = tokio::time::Instant::now();
     loop {
+        // A connection with no open stream for a while is closed (the game
+        // keeps its subscriptions open, so it is never idle while playing).
+        let idle_at = last_activity + limits::IDLE_CONNECTION;
         tokio::select! {
             next = h2.accept() => match next {
                 Some(Ok((req, respond))) => {
+                    last_activity = tokio::time::Instant::now();
                     streams.spawn(stream(req, respond, peer, conn, backend.clone()));
                 }
                 Some(Err(e)) => {
@@ -121,7 +147,13 @@ where
                 None => break,
             },
             // Reap finished stream tasks so the set doesn't grow.
-            Some(_) = streams.join_next(), if !streams.is_empty() => {}
+            Some(_) = streams.join_next(), if !streams.is_empty() => {
+                last_activity = tokio::time::Instant::now();
+            }
+            _ = tokio::time::sleep_until(idle_at), if streams.is_empty() => {
+                line(format!("conn {conn}: idle, closing"));
+                break;
+            }
         }
     }
     // The connection is gone: its streams can't send or receive anymore.

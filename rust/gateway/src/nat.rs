@@ -27,13 +27,15 @@ pub fn reply(probe: &[u8], peer: SocketAddr) -> Option<[u8; 16]> {
 
 pub async fn run(sock: UdpSocket) -> std::io::Result<()> {
     let mut buf = [0u8; 2048];
+    // UDP replies can be aimed at a spoofed address: cap them per source.
+    let mut per_ip = crate::limits::PerIp::new(20.0, 40.0);
     loop {
         let (n, peer) = match sock.recv_from(&mut buf).await {
             Ok(x) => x,
             // ICMP port-unreachable surfaces as an error on some systems.
             Err(_) => continue,
         };
-        if let Some(r) = reply(&buf[..n], peer) {
+        if let Some(r) = reply(&buf[..n], peer).filter(|_| per_ip.allow(peer.ip())) {
             let _ = sock.send_to(&r, peer).await;
         }
     }

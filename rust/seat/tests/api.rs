@@ -318,12 +318,14 @@ async fn pin_guessing_is_rate_limited_per_name() {
 #[tokio::test]
 async fn registrations_are_limited_per_client_ip_behind_the_tunnel() {
     let h = harness_at("127.0.0.1:40000"); // cloudflared on the same machine
-    for (i, ip) in ["198.51.100.1", "198.51.100.1", "198.51.100.1", "198.51.100.1", "198.51.100.2"].iter().enumerate() {
+    let max = seat::limits::REGISTER_PER_IP.max;
+    let ips: Vec<&str> = std::iter::repeat_n("198.51.100.1", max + 1).chain(["198.51.100.2"]).collect();
+    for (i, ip) in ips.iter().enumerate() {
         let name = format!("player{i}");
         let (st, _) = h
             .call_h("POST", "/seat/v1/profiles", None, Some(json!({"name": name})), &[("cf-connecting-ip", ip)])
             .await;
-        let want = if i == 3 { StatusCode::TOO_MANY_REQUESTS } else { StatusCode::CREATED };
+        let want = if i == max { StatusCode::TOO_MANY_REQUESTS } else { StatusCode::CREATED };
         assert_eq!(st, want, "{name} from {ip}");
     }
 }

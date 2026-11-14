@@ -18,6 +18,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 pub mod grpc;
 pub mod h2conn;
+pub mod limits;
 pub mod log;
 pub mod nat;
 pub mod tls;
@@ -95,6 +96,7 @@ pub async fn serve<B: Backend>(cfg: GatewayConfig, backend: Arc<B>) -> std::io::
     };
     let mut tasks = tokio::task::JoinSet::new();
     let ids = Arc::new(std::sync::atomic::AtomicU64::new(1));
+    let conns = Arc::new(limits::Connections::default());
     let mut ports = vec![cfg.npln_port];
     if cfg.gamesync_port != 0 && cfg.gamesync_port != cfg.npln_port {
         ports.push(cfg.gamesync_port);
@@ -106,7 +108,7 @@ pub async fn serve<B: Backend>(cfg: GatewayConfig, backend: Arc<B>) -> std::io::
             cfg.host,
             if acceptor.is_some() { "TLS or h2c, sniffed" } else { "h2c" }
         ));
-        tasks.spawn(h2conn::accept_loop(listener, acceptor.clone(), backend.clone(), ids.clone()));
+        tasks.spawn(h2conn::accept_loop(listener, acceptor.clone(), backend.clone(), ids.clone(), conns.clone()));
     }
     if cfg.turn_port != 0 {
         let relay = turn::Relay::bind(
