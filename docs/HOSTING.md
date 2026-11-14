@@ -1,76 +1,104 @@
 # Hosting mkwmp
 
-A server has two parts. Both can run on one machine:
+An mkwmp server is one binary, `mkwmp`, run twice:
 
 | Part | What it does | Reached by | Ports |
 | --- | --- | --- | --- |
-| `mkwmp server` (Rust) | seats (player cap), queue, signed tickets, friends | the launcher, over HTTP(S) | `[seats] bind`, default 127.0.0.1:7000 |
-| lobby (Python for now: `resources/python-lobby/mkwmp_server.py` + `resources/python-lobby/pia_capture.py`) | the game's online services: matchmaking, sessions, Gamesync, TURN relay | the game, directly | TCP 8905, 8906; UDP 10025, 3478, relay range |
+| `mkwmp server` | gamertags + PINs, friends, seats, queue, signed seat tickets | the launcher, over HTTP(S) | TCP 7000 |
+| `mkwmp lobby` | the game's online services: matchmaking, sessions, Gamesync, TURN relay, NAT check | the game, directly | TCP 8905, 8906; UDP 3478, 10025, 49152–49407 |
 
-How the parts work together: docs/ARCHITECTURE.md. Seat API and ticket format: docs/contracts/SEAT_API.md.
+How the parts fit together: [ARCHITECTURE.md](ARCHITECTURE.md). Seat API and ticket format: [contracts/SEAT_API.md](contracts/SEAT_API.md).
 
-## 1. Run locally (one PC or a LAN)
+Gamertags, hashed PINs and friendships are kept in one SQLite file. Seats and queues live in memory: after a restart, launchers rejoin on their own.
 
-Needs Rust (stable) and Python 3.12+ with `h2` and `cryptography`.
+> **Game patch version.** A server with its own lobby certificate (every server except the official one) needs players on the **rc.2** game patch or later. That patch trusts the certificate each server publishes. The launcher installs the patch.
 
-1. **Start the seat server.** On first run it creates the signing key:
+## 1. Docker Compose (recommended)
 
-       tools/host/run_seat_local.sh
+Use any Linux machine with Docker: a small VM (1 vCPU, 1 GB) or a PC on your LAN. Host networking is required, so the lobby sees each player's real address, and Docker Desktop on macOS or Windows won't do.
 
-2. **Start the lobby** from the repo root, in two shells. Use your LAN IPv4 instead of 127.0.0.1 for other devices:
+    git clone https://github.com/anarqz/mkwmp && cd mkwmp
+    cp .env.example .env              # set MKWMP_PUBLIC_IP (and the name / seat count)
+    docker compose up -d --build
 
-       python -E -s resources/python-lobby/mkwmp_server.py --host 0.0.0.0 --public-host 127.0.0.1 --port 8905 \
-         --tls-cert scratch/certs/capture-cert.pem --tls-key scratch/certs/capture-key.pem --announce-matches
-       python -I resources/python-lobby/pia_capture.py --host 0.0.0.0 --reply
+- `MKWMP_PUBLIC_IP` is the IPv4 address players reach the machine at: your public IP, or the LAN address for a LAN party. The game takes an address, not a host name.
+- The first start creates everything in the `mkwmp-data` volume:
+  - the ticket signing key;
+  - the lobby's tokens;
+  - the lobby's TLS certificate (self-signed, for the host names the game asks for);
+  - `server.toml`;
+  - `registry.db`.
 
-3. **Set the address handed to players.** In `config/server.toml`, set `[seats] lobby_endpoint` to the lobby's `IPv4:8905`. The game takes an IP address here, not a hostname (yet).
+  Later starts keep all of these. They rewrite only `server.toml`, from `.env`.
+- Open these ports in the firewall: TCP 7000, 8905, 8906 and UDP 3478, 10025, 49152–49407.
+- Players set the launcher's **SERVER** to `http://<MKWMP_PUBLIC_IP>:7000`, register a gamertag on your server, and press PLAY.
 
-4. **Set up each player.** Each player runs `mkwmp-launcher` and, in its window, sets the server URL, registers a gamertag (6-digit PIN) and picks the game dir (all saved in `client.toml`); friends are added by gamertag and kept on the server:
-   - build the launcher with `cargo build --release --manifest-path rust/Cargo.toml -p client`;
-   - it waits in the queue if the server is full;
-   - it writes `<game>/mkwmp.toml` and starts the game once seated.
+**Check that it's up:** `curl http://<ip>:7000/seat/v1/status`. Logs: `docker compose logs -f lobby seat`.
 
-## 2. Host on a Linux VM
+**HTTPS (optional).** With a domain pointing at the machine and ports 80/443 open:
+1. Set `MKWMP_DOMAIN` in `.env`, plus `MKWMP_SEAT_BIND=127.0.0.1:7000` so only Caddy reaches the seat API.
+2. Run `docker compose --profile https up -d`.
+3. Players use `https://<domain>`, and you can close TCP 7000.
 
-Any small VM works: 1 vCPU and 1 GB is plenty. Pick a generous transfer allowance, since the TURN relay can carry game traffic.
+**Admin:** gamertags can be listed, reserved, released and their PINs reset:
 
-1. **Open the ports.** In the firewall, open TCP 8905, 8906 and UDP 10025, 3478 plus the TURN relay range. Do not expose 7000.
+    docker compose exec seat mkwmp admin list --config /data/server.toml
+    docker compose exec seat mkwmp admin register <name> --config /data/server.toml   # reserve + new PIN
+    docker compose exec seat mkwmp admin reset-pin <name> --config /data/server.toml
+    docker compose exec seat mkwmp admin release <name> --config /data/server.toml
 
+**Backup:** everything is in the `mkwmp-data` volume (`registry.db` and `keys/`). For a consistent copy, stop the seat server first:
+
+    docker compose stop seat
+    docker run --rm -v mkwmp_mkwmp-data:/data -v "$PWD":/out debian tar czf /out/mkwmp-data.tgz -C /data .
+    docker compose start seat
+
+**Update:** `git pull && docker compose up -d --build`.
+
+## 2. Without Docker (systemd on a Linux VM)
+
+1. **Open the ports** listed above. Keep 7000 closed if a tunnel or proxy fronts it (step 6).
 2. **Create the user and folders:**
 
        useradd --system --home-dir /opt/mkwmp --shell /usr/sbin/nologin mkwmp
-       install -d -o mkwmp -g mkwmp /opt/mkwmp/{bin,config,keys,lobby}
+       install -d -o mkwmp -g mkwmp /opt/mkwmp/{bin,config,keys}
 
-3. **Install the seat server binary.** Build a static Linux binary, for example with `cargo zigbuild --release -p mkwmp --target x86_64-unknown-linux-musl`, and copy it to `/opt/mkwmp/bin/mkwmp`.
+3. **Build and install the binary.** Build a static Linux binary, for example with `cargo zigbuild --release --manifest-path rust/Cargo.toml -p mkwmp --target x86_64-unknown-linux-musl`, and copy it to `/opt/mkwmp/bin/mkwmp`.
+4. **Create the keys.** The steps in `deploy/docker/setup.sh` show what each key is:
+   - **Ticket signing key:** run `/opt/mkwmp/bin/mkwmp keygen k1`. Save line 2 as `/opt/mkwmp/keys/seat-ed25519.key`. Line 4 is the `public_keys` entry.
+   - **Lobby token:** `openssl rand -hex 32 > /opt/mkwmp/keys/lobby-tokens.txt`.
+   - **Token secret:** `openssl rand 32 > /opt/mkwmp/keys/lobby-token-secret`.
+   - **Lobby certificate:** use the `openssl req` line from `setup.sh` to create `lobby-cert.pem` and `lobby-key.pem`.
+   - `chmod 600` every key and `chown` them to `mkwmp`.
+5. **Write the config.** Copy `config/server.toml` to `/opt/mkwmp/config/` and fill it in the way `setup.sh` writes it:
+   - `[seats] lobby_endpoint = "<public IPv4>:8905"`;
+   - `[lobby] host = "0.0.0.0"`, `public_host`, `relay_ports = "49152:49407"`, `require_ticket = true`, `roster_url` + `roster_token_file`;
+   - `[ticket]` key and `public_keys`;
+   - `[registry] file = "/var/lib/mkwmp/registry.db"`;
+   - `[tls]` = the lobby pair.
+6. **Start the services:**
 
-4. **Create the signing key and config:**
-   - Run `/opt/mkwmp/bin/mkwmp keygen k1`.
-   - Save line 2 (the private seed) as `/opt/mkwmp/keys/seat-ed25519.key` (mode 600, owner mkwmp).
-   - Copy `config/server.toml` to `/opt/mkwmp/config/` and set:
-     - `[server] name`;
-     - `[seats] capacity` (default 50);
-     - `[seats] lobby_endpoint = "<public IPv4>:8905"`;
-     - `[ticket] kid` and `private_key_file`.
-
-5. **Install the lobby:**
-   - Copy `resources/python-lobby/*.py` to `/opt/mkwmp/lobby/`.
-   - Create the venv: `python3 -m venv /opt/mkwmp/venv && /opt/mkwmp/venv/bin/pip install h2 cryptography`.
-   - Put the lobby's TLS pair in `/opt/mkwmp/keys/lobby-{cert,key}.pem`.
-   - Write `PUBLIC_HOST=<public IPv4>` to `/opt/mkwmp/config/lobby.env`.
-
-6. **Start the services.** Copy `deploy/systemd/*.service` to `/etc/systemd/system/`, then:
-
+       cp deploy/systemd/mkwmp-seat.service deploy/systemd/mkwmp-lobby-rs.service /etc/systemd/system/
        systemctl daemon-reload
-       systemctl enable --now mkwmp-seat mkwmp-lobby mkwmp-pia
+       systemctl enable --now mkwmp-seat mkwmp-lobby-rs
 
-7. **Put HTTPS in front of the seat API.** Two options:
-   - **Cloudflare tunnel.** Create a tunnel routing `https://<your host>` to `http://127.0.0.1:7000`, put `TUNNEL_TOKEN=...` in `/etc/mkwmp/tunnel.env` (mode 600), install `cloudflared`, then `systemctl enable --now mkwmp-cloudflared`.
-   - **Reverse proxy.** Use one such as Caddy: `your.host { reverse_proxy 127.0.0.1:7000 }`.
+7. **Put HTTPS in front of the seat API** (`127.0.0.1:7000`):
+   - **Cloudflare tunnel:** route `https://<your host>` to `http://127.0.0.1:7000`, put `TUNNEL_TOKEN=...` in `/etc/mkwmp/tunnel.env` (mode 600), install `cloudflared`, then `systemctl enable --now mkwmp-cloudflared`.
+   - **Reverse proxy:** use, for example, Caddy with the block in `deploy/docker/Caddyfile`. It passes the player's address to the seat server's rate limits.
 
-   Players then set `server = "https://<your host>"` in `client.toml`.
+## 3. On one PC, for development
 
-**Check that it's up:** `curl https://<your host>/seat/v1/status` shows seats and the queue.
+    tools/host/run_seat_local.sh          # seat server on 127.0.0.1:7000, config/server.toml
+    rust/target/release/mkwmp lobby config/server.toml
 
-**Restarts:** a restart clears every seat. Launchers notice and rejoin on their own, since nothing is stored.
+The local config uses the development certificate pair in `scratch/certs/` (not in the repo).
 
-**Keep these private:** the signing key (`seat-ed25519.key`), lobby tokens, the tunnel token and the lobby TLS key.
+## Keep these private
+
+- the ticket signing key (`seat-ed25519.key`);
+- the lobby tokens and token secret;
+- the admin token;
+- the lobby's private key (`lobby-key.pem`);
+- the tunnel token.
+
+The lobby **certificate** is public: the seat server publishes it (`lobbyCa` in `/seat/v1/status`) so that players' game patches trust it.

@@ -1,87 +1,93 @@
 # Architecture
 
-**One server binary, `mkwmp`, with two parts.** Both run on one VM by default; anyone can host. Contracts in `contracts/*.proto` (NPLN, game-facing) and `docs/contracts/SEAT_API.md` (ours) are the source of truth.
+There is **one server binary, `mkwmp`, with two parts**. Both run on one machine by default, and anyone can host one. The source of truth for each interface:
+
+- `contracts/*.proto`: NPLN, the game-facing protocol.
+- `docs/contracts/SEAT_API.md`: the seat API (ours).
+- `docs/contracts/LAUNCHER_API.md`: the API between the launcher and the game patch.
 
 ```
- player PC                                   the VM
- ┌──────────────────┐   HTTPS (seat API)   ┌───────────────────────────────┐
- │ mkwmp-launcher   │ ───────────────────► │ mkwmp server  (seats, queue,  │
- │  name + 8 friends│ ◄─ queue / ticket ── │   signed tickets, friends)    │
- │  writes mkwmp.toml                      │        ▲ roster (localhost)   │
+ player PC                                   the server
+ ┌──────────────────┐   HTTP(S) seat API   ┌───────────────────────────────┐
+ │ mkwmp-launcher   │ ───────────────────► │ mkwmp server  (gamertags,     │
+ │  gamertag + PIN  │ ◄─ queue / ticket ── │   friends, seats, tickets)    │
+ │  friends, tray   │                      │   SQLite registry             │
+ │  writes mkwmp.toml + lobby cert         │        ▲ roster (localhost)   │
  │  launches mkw.exe│                      │        │                      │
- │   └ winmm probe ─┼── NPLN gRPC/TLS ────►│ mkwmp lobby   (matchmaking,   │
+ │   └ winmm patch ─┼── NPLN gRPC/TLS ────►│ mkwmp lobby   (matchmaking,   │
  │                  │◄── Pia UDP / TURN ──►│   sessions, Gamesync, TURN)   │
  └──────────────────┘                      └───────────────────────────────┘
 ```
 
-    mkwmp server [config/server.toml]   seats, queue, signed tickets (HTTP)
+    mkwmp server [config/server.toml]   gamertags, friends, seats, queue, tickets (HTTP)
     mkwmp lobby  [config/server.toml]   the game-facing lobby
     mkwmp keygen [kid]                  new ticket signing key
+    mkwmp admin  <list|register|reset-pin|release> [name]
 
-## The two parts
+## The seat server (`mkwmp server`, crate `rust/seat`)
 
-**`mkwmp server`** (crate `rust/seat`) is the seat server. It owns the roster:
+- **Gamertags.** A player registers a gamertag and gets a 6-digit PIN. Gamertags, PIN hashes (Argon2) and friendships are stored in SQLite (`[registry] file`). Unused gamertags expire after `expire_days`.
+- **Friends.** Requests are accepted or declined, then stored on the server. Removing a friend, or deleting a gamertag, removes the friendship on both sides.
+  - A friend is **playing** (seated), **online** (launcher running: a *presence* signed in with the PIN) or **offline**.
+  - The launcher long-polls `GET /seat/v1/friends` for changes.
+- **Seats.** There are `capacity` seats (default 50). PLAY takes one, or joins a FIFO queue.
+  - A seated player receives a **signed ticket** (Ed25519).
+  - The launcher heartbeats to keep its seat; silence frees the seat for the next player in line.
+  - Seats are in memory. After a restart the `bootId` changes and launchers rejoin.
+- **Status.** `GET /seat/v1/status` is public. It shows seats, the queue and live lobbies, plus the lobby endpoint and the lobby's certificate (`lobbyCa`) for the launcher.
+- **Rate limits** cover every route (per IP, per session or per token). Every 429 carries `Retry-After`.
 
-- A player connects with a name and up to 8 friend names.
-- If one of the `capacity` seats (default 50) is free, the player gets one. Otherwise they wait in a FIFO queue.
-- A seated player receives a **signed ticket** (Ed25519).
-- The launcher heartbeats to keep the seat. Silence frees it for the next player in line.
-- Friends exist only while both players are online. Two players who list each other are mutual friends, and the lobby serves them to the game's ONLINE → FRIENDS menu.
-- There is no database: a restart clears every session. The `bootId` tells clients to rejoin.
+## The lobby (`mkwmp lobby`, crates `rust/lobby` + `rust/gateway`)
 
-**`mkwmp lobby`** (crate `rust/lobby`) is the game-facing side: NPLN Auth/Matchmaker/GameSessionService/Gamesync, plus Pia NAT/TURN.
+This is the game-facing side: NPLN Auth, Matchmaker, GameSessionService and Gamesync over gRPC/HTTP2/TLS, plus Pia NAT checks and a TURN relay over UDP.
 
-- It accepts a game only with a ticket that verifies against the seat server's public key.
-- It drops players the roster reports as no longer alive.
-- **Today this is the Python reference server** (`resources/python-lobby/mkwmp_server.py`). Handlers move to Rust as each is verified in game.
+- **Sign-in.** It accepts a game only with a seat ticket that verifies against the seat server's public key (`require_ticket`).
+- **Roster.** Every `roster_secs` it asks the seat server which seats are still live, and drops players whose seat is gone. Friends for the game's ONLINE → FRIENDS menu come from the same call.
+- **Lobbies are unlimited.** Each matchmaking mode opens a lobby as players arrive (up to `capacity` per lobby), starts it after `gather_secs` with at least `min_start` players, and closes it when empty.
+- **Limits.** `rust/gateway/src/limits.rs` caps connections, streams, TURN allocations and bandwidth, and NAT replies.
 
-**Why the ticket is signed** even on one VM: the lobby holds only the public key, so the two parts can still be split across machines (or a lobby hosted by someone else) without the lobby being able to mint seats. The seat cap holds because every lobby login needs a ticket the seat server issued.
+**Why the ticket is signed** even on one machine: the lobby holds only the public key. The two parts can be split across machines, or a lobby can be run by someone else, without that lobby being able to create seats.
 
-**Networking on the VM:**
+**TLS trust.** The game verifies the lobby's certificate and host name, and the patch supplies the trust root:
+- From rc.2, that root is the certificate the server publishes as `lobbyCa`, which the launcher writes to `<game>/mkwmp-lobby-ca.pem`.
+- Without that file, the patch trusts its built-in certificate.
 
-- Seat API (`[seats] bind`, HTTP): behind a TLS reverse proxy or a Cloudflare tunnel.
-- NPLN TLS (8905), Gamesync (8906), and UDP 10025 (Pia NAT) + 3478 (TURN) + relay ports: open directly on the public IP. A Cloudflare tunnel cannot carry the game's UDP.
+A self-hosted lobby uses a self-signed certificate for the host names the game asks for; `deploy/docker/setup.sh` creates one.
 
-## Launcher
+**Networking:**
+- The seat API (`[seats] bind`, HTTP) runs directly, or behind a TLS reverse proxy or a Cloudflare tunnel.
+- NPLN TLS (8905), Gamesync (8906), and UDP 10025 (Pia NAT), 3478 (TURN) and the relay range must be open directly on the public IP. A tunnel cannot carry the game's UDP.
 
-`mkwmp-launcher` (crate `rust/client`) is a small binary the player runs. It works like this:
+## The launcher (`mkwmp-launcher`, crate `rust/client`)
 
-1. It reads `client.toml`: the server URL, name, friends and game dir.
-2. It joins the seat server and shows the queue position and friends' status.
-3. When the player is seated, it writes `<game>\mkwmp.toml` with the lobby endpoint, name and **ticket**, then launches `mkw.exe`.
-4. It heartbeats until the game exits, then frees the seat.
+1. It reads `client.toml`: server URL, gamertag, PIN, game folder and background settings.
+2. With the window open, or from the tray, it signs in a *presence* and follows friends. It never takes a seat this way.
+3. On PLAY it updates itself and the game patch from GitHub releases (signed `SHA256SUMS`), then takes a seat or queues.
+   - It writes `<game>/mkwmp.toml` (lobby endpoint, gamertag, ticket, its local API address) and `<game>/mkwmp-lobby-ca.pem`, then launches `mkw.exe`.
+4. It heartbeats until the game exits or the player presses STOP, then frees the seat.
 
-While the game runs:
-
-- Edits to `friends` in `client.toml` are sent on the next heartbeat.
-- If the server restarts, the launcher rejoins and rewrites `mkwmp.toml`.
+The game patch (`native/probe`, `winmm.dll`) stays dormant until the player opens Online Play. It then redirects the game's online services to the lobby and asks the launcher's local API (`127.0.0.1:47820`) for its seat and friends.
 
 ## Crates
 
 ```
 rust/
-  mkwmp/       the server binary: `server`, `lobby`, `keygen` subcommands
-  seat/        seat server: names, roster (seats/queue/friends), HTTP API
-  ticket/      ticket v1 sign/verify (Python twin: resources/tools/ticket/verify_ticket.py)
-  lobby/       lobby (Rust port pending; matchmaking core only)
-  contracts/   generated prost types + tonic stubs for the NPLN protos
+  mkwmp/       the server binary: server, lobby, keygen, admin
+  seat/        seat server: registry (SQLite), friends, presence, roster, HTTP API
+  lobby/       lobby core: matchmaking, sessions, documents, referee, friend rooms
+  gateway/     gRPC/HTTP2 + TLS front, TURN relay, NAT responder, rate limits
+  ticket/      ticket v1 sign/verify
+  contracts/   generated prost types for the NPLN protos
   config/      typed server config loader
-  gateway/     TLS/h2 front (pending)
-  client/      the player launcher (binary `mkwmp-launcher`)
+  client/      the launcher (binary `mkwmp-launcher`)
 ```
 
 ## Config
 
-- `config/server.toml` — server side:
-  - `[seats]`: capacity, bind, timeouts, `lobby_endpoint` handed to players, `lobby_tokens_file` for the roster;
-  - `[ticket]`: kid, private key file, trusted public keys, ttl;
-  - `[lobby]`, `[tls]`.
-  - Relative paths resolve against the file.
-- `config/client.toml` — per player: server URL, name, `friends`, game dir, optional loopback slot.
-  - The launcher turns it into `<game dir>\mkwmp.toml`, which the probe (winmm.dll) reads at startup. That file is parsed in C (`native/probe/src/config.c`).
-  - If `mkwmp.toml` is absent, the game runs stock/offline.
-  - Env vars (`MKWMP_HOST/PORT/PLAYER/ENABLE`) still override for testing.
-
-## Today vs. target
-
-The Python server (`resources/python-lobby/mkwmp_server.py`) is the throwaway capture/prototype: it answers RPCs so we can learn the contracts. As each contract is verified it is ported to the Rust service that owns it. The Python code is not the product.
+- **`config/server.toml`** is the server side. Relative paths resolve against the file.
+  - `[seats]`: capacity, bind, timeouts, and the `lobby_endpoint` handed to players.
+  - `[registry]`: the SQLite file and reserved names.
+  - `[ticket]`: the signing key and trusted public keys.
+  - `[lobby]` and `[lobby.policy]`: ports, the relay range, the roster, and the lobby rules.
+  - `[tls]`: the lobby's certificate pair.
+- **`config/client.toml`** is per player. The launcher window edits it.

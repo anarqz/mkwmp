@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MKWMP: online play for mkw-recomp</title>
-<meta name="description" content="Community online servers for the mkw-recomp PC runtime. Install guides for Windows and SteamOS, how to play on the official server, and how to host your own.">
+<meta name="description" content="Community online play for the mkw-recomp PC runtime: gamertags, friends, race and battle lobbies. Install guides for Windows and SteamOS, the official server, and your own server with Docker Compose.">
 <link rel="preload" href="fonts/press-start-2p.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -15,7 +15,7 @@
   <div class="wrap hero">
     <p class="badge"><span class="blink">●</span> IN DEVELOPMENT</p>
     <h1>MKW<span class="r">M</span><span class="y">P</span></h1>
-    <p class="tag">Community online play for the <a href="https://github.com/adriadam10/mkw-recomp">mkw-recomp</a> PC runtime: servers with seats and a queue, race and battle lobbies, and friends. Anyone can host.</p>
+    <p class="tag">Community online play for the <a href="https://github.com/adriadam10/mkw-recomp">mkw-recomp</a> PC runtime: gamertags, friends, and race and battle lobbies on servers anyone can host.</p>
     <nav class="buttons">
       <a class="btn red" href="#play">▶ Play online</a>
       <a class="btn blue" href="#install">⬇ Install</a>
@@ -37,22 +37,36 @@
 
   <section class="panel note">
     <h2><span class="coin">!</span> STATUS</h2>
-    <p>Matchmaking works for <b>races and battles</b>: two players land in one lobby, vote, start and see each other. The <b>end of a match</b> is still being finished, so races don't complete cleanly yet. Not yet available: Friends rooms, LAN Play, and matches with more than 2 players (untested). Watch the repository for the first release.</p>
+    <p><b>Developer preview</b> (<a href="https://github.com/anarqz/mkwmp/releases">v0.0.1-rc.1</a>). Online <b>races and battles</b> work end to end: full matches, from the vote to the results and back to the lobby, were played on the first lobby server. The new lobby server, with any number of lobbies, is <b>being tested</b> now. <b>Friend rooms</b> (Room ID and password) are being tested too.</p>
+  </section>
+
+  <section id="launcher" class="panel">
+    <h2><span class="coin blue">★</span> THE LAUNCHER</h2>
+    <p>One small app does everything: your gamertag, your friends, the server's free seats, and installing and updating the game patch. Close the window and it keeps running in the system tray, with a notification when a friend comes online, starts playing, or sends you a request.</p>
+    <figure class="shot">
+      <img src="img/launcher-main.png" width="1296" height="891" alt="The MKWMP launcher: the player card with gamertag, PIN, server and game folder; the friends card with a pending request and friends who are playing, online and offline; the PLAY button.">
+      <figcaption>Gamertag and PIN on the left; friends, requests and who's playing on the right.</figcaption>
+    </figure>
+    <figure class="shot">
+      <img src="img/launcher-settings.png" width="1296" height="891" loading="lazy" alt="The launcher's settings: keep running in the system tray, and which friend notifications to show.">
+      <figcaption>Settings: background mode and notifications. Running in the background never takes a seat.</figcaption>
+    </figure>
   </section>
 
   <section id="play" class="panel">
     <h2><span class="coin red">1</span> PLAY ON THE OFFICIAL SERVER</h2>
-    <p>The official server has <b>50 seats</b>. When it's full you wait in a queue and the launcher shows your place in line. Your seat stays yours while the launcher runs.</p>
+    <p>The official server has <b>50 seats</b>. You only take a seat while you play; when it's full you wait in a queue and the launcher shows your place in line.</p>
     <ol class="steps">
       <li><b>Install</b> the game and the MKWMP patch: <a href="#install">Windows</a> or <a href="#steamos">Steam Deck / SteamOS</a>.</li>
-      <li><b>Open the launcher.</b> Its window shows the server's free seats and queue. Type your <b>gamertag</b>, press <b>REGISTER</b> (you get a 6-digit PIN), and pick the <b>game folder</b>; the server is already set to the official one (<code>https://mkw.anarqz.dev</code>). Add friends by their gamertag; they accept, and you see each other online and in the game.</li>
-      <li><b>Press PLAY.</b> The launcher updates itself and the game patch, takes a seat (or shows your place in the queue), and starts the game. Closing the game frees your seat.</li>
-      <li><b>In the game</b>, choose <b>Online Play → Race</b> or <b>Online Play → Battle</b> (1P). Players who pick the same mode are matched together. Until you click Online Play, the game behaves exactly like the normal offline game.</li>
+      <li><b>Open the launcher.</b> Type a <b>gamertag</b> and press <b>REGISTER</b>: you get a 6-digit <b>PIN</b>. Keep it: it's how you use the same gamertag on another PC or your Deck. Pick the <b>game folder</b>. The server is already set to the official one (<code>https://mkw.anarqz.dev</code>).</li>
+      <li><b>Add friends</b> by gamertag. They accept (or decline) in their launcher, and then you see each other as <b>playing</b>, <b>online</b> or <b>offline</b>, and you're friends in the game too.</li>
+      <li><b>Press PLAY.</b> The launcher updates itself and the game patch, takes a seat (or queues), and starts the game. Your seat is held until you close the game or press <b>STOP</b>.</li>
+      <li><b>In the game</b>, choose <b>Online Play → Race</b> or <b>Online Play → Battle</b> (1P). Players who pick the same mode are matched together, and new lobbies open as more players arrive. Until you click Online Play, the game behaves exactly like the normal offline game.</li>
     </ol>
     <div class="cards">
-      <div class="card blue"><h3>FRIENDS</h3><p>List up to 8 names. Anyone who lists you back is your friend in the game for as long as you're both online. Nothing is stored, and you can edit the list while you play. Arrange games with your friends on Discord.</p></div>
-      <div class="card green"><h3>NAMES</h3><p>3–16 characters: letters, digits, <code>-</code> and <code>_</code>. Each name is unique on a server while its player is online, and case doesn't count.</p></div>
-      <div class="card yellow"><h3>QUEUE</h3><p>A full server queues you in order. If the launcher stops responding, its seat goes to the next player after a minute.</p></div>
+      <div class="card blue"><h3>FRIENDS</h3><p>Kept on the server with your gamertag: add by gamertag, they accept or decline. Up to 100 friends. Removing a friend, or deleting your gamertag, removes it on both sides.</p></div>
+      <div class="card green"><h3>GAMERTAGS</h3><p>3–16 characters: letters, digits, <code>-</code> and <code>_</code>; case doesn't count. Yours on that server, protected by your PIN (stored hashed). Unused for 6 months, it becomes free again.</p></div>
+      <div class="card yellow"><h3>SEATS &amp; QUEUE</h3><p>Having the launcher open doesn't take a seat; PLAY does. A full server queues you in order. If a launcher stops responding, its seat goes to the next player after a minute.</p></div>
     </div>
   </section>
 
@@ -62,9 +76,9 @@
       <li><b>Set up mkw-recomp 0.1.10</b> (Windows build) with <b>your own copy</b> of the game, as the <a href="https://github.com/adriadam10/mkw-recomp">mkw-recomp README</a> describes. MKWMP needs game version <b>1.0.0</b>; other versions won't work.</li>
       <li><b>Get the launcher</b>: download <code>mkwmp-launcher-x86_64-windows.exe</code> from the <a href="https://github.com/anarqz/mkwmp/releases">latest release</a> and put it anywhere, for example in the game folder. It keeps its settings in <code>client.toml</code> next to itself.</li>
       <li><b>Open it and press PLAY</b> (see <a href="#play">Play</a>). The first run installs the game patch (<code>winmm.dll</code>) into the game folder. It also copies your system's <code>winmm.dll</code> there as <code>winmm_host.dll</code>, and saves any <code>winmm.dll</code> already there as <code>winmm.dll.bak</code>. Every download is checked against the release's signature.</li>
-      <li><b>Play.</b> The launcher keeps itself and the patch up to date. Without the launcher running, the game stays offline as normal.</li>
+      <li><b>Play.</b> The launcher keeps itself and the patch up to date. Without the launcher, the game stays offline as normal.</li>
     </ol>
-    <p class="hint">Game folder after setup: <code>mkw.exe</code>, <code>mkwgame.dll</code>, <code>SDL3.dll</code>, …, <code>winmm.dll</code> (MKWMP), <code>winmm_host.dll</code> (your system's copy), and <code>mkwmp.toml</code> (written by the launcher). Updates to the patch wait until the game is closed.</p>
+    <p class="hint">Game folder after setup: <code>mkw.exe</code>, <code>mkwgame.dll</code>, <code>SDL3.dll</code>, …, <code>winmm.dll</code> (MKWMP), <code>winmm_host.dll</code> (your system's copy), <code>mkwmp.toml</code> and <code>mkwmp-lobby-ca.pem</code> (both written by the launcher for the server you play on). Updates to the patch wait until the game is closed.</p>
   </section>
 
   <section id="steamos" class="panel">
@@ -75,24 +89,25 @@
       <li><b>Add to Steam.</b> Add <code>mkw.exe</code> as a <b>non-Steam game</b>. Under <b>Properties → Compatibility</b>, force <b>Proton 10.0</b> (install it from Steam if needed). Proton 11 can't see the controller.</li>
       <li><b>Launch options</b> (Properties → General):
 <pre><code>WINEDLLOVERRIDES="winmm=n,b" GRPC_DNS_RESOLVER=native MKW_MESH_COMPUTE=1 MKW_ASSUME_FOCUS=1 %command% --play</code></pre></li>
-      <li><b>Launcher.</b> Download <code>mkwmp-launcher-x86_64-linux</code> from the <a href="https://github.com/anarqz/mkwmp/releases">latest release</a>, make it executable (right-click → Properties → Permissions, or <code>chmod +x</code>), and open it. In the window, register your gamertag, set the game folder, and tick <b>"I start the game from Steam"</b>. The first PLAY installs the patch and copies Proton 10.0's <code>winmm.dll</code> in as <code>winmm_host.dll</code>.</li>
-      <li><b>Play.</b> Press <b>PLAY</b> in the launcher, then start the game from Steam. Keep the launcher open while you play; <b>STOP</b> or closing it frees your seat. You can also add the launcher to Steam as a non-Steam game: in Game Mode it opens fullscreen with large text.</li>
+      <li><b>Launcher.</b> Download <code>mkwmp-launcher-x86_64-linux</code> from the <a href="https://github.com/anarqz/mkwmp/releases">latest release</a>, make it executable (right-click → Properties → Permissions, or <code>chmod +x</code>), and open it. Register your gamertag (or enter the PIN of the one you already have), set the game folder, and tick <b>"I start the game from Steam"</b>. The first PLAY installs the patch and copies Proton 10.0's <code>winmm.dll</code> in as <code>winmm_host.dll</code>.</li>
+      <li><b>Play.</b> Press <b>PLAY</b> in the launcher, then start the game from Steam. Press <b>STOP</b> when you're done to free your seat. You can also add the launcher to Steam as a non-Steam game: in Game Mode it opens fullscreen with large text.</li>
     </ol>
     <p class="hint">The controller wakes up 20–50 seconds after the game starts; MKWMP fixes up Steam Input under Proton by itself. Both a Steam Deck and a ROG Ally X running SteamOS have been tested.</p>
   </section>
 
   <section id="host" class="panel">
     <h2><span class="coin yellow">4</span> HOST YOUR OWN SERVER</h2>
-    <p>The server is one program with two parts, and both fit on a small Linux VM (1 vCPU, 1 GB):</p>
-<pre><code>mkwmp keygen k1           # ticket signing key (keep it private)
-mkwmp server server.toml  # seats, queue, signed tickets, friends
-mkwmp lobby  server.toml  # the game-facing lobby</code></pre>
+    <p>Play with your friends on your own server: one <b>Docker Compose</b> command on any Linux machine (a small VM with 1 vCPU and 1 GB is plenty, or a PC on your LAN).</p>
+<pre><code>git clone https://github.com/anarqz/mkwmp && cd mkwmp
+cp .env.example .env        # set MKWMP_PUBLIC_IP
+docker compose up -d --build</code></pre>
+    <p>Then everyone sets the launcher's <b>SERVER</b> to <code>http://&lt;your IP&gt;:7000</code>, registers a gamertag there and presses PLAY.</p>
     <div class="cards">
-      <div class="card red"><h3>SETTINGS</h3><p>In <code>server.toml</code>: the seat limit (<code>capacity</code>, default 50), queue size, timeouts, and the lobby address handed to players.</p></div>
-      <div class="card blue"><h3>PORTS</h3><p>Open TCP <code>8905</code>, <code>8906</code> and UDP <code>10025</code>, <code>3478</code>, <code>49152–49407</code>. Put the seat API behind HTTPS with a Cloudflare tunnel or a reverse proxy.</p></div>
-      <div class="card green"><h3>NO DATABASE</h3><p>Everything is kept in memory. A restart clears every seat, and launchers rejoin on their own.</p></div>
+      <div class="card red"><h3>WHAT RUNS</h3><p>The seat server (gamertags, friends, seats and queue) and the lobby (matchmaking, Gamesync, TURN relay). First start creates every key and the lobby's certificate.</p></div>
+      <div class="card blue"><h3>PORTS</h3><p>Open TCP <code>7000</code>, <code>8905</code>, <code>8906</code> and UDP <code>3478</code>, <code>10025</code>, <code>49152–49407</code>. Optional HTTPS with a domain: <code>--profile https</code>.</p></div>
+      <div class="card green"><h3>SQLITE</h3><p>Gamertags, hashed PINs and friends live in one SQLite file in the Docker volume. Seats are in memory: after a restart, launchers rejoin on their own.</p></div>
     </div>
-    <p>To try it on one PC, run <code>tools/host/run_seat_local.sh</code>. Ready-made systemd services are in <code>deploy/systemd</code>.</p>
+    <p class="hint">Your own server needs a game patch from <b>rc.2 or later</b>, which trusts each server's own certificate (the launcher installs it). Without Docker, or behind a Cloudflare tunnel: see the full hosting guide.</p>
     <nav class="buttons small">
       <a class="btn yellow" href="https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md">Full hosting guide</a>
       <a class="btn blue" href="https://github.com/anarqz/mkwmp">Source code</a>
@@ -105,11 +120,13 @@ mkwmp lobby  server.toml  # the game-facing lobby</code></pre>
       <dt>Is this official?</dt>
       <dd>No. MKWMP is an unofficial community project, not affiliated with or endorsed by Nintendo. You need your own copy of the game.</dd>
       <dt>Why a queue?</dt>
-      <dd>Each server has a fixed number of seats so its lobby stays responsive. Your place is held while your launcher runs.</dd>
+      <dd>Each server has a fixed number of seats so its lobby stays responsive. A seat is yours from PLAY until you close the game or press STOP.</dd>
       <dt>Can someone skip the queue?</dt>
-      <dd>That's the design: the lobby will only let in games holding a ticket signed by the seat server, and the ticket stays valid only while its seat is held. The lobby's ticket check is still being built.</dd>
-      <dt>Where are my friends stored?</dt>
-      <dd>Nowhere. Friend lists live only while you're online.</dd>
+      <dd>No. The lobby only lets in games holding a ticket signed by the seat server, and checks that the ticket's seat is still held.</dd>
+      <dt>Where are my friends and gamertag stored?</dt>
+      <dd>On the server you play on, in its database: your gamertag, your PIN (hashed, never in plain text) and your friend list. Deleting your gamertag in the launcher removes all of it.</dd>
+      <dt>I forgot my PIN.</dt>
+      <dd>The server's admin can reset it. On the official server, ask on the project's GitHub.</dd>
     </dl>
   </section>
 </main>

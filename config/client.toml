@@ -3,12 +3,11 @@
 ## options the window doesn't show. Guides: https://anarqz.github.io/mkwmp/
 
 server = "https://mkw.anarqz.dev"  # seat server URL (the official one)
-name = "Player1"                   # in-game name: 3-16 letters, digits, '-' or '_'; unique on the server
+name = "Player1"                   # gamertag: 3-16 letters, digits, '-' or '_'; registered on the server
+pin = ""                           # its 6-digit PIN (REGISTER in the window fills this in)
 game = "C:/Games/mkw"              # game folder containing mkw.exe
 
-# Up to 8 friends. When a friend lists you too, you are friends in game
-# (ONLINE -> FRIENDS). Edit this while playing; the launcher picks it up.
-friends = []
+# Friends are kept on the server: add them in the launcher window.
 
 # launch = false     # don't start the game (SteamOS: start it from Steam)
 # seat = "online"    # take a seat only when you go online in the game ("start" = at launch)
