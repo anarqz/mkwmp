@@ -14,6 +14,7 @@ use crate::lobbies::{Assignment, Lobby, LobbyId, Matchmaker, ModeCounts, Policy,
 use crate::msgs::{self, Member, SessionView, OP_CURRENT, OP_SUCCEEDED};
 use crate::social::{self, KeepAlive, Social};
 use crate::referee::Verdict;
+use crate::limits::{self, caps, Limiter, Rule};
 use crate::users::{self, Audience, Directory, Tokens};
 use crate::value::{Document, Fields, Value};
 use crate::{code, Call, ConnId, CoreConfig, Out, RosterEntry, StreamId};
@@ -91,6 +92,27 @@ struct Stream {
     /// User resource from the bearer token, if it was one of ours.
     user: Option<String>,
     messages: Vec<Vec<u8>>,
+    peer: std::net::IpAddr,
+}
+
+/// gRPC RESOURCE_EXHAUSTED: what every rate limit and size cap answers.
+fn exhausted(what: &str) -> Out {
+    Out::status(8, format!("rate limit: {what}"))
+}
+
+/// The limit of a unary RPC by path.
+fn unary_rule(path: &str) -> Rule {
+    match path {
+        AUTH_SIGN_IN => Rule::SignIn,
+        GS_ISSUE_TOKEN | GS_REFRESH_TOKEN => Rule::GamesyncToken,
+        MM_CREATE => Rule::Ticket,
+        ROOM_CREATE | ALIAS_CREATE => Rule::RoomCreate,
+        ALIAS_GET | SESSION_GET | SESSION_BATCH_GET => Rule::RoomLookup,
+        SESSION_JOIN => Rule::Join,
+        GS_WRITE_DOCUMENTS => Rule::Write,
+        GS_GET_DOCUMENT | BULK_GET => Rule::Read,
+        _ => Rule::Other,
+    }
 }
 
 type Sends = Vec<(StreamKey, Out)>;
@@ -125,6 +147,8 @@ struct State {
     /// Mutual friends (user ids) per user id, from the seat roster. `None` until a roster
     /// arrives (development: everyone online is a friend).
     friends: Option<HashMap<String, HashSet<String>>>,
+    limiter: Limiter,
+    swept: f64,
 }
 
 struct Inner {
@@ -183,6 +207,8 @@ impl Core {
             deferred_sends: Sends::new(),
             seat_sessions: HashMap::new(),
             friends: None,
+            limiter: Limiter::default(),
+            swept: 0.0,
             cfg,
         };
         Self { inner: Arc::new(Inner { state: Mutex::new(state), clock }) }
@@ -199,9 +225,26 @@ impl Core {
         self.run(|s, now| {
             let user = call.bearer.and_then(|t| s.tokens.subject(t, now as u64));
             debug!(conn = call.conn, stream = call.stream, path = call.path, peer = %call.peer, user = ?user, "open");
+            let kind = kind_of(call.path);
+            let open_here = s.streams.keys().filter(|k| k.0 == call.conn).count();
+            let subject = user.as_deref().map_or_else(|| format!("ip:{}", call.peer.ip()), |u| users::tail(u).to_owned());
+            let refused = if open_here >= limits::caps::STREAMS_PER_CONNECTION {
+                Some("too many open streams on this connection")
+            } else if matches!(kind, Kind::Subscription | Kind::Presences | Kind::FriendUsers)
+                && !s.limiter.allow(Rule::Subscribe, &subject, now)
+            {
+                Some("subscriptions")
+            } else {
+                None
+            };
+            if let Some(why) = refused {
+                warn!(peer = %call.peer, path = call.path, why, "refused");
+                let _ = out.send(exhausted(why));
+                return;
+            }
             s.streams.insert(
                 (call.conn, call.stream),
-                Stream { path: call.path.to_owned(), kind: kind_of(call.path), out, user, messages: Vec::new() },
+                Stream { path: call.path.to_owned(), kind, out, user, messages: Vec::new(), peer: call.peer.ip() },
             );
         })
     }
@@ -212,10 +255,30 @@ impl Core {
             let key = (conn, stream);
             let Some(kind) = s.streams.get(&key).map(|st| st.kind) else { return };
             let mut sends = Sends::new();
+            let stream_rule = match kind {
+                Kind::KeepUserSession => Some(Rule::SessionFrame),
+                Kind::PresenceKeepAlive => Some(Rule::Presence),
+                _ => None,
+            };
+            if let Some(rule) = stream_rule {
+                if !s.limiter.allow(rule, &s.subject(key), now) {
+                    warn!(?key, ?rule, "stream over its rate limit: ended");
+                    sends.push((key, exhausted("stream messages")));
+                    s.stream_ended(key, now);
+                    s.flush(sends);
+                    return;
+                }
+            }
             match kind {
                 Kind::KeepUserSession => s.session_frame(key, body, now, &mut sends),
                 Kind::PresenceKeepAlive => s.keepalive(key, body, &mut sends),
-                _ => s.streams.get_mut(&key).expect("checked").messages.push(body.to_vec()),
+                // Unary and server-streaming requests carry one message; extras are ignored.
+                _ => {
+                    let st = s.streams.get_mut(&key).expect("checked");
+                    if st.messages.is_empty() {
+                        st.messages.push(body.to_vec());
+                    }
+                }
             }
             s.flush(sends);
         })
@@ -371,7 +434,28 @@ impl State {
         }
     }
 
+    /// Rate-limit subject: the caller's user id, else its IP.
+    fn subject(&self, key: StreamKey) -> String {
+        self.session_user
+            .get(&key)
+            .cloned()
+            .or_else(|| self.caller(key).map(|u| users::tail(&u).to_owned()))
+            .unwrap_or_else(|| self.streams.get(&key).map_or_else(String::new, |s| format!("ip:{}", s.peer)))
+    }
+
     fn unary(&mut self, key: StreamKey, path: &str, body: &[u8], now: f64, sends: &mut Sends) {
+        // Sign-in is limited per IP (no user yet); everything else per user.
+        let subject = if path == AUTH_SIGN_IN {
+            self.streams.get(&key).map_or_else(String::new, |s| format!("ip:{}", s.peer))
+        } else {
+            self.subject(key)
+        };
+        let rule = unary_rule(path);
+        if !self.limiter.allow(rule, &subject, now) {
+            warn!(%subject, path, ?rule, "rate limited");
+            sends.push((key, exhausted(path.rsplit('/').next().unwrap_or(path))));
+            return;
+        }
         let reply = match path {
             AUTH_SIGN_IN => self.sign_in(key, body, now),
             GS_ISSUE_TOKEN | GS_REFRESH_TOKEN => Ok(self.gamesync_token(key, body, now)),
@@ -394,7 +478,8 @@ impl State {
             SESSION_BATCH_GET => Ok(self.session_batch_get(body, now)),
             SESSION_JOIN => self.session_join(key, body, now, sends),
             BULK_GET => {
-                let names = msgs::bulk_get_names(body).unwrap_or_default();
+                let mut names = msgs::bulk_get_names(body).unwrap_or_default();
+                names.truncate(caps::BATCH_NAMES);
                 if names.is_empty() {
                     Err(Out::status(code::INVALID_ARGUMENT, "no documents requested"))
                 } else {
@@ -500,6 +585,9 @@ impl State {
 
     fn write_documents(&mut self, key: StreamKey, body: &[u8], now: f64, sends: &mut Sends) -> Result<Vec<u8>, Out> {
         let req = WriteRequest::decode(body).map_err(|e| Out::status(code::INVALID_ARGUMENT, e.to_string()))?;
+        if req.writes.len() > caps::WRITES_PER_REQUEST {
+            return Err(exhausted("writes per request"));
+        }
         let writer = self.caller(key).map(|u| users::tail(&u).to_owned());
         let writer_number = writer.as_deref().map_or(1, |w| self.users.number(w));
         let writer_name = writer.as_deref().and_then(|w| self.users.name(w)).map(str::to_owned);
@@ -545,6 +633,12 @@ impl State {
                     if let Some(n) = transformed.get(name) {
                         fields.set("upcsid", Value::Int(*n));
                     }
+                    let too_big = fields.encode().0.len() > caps::DOC_BYTES;
+                    let lobby_full = lobby.docs.get(name).is_none() && lobby.docs.len() >= caps::DOCS_PER_LOBBY;
+                    if too_big || lobby_full {
+                        warn!(lobby = %lobby.id, user = %writer, %name, too_big, lobby_full, "document refused (size cap)");
+                        continue;
+                    }
                     if let Some((doc, kind)) = lobby.docs.update(name, fields.clone(), mask.as_deref(), *exists, Some(&writer), now as u64) {
                         publish(lobby, &doc, kind, sends);
                     }
@@ -563,7 +657,9 @@ impl State {
         }
         if let Some(seat) = lobby.seat_mut(&writer) {
             for d in &req.deferments {
-                seat.deferments.insert(d.name.clone(), d.writes.clone());
+                if seat.deferments.len() < caps::DEFERMENTS_PER_SEAT || seat.deferments.contains_key(&d.name) {
+                    seat.deferments.insert(d.name.clone(), d.writes.clone());
+                }
             }
         }
         lobby.refresh_state();
@@ -610,6 +706,11 @@ impl State {
             lobby.pending.retain(|w| !(w.stream == key && w.target_id == *tid));
         }
         for l in frame.listens {
+            let listening = lobby.watchers.iter().chain(&lobby.pending).filter(|w| w.stream == key).count();
+            if listening >= caps::LISTENS_PER_STREAM {
+                warn!(lobby = %lobby.id, user = %uid, "listen refused (cap)");
+                break;
+            }
             let w = Watcher { stream: key, session: frame.session.clone(), target_id: l.target_id, target: l.target.clone() };
             if l.target.ends_with("/__pus/") && !earlier_members_present(lobby, &uid, &l.target) {
                 debug!(lobby = %lobby.id, target = %l.target, "__pus listen deferred until earlier members joined");
@@ -902,7 +1003,8 @@ impl State {
 
     /// Friends' sessions by the ids they publish as `SessionId`; unknown ids are omitted.
     fn session_batch_get(&self, body: &[u8], now: f64) -> Vec<u8> {
-        let names = crate::wire::repeated_bytes(body, 2).unwrap_or_default();
+        let mut names = crate::wire::repeated_bytes(body, 2).unwrap_or_default();
+        names.truncate(caps::BATCH_NAMES);
         let mut out = crate::wire::Msg::new();
         for n in names {
             let id = users::tail(&String::from_utf8_lossy(n)).to_owned();
@@ -924,6 +1026,9 @@ impl State {
             if lobby.seat(&uid).is_none() {
                 if let Some(room) = &lobby.room {
                     if !room.password.is_empty() && room.password != req.password {
+                        if !self.limiter.allow(Rule::WrongPassword, &uid, now) {
+                            return Err(exhausted("password attempts"));
+                        }
                         return Err(Out::status(code::PERMISSION_DENIED, "wrong password"));
                     }
                 }
@@ -1071,6 +1176,10 @@ impl State {
         }
         for (lobby, uid, reason) in leaving {
             self.leave(lobby, &uid, reason, now, &mut sends);
+        }
+        if now - self.swept >= 60.0 {
+            self.swept = now;
+            self.limiter.sweep(now);
         }
         // Friends/presence streams: refresh before the client's 60 s watchdog fires.
         if now - self.social_refreshed >= SOCIAL_REFRESH_SECS {

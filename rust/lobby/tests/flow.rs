@@ -492,3 +492,21 @@ fn roster_limits_friends_to_mutual_and_ends_dead_seats() {
     let fu = wire::bytes_field(wire::repeated_bytes(last, 1).unwrap()[0], 2).unwrap().unwrap();
     assert!(wire::str_field(fu, 2).unwrap().unwrap().ends_with(&lobby::users::ticket_user_id("bia")));
 }
+
+#[test]
+fn room_id_scanning_and_sign_in_floods_are_rate_limited() {
+    let w = World::new(Policy::default());
+    let p = sign_in(&w, &dev_ticket("Eve"));
+    let lookup = |id: u32| w.unary(p.conn, &format!("{GSS}GetGameSessionShortAlias"), Some(&p.token),
+        &Msg::new().bytes(1, format!("tenants/current/GameSessionShortAliases/{id:06}")).0);
+    let results: Vec<_> = (0..20).map(lookup).collect();
+    assert!(results[..10].iter().all(|r| *r == Err(5)), "unknown ids: NOT_FOUND");
+    assert!(results[10..].iter().all(|r| *r == Err(8)), "then RESOURCE_EXHAUSTED");
+    w.advance(60.0);
+    assert_eq!(lookup(1), Err(5), "refills over time");
+
+    // Sign-in is limited per IP before any user exists.
+    let body = Msg::new().bytes(1, "tenants/t").msg(3, &Msg::new().bytes(1, "dev")).into_bytes();
+    let got: Vec<_> = (0..12).map(|_| w.unary(w.id(), SIGN_IN, None, &body).map(|_| ())).collect();
+    assert!(got.contains(&Err(8)));
+}

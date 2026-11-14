@@ -143,7 +143,10 @@ impl Social {
         let p = self.presences.entry(uid.to_owned()).or_insert_with(|| Presence { user: user.to_owned(), ..Default::default() });
         let before = p.attributes.clone();
         for key in mask {
-            match attributes.get(key) {
+            if !p.attributes.contains(key) && p.attributes.0.len() >= crate::limits::caps::PRESENCE_ATTRIBUTES {
+                continue;
+            }
+            match attributes.get(key).filter(|v| v.encode().0.len() <= crate::limits::caps::PRESENCE_VALUE_BYTES) {
                 Some(v) => p.attributes.set(key, v.clone()),
                 None => p.attributes.remove(key),
             }
