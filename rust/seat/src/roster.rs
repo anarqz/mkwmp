@@ -71,7 +71,6 @@ impl From<NameError> for RosterError {
 struct Session {
     key: String,
     name: String,
-    friends: Vec<String>,
     seat: Option<Seat>,
     last_seen: u64,
 }
@@ -100,7 +99,6 @@ pub struct View {
     pub next_poll_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ticket: Option<TicketView>,
-    pub friends: Vec<FriendView>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -109,17 +107,6 @@ pub struct TicketView {
     pub token: String,
     pub expires_at: u64,
     pub lobby: String,
-}
-
-/// One entry of the player's own list, as the launcher shows it.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct FriendView {
-    pub name: String,
-    /// Seated on this server right now.
-    pub online: bool,
-    /// They list you too: you are friends in game.
-    pub mutual: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -169,6 +156,7 @@ pub struct Roster {
     by_name: HashMap<String, String>, // name key -> sid
     queue: VecDeque<String>,
     seated: usize,
+    changes: u64,
     lobbies: BTreeMap<String, usize>,
     lobbies_at: u64,
 }
@@ -194,6 +182,7 @@ impl Roster {
             by_name: HashMap::new(),
             queue: VecDeque::new(),
             seated: 0,
+            changes: 0,
             lobbies: BTreeMap::new(),
             lobbies_at: 0,
         }
@@ -211,12 +200,10 @@ impl Roster {
         &self.rules
     }
 
-    /// A player connects with a name and a friend list. Seated at once if a
-    /// seat is free, else queued.
-    pub fn join(&mut self, name: &str, friends: &[String], now: u64) -> Result<Created, RosterError> {
+    /// A player asks for a seat. Seated at once if one is free, else queued.
+    pub fn join(&mut self, name: &str, now: u64) -> Result<Created, RosterError> {
         self.sweep(now);
         names::validate(name)?;
-        let friends = names::friends(name, friends)?;
         if self.by_name.contains_key(&names::key(name)) {
             return Err(RosterError::NameTaken);
         }
@@ -227,10 +214,11 @@ impl Roster {
         let key = random_hex(32);
         self.sessions.insert(
             sid.clone(),
-            Session { key: key.clone(), name: name.to_string(), friends, seat: None, last_seen: now },
+            Session { key: key.clone(), name: name.to_string(), seat: None, last_seen: now },
         );
         self.by_name.insert(names::key(name), sid.clone());
         self.queue.push_back(sid.clone());
+        self.changes += 1;
         self.promote(now);
         Ok(Created { session_key: key, view: self.view(&sid) })
     }
@@ -280,15 +268,6 @@ impl Roster {
         Seat { ticket, expires_at: exp }
     }
 
-    /// Replace the friend list. Also counts as a heartbeat.
-    pub fn set_friends(&mut self, sid: &str, key: &str, friends: &[String], now: u64) -> Result<View, RosterError> {
-        self.sweep(now);
-        let s = self.session_mut(sid, key)?;
-        s.friends = names::friends(&s.name, friends)?;
-        s.last_seen = now;
-        Ok(self.view(sid))
-    }
-
     /// Leave: frees the seat or the place in line. Idempotent.
     pub fn leave(&mut self, sid: &str, key: &str, now: u64) {
         if self.session_mut(sid, key).is_ok() {
@@ -325,6 +304,7 @@ impl Roster {
 
     fn remove(&mut self, sid: &str) {
         if let Some(s) = self.sessions.remove(sid) {
+            self.changes += 1;
             self.by_name.remove(&names::key(&s.name));
             if s.seat.is_some() {
                 self.seated -= 1;
@@ -343,6 +323,7 @@ impl Roster {
             // A newly seated player gets a full heartbeat window.
             s.last_seen = now;
             self.seated += 1;
+            self.changes += 1;
         }
     }
 
@@ -353,22 +334,21 @@ impl Roster {
         s.seat.as_ref().map(|_| (sid, s))
     }
 
-    fn lists(s: &Session, other: &str) -> bool {
-        let k = names::key(other);
-        s.friends.iter().any(|f| names::key(f) == k)
+    /// "seated" or "queued" for the live session named `name`.
+    pub fn state_of(&self, name: &str) -> Option<&'static str> {
+        let s = self.sessions.get(self.by_name.get(&names::key(name))?)?;
+        Some(if s.seat.is_some() { "seated" } else { "queued" })
     }
 
-    /// Mutual friends of `s` that are seated, sorted by name (case-insensitive).
-    fn mutual(&self, s: &Session) -> Vec<RosterFriend> {
-        let mut out: Vec<RosterFriend> = s
-            .friends
-            .iter()
-            .filter_map(|f| self.seated_by_name(f))
-            .filter(|(_, other)| Self::lists(other, &s.name))
-            .map(|(sid, other)| RosterFriend { session_id: sid.clone(), name: other.name.clone() })
-            .collect();
-        out.sort_by_key(|f| names::key(&f.name));
-        out
+    /// The seated session id and spelling for `name`, if seated.
+    pub fn seated(&self, name: &str) -> Option<(String, String)> {
+        self.seated_by_name(name).map(|(sid, s)| (sid.clone(), s.name.clone()))
+    }
+
+    /// Bumped whenever a session comes, goes or gets its seat (friends'
+    /// launchers long-poll on it).
+    pub fn changes(&self) -> u64 {
+        self.changes
     }
 
     fn view(&self, sid: &str) -> View {
@@ -378,18 +358,6 @@ impl Roster {
         } else {
             None
         };
-        let friends = s
-            .friends
-            .iter()
-            .map(|f| {
-                let other = self.seated_by_name(f);
-                FriendView {
-                    name: other.map(|(_, o)| o.name.clone()).unwrap_or_else(|| f.clone()),
-                    online: other.is_some(),
-                    mutual: other.is_some_and(|(_, o)| Self::lists(o, &s.name)),
-                }
-            })
-            .collect();
         View {
             boot_id: self.boot_id.clone(),
             session_id: sid.to_string(),
@@ -405,11 +373,11 @@ impl Roster {
                 expires_at: seat.expires_at,
                 lobby: self.rules.lobby_endpoint.clone(),
             }),
-            friends,
         }
     }
 
-    /// The lobby's view of its players: alive = still seated.
+    /// The lobby's view of its players: alive = still seated. `friends` is
+    /// filled by the caller (from the registry).
     pub fn roster(&mut self, sids: &[String], now: u64) -> Vec<RosterEntry> {
         self.sweep(now);
         sids.iter()
@@ -418,7 +386,7 @@ impl Roster {
                     session_id: sid.clone(),
                     name: Some(s.name.clone()),
                     alive: true,
-                    friends: self.mutual(s),
+                    friends: vec![],
                 },
                 None => RosterEntry { session_id: sid.clone(), name: None, alive: false, friends: vec![] },
             })
@@ -461,20 +429,16 @@ mod tests {
         Roster::new(rules, Issuer::new("t", SigningKey::from_bytes(&[1; 32])))
     }
 
-    fn f(names: &[&str]) -> Vec<String> {
-        names.iter().map(|s| s.to_string()).collect()
-    }
-
     #[test]
     fn seats_then_queues_then_promotes_on_leave() {
         let mut r = roster(1);
-        let a = r.join("ana", &[], 0).unwrap();
+        let a = r.join("ana", 0).unwrap();
         assert_eq!(a.view.state, "seated");
         assert!(a.view.ticket.is_some());
-        let b = r.join("bia", &[], 0).unwrap();
+        let b = r.join("bia", 0).unwrap();
         assert_eq!((b.view.state, b.view.position), ("queued", Some(1)));
         assert!(b.view.ticket.is_none());
-        let c = r.join("cid", &[], 0).unwrap();
+        let c = r.join("cid", 0).unwrap();
         assert_eq!(c.view.position, Some(2));
 
         r.leave(&a.view.session_id, &a.session_key, 1);
@@ -486,7 +450,7 @@ mod tests {
     #[test]
     fn ticket_verifies_and_names_the_session() {
         let mut r = roster(1);
-        let a = r.join("Ana", &[], 1_700_000_000_000).unwrap();
+        let a = r.join("Ana", 1_700_000_000_000).unwrap();
         let t = a.view.ticket.unwrap();
         let v = TicketVerifier::from_entries(&[format!("t:{}", r.issuer.public_key_b64())]).unwrap();
         let c = v.verify(&t.token, 1_700_000_001).unwrap();
@@ -497,24 +461,24 @@ mod tests {
     #[test]
     fn names_unique_case_insensitive_and_freed_on_leave() {
         let mut r = roster(5);
-        let a = r.join("Ana", &[], 0).unwrap();
-        assert_eq!(r.join("ANA", &[], 0).err(), Some(RosterError::NameTaken));
+        let a = r.join("Ana", 0).unwrap();
+        assert_eq!(r.join("ANA", 0).err(), Some(RosterError::NameTaken));
         r.leave(&a.view.session_id, &a.session_key, 0);
-        assert!(r.join("ana", &[], 0).is_ok());
+        assert!(r.join("ana", 0).is_ok());
     }
 
     #[test]
     fn invalid_names_rejected() {
         let mut r = roster(5);
-        assert!(matches!(r.join("a b", &[], 0), Err(RosterError::Name(_))));
-        assert!(matches!(r.join("ana", &f(&["ok_name", "x"]), 0), Err(RosterError::Name(_))));
+        assert!(matches!(r.join("a b", 0), Err(RosterError::Name(_))));
+        assert!(matches!(r.join("x", 0), Err(RosterError::Name(_))));
     }
 
     #[test]
     fn silent_seat_expires_and_queue_promotes() {
         let mut r = roster(1);
-        let a = r.join("ana", &[], 0).unwrap();
-        let b = r.join("bia", &[], 0).unwrap();
+        let a = r.join("ana", 0).unwrap();
+        let b = r.join("bia", 0).unwrap();
         // bia keeps polling, ana stops heartbeating.
         for t in (5_000..=60_000).step_by(5_000) {
             r.touch(&b.view.session_id, &b.session_key, t).unwrap();
@@ -526,8 +490,8 @@ mod tests {
     #[test]
     fn silent_queued_player_drops_out() {
         let mut r = roster(1);
-        let a = r.join("ana", &[], 0).unwrap();
-        let b = r.join("bia", &[], 0).unwrap();
+        let a = r.join("ana", 0).unwrap();
+        let b = r.join("bia", 0).unwrap();
         r.touch(&a.view.session_id, &a.session_key, 30_001).unwrap();
         assert_eq!(r.touch(&b.view.session_id, &b.session_key, 30_002), Err(RosterError::NotFound));
     }
@@ -536,7 +500,7 @@ mod tests {
     fn long_session_gets_a_fresh_ticket() {
         let rules = Rules { capacity: 1, seat_timeout_ms: u64::MAX / 2, ..Rules::default() };
         let mut r = Roster::new(rules, Issuer::new("t", SigningKey::from_bytes(&[1; 32])));
-        let a = r.join("ana", &[], 0).unwrap();
+        let a = r.join("ana", 0).unwrap();
         let t0 = a.view.ticket.unwrap().token;
         let early = r.touch(&a.view.session_id, &a.session_key, 3_600_000).unwrap();
         assert_eq!(early.ticket.unwrap().token, t0);
@@ -549,73 +513,27 @@ mod tests {
     #[test]
     fn queue_cap() {
         let mut r = roster(1);
-        r.join("aaa", &[], 0).unwrap();
+        r.join("aaa", 0).unwrap();
         for n in ["bbb", "ccc", "ddd"] {
-            r.join(n, &[], 0).unwrap();
+            r.join(n, 0).unwrap();
         }
-        assert_eq!(r.join("eee", &[], 0).err(), Some(RosterError::QueueFull));
+        assert_eq!(r.join("eee", 0).err(), Some(RosterError::QueueFull));
     }
 
     #[test]
     fn wrong_key_is_not_found() {
         let mut r = roster(1);
-        let a = r.join("ana", &[], 0).unwrap();
+        let a = r.join("ana", 0).unwrap();
         assert_eq!(r.touch(&a.view.session_id, "nope", 0), Err(RosterError::NotFound));
         r.leave(&a.view.session_id, "nope", 0);
         assert!(r.touch(&a.view.session_id, &a.session_key, 0).is_ok());
     }
 
     #[test]
-    fn friends_are_mutual_seated_and_sorted() {
-        let mut r = roster(3);
-        let ana = r.join("Ana", &f(&["zed", "BIA", "cid", "dan"]), 0).unwrap();
-        let bia = r.join("bia", &f(&["ana"]), 0).unwrap();
-        let _cid = r.join("cid", &f(&["someone"]), 0).unwrap(); // one-sided
-        let zed = r.join("Zed", &f(&["ana"]), 0).unwrap(); // mutual but queued
-        assert_eq!(zed.view.state, "queued");
-
-        let e = &r.roster(std::slice::from_ref(&ana.view.session_id), 1)[0];
-        assert!(e.alive);
-        let names: Vec<&str> = e.friends.iter().map(|x| x.name.as_str()).collect();
-        assert_eq!(names, vec!["bia"]);
-        assert_eq!(e.friends[0].session_id, bia.view.session_id);
-
-        let v = r.touch(&ana.view.session_id, &ana.session_key, 1).unwrap();
-        let summary: Vec<(String, bool, bool)> =
-            v.friends.into_iter().map(|x| (x.name, x.online, x.mutual)).collect();
-        assert_eq!(
-            summary,
-            vec![
-                ("zed".into(), false, false),
-                ("bia".into(), true, true),
-                ("cid".into(), true, false),
-                ("dan".into(), false, false),
-            ]
-        );
-
-        // Zed gets a seat once Bia leaves; the sorted roster then has both.
-        r.leave(&bia.view.session_id, &bia.session_key, 2);
-        r.set_friends(&bia.view.session_id, &bia.session_key, &[], 2).unwrap_err();
-        let e = &r.roster(std::slice::from_ref(&ana.view.session_id), 3)[0];
-        let names: Vec<&str> = e.friends.iter().map(|x| x.name.as_str()).collect();
-        assert_eq!(names, vec!["Zed"]);
-    }
-
-    #[test]
-    fn editing_friends_takes_effect() {
-        let mut r = roster(2);
-        let ana = r.join("ana", &[], 0).unwrap();
-        let _bia = r.join("bia", &f(&["ana"]), 0).unwrap();
-        assert!(r.roster(std::slice::from_ref(&ana.view.session_id), 0)[0].friends.is_empty());
-        r.set_friends(&ana.view.session_id, &ana.session_key, &f(&["bia"]), 1).unwrap();
-        assert_eq!(r.roster(std::slice::from_ref(&ana.view.session_id), 1)[0].friends.len(), 1);
-    }
-
-    #[test]
     fn roster_reports_gone_and_queued_as_not_alive() {
         let mut r = roster(1);
-        let _a = r.join("ana", &[], 0).unwrap();
-        let b = r.join("bia", &[], 0).unwrap();
+        let _a = r.join("ana", 0).unwrap();
+        let b = r.join("bia", 0).unwrap();
         let out = r.roster(&[b.view.session_id.clone(), "unknown".into()], 0);
         assert!(out.iter().all(|e| !e.alive && e.name.is_none()));
     }

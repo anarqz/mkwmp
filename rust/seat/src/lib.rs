@@ -5,6 +5,7 @@
 pub mod http;
 pub mod limits;
 pub mod names;
+pub mod presence;
 pub mod registry;
 pub mod roster;
 pub mod serve;

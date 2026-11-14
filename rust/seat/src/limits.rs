@@ -5,6 +5,10 @@
 //! | pin failures       | ip         | 10 per 15 min  |
 //! | pin failures       | name       | 10 per hour    |
 //! | joins              | ip         | 30 per minute  |
+//! | launcher sign-ins  | ip         | 30 per minute  |
+//! | friend requests    | profile    | 20 per hour    |
+//! | friend answers     | profile    | 120 per hour   |
+//! | friends reads      | presence   | 120 per minute |
 //!
 //! With 10 wrong PINs per name per hour, guessing a 6-digit PIN takes on the
 //! order of 5 years on average.
@@ -21,6 +25,10 @@ pub const REGISTER_PER_IP: Limit = Limit { max: 3, window_ms: 3_600_000 };
 pub const PIN_FAIL_PER_IP: Limit = Limit { max: 10, window_ms: 900_000 };
 pub const PIN_FAIL_PER_NAME: Limit = Limit { max: 10, window_ms: 3_600_000 };
 pub const JOIN_PER_IP: Limit = Limit { max: 30, window_ms: 60_000 };
+pub const PRESENCE_PER_IP: Limit = Limit { max: 30, window_ms: 60_000 };
+pub const FRIEND_ADD_PER_NAME: Limit = Limit { max: 20, window_ms: 3_600_000 };
+pub const FRIEND_ACT_PER_NAME: Limit = Limit { max: 120, window_ms: 3_600_000 };
+pub const FRIENDS_GET_PER_TOKEN: Limit = Limit { max: 120, window_ms: 60_000 };
 
 #[derive(Default)]
 pub struct Limiter {

@@ -98,7 +98,21 @@ impl Harness {
                 p
             }
         };
-        self.call("POST", "/seat/v1/sessions", None, Some(json!({"name": name, "pin": pin, "friends": friends}))).await
+        let _ = friends;
+        self.call("POST", "/seat/v1/sessions", None, Some(json!({"name": name, "pin": pin}))).await
+    }
+
+    /// Register `name` if needed and sign its launcher in; the presence token.
+    async fn presence(&self, name: &str) -> String {
+        let key = name.to_ascii_lowercase();
+        if !self.pins.lock().unwrap().contains_key(&key) {
+            let (_, v) = self.call("POST", "/seat/v1/profiles", None, Some(json!({"name": name}))).await;
+            self.pins.lock().unwrap().insert(key.clone(), v["pin"].as_str().expect("registered").to_string());
+        }
+        let pin = self.pins.lock().unwrap()[&key].clone();
+        let (st, v) = self.call("POST", "/seat/v1/presence", None, Some(json!({"name": name, "pin": pin}))).await;
+        assert_eq!(st, StatusCode::OK, "{v}");
+        v["token"].as_str().unwrap().to_string()
     }
 }
 
@@ -153,10 +167,10 @@ async fn join_queue_heartbeat_promote() {
 #[tokio::test]
 async fn lobby_roster_reports_liveness_and_mutual_friends() {
     let h = Harness::new(5);
-    let (_, a) = h.join("ana", &["Bia", "cid"]).await;
+    let (_, a) = h.join("ana", &[]).await;
     let (_, b) = h.join("bia", &[]).await;
     let (a_sid, _) = sid_key(&a);
-    let (b_sid, b_key) = sid_key(&b);
+    let (b_sid, _) = sid_key(&b);
 
     let body = json!({"sessionIds": [a_sid, "gone"]});
     let (st, _) = h.call("POST", "/seat/v1/lobby/roster", Some("nope"), Some(body.clone())).await;
@@ -168,19 +182,66 @@ async fn lobby_roster_reports_liveness_and_mutual_friends() {
     assert_eq!(r["sessions"][0]["friends"], json!([]));
     assert_eq!(r["sessions"][1]["alive"], false);
 
-    // Bia adds Ana back: now mutual.
-    let (st, v) = h
-        .call("PUT", &format!("/seat/v1/sessions/{b_sid}/friends"), Some(&b_key), Some(json!({"friends": ["ana"]})))
-        .await;
-    assert_eq!(st, StatusCode::OK);
-    assert_eq!(v["friends"][0], json!({"name": "ana", "online": true, "mutual": true}));
+    // Launcher presences (no seat), a request, then Bia accepts: friends.
+    let ta = h.presence("ana").await;
+    let tb = h.presence("bia").await;
+    let (st, v) = h.call("POST", "/seat/v1/friends", Some(&ta), Some(json!({"name": "BIA"}))).await;
+    assert_eq!((st, v["state"].as_str()), (StatusCode::OK, Some("pending")));
+    let (_, r) = h.call("POST", "/seat/v1/lobby/roster", Some("lobby-secret"), Some(body.clone())).await;
+    assert_eq!(r["sessions"][0]["friends"], json!([]), "pending is not friends");
+    let (_, f) = h.call("GET", "/seat/v1/friends", Some(&tb), None).await;
+    assert_eq!(f["incoming"][0]["name"], "ana");
+    let (st, _) = h.call("POST", "/seat/v1/friends/ana/accept", Some(&tb), None).await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
     let (_, r) = h.call("POST", "/seat/v1/lobby/roster", Some("lobby-secret"), Some(body.clone())).await;
     assert_eq!(r["sessions"][0]["friends"], json!([{"sessionId": b_sid, "name": "bia"}]));
+    let (_, f) = h.call("GET", "/seat/v1/friends", Some(&ta), None).await;
+    assert_eq!(f["friends"], json!([{"name": "bia", "state": "playing"}]));
 
     // Ana goes silent past the seat timeout: the lobby sees her gone.
     h.advance(61_000);
     let (_, r) = h.call("POST", "/seat/v1/lobby/roster", Some("lobby-secret"), Some(body)).await;
     assert_eq!(r["sessions"][0]["alive"], false);
+}
+
+#[tokio::test]
+async fn friends_states_presence_and_profile_delete() {
+    let h = Harness::new(1);
+    let ta = h.presence("ana").await;
+    let tb = h.presence("bia").await;
+    let tc = h.presence("cid").await;
+    for (t, other) in [(&tb, "ana"), (&tc, "ana")] {
+        h.call("POST", "/seat/v1/friends", Some(t), Some(json!({"name": other}))).await;
+    }
+    h.call("POST", "/seat/v1/friends/bia/accept", Some(&ta), None).await;
+    // Asking back accepts.
+    let (_, v) = h.call("POST", "/seat/v1/friends", Some(&ta), Some(json!({"name": "cid"}))).await;
+    assert_eq!(v["state"], "accepted");
+    // Presence holds no seat: the pool is untouched.
+    let (_, st) = h.call("GET", "/seat/v1/status", None, None).await;
+    assert_eq!(st["seated"], 0);
+    let (_, f) = h.call("GET", "/seat/v1/friends", Some(&ta), None).await;
+    assert_eq!(f["friends"], json!([{"name": "bia", "state": "online"}, {"name": "cid", "state": "online"}]));
+    // Cid's launcher quits: offline.
+    h.call("DELETE", "/seat/v1/presence", Some(&tc), None).await;
+    let (_, f) = h.call("GET", "/seat/v1/friends", Some(&ta), None).await;
+    assert_eq!(f["friends"][1], json!({"name": "cid", "state": "offline"}));
+    // A stale cursor answers at once.
+    let (st, _) = h.call("GET", "/seat/v1/friends?since=0", Some(&ta), None).await;
+    assert_eq!(st, StatusCode::OK);
+    // Errors are plain.
+    let (st, e) = h.call("POST", "/seat/v1/friends", Some(&ta), Some(json!({"name": "zed"}))).await;
+    assert_eq!((st, e["error"]["code"].as_str()), (StatusCode::NOT_FOUND, Some("FRIEND_UNKNOWN")));
+    let (st, _) = h.call("GET", "/seat/v1/friends", Some("bogus"), None).await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+    // Bia deletes her profile: gone from Ana's list, her presence ends.
+    let pin = h.pins.lock().unwrap()["bia"].clone();
+    let (st, _) = h.call("DELETE", "/seat/v1/profiles/bia", None, Some(json!({"pin": pin}))).await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    let (_, f) = h.call("GET", "/seat/v1/friends", Some(&ta), None).await;
+    assert_eq!(f["friends"], json!([{"name": "cid", "state": "offline"}]));
+    let (st, _) = h.call("GET", "/seat/v1/friends", Some(&tb), None).await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
