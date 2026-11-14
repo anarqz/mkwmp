@@ -35,7 +35,7 @@ const MUTED: Color32 = Color32::from_rgb(0x6b, 0x63, 0x86);
 const SKY_TEXT: Color32 = Color32::from_rgb(0xa6, 0xe3, 0xff);
 const PINK: Color32 = Color32::from_rgb(0xff, 0x5e, 0x8a);
 const PINK_D: Color32 = Color32::from_rgb(0xa8, 0x1f, 0x4a);
-pub const REPO_URL: &str = "https://github.com/anarqz/mkwmp";
+pub const DISCORD_URL: &str = "https://discord.gg/ysb3Mek6QQ";
 pub const DONATE_URL: &str = "https://ko-fi.com/anarqz";
 const GOOD: Color32 = Color32::from_rgb(0x7d, 0xff, 0x7d);
 const BAD: Color32 = Color32::from_rgb(0xff, 0x8a, 0x8a);
@@ -286,7 +286,7 @@ impl eframe::App for App {
                 }
             });
             ui.add_space(6.0);
-            self.play_row(ui, busy, st.stars);
+            self.play_row(ui, busy);
             status_pill(ui, &st, &self.draft, &self.error);
         });
 
@@ -643,12 +643,12 @@ impl App {
         }
     }
 
-    /// GITHUB · PLAY · DONATE in one row.
-    fn play_row(&mut self, ui: &mut egui::Ui, busy: bool, stars: Option<u64>) {
+    /// DISCORD · PLAY · DONATE in one row.
+    fn play_row(&mut self, ui: &mut egui::Ui, busy: bool) {
         let (row, _) = ui.allocate_exact_size(vec2(COLUMN, 72.0), Sense::hover());
         let play = Rect::from_center_size(row.center(), vec2(420.0, 68.0));
-        let side = vec2(200.0, 40.0);
-        let gh = Rect::from_center_size(pos2((row.left() + play.left()) / 2.0, row.center().y), side);
+        let side = vec2(232.0, 40.0);
+        let discord = Rect::from_center_size(pos2((row.left() + play.left()) / 2.0, row.center().y), side);
         let kofi = Rect::from_center_size(pos2((play.right() + row.right()) / 2.0, row.center().y), side);
 
         let problem = self.draft.problem();
@@ -665,15 +665,10 @@ impl App {
             }
         }
 
-        let gh_text = match stars {
-            Some(n) if n > 0 => format!("GITHUB · {n}"),
-            Some(_) => "GITHUB".to_string(),
-            None => "GITHUB".to_string(),
-        };
-        if icon_button(ui, gh, &gh_text, &STAR, INK, Color32::from_rgb(0x3a, 0x2f, 0x66), YELLOW).clicked() {
-            let _ = open::that(REPO_URL);
+        if icon_button(ui, discord, "JOIN THE COMMUNITY", &DISCORD, BLURPLE, BLURPLE_D, Color32::WHITE, DISCORD_URL).clicked() {
+            let _ = open::that(DISCORD_URL);
         }
-        if icon_button(ui, kofi, "DONATE", &HEART, PINK, PINK_D, Color32::WHITE).clicked() {
+        if icon_button(ui, kofi, "DONATE", &HEART, PINK, PINK_D, Color32::WHITE, DONATE_URL).clicked() {
             let _ = open::that(DONATE_URL);
         }
     }
@@ -704,7 +699,21 @@ fn gear_button(ui: &mut egui::Ui, rect: Rect) -> Response {
     resp.on_hover_text("Settings: tray, notifications, start-up")
 }
 
-const STAR: [&str; 7] = ["...#...", "...#...", "#######", ".#####.", "..###..", ".##.##.", ".#...#."];
+/// The Discord mark (the controller face), in pixels.
+const DISCORD: [&str; 10] = [
+    "...##....##...",
+    "..##########..",
+    ".############.",
+    ".############.",
+    "###..####..###",
+    "###..####..###",
+    "###..####..###",
+    "##############",
+    ".####....####.",
+    "..##......##..",
+];
+const BLURPLE: Color32 = Color32::from_rgb(0x58, 0x65, 0xf2);
+const BLURPLE_D: Color32 = Color32::from_rgb(0x3c, 0x45, 0xa5);
 const HEART: [&str; 6] = [".##.##.", "#######", "#######", ".#####.", "..###..", "...#..."];
 
 /// A tiny bitmap icon, `cell` points per pixel.
@@ -719,7 +728,8 @@ fn paint_icon(p: &egui::Painter, at: egui::Pos2, rows: &[&str], cell: f32, color
 }
 
 /// A small pixel button at `rect` with a bitmap icon before its label.
-fn icon_button(ui: &mut egui::Ui, rect: Rect, text: &str, icon: &[&str], fill: Color32, dark: Color32, icon_color: Color32) -> Response {
+#[allow(clippy::too_many_arguments)]
+fn icon_button(ui: &mut egui::Ui, rect: Rect, text: &str, icon: &[&str], fill: Color32, dark: Color32, icon_color: Color32, hover: &str) -> Response {
     let resp = ui.interact(rect, ui.scope_id().with(text), Sense::click());
     let pressed = resp.is_pointer_button_down_on();
     let r = if pressed { rect.translate(vec2(3.0, 3.0)) } else { rect };
@@ -734,7 +744,7 @@ fn icon_button(ui: &mut egui::Ui, rect: Rect, text: &str, icon: &[&str], fill: C
     let font = pixel(9.0);
     let galley = p.layout_no_wrap(text.to_string(), font, PAPER);
     let cell = 2.0;
-    let icon_w = 7.0 * cell;
+    let icon_w = icon.first().map_or(0, |r| r.len()) as f32 * cell;
     let total = icon_w + 8.0 + galley.size().x;
     let x0 = r.center().x - total / 2.0;
     paint_icon(p, pos2(x0, r.center().y - icon.len() as f32 * cell / 2.0), icon, cell, icon_color);
@@ -742,7 +752,7 @@ fn icon_button(ui: &mut egui::Ui, rect: Rect, text: &str, icon: &[&str], fill: C
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    resp.on_hover_text(if icon.len() == 7 { REPO_URL } else { DONATE_URL })
+    resp.on_hover_text(hover)
 }
 
 /// A cream panel with a thick ink border, hard drop shadow and a coin heading.

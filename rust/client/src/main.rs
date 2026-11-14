@@ -124,7 +124,6 @@ fn main() {
     rt.spawn(core.clone().status_loop());
     rt.spawn(core.clone().friends_loop());
     if !a.headless {
-        rt.spawn(core.clone().stars_loop());
         notify::register();
         rt.spawn(notify::watch_loop(core.clone()));
         // Keep the start-up entry pointing at this launcher (it may have moved).

@@ -6,7 +6,7 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 
 > MKWMP is an unofficial community project, not affiliated with or endorsed by Nintendo. You need your own copy of the game.
 >
-> **Status: developer preview** ([v0.0.1-rc.2](https://github.com/anarqz/mkwmp/releases)). Online races and battles work end to end. The new lobby server, friend rooms and self-hosted servers with the real game are being tested.
+> **Status: developer preview** ([v0.0.1-rc.3](https://github.com/anarqz/mkwmp/releases)). Online races and battles work end to end. The new lobby server, friend rooms and self-hosted servers with the real game are being tested.
 
 ![The MKWMP launcher: gamertag and PIN, server, game folder, friends with requests and who is playing, and the PLAY button](site/img/launcher-main.png)
 
@@ -195,6 +195,8 @@ Two tests start the real `mkwmp` binary. One plays two clients from sign-in to a
 | `tools/` | release script (`tools/release`) and a local seat server helper (`tools/host`) |
 | `resources/` | research material: reverse-engineering notes and tools, captures, the original Python lobby, handoff notes |
 
-## Support
+## Community and support
+
+Join the community on [Discord](https://discord.gg/ysb3Mek6QQ).
 
 MKWMP is made by players, for players. If you'd like to help keep the official server running: [Ko-fi](https://ko-fi.com/anarqz).

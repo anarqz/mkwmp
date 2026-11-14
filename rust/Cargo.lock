@@ -496,7 +496,7 @@ dependencies = [
 
 [[package]]
 name = "client"
-version = "0.0.1-rc.2"
+version = "0.0.1-rc.3"
 dependencies = [
  "axum",
  "base64 0.22.1",

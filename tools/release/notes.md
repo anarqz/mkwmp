@@ -1,14 +1,16 @@
 **Developer preview.** Online play works end to end on the official server. Some parts are still being tested; they are marked below.
 
-New in rc.2:
+New in rc.3:
 
-- **Host your own server.** `mkwmp-server` is the whole server in one program, for Windows or Linux.
-  - Run it (on Windows, double-click it) and answer one question: the address your friends reach you at.
-  - It creates its keys, certificate, config and gamertag database by itself, then runs.
-  - Players set the launcher's SERVER to `http://<that address>:7000`.
-  - The steps for ports, the router and troubleshooting are in the [README](https://github.com/anarqz/mkwmp#host-your-own-server). For a Linux server, Docker Compose is in the repository.
-- **Each server's own certificate.** The launcher fetches the certificate of the server you play on, and the game patch trusts it. That's what lets your game join a self-hosted server. On the official server nothing changes.
-- **Launcher:** the settings dialog no longer shows a star count of 0.
+- **Join the community.** The launcher's GitHub button is now a Discord button: https://discord.gg/ysb3Mek6QQ
+- **Reserved gamertags can sign in.** Registering a reserved gamertag now asks for its PIN, the same as a gamertag that is already taken. In rc.2 it only said the name was reserved.
+- **`launch_command`** in `client.toml`: an optional command the launcher runs to start the game (for example through Proton when the launcher is your Steam shortcut).
+- The game patch is the same as in rc.2 and is not reinstalled.
+
+From rc.2:
+
+- **Host your own server.** `mkwmp-server` is the whole server in one program, for Windows or Linux: run it, answer one question (the address your friends reach you at), and it sets itself up. Steps: [README](https://github.com/anarqz/mkwmp#host-your-own-server).
+- **Each server's own certificate.** The launcher fetches the certificate of the server you play on, and the game patch trusts it.
 
 Still in this release:
 
