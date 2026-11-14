@@ -53,7 +53,6 @@ mod tests {
             server: "https://mkw.example".into(),
             name: "Ana".into(),
             pin: String::new(),
-            friends: vec![],
             game: "C:/game".into(),
             launch: true,
             seat: SeatMode::Start,

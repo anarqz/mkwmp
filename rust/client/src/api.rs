@@ -17,8 +17,6 @@ pub struct View {
     pub seats_free: usize,
     pub next_poll_ms: u64,
     pub ticket: Option<Ticket>,
-    #[serde(default)]
-    pub friends: Vec<Friend>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -39,11 +37,27 @@ pub struct Status {
     pub lobby_endpoint: Option<String>,
 }
 
+/// One friend and what they're doing.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct Friend {
     pub name: String,
-    pub online: bool,
-    pub mutual: bool,
+    /// "playing" (in the game, seated), "online" (launcher running) or "offline".
+    pub state: String,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct Request {
+    pub name: String,
+    pub since: u64,
+}
+
+/// GET /seat/v1/friends.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+pub struct Friends {
+    pub cursor: u64,
+    pub friends: Vec<Friend>,
+    pub incoming: Vec<Request>,
+    pub outgoing: Vec<Request>,
 }
 
 #[derive(Debug)]
@@ -56,6 +70,10 @@ pub enum ApiError {
     Taken,
     /// Network or server trouble: retry.
     Transient(String),
+    /// The launcher's presence is gone (server restart, new PIN): sign in again.
+    SignedOut,
+    /// Too many tries: wait this many seconds.
+    Limited(u64),
 }
 
 impl std::fmt::Display for ApiError {
@@ -64,7 +82,17 @@ impl std::fmt::Display for ApiError {
             ApiError::Gone => f.write_str("session expired"),
             ApiError::Taken => f.write_str("that name is already registered"),
             ApiError::Refused(m) | ApiError::Transient(m) => f.write_str(m),
+            ApiError::SignedOut => f.write_str("signed out"),
+            ApiError::Limited(secs) => write!(f, "too many tries; wait {}", wait_text(*secs)),
         }
+    }
+}
+
+fn wait_text(secs: u64) -> String {
+    if secs < 90 {
+        format!("{} s", secs.max(1))
+    } else {
+        format!("{} min", secs.div_ceil(60))
     }
 }
 
@@ -125,9 +153,9 @@ impl Api {
             .ok_or_else(|| ApiError::Transient("the server is too old (no lobbyEndpoint)".into()))
     }
 
-    pub async fn join(&self, name: &str, pin: &str, friends: &[String]) -> Result<View, ApiError> {
+    pub async fn join(&self, name: &str, pin: &str) -> Result<View, ApiError> {
         let url = format!("{}/seat/v1/sessions", self.base);
-        Self::read(self.http.post(url).json(&json!({"name": name, "pin": pin, "friends": friends})).send().await).await
+        Self::read(self.http.post(url).json(&json!({"name": name, "pin": pin})).send().await).await
     }
 
     /// Is `name` registered (or reserved)?
@@ -183,9 +211,79 @@ impl Api {
         Self::read(self.http.get(url).bearer_auth(key).send().await).await
     }
 
-    pub async fn set_friends(&self, sid: &str, key: &str, friends: &[String]) -> Result<View, ApiError> {
-        let url = format!("{}/seat/v1/sessions/{sid}/friends", self.base);
-        Self::read(self.http.put(url).bearer_auth(key).json(&json!({"friends": friends})).send().await).await
+    // ---- launcher presence and friends (no seat) -------------------------
+
+    /// A friends-API answer: JSON on success, else a friendly error.
+    async fn friendly(res: Result<reqwest::Response, reqwest::Error>) -> Result<serde_json::Value, ApiError> {
+        let res = res.map_err(|e| ApiError::Transient(format!("cannot reach the server: {e}")))?;
+        let status = res.status();
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let secs = res
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok()?.parse().ok())
+                .unwrap_or(60);
+            return Err(ApiError::Limited(secs));
+        }
+        if status == reqwest::StatusCode::NO_CONTENT {
+            return Ok(serde_json::Value::Null);
+        }
+        let v: serde_json::Value = res.json().await.unwrap_or_default();
+        if status.is_success() {
+            return Ok(v);
+        }
+        let code = v["error"]["code"].as_str().unwrap_or("");
+        let msg = v["error"]["message"].as_str().unwrap_or("server error").to_string();
+        match code {
+            "PRESENCE_NOT_FOUND" => Err(ApiError::SignedOut),
+            "PIN_WRONG" => Err(ApiError::Refused("wrong PIN for this name".into())),
+            "PROFILE_NOT_FOUND" => Err(ApiError::Refused("this name isn't registered".into())),
+            _ if status.is_client_error() => Err(ApiError::Refused(msg)),
+            _ => Err(ApiError::Transient(msg)),
+        }
+    }
+
+    /// Sign the launcher in (no seat); returns the presence token.
+    pub async fn presence(&self, name: &str, pin: &str) -> Result<String, ApiError> {
+        let url = format!("{}/seat/v1/presence", self.base);
+        let v = Self::friendly(self.http.post(url).json(&json!({"name": name, "pin": pin})).send().await).await?;
+        v["token"].as_str().map(str::to_string).ok_or_else(|| ApiError::Transient("bad answer".into()))
+    }
+
+    /// The launcher quits: show offline at once.
+    pub async fn presence_end(&self, token: &str) {
+        let url = format!("{}/seat/v1/presence", self.base);
+        let _ = self.http.delete(url).bearer_auth(token).timeout(std::time::Duration::from_secs(3)).send().await;
+    }
+
+    /// Friends and requests. With `since` (the last cursor) the server
+    /// waits up to 25 s for a change.
+    pub async fn friends(&self, token: &str, since: Option<u64>) -> Result<Friends, ApiError> {
+        let mut url = format!("{}/seat/v1/friends", self.base);
+        if let Some(c) = since {
+            url.push_str(&format!("?since={c}"));
+        }
+        let req = self.http.get(url).bearer_auth(token).timeout(std::time::Duration::from_secs(40));
+        let v = Self::friendly(req.send().await).await?;
+        serde_json::from_value(v).map_err(|e| ApiError::Transient(format!("bad answer: {e}")))
+    }
+
+    /// Ask `name` to be friends; "pending" or "accepted" (they had asked).
+    pub async fn friend_request(&self, token: &str, name: &str) -> Result<(String, String), ApiError> {
+        let url = format!("{}/seat/v1/friends", self.base);
+        let v = Self::friendly(self.http.post(url).bearer_auth(token).json(&json!({ "name": name })).send().await).await?;
+        Ok((v["name"].as_str().unwrap_or(name).to_string(), v["state"].as_str().unwrap_or("pending").to_string()))
+    }
+
+    pub async fn friend_accept(&self, token: &str, name: &str) -> Result<(), ApiError> {
+        let url = format!("{}/seat/v1/friends/{name}/accept", self.base);
+        Self::friendly(self.http.post(url).bearer_auth(token).send().await).await.map(|_| ())
+    }
+
+    /// Reject, cancel or unfriend.
+    pub async fn friend_remove(&self, token: &str, name: &str) -> Result<(), ApiError> {
+        let url = format!("{}/seat/v1/friends/{name}", self.base);
+        Self::friendly(self.http.delete(url).bearer_auth(token).send().await).await.map(|_| ())
     }
 
     pub async fn leave(&self, sid: &str, key: &str) {

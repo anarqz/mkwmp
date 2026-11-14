@@ -2,7 +2,7 @@
 
 Our own protocol. Not an NPLN/game contract. Served by `mkwmp server` (crate `rust/seat`) over plain HTTP + JSON. Put TLS in front of it with a reverse proxy or tunnel. Consumers:
 
-- the launcher (`mkwmp-launcher`, `rust/client`): join, poll/heartbeat, friends, leave;
+- the launcher (`mkwmp-launcher`, `rust/client`): join, poll/heartbeat, leave; presence and friends;
 - the lobby: the roster, and ticket verification at login.
 
 All state is in memory and dies with the process. Names are compared case-insensitively.
@@ -38,9 +38,8 @@ Errors are `{"error": {"code", "message"}}`. Session answers carry `Cache-Contro
 | --- | --- | --- |
 | `GET /seat/v1/status` | → `{bootId, name, lobbyEndpoint, seatsTotal, seated, queued, lobbies}` | Public, readable from any origin. `lobbyEndpoint` is the NPLN `host:port` the launcher writes as `server`. `lobbies` is the lobby's last count of live lobbies per mode, e.g. `{"Normal24": 3}`. It is `{}` until the lobby reports, and again once its report is older than 60 s. Lobbies have no cap: they open and close with the players. |
 | `GET /seat/v1/keys` | → `{keys: [{kid, publicKey}]}` | Public. The ticket verification key (base64url, raw 32 bytes). |
-| `POST /seat/v1/sessions` | `{name, pin, friends?: string[]}` → `201 View + sessionKey` | Checks the profile's PIN, then seats the player at once if a seat is free, else queues them. Errors: `404 PROFILE_NOT_FOUND`, `401 PIN_WRONG`, `429 RATE_LIMITED`, `409 NAME_TAKEN` (that profile is already online), `503 QUEUE_FULL` (with `Retry-After: 30`). |
+| `POST /seat/v1/sessions` | `{name, pin}` → `201 View + sessionKey` | Checks the profile's PIN, then seats the player at once if a seat is free, else queues them. Errors: `404 PROFILE_NOT_FOUND`, `401 PIN_WRONG`, `429 RATE_LIMITED`, `409 NAME_TAKEN` (that profile is already online), `503 QUEUE_FULL` (with `Retry-After: 30`). |
 | `GET /seat/v1/sessions/{id}` | → `View` | The poll while queued and the heartbeat while seated. Repeat within `nextPollMs`. |
-| `PUT /seat/v1/sessions/{id}/friends` | `{friends}` → `View` | Replaces the friend list. Also counts as a heartbeat. |
 | `DELETE /seat/v1/sessions/{id}` | → `204` | Frees the seat or the place in line. Idempotent. |
 | `POST /seat/v1/lobby/roster` | `{sessionIds: string[] (≤256), lobbies?: {mode: count}}` → `{bootId, sessions: RosterEntry[]}` | Lobby only. `lobbies` takes at most 16 modes, and mode names are `[A-Za-z0-9_-]{1,32}`. `Authorization: Bearer <lobby token>`. The tokens come from `[seats] lobby_tokens_file`. Without that file: `403 ROSTER_DISABLED`. Wrong token: `401`. |
 
@@ -53,13 +52,12 @@ View = {
   seatsTotal, seatsFree, queued,
   nextPollMs,        // seated: heartbeat (20 s); queued: poll (5 s)
   ticket?: { token, expiresAt /* unix s */, lobby /* NPLN host:port */ },
-  friends: [{ name, online /* seated now */, mutual /* lists you too */ }],  // the player's own list, in order
 }
 RosterEntry = {
   sessionId,
   alive,             // still seated; false for unknown, queued or gone
   name?,             // when alive
-  friends: [{ sessionId, name }],  // mutual friends seated now, sorted by name (case-insensitive)
+  friends: [{ sessionId, name }],  // accepted friends (registry) seated now, sorted by name (case-insensitive)
 }
 ```
 
@@ -71,6 +69,23 @@ RosterEntry = {
 - A newly seated player gets a full heartbeat window.
 
 **Restart:** a new `bootId` means every old session is gone, and old sessions answer `404`. The launcher rejoins and rewrites `mkwmp.toml` with the fresh ticket. A lobby sees `alive: false` for the old ids.
+
+## 2a. Presence and friends
+
+Friendships are stored in the registry database (`registry.db`), one row per pair: `pending` (a request) or `accepted` (friends both ways). They are deleted with their profile, whichever way it goes: owner delete, admin release, expiry, or someone registering an expired name.
+
+A launcher signs in with its PIN to a **presence**. A presence never takes a seat and never counts in the seat pool. It is what "online" means for friends, and its token authenticates the friends routes. A presence lasts 90 s past its last request (the friends long-poll keeps it alive), up to 4 per profile. It ends on `DELETE`, a new PIN, or the profile going away. It lives in memory: after a seat-server restart the launcher signs in again.
+
+| Route | Body → answer | Notes |
+|---|---|---|
+| `POST /seat/v1/presence` | `{name, pin}` → `{token, name, ttlMs}` | Same PIN limits as joins (`401 PIN_WRONG`, `404 PROFILE_NOT_FOUND`, `429`), plus 30 sign-ins per IP per minute. |
+| `DELETE /seat/v1/presence` | bearer → `204` | The launcher quits: offline at once. |
+| `GET /seat/v1/friends[?since=<cursor>]` | bearer → `{cursor, friends: [{name, state}], incoming: [{name, since}], outgoing: [{name, since}]}` | `state`: `playing` (seated), `online` (launcher running, or queued), `offline`. Friends are ordered playing, online, offline, then by name. With `since` (the last `cursor`), the server waits up to 25 s for any change. 120 per minute per token. |
+| `POST /seat/v1/friends` | bearer, `{name}` → `{name, state: "pending" \| "accepted"}` | A request; if they had asked you, it accepts instead. Errors: `404 FRIEND_UNKNOWN`, `400 FRIEND_SELF`, `409 FRIEND_EXISTS`, `409 FRIEND_PENDING`, `409 FRIEND_LIMIT` (100 friends, 50 requests waiting). 20 per hour per profile. |
+| `POST /seat/v1/friends/{name}/accept` | bearer → `204` | `404 REQUEST_NOT_FOUND`. |
+| `DELETE /seat/v1/friends/{name}` | bearer → `204` | Rejects their request, cancels yours, or ends the friendship. Accept and delete share 120 per hour per profile. |
+
+A missing, expired or outdated token answers `401 PRESENCE_NOT_FOUND`: sign in again. Every `429` carries `Retry-After`.
 
 ## 3. The seat ticket (v1)
 

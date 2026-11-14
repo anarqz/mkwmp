@@ -1,5 +1,5 @@
-//! The launcher's seat: one place that joins, heartbeats, picks up friend
-//! edits, rejoins after a server restart, and (in `seat = "online"` mode)
+//! The launcher's seat: one place that joins, heartbeats, rejoins after a
+//! server restart, and (in `seat = "online"` mode)
 //! lets the seat go once the game stops asking for it.
 //!
 //! The game reaches it through the local API ([`crate::local`]); `tick` is
@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
 
-use crate::api::{Api, ApiError, Friend, View};
+use crate::api::{Api, ApiError, View};
 use crate::config::{ClientConfig, SeatMode};
 
 /// The game stops asking (left Online Play, quit) → the seat goes after this.
@@ -29,7 +29,6 @@ pub enum Phase {
 #[derive(Debug, Clone)]
 pub struct Snapshot {
     pub phase: Phase,
-    pub friends: Vec<Friend>,
 }
 
 /// What the local API answers the game.
@@ -53,15 +52,11 @@ struct State {
     next_poll: Instant,
     last_want: Option<Instant>,
     refused: Option<String>,
-    friends: Vec<String>,
-    rejected_friends: Option<Vec<String>>,
-    shown_friends: Vec<Friend>,
     shown_position: Option<usize>,
 }
 
 pub struct Seat {
     api: Api,
-    config_path: String,
     mode: SeatMode,
     name: String,
     pin: String,
@@ -73,10 +68,9 @@ pub struct Seat {
 pub type TicketChanged = Option<(String, String)>; // (ticket, lobby)
 
 impl Seat {
-    pub fn new(cfg: &ClientConfig, config_path: &str) -> Self {
+    pub fn new(cfg: &ClientConfig) -> Self {
         Self {
             api: Api::new(&cfg.server),
-            config_path: config_path.to_string(),
             mode: cfg.seat,
             name: cfg.name.clone(),
             pin: cfg.pin.clone(),
@@ -86,9 +80,6 @@ impl Seat {
                 next_poll: Instant::now(),
                 last_want: None,
                 refused: None,
-                friends: cfg.friends.clone(),
-                rejected_friends: None,
-                shown_friends: vec![],
                 shown_position: None,
             }),
         }
@@ -124,7 +115,7 @@ impl Seat {
     }
 
     async fn join(&self, st: &mut State) -> Result<(), Answer> {
-        match self.api.join(&self.name, &self.pin, &st.friends).await {
+        match self.api.join(&self.name, &self.pin).await {
             Ok(v) => {
                 let key = v.session_key.clone().unwrap_or_default();
                 st.session = Some(Session { sid: v.session_id.clone(), key, boot: v.boot_id.clone() });
@@ -177,28 +168,7 @@ impl Seat {
     async fn heartbeat(&self, st: &mut State) {
         let s = st.session.as_ref().expect("session");
         let (sid, key, boot) = (s.sid.clone(), s.key.clone(), s.boot.clone());
-        // Friend edits in client.toml: a refused list is reported once and
-        // never costs the seat.
-        let edited = ClientConfig::load(&self.config_path)
-            .ok()
-            .map(|c| c.friends)
-            .filter(|f| *f != st.friends && Some(f) != st.rejected_friends.as_ref());
-        let result = match edited {
-            Some(list) => match self.api.set_friends(&sid, &key, &list).await {
-                Ok(v) => {
-                    st.friends = list;
-                    st.rejected_friends = None;
-                    Ok(v)
-                }
-                Err(ApiError::Refused(m)) => {
-                    crate::log::note(format!("friends not updated: {m}"));
-                    st.rejected_friends = Some(list);
-                    self.api.poll(&sid, &key).await
-                }
-                Err(e) => Err(e),
-            },
-            None => self.api.poll(&sid, &key).await,
-        };
+        let result = self.api.poll(&sid, &key).await;
         match result {
             Ok(v) if v.boot_id != boot => {
                 crate::log::note("the server restarted; rejoining");
@@ -239,20 +209,9 @@ impl Seat {
             crate::log::note("seated");
         }
         st.shown_position = if v.state == "queued" { v.position } else { None };
-        if v.friends != st.shown_friends {
-            for f in &v.friends {
-                let s = match (f.online, f.mutual) {
-                    (true, true) => "online, friends in game",
-                    (true, false) => "online, hasn't added you",
-                    _ => "offline",
-                };
-                println!("mkwmp:   friend {:<16} {s}", f.name); // the window shows these as lights
-            }
-            st.shown_friends = v.friends.clone();
-        }
     }
 
-    /// What the window shows: the seat's state and the friend list.
+    /// What the window shows: the seat's state.
     pub async fn snapshot(&self) -> Snapshot {
         let st = self.state.lock().await;
         let phase = if let Some(m) = &st.refused {
@@ -265,7 +224,7 @@ impl Seat {
                 None => Phase::Joining,
             }
         };
-        Snapshot { phase, friends: st.view.as_ref().map(|v| v.friends.clone()).unwrap_or_default() }
+        Snapshot { phase }
     }
 
     /// Free the seat (game exited, Ctrl-C).

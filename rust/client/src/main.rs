@@ -115,6 +115,7 @@ fn main() {
         }
     }
     rt.spawn(core.clone().status_loop());
+    rt.spawn(core.clone().friends_loop());
     if !a.headless {
         rt.spawn(core.clone().stars_loop());
     }
@@ -198,6 +199,7 @@ fn headless(rt: &tokio::runtime::Runtime, core: Arc<Core>) {
 
 async fn wait_idle(core: &Arc<Core>, max: Duration) {
     core.stop();
+    core.sign_out().await;
     let until = tokio::time::Instant::now() + max;
     while core.busy() && tokio::time::Instant::now() < until {
         tokio::time::sleep(Duration::from_millis(100)).await;

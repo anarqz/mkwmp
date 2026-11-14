@@ -25,7 +25,7 @@ Needs Rust (stable) and Python 3.12+ with `h2` and `cryptography`.
 
 3. **Set the address handed to players.** In `config/server.toml`, set `[seats] lobby_endpoint` to the lobby's `IPv4:8905`. The game takes an IP address here, not a hostname (yet).
 
-4. **Set up each player.** Each player edits `client.toml` (server URL, name, up to 8 friends, game dir) and runs `mkwmp-launcher client.toml`:
+4. **Set up each player.** Each player sets the server URL, registers a name (6-digit PIN) and picks the game dir in the launcher window (or `client.toml`); friends are added in the window and kept on the server. and runs `mkwmp-launcher client.toml`:
    - build the launcher with `cargo build --release --manifest-path rust/Cargo.toml -p client`;
    - it waits in the queue if the server is full;
    - it writes `<game>/mkwmp.toml` and starts the game once seated.

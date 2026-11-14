@@ -11,7 +11,7 @@ use std::time::Duration;
 use rand::RngCore;
 use tokio::sync::{Notify, RwLock};
 
-use crate::api::{Api, ApiError, Friend};
+use crate::api::{Api, ApiError, Friends};
 use crate::config::{ClientConfig, SeatMode};
 use crate::log::note;
 use crate::seat::{Phase, Seat};
@@ -42,6 +42,16 @@ pub enum RegisterView {
     Failed(String),
 }
 
+/// The FRIENDS card: the list (None until the first answer), a one-line
+/// note (the last action's outcome or a problem), and whether an action is
+/// on its way.
+#[derive(Debug, Clone, Default)]
+pub struct FriendsUi {
+    pub list: Option<Friends>,
+    pub note: Option<(String, bool)>, // (text, is_error)
+    pub working: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct Ui {
     pub cfg: ClientConfig,
@@ -50,9 +60,12 @@ pub struct Ui {
     pub stars: Option<u64>,
     pub server: ServerView,
     pub session: SessionView,
-    pub friends: Vec<Friend>,
+    pub friends: FriendsUi,
     pub update: String,
 }
+
+/// Who the presence token belongs to: a change signs in again.
+type Ident = (String, String, String); // (server, name key, pin)
 
 pub struct Core {
     pub config_path: String,
@@ -60,6 +73,10 @@ pub struct Core {
     seat: RwLock<Option<Arc<Seat>>>,
     ui: Mutex<Ui>,
     stop: Notify,
+    /// The launcher's presence on the server (friends API), per identity.
+    presence: Mutex<Option<(Ident, String)>>,
+    /// Wakes the friends loop (an action, or the name/PIN changed).
+    friends_wake: Notify,
 }
 
 impl Core {
@@ -76,10 +93,12 @@ impl Core {
                 stars: None,
                 server: ServerView::Checking,
                 session: SessionView::Idle,
-                friends: vec![],
+                friends: FriendsUi::default(),
                 update: String::new(),
             }),
             stop: Notify::new(),
+            presence: Mutex::new(None),
+            friends_wake: Notify::new(),
         })
     }
 
@@ -105,6 +124,7 @@ impl Core {
     pub fn set_config(&self, cfg: ClientConfig) -> Result<(), String> {
         cfg.save(&self.config_path)?;
         self.set(|u| u.cfg = cfg);
+        self.friends_wake.notify_one();
         Ok(())
     }
 
@@ -185,7 +205,6 @@ impl Core {
             let result = core.session().await;
             *core.seat.write().await = None;
             core.set(|u| {
-                u.friends.clear();
                 u.session = match result {
                     Ok(()) => SessionView::Idle,
                     Err(e) => {
@@ -207,7 +226,7 @@ impl Core {
         if let Some(p) = cfg.problem() {
             return Err(p);
         }
-        let seat = Arc::new(Seat::new(&cfg, &self.config_path));
+        let seat = Arc::new(Seat::new(&cfg));
         let lobby = seat.api().lobby_endpoint().await.map_err(|e| e.to_string())?;
         if cfg.update {
             sync_probe(&cfg).await;
@@ -256,7 +275,6 @@ impl Core {
                 None => probe::game_running(),
             };
             self.set(|u| {
-                u.friends = snap.friends.clone();
                 u.session = SessionView::Running { phase: snap.phase.clone(), game_running, steam: !cfg.launch };
             });
             tokio::select! {
@@ -267,6 +285,163 @@ impl Core {
                     return Ok(());
                 }
             }
+        }
+    }
+
+    fn ident(cfg: &ClientConfig) -> Option<Ident> {
+        (crate::config::valid_name(&cfg.name) && cfg.pin.len() == 6)
+            .then(|| (cfg.server.clone(), cfg.name.to_ascii_lowercase(), cfg.pin.clone()))
+    }
+
+    /// The presence token for the current name + PIN, signing in if needed.
+    async fn presence_token(&self) -> Result<String, ApiError> {
+        let id = Self::ident(&self.ui().cfg).ok_or_else(|| ApiError::Refused("register your name first".into()))?;
+        if let Some((who, t)) = self.presence.lock().unwrap().clone() {
+            if who == id {
+                return Ok(t);
+            }
+        }
+        let t = self.api().presence(&id.1, &id.2).await?;
+        *self.presence.lock().unwrap() = Some((id, t.clone()));
+        Ok(t)
+    }
+
+    /// Keeps the FRIENDS card current while the launcher runs (window,
+    /// tray or headless): a long-poll that returns on any change. Holds no
+    /// seat.
+    pub async fn friends_loop(self: Arc<Self>) {
+        let mut cursor: Option<(Ident, u64)> = None;
+        loop {
+            let id = Self::ident(&self.ui().cfg);
+            let Some(id) = id else {
+                self.set(|u| u.friends.list = None);
+                cursor = None;
+                tokio::select! {
+                    _ = self.friends_wake.notified() => {}
+                    _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                }
+                continue;
+            };
+            if cursor.as_ref().is_some_and(|(who, _)| *who != id) {
+                cursor = None;
+                self.set(|u| u.friends.list = None);
+            }
+            let token = match self.presence_token().await {
+                Ok(t) => t,
+                Err(e) => {
+                    self.friends_problem(&e);
+                    let wait = match e {
+                        ApiError::Limited(s) => s.min(900),
+                        ApiError::Refused(_) => 60,
+                        _ => 5,
+                    };
+                    tokio::select! {
+                        _ = self.friends_wake.notified() => {}
+                        _ = tokio::time::sleep(Duration::from_secs(wait)) => {}
+                    }
+                    continue;
+                }
+            };
+            let since = cursor.as_ref().map(|(_, c)| *c);
+            let api = self.api();
+            let res = tokio::select! {
+                r = api.friends(&token, since) => Some(r),
+                _ = self.friends_wake.notified() => None,
+            };
+            match res {
+                None => cursor = None, // something changed here: fetch now
+                Some(Ok(f)) => {
+                    cursor = Some((id, f.cursor));
+                    self.set(|u| {
+                        if matches!(&u.friends.note, Some((_, true))) && !u.friends.working {
+                            u.friends.note = None; // a problem that went away
+                        }
+                        u.friends.list = Some(f);
+                    });
+                }
+                Some(Err(ApiError::SignedOut)) => {
+                    *self.presence.lock().unwrap() = None;
+                    cursor = None;
+                }
+                Some(Err(e)) => {
+                    self.friends_problem(&e);
+                    cursor = None;
+                    let wait = if let ApiError::Limited(s) = e { s.min(900) } else { 5 };
+                    tokio::time::sleep(Duration::from_secs(wait)).await;
+                }
+            }
+        }
+    }
+
+    fn friends_problem(&self, e: &ApiError) {
+        let msg = match e {
+            ApiError::Transient(_) => "can't reach the server right now".to_string(),
+            other => other.to_string(),
+        };
+        self.set(|u| u.friends.note = Some((msg, true)));
+    }
+
+    /// One friends action (add, accept, reject/cancel/remove), then refresh.
+    fn friend_action<F, Fut>(self: &Arc<Self>, run: F)
+    where
+        F: FnOnce(Api, String) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<String, ApiError>> + Send,
+    {
+        self.set(|u| u.friends.working = true);
+        let core = self.clone();
+        tokio::spawn(async move {
+            let mut outcome = match core.presence_token().await {
+                Ok(t) => run(core.api(), t).await,
+                Err(e) => Err(e),
+            };
+            if matches!(outcome, Err(ApiError::SignedOut)) {
+                *core.presence.lock().unwrap() = None;
+                outcome = Err(ApiError::Transient("signed out; try again".into()));
+            }
+            let note = match outcome {
+                Ok(m) => (m, false),
+                Err(ApiError::Transient(_)) => ("can't reach the server right now".into(), true),
+                Err(e) => (e.to_string(), true),
+            };
+            core.set(|u| {
+                u.friends.working = false;
+                u.friends.note = Some(note);
+            });
+            core.friends_wake.notify_one();
+        });
+    }
+
+    pub fn add_friend(self: &Arc<Self>, name: String) {
+        self.friend_action(move |api, t| async move {
+            let (name, state) = api.friend_request(&t, &name).await?;
+            Ok(if state == "accepted" { format!("You and {name} are friends now.") } else { format!("Request sent to {name}.") })
+        });
+    }
+
+    pub fn accept_friend(self: &Arc<Self>, name: String) {
+        self.friend_action(move |api, t| async move {
+            api.friend_accept(&t, &name).await?;
+            Ok(format!("You and {name} are friends now."))
+        });
+    }
+
+    /// Reject a request, cancel yours, or remove a friend.
+    pub fn remove_friend(self: &Arc<Self>, name: String, what: &'static str) {
+        self.friend_action(move |api, t| async move {
+            api.friend_remove(&t, &name).await?;
+            Ok(match what {
+                "reject" => format!("Request from {name} declined."),
+                "cancel" => format!("Request to {name} cancelled."),
+                _ => format!("{name} removed from your friends."),
+            })
+        });
+    }
+
+    /// Leaving: friends see this launcher offline at once.
+    pub async fn sign_out(&self) {
+        let t = self.presence.lock().unwrap().take();
+        if let Some((_, token)) = t {
+            self.api().presence_end(&token).await;
         }
     }
 

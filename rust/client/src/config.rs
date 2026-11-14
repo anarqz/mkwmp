@@ -24,9 +24,6 @@ pub struct ClientConfig {
     /// The 6-digit PIN of your registered name (given once, at registration).
     #[serde(default)]
     pub pin: String,
-    /// Up to 8 friend names. When a friend lists you too, you are friends in game.
-    #[serde(default)]
-    pub friends: Vec<String>,
     /// Game directory (contains mkw.exe).
     pub game: PathBuf,
     /// Start the game. false: only hold the seat (start the game yourself,
@@ -76,7 +73,6 @@ impl Default for ClientConfig {
             server: OFFICIAL_SERVER.into(),
             name: String::new(),
             pin: String::new(),
-            friends: vec![],
             game,
             launch: !is_steamos(),
             seat: SeatMode::Start,
@@ -149,14 +145,14 @@ mod tests {
         std::fs::write(&p, "server=\"10.0.0.5:7000/\"\nname=\"Ana\"\nfriends=[\"Bia\",\"Cid\"]\ngame=\"C:/game\"\n").unwrap();
         let c = ClientConfig::load(p.to_str().unwrap()).unwrap();
         assert_eq!(c.server, "http://10.0.0.5:7000");
-        assert_eq!(c.friends, vec!["Bia", "Cid"]);
+        // An old `friends = [...]` line (friends now live on the server) still loads.
         assert_eq!((c.slot, c.launch, c.seat, c.local_port, c.update), (1, true, SeatMode::Start, 47820, true));
     }
 
     #[test]
     fn save_round_trips() {
         let p = std::env::temp_dir().join("mkwmp_client_save.toml");
-        let c = ClientConfig { name: "Ana".into(), friends: vec!["Bia".into()], ..Default::default() };
+        let c = ClientConfig { name: "Ana".into(), ..Default::default() };
         c.save(p.to_str().unwrap()).unwrap();
         assert_eq!(ClientConfig::load(p.to_str().unwrap()).unwrap(), c);
     }

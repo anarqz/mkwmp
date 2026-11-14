@@ -51,7 +51,7 @@ const CARD_W: f32 = (COLUMN - GAP) / 2.0;
 /// Width inside a card (card minus border and margins).
 const INNER: f32 = CARD_W - 44.0;
 /// Both cards' content height (fixed by design, so they always match).
-const CARD_H: f32 = 252.0;
+const CARD_H: f32 = 258.0;
 
 /// Steam Deck Game Mode (gamescope): open fullscreen.
 pub fn game_mode() -> bool {
@@ -129,7 +129,10 @@ fn pixel(size: f32) -> FontId {
 struct App {
     core: Arc<Core>,
     draft: ClientConfig,
-    friends: [String; 8],
+    /// The "add a friend" field.
+    friend_entry: String,
+    /// A friend waiting for "remove?" confirmation.
+    confirm_unfriend: Option<String>,
     pin_entry: String,
     error: Option<String>,
     confirm_delete: bool,
@@ -140,15 +143,19 @@ struct App {
 impl App {
     fn new(core: Arc<Core>) -> Self {
         let draft = core.ui().cfg;
-        let mut friends: [String; 8] = Default::default();
-        for (slot, f) in friends.iter_mut().zip(draft.friends.iter()) {
-            *slot = f.clone();
+        Self {
+            core,
+            draft,
+            friend_entry: String::new(),
+            confirm_unfriend: None,
+            pin_entry: String::new(),
+            error: None,
+            confirm_delete: false,
+            deleting: false,
         }
-        Self { core, draft, friends, pin_entry: String::new(), error: None, confirm_delete: false, deleting: false }
     }
 
     fn save(&mut self) {
-        self.draft.friends = self.friends.iter().map(|f| f.trim().to_string()).filter(|f| !f.is_empty()).collect();
         if self.draft != self.core.ui().cfg {
             self.error = self.core.set_config(self.draft.clone()).err();
         }
@@ -218,6 +225,9 @@ impl eframe::App for App {
 
         if self.confirm_delete {
             self.delete_dialog(&ctx);
+        }
+        if self.confirm_unfriend.is_some() {
+            self.unfriend_dialog(&ctx);
         }
 
         // Footer on the road.
@@ -346,52 +356,131 @@ impl App {
         })
     }
 
-    fn friends_card(&mut self, ui: &mut egui::Ui, st: &crate::core::Ui, busy: bool) -> f32 {
+    fn friends_card(&mut self, ui: &mut egui::Ui, st: &crate::core::Ui, _busy: bool) -> f32 {
         let min_h = CARD_H;
+        let f = &st.friends;
+        let signed = self.draft.pin.len() == 6 && valid_name(&self.draft.name);
         card(ui, "FRIENDS", GREEN, GREEN_D, min_h, |ui| {
-            hint(ui, "Up to 8. Anyone who adds you back is your friend in the game.", MUTED);
-            // Two (light + field) pairs: field width minus its 8 pt margins each side.
-            let w = (INNER - 2.0 * 14.0 - 3.0 * 8.0 - 2.0 * 16.0) / 2.0;
-            for row in 0..4 {
-                ui.horizontal(|ui| {
-                    for col in 0..2 {
-                        let i = row * 2 + col;
-                        let name = self.friends[i].trim().to_ascii_lowercase();
-                        let live = st.friends.iter().find(|f| f.name.to_ascii_lowercase() == name);
-                        let (color, tip) = match live {
-                            Some(f) if f.mutual => (GREEN, "online · friends in game"),
-                            Some(f) if f.online => (YELLOW, "online · hasn't added you yet"),
-                            _ if busy && !name.is_empty() => (MUTED, "offline"),
-                            _ => (Color32::from_rgb(0xe4, 0xdc, 0xc8), ""),
-                        };
-                        light(ui, color).on_hover_text(tip);
-                        let r = ui.add(
-                            TextEdit::singleline(&mut self.friends[i])
-                                .char_limit(16)
-                                .hint_text("friend")
-                                .margin(vec2(8.0, 4.0))
-                                .desired_width(w),
-                        );
-                        if r.lost_focus() {
-                            self.save();
-                        }
+            // Add by profile name.
+            ui.horizontal(|ui| {
+                let r = ui.add_enabled(
+                    signed,
+                    TextEdit::singleline(&mut self.friend_entry)
+                        .hint_text("add a friend by profile name")
+                        .char_limit(16)
+                        .margin(vec2(8.0, 6.0))
+                        .desired_width(INNER - 104.0),
+                );
+                let entry = self.friend_entry.trim().to_string();
+                let ok = signed && !f.working && valid_name(&entry);
+                let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if pixel_button(ui, "ADD", vec2(80.0, 32.0), GREEN, GREEN_D, PAPER, 10.0, ok).clicked() || (enter && ok) {
+                    self.core.add_friend(entry);
+                    self.friend_entry.clear();
+                }
+            });
+            // Exactly one message line (fixed card height).
+            let (msg, color) = if !signed {
+                ("Register your name to add friends.".to_string(), MUTED)
+            } else if let Some((m, err)) = &f.note {
+                (m.clone(), if *err { RED_D } else { GREEN_D })
+            } else if f.list.is_none() {
+                ("Loading your friends…".to_string(), MUTED)
+            } else {
+                ("Friends are kept on the server, and are your friends in the game.".to_string(), MUTED)
+            };
+            hint(ui, &msg, color);
+
+            // The lists, scrolling inside the card's fixed height.
+            let h = (CARD_H - ui.min_rect().height() - 6.0).max(60.0);
+            egui::ScrollArea::vertical().max_height(h).min_scrolled_height(h).auto_shrink([false, false]).show(ui, |ui| {
+                ui.set_width(INNER - 12.0);
+                ui.spacing_mut().item_spacing.y = 2.0;
+                let Some(list) = &f.list else { return };
+                if list.friends.is_empty() && list.incoming.is_empty() && list.outgoing.is_empty() {
+                    ui.add_space(6.0);
+                    hint(ui, "No friends yet. Add someone by their profile name above.", MUTED);
+                    return;
+                }
+                if !list.incoming.is_empty() {
+                    section(ui, &format!("REQUESTS · {}", list.incoming.len()));
+                    for r in &list.incoming {
+                        ui.push_id(("in", &r.name), |ui| {
+                            friend_row(ui, YELLOW, &r.name, "wants to be friends", |ui| {
+                                if small_button(ui, "X", 24.0, RED, RED_D, !f.working).on_hover_text("Decline").clicked() {
+                                    self.core.remove_friend(r.name.clone(), "reject");
+                                }
+                                if small_button(ui, "ACCEPT", 70.0, GREEN, GREEN_D, !f.working).clicked() {
+                                    self.core.accept_friend(r.name.clone());
+                                }
+                            });
+                        });
                     }
-                });
-            }
+                }
+                if !list.friends.is_empty() {
+                    let on = list.friends.iter().filter(|x| x.state != "offline").count();
+                    section(ui, &format!("FRIENDS · {on} ONLINE"));
+                    for fr in &list.friends {
+                        let (light_c, text) = match fr.state.as_str() {
+                            "playing" => (GREEN, "playing"),
+                            "online" => (BLUE, "online"),
+                            _ => (Color32::from_rgb(0xc9, 0xc1, 0xae), "offline"),
+                        };
+                        ui.push_id(("fr", &fr.name), |ui| {
+                            friend_row(ui, light_c, &fr.name, text, |ui| {
+                                if small_button(ui, "X", 24.0, RED, RED_D, !f.working).on_hover_text("Remove friend").clicked() {
+                                    self.confirm_unfriend = Some(fr.name.clone());
+                                }
+                            });
+                        });
+                    }
+                }
+                if !list.outgoing.is_empty() {
+                    section(ui, &format!("SENT · {}", list.outgoing.len()));
+                    for r in &list.outgoing {
+                        ui.push_id(("out", &r.name), |ui| {
+                            friend_row(ui, PAPER, &r.name, "request sent", |ui| {
+                                if small_button(ui, "X", 24.0, RED, RED_D, !f.working).on_hover_text("Cancel request").clicked() {
+                                    self.core.remove_friend(r.name.clone(), "cancel");
+                                }
+                            });
+                        });
+                    }
+                }
+            });
         })
     }
 
-    fn delete_dialog(&mut self, ctx: &egui::Context) {
-        let modal = egui::Modal::new(egui::Id::unique("delete-profile"))
-            .backdrop_color(Color32::from_black_alpha(120))
-            .frame(
-                egui::Frame::new()
-                    .fill(PAPER)
-                    .stroke(Stroke::new(4.0, INK))
-                    .shadow(Shadow { offset: [8, 8], blur: 0, spread: 0, color: Color32::from_black_alpha(120) })
-                    .inner_margin(20),
+    fn unfriend_dialog(&mut self, ctx: &egui::Context) {
+        let name = self.confirm_unfriend.clone().unwrap_or_default();
+        let r = pixel_modal("remove-friend").show(ctx, |ui| {
+            ui.set_width(360.0);
+            ui.label(RichText::new("REMOVE FRIEND?").font(pixel(11.0)).color(INK));
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(format!("{name} will no longer be your friend, here or in the game."))
+                    .size(13.0)
+                    .color(MUTED),
             );
-        let r = modal.show(ctx, |ui| {
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                if pixel_button(ui, "REMOVE", vec2(150.0, 36.0), RED, RED_D, PAPER, 11.0, true).clicked() {
+                    self.confirm_unfriend = None;
+                    self.core.remove_friend(name.clone(), "remove");
+                }
+                ui.add_space(8.0);
+                if pixel_button(ui, "CANCEL", vec2(150.0, 36.0), BLUE, BLUE_D, PAPER, 11.0, true).clicked() {
+                    self.confirm_unfriend = None;
+                }
+            });
+        });
+        if r.should_close() {
+            self.confirm_unfriend = None;
+        }
+    }
+
+    fn delete_dialog(&mut self, ctx: &egui::Context) {
+        let r = pixel_modal("delete-profile").show(ctx, |ui| {
             ui.set_width(360.0);
             ui.label(RichText::new("DELETE YOUR PROFILE FROM SERVER?").font(pixel(11.0)).color(INK));
             ui.add_space(6.0);
@@ -572,6 +661,42 @@ fn path_field(ui: &mut egui::Ui, path: &std::path::Path, size: Vec2, enabled: bo
     let color = if enabled { color } else { color.gamma_multiply(0.5) };
     p.text(rect.left_center() + vec2(8.0, 0.0), egui::Align2::LEFT_CENTER, text, font, color);
     resp
+}
+
+/// The confirmation dialog frame (paper, ink border, hard shadow).
+fn pixel_modal(id: &str) -> egui::Modal {
+    egui::Modal::new(egui::Id::unique(id)).backdrop_color(Color32::from_black_alpha(120)).frame(
+        egui::Frame::new()
+            .fill(PAPER)
+            .stroke(Stroke::new(4.0, INK))
+            .shadow(Shadow { offset: [8, 8], blur: 0, spread: 0, color: Color32::from_black_alpha(120) })
+            .inner_margin(20),
+    )
+}
+
+/// A small heading inside a card list.
+fn section(ui: &mut egui::Ui, text: &str) {
+    ui.add_space(4.0);
+    ui.label(RichText::new(text).font(pixel(8.0)).color(MUTED));
+}
+
+/// One list row: a state light, the name, a muted note, and buttons on the right.
+fn friend_row(ui: &mut egui::Ui, color: Color32, name: &str, note: &str, buttons: impl FnOnce(&mut egui::Ui)) {
+    ui.horizontal(|ui| {
+        ui.set_height(28.0);
+        light(ui, color);
+        ui.label(RichText::new(name).size(14.0).color(INK).strong());
+        ui.label(RichText::new(note).size(12.0).color(MUTED));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            buttons(ui);
+        });
+    });
+}
+
+/// A compact pixel button for list rows.
+fn small_button(ui: &mut egui::Ui, text: &str, w: f32, fill: Color32, dark: Color32, enabled: bool) -> Response {
+    pixel_button(ui, text, vec2(w, 22.0), fill, dark, PAPER, 8.0, enabled)
 }
 
 fn field_label(ui: &mut egui::Ui, text: &str) {

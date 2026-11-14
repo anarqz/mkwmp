@@ -14,11 +14,10 @@
 //!
 //!   GET http://127.0.0.1:<local_port>/local/v1/friends   (same token)
 //!
-//! 200 {"friends":[{"name":"Ana"}, ...]}: every friend on this player's list,
-//! online mutual friends first, then the rest alphabetically; at most 100.
-//! The game reads its system friend list once per sign-in, so offline friends
-//! must be there too; who's online (and mutual) comes from the lobby's
-//! presence, which shows mutual friends only.
+//! 200 {"friends":[{"name":"Ana"}, ...]}: every accepted friend (stored on
+//! the server), playing and online first; at most 100. The game reads its
+//! system friend list once per sign-in, so offline friends are there too;
+//! who's online in the game comes from the lobby's presence.
 //! 503 before PLAY; 401 as above.
 
 use std::sync::Arc;
@@ -58,9 +57,8 @@ async fn friends(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
         let m = "press PLAY in the mkwmp launcher";
         return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"state": "unavailable", "message": m}))).into_response();
     }
-    let mut all = core.ui().friends;
-    all.sort_by_key(|f| (!(f.online && f.mutual), f.name.to_lowercase()));
-    all.dedup_by_key(|f| f.name.to_lowercase());
+    // The server already orders them: playing, online, offline; by name.
+    let all = core.ui().friends.list.map(|f| f.friends).unwrap_or_default();
     let list: Vec<_> = all.into_iter().take(MAX_FRIENDS).map(|f| json!({"name": f.name})).collect();
     Json(json!({"friends": list})).into_response()
 }
