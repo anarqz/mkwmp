@@ -211,6 +211,13 @@ fn two_players_match_play_and_leave() {
     assert_eq!(members, vec![a.user.clone(), b.user.clone()]);
     assert_eq!(w.core.counts()["Battle24"].players, 2);
 
+    // Voice (VOICE_API.md §1): both share one room, listed in seat order.
+    let room = w.core.voice_room(&a.uid).expect("a is in a voice room");
+    assert_eq!(room.members, vec![a.uid.clone(), b.uid.clone()]);
+    assert_eq!(w.core.voice_room(&b.uid), Some(room));
+    assert!(w.core.voice_room("00000000-0000-4000-8000-000000000099").is_none());
+    assert!(w.core.voice_user("not-a-ticket").is_none());
+
     // Own user session: __us/<uid> (st 2) + the lobby's __gs/f, then "current" + "done" ops.
     let got = join_session(&w, &mut a);
     let c = changes(&got);
@@ -369,6 +376,9 @@ fn production_requires_a_valid_seat_ticket() {
     let reply = sign(&good).unwrap();
     let user = wire::str_field(wire::bytes_field(&reply, 2).unwrap().unwrap(), 1).unwrap().unwrap();
     assert!(user.ends_with(&lobby::users::ticket_user_id("ana")));
+    // The voice relay checks the same ticket the same way.
+    assert_eq!(w.core.voice_user(&good), Some(lobby::users::ticket_user_id("ana")));
+    assert_eq!(w.core.voice_user(&dev_ticket("ana")), None);
 }
 
 const GSS: &str = "/nn.npln.matchmaking.v1.GameSessionService/";

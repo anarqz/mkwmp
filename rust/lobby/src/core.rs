@@ -387,6 +387,34 @@ impl Core {
     pub fn counts(&self) -> BTreeMap<String, ModeCounts> {
         self.run(|s, _| s.mm.counts())
     }
+
+    /// Voice relay (docs/contracts/VOICE_API.md §3): the user id a voice subscribe's seat
+    /// ticket names, checked exactly like a sign-in's ticket. `None`: refuse the subscribe.
+    pub fn voice_user(&self, ticket: &str) -> Option<String> {
+        self.run(|s, now| {
+            if !ticket.starts_with(&format!("{}.", ticket::PREFIX)) {
+                return None;
+            }
+            s.ticket_name(ticket, now).ok().map(|(name, _)| users::ticket_user_id(&name))
+        })
+    }
+
+    /// Voice relay (VOICE_API.md §1): the lobby `uid` is seated in and every member's user id
+    /// (seat order). `None`: not in a lobby, no voice.
+    pub fn voice_room(&self, uid: &str) -> Option<VoiceRoom> {
+        self.run(|s, _| {
+            let lobby = s.mm.lobbies.values().find(|l| l.seat(uid).is_some())?;
+            Some(VoiceRoom { lobby: lobby.id, members: lobby.seats.iter().map(|x| x.uid().to_owned()).collect() })
+        })
+    }
+}
+
+/// One lobby as the voice relay sees it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VoiceRoom {
+    pub lobby: LobbyId,
+    /// User ids (uuid strings); the account id is [`crate::social::account_id`].
+    pub members: Vec<String>,
 }
 
 impl State {
