@@ -106,7 +106,6 @@ h1 .y { color: var(--yellow); }
 .btn.green  { --c: var(--green);  --d: var(--green-d); }
 .btn.yellow { --c: var(--yellow); --d: var(--yellow-d); color: var(--ink); }
 .btn.pink   { --c: #ff5e8a;      --d: #a81f4a; }
-.btn.discord { --c: #5865f2;    --d: #3c45a5; }
 
 /* ---- live server widget ------------------------------------------------ */
 .server {

@@ -195,8 +195,6 @@ Two tests start the real `mkwmp` binary. One plays two clients from sign-in to a
 | `tools/` | release script (`tools/release`) and a local seat server helper (`tools/host`) |
 | `resources/` | research material: reverse-engineering notes and tools, captures, the original Python lobby, handoff notes |
 
-## Community and support
-
-Join the community on [Discord](https://discord.gg/ysb3Mek6QQ).
+## Support
 
 MKWMP is made by players, for players. If you'd like to help keep the official server running: [Ko-fi](https://ko-fi.com/anarqz).

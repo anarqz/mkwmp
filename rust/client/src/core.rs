@@ -56,6 +56,8 @@ pub struct FriendsUi {
 pub struct Ui {
     pub cfg: ClientConfig,
     pub register: RegisterView,
+    /// GitHub stars of the project (None until fetched).
+    pub stars: Option<u64>,
     pub server: ServerView,
     pub session: SessionView,
     pub friends: FriendsUi,
@@ -88,6 +90,7 @@ impl Core {
             ui: Mutex::new(Ui {
                 cfg,
                 register: RegisterView::Idle,
+                stars: None,
                 server: ServerView::Checking,
                 session: SessionView::Idle,
                 friends: FriendsUi::default(),
@@ -456,6 +459,26 @@ impl Core {
             };
             self.set(|u| u.server = view);
             tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    }
+
+    /// The project's GitHub star count, every 10 minutes.
+    pub async fn stars_loop(self: Arc<Self>) {
+        let http = reqwest::Client::builder()
+            .user_agent(concat!("mkwmp-launcher/", env!("CARGO_PKG_VERSION")))
+            .timeout(Duration::from_secs(10))
+            .build()
+            .expect("http client");
+        loop {
+            let url = format!("https://api.github.com/repos/{}", update::REPO);
+            if let Ok(res) = http.get(url).send().await {
+                if let Ok(v) = res.json::<serde_json::Value>().await {
+                    if let Some(n) = v["stargazers_count"].as_u64() {
+                        self.set(|u| u.stars = Some(n));
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(600)).await;
         }
     }
 

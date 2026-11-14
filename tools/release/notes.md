@@ -2,7 +2,6 @@
 
 New in rc.3:
 
-- **Join the community.** The launcher's GitHub button is now a Discord button: https://discord.gg/ysb3Mek6QQ
 - **Reserved gamertags can sign in.** Registering a reserved gamertag now asks for its PIN, the same as a gamertag that is already taken. In rc.2 it only said the name was reserved.
 - **`launch_command`** in `client.toml`: an optional command the launcher runs to start the game (for example through Proton when the launcher is your Steam shortcut).
 - The game patch is the same as in rc.2 and is not reinstalled.
