@@ -34,9 +34,18 @@ public_keys = []               # "kid:base64url" entries a lobby trusts
 ttl_secs = 43200               # 12 h; liveness is the roster's job
 
 [lobby]
-bind = "127.0.0.1:8906"        # world/lobby (+ Gamesync) endpoint
-lobby_size = 2                 # players per lobby (2 for loopback bring-up)
-max_lobbies_per_worker = 64    # a worker past this sheds; idle workers exit
+# `mkwmp lobby`: NPLN + Gamesync + TURN + Pia NAT. Lobbies are unlimited:
+# they open as players arrive and close when empty.
+host = "127.0.0.1"             # 0.0.0.0 on a server
+public_host = "127.0.0.1"      # IPv4 players reach this server at
+npln_port = 8905               # TLS + h2 (the [tls] pair)
+gamesync_port = 8906           # TLS or h2c, sniffed (0 = none)
+turn_port = 3478               # UDP TURN relay (0 = off)
+nat_port = 10025               # UDP Pia NAT responder (0 = off)
+# relay_ports = "49152:49407"  # TURN relay sockets (firewall range); default ephemeral
+require_ticket = false         # true: sign-in needs a seat ticket
+# roster_url = "http://127.0.0.1:7000"                  # seat server, for seat liveness
+# roster_token_file = "../scratch/keys/lobby-token.txt"  # one line of its lobby_tokens_file
 
 [tls]
 # Shared by both endpoints. Paths relative to this file.

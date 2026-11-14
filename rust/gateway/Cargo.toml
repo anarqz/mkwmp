@@ -4,5 +4,23 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 
+# The lobby's transport: TLS + HTTP/2 + gRPC framing on the NPLN and Gamesync
+# ports, the TURN relay and the Pia NAT responder. The game protocol itself
+# lives behind the `Backend` trait (the lobby crate's Core).
+
 [dependencies]
-tokio.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "io-util"] }
+h2 = "0.4"
+http = "1"
+bytes = "1"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls-pki-types = { version = "1", features = ["std"] }
+hmac = "0.12"
+sha1 = "0.10"
+md-5 = "0.10"
+crc32fast = "1"
+rand = "0.8"
+
+[dev-dependencies]
+rcgen = { version = "0.13", default-features = false, features = ["pem", "ring"] }

@@ -9,9 +9,9 @@ pub mod matchmaking;
 pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn std::error::Error>> {
     let _mm = matchmaking::Matchmaking::default();
     Err(format!(
-        "the Rust lobby is not ready yet (would serve {}, lobby_size {}). \
+        "the Rust lobby is not ready yet (would serve {}:{}). \
          Run the Python reference lobby for now: python server/mkwmp_server.py",
-        cfg.lobby.bind, cfg.lobby.lobby_size
+        cfg.lobby.host, cfg.lobby.npln_port
     )
     .into())
 }

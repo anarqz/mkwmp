@@ -121,11 +121,60 @@ impl Default for Ticket {
     }
 }
 
+/// The game-facing lobby (`mkwmp lobby`). Lobbies themselves are unlimited:
+/// they open and close with the players.
 #[derive(Debug, Deserialize)]
 pub struct Lobby {
-    pub bind: String,
-    pub lobby_size: usize,
-    pub max_lobbies_per_worker: usize,
+    /// Address every lobby listener binds to.
+    #[serde(default = "d_host")]
+    pub host: String,
+    /// IPv4 clients reach this server at (TURN relay addresses, ICE set).
+    #[serde(default = "d_public_host")]
+    pub public_host: String,
+    /// NPLN (TLS + h2).
+    #[serde(default = "d_npln")]
+    pub npln_port: u16,
+    /// Gamesync (TLS or h2c, sniffed). 0 = none.
+    #[serde(default = "d_gamesync")]
+    pub gamesync_port: u16,
+    /// TURN relay (UDP). 0 = off.
+    #[serde(default = "d_turn")]
+    pub turn_port: u16,
+    /// Pia NAT probe responder (UDP). 0 = off.
+    #[serde(default = "d_nat")]
+    pub nat_port: u16,
+    /// "lo:hi" UDP range for TURN relay sockets (open it in the firewall).
+    #[serde(default)]
+    pub relay_ports: Option<String>,
+    /// Refuse sign-ins without a valid seat ticket.
+    #[serde(default)]
+    pub require_ticket: bool,
+    /// Seat server base URL for the roster call (e.g. http://127.0.0.1:7000).
+    #[serde(default)]
+    pub roster_url: Option<String>,
+    /// One lobby token (a line of the seat server's lobby_tokens_file).
+    #[serde(default)]
+    pub roster_token_file: Option<PathBuf>,
+}
+
+fn d_host() -> String { "127.0.0.1".into() }
+fn d_public_host() -> String { "127.0.0.1".into() }
+fn d_npln() -> u16 { 8905 }
+fn d_gamesync() -> u16 { 8906 }
+fn d_turn() -> u16 { 3478 }
+fn d_nat() -> u16 { 10025 }
+
+impl Lobby {
+    /// `relay_ports` parsed; Err on a malformed range.
+    pub fn relay_range(&self) -> Result<Option<(u16, u16)>, ConfigError> {
+        let Some(r) = &self.relay_ports else { return Ok(None) };
+        let bad = ConfigError::Invalid("lobby.relay_ports must be \"lo:hi\" with 0 < lo <= hi");
+        let (lo, hi) = r.split_once(':').ok_or(bad)?;
+        match (lo.trim().parse::<u16>(), hi.trim().parse::<u16>()) {
+            (Ok(lo), Ok(hi)) if 0 < lo && lo <= hi => Ok(Some((lo, hi))),
+            _ => Err(ConfigError::Invalid("lobby.relay_ports must be \"lo:hi\" with 0 < lo <= hi")),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -151,8 +200,13 @@ impl ServerConfig {
         if cfg.seats.seat_timeout_secs <= cfg.seats.heartbeat_secs {
             return Err(ConfigError::Invalid("seats.seat_timeout_secs must exceed heartbeat_secs"));
         }
-        if cfg.lobby.lobby_size < 2 {
-            return Err(ConfigError::Invalid("lobby.lobby_size must be >= 2"));
+        cfg.lobby.roster_token_file = cfg.lobby.roster_token_file.map(|p| resolve(base, &p));
+        cfg.lobby.relay_range()?;
+        if cfg.lobby.public_host.parse::<std::net::Ipv4Addr>().is_err() {
+            return Err(ConfigError::Invalid("lobby.public_host must be an IPv4 address"));
+        }
+        if cfg.lobby.host.parse::<std::net::IpAddr>().is_err() {
+            return Err(ConfigError::Invalid("lobby.host must be an IP address"));
         }
         Ok(cfg)
     }
@@ -185,7 +239,8 @@ mod tests {
         assert_eq!(cfg.seats.capacity, 50);
         assert_eq!(cfg.seats.heartbeat_secs, 20);
         assert!(cfg.ticket.private_key_file.unwrap().ends_with("seat-ed25519.key"));
-        assert_eq!(cfg.lobby.lobby_size, 2);
+        assert_eq!((cfg.lobby.npln_port, cfg.lobby.gamesync_port), (8905, 8906));
+        assert_eq!(cfg.lobby.relay_range().unwrap(), None);
         assert!(cfg.tls.cert.ends_with("capture-cert.pem"));
     }
 
@@ -194,7 +249,7 @@ mod tests {
         let p = std::env::temp_dir().join("mkwmp_bad_server.toml");
         std::fs::write(&p, concat!(
             "[server]\nname=\"x\"\nbind=\"x\"\n[seats]\ncapacity=0\nbind=\"x\"\nlobby_endpoint=\"x\"\n",
-            "[lobby]\nbind=\"x\"\nlobby_size=2\nmax_lobbies_per_worker=1\n",
+            "[lobby]\n",
             "[tls]\ncert=\"c\"\nkey=\"k\"\n")).unwrap();
         assert!(matches!(ServerConfig::load(&p), Err(ConfigError::Invalid(_))));
     }
