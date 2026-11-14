@@ -3,7 +3,8 @@
 ## Flow: the launcher joins the seat server -> a free seat gets a signed ticket
 ## (else the player queues) -> the game presents the ticket to the lobby,
 ## which checks the signature and, over the roster call, that the seat is live.
-## All state is in memory and dies with the process; nothing persists.
+## Profiles and friends persist in the registry (SQLite, next to [registry] file);
+## seats, queue and lobbies are in memory. Paths are relative to this file.
 
 [server]
 name = "mkwmp"                 # instance name shown to players; the ticket's `iss`
@@ -18,19 +19,19 @@ seat_timeout_secs = 60         # no heartbeat for this long frees the seat
 queue_poll_secs = 5            # launcher poll while queued
 queue_timeout_secs = 30        # a queued player silent this long drops out
 lobby_endpoint = "127.0.0.1:8905"   # NPLN host:port handed to seated players
-# lobby_tokens_file = "../scratch/keys/lobby-tokens.txt"  # enables POST /seat/v1/lobby/roster
+# lobby_tokens_file = "../../scratch/keys/lobby-tokens.txt"  # enables POST /seat/v1/lobby/roster
 
 [registry]
 # Registered profiles: a name + its 6-digit PIN. The only state kept across
 # restarts; PINs are stored hashed. Players register in the launcher.
-file = "../scratch/registry.json"
+file = "../../scratch/registry.json"
 reserved_names = []            # names only `mkwmp admin register <name>` can take
 expire_days = 180              # unused names become free again (0 = never)
-# admin_token_file = "../scratch/keys/admin-token.txt"  # enables `mkwmp admin` (loopback only)
+# admin_token_file = "../../scratch/keys/admin-token.txt"  # enables `mkwmp admin` (loopback only)
 
 [ticket]
 kid = "dev1"
-private_key_file = "../scratch/keys/seat-ed25519.key"     # `seat keygen`; seat server only
+private_key_file = "../../scratch/keys/seat-ed25519.key"     # `seat keygen`; seat server only
 public_keys = []               # "kid:base64url" entries a lobby trusts
 ttl_secs = 43200               # 12 h; liveness is the roster's job
 
@@ -46,9 +47,9 @@ nat_port = 10025               # UDP Pia NAT responder (0 = off)
 relay_ports = "49152:49407"  # TURN relay sockets (firewall range); default ephemeral
 require_ticket = false         # true: sign-in needs a seat ticket
 # roster_url = "http://127.0.0.1:7000"                  # seat server, for seat liveness
-# roster_token_file = "../scratch/keys/lobby-token.txt"  # one line of its lobby_tokens_file
+# roster_token_file = "../../scratch/keys/lobby-token.txt"  # one line of its lobby_tokens_file
 gamesync_host = "gamesync.npln.nintendo.net"  # advertised; the patch redirects it, the cert covers it
-token_secret_file = "../scratch/keys/lobby-token-secret"  # 32 random bytes: restarts keep running games
+token_secret_file = "../../scratch/keys/lobby-token-secret"  # 32 random bytes: restarts keep running games
 
 [lobby.policy]
 # Unset = the tested defaults: 24 players per lobby, start at 2, gather 10 s.
@@ -58,5 +59,5 @@ token_secret_file = "../scratch/keys/lobby-token-secret"  # 32 random bytes: res
 
 [tls]
 # Shared by both endpoints. Paths relative to this file.
-cert = "../scratch/certs/capture-cert.pem"
-key = "../scratch/certs/capture-key.pem"
+cert = "../../scratch/certs/capture-cert.pem"
+key = "../../scratch/certs/capture-key.pem"

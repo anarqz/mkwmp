@@ -11,10 +11,10 @@ probe development and protocol experiments. Both speak the same protocol; never 
 cd C:\Users\alcmo\Projects\mkwmp
 cargo build --release -p mkwmp --manifest-path rust\Cargo.toml
 $env:RUST_LOG = "info,lobby=debug"            # per-call lines; "info" for quiet
-rust\target\release\mkwmp.exe lobby config\lan.toml 2>&1 | Tee-Object scratch\run-rust1.log
+rust\target\release\mkwmp.exe lobby resources\config\lan.toml 2>&1 | Tee-Object scratch\run-rust1.log
 ```
 
-`config/lan.toml`: binds 0.0.0.0, advertises 192.168.68.238, TURN relays on 49152-49407, the
+`resources/config/lan.toml`: binds 0.0.0.0, advertises 192.168.68.238, TURN relays on 49152-49407, the
 capture certificate, no seat tickets required (the probe's dev users P1/P2 work), token secret in
 `scratch/keys/lobby-token-secret` (restarting the lobby keeps running games recognised).
 
