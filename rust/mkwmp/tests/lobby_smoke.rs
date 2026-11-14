@@ -403,10 +403,18 @@ async fn voice_relay_carries_a_lobby_room() {
     ta.next(Duration::from_secs(5)).await.expect("assignment for A");
     tb.next(Duration::from_secs(5)).await.expect("assignment for B");
 
-    // Both in one lobby: B subscribes, both learn the two seats.
+    // Both in one lobby: B subscribes, both learn the two seats (A, bound before its lobby
+    // opened, joins the room on the relay's next 1 s reconcile).
     let b = udp(&tickets[1]);
-    let (room, _, seats) = voice::parse_state(&recv(&b).expect("state for B")).unwrap();
-    assert!(room);
+    let mut seats = vec![];
+    for _ in 0..4 {
+        let (room, _, s) = voice::parse_state(&recv(&b).expect("state for B")).unwrap();
+        assert!(room);
+        seats = s;
+        if seats.len() == 2 {
+            break;
+        }
+    }
     let mut want = vec![lobby::account_id(&pa.uid), lobby::account_id(&pb.uid)];
     want.sort();
     let mut got: Vec<u64> = seats.iter().map(|s| s.account).collect();

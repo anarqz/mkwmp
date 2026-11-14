@@ -400,10 +400,14 @@ impl Core {
     }
 
     /// Voice relay (VOICE_API.md §1): the lobby `uid` is seated in and every member's user id
-    /// (seat order). `None`: not in a lobby, no voice.
+    /// (seat order). `None`: not in a lobby, or the lobby is still gathering (nobody has been
+    /// sent into it yet), no voice.
     pub fn voice_room(&self, uid: &str) -> Option<VoiceRoom> {
         self.run(|s, _| {
             let lobby = s.mm.lobbies.values().find(|l| l.seat(uid).is_some())?;
+            if lobby.state == LobbyState::Gathering {
+                return None;
+            }
             Some(VoiceRoom { lobby: lobby.id, members: lobby.seats.iter().map(|x| x.uid().to_owned()).collect() })
         })
     }

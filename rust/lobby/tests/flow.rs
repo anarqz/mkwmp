@@ -204,6 +204,7 @@ fn two_players_match_play_and_leave() {
     search(&w, &mut a, "Battle24");
     search(&w, &mut b, "Battle24");
     assert!(assignment(&mut a).is_none(), "gathering waits for more players");
+    assert!(w.core.voice_room(&a.uid).is_none(), "no voice while gathering");
     w.advance(11.0);
     let (session_a, members) = assignment(&mut a).expect("assigned after the gather wait");
     let (session_b, _) = assignment(&mut b).unwrap();

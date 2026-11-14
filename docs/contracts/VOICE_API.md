@@ -19,7 +19,8 @@ Owners:
   the uuid5 user id (`uuid5(lower(name))`), big-endian, top bit cleared.
 - A player's **room** is the lobby the Core has them in (`Matchmaker::lobby_of(uid)`); the relay
   asks `Core::voice_room(uid) -> Option<VoiceRoom { lobby: LobbyId, members: Vec<String /*uid*/> }>`
-  each time it routes (cheap; no copy of lobby state in the relay). Not in a lobby: no room, no voice.
+  each time it routes (cheap; no copy of lobby state in the relay). Not in a lobby, or the lobby is
+  still gathering (no assignment sent yet: the players are not in one world): no room, no voice.
 - **Seat**: a stable u8 0..23 per (room, uid) (a lobby holds up to 24 players), handed out by the relay in subscribe order, kept while
   the subscriber stays in that room, freed when it leaves. Voice down carries the seat; state down
   maps seats to account ids.
