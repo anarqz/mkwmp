@@ -284,6 +284,7 @@ public_keys = ["{public_key}"]
 host = "0.0.0.0"
 public_host = "{ip}"
 turn_port = {turn_port}
+voice_port = 8907
 relay_ports = "49152:49407"
 require_ticket = true
 roster_url = "http://{roster}"
@@ -325,7 +326,7 @@ pub async fn run(args: &[String]) -> Res<()> {
     println!("data folder: {}", opts.data.display());
     println!("players set the launcher's SERVER to: http://{ip}:{port}");
     println!(
-        "open (and on a home router, forward to this machine): TCP {port}, 8905, 8906; UDP {}, 10025, 49152-49407",
+        "open (and on a home router, forward to this machine): TCP {port}, 8905, 8906; UDP {}, 8907, 10025, 49152-49407",
         h.turn_port
     );
     if opts.init_only {

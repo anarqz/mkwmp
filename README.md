@@ -62,7 +62,7 @@ created the ticket signing key
 created the lobby certificate
 data folder: C:\Games\mkwmp-server\mkwmp-data
 players set the launcher's SERVER to: http://203.0.113.7:7000
-open (and on a home router, forward to this machine): TCP 7000, 8905, 8906; UDP 3478, 10025, 49152-49407
+open (and on a home router, forward to this machine): TCP 7000, 8905, 8906; UDP 3478, 8907, 10025, 49152-49407
 running; stop with Ctrl-C or by closing this window (players' seats are freed, gamertags are kept)
 ```
 
@@ -75,11 +75,12 @@ Keep that window open while you play. Next time, just start it again: it remembe
 | 7000 | TCP | the launcher: gamertags, friends, seats |
 | 8905, 8906 | TCP | the game: sign-in, matchmaking, sessions |
 | 3478, 10025 | UDP | the game: relay and connection check |
+| 8907 | UDP | the game: voice chat |
 | 49152–49407 | UDP | the game: relayed race traffic |
 
 - **Windows firewall:** when Windows asks whether to allow `mkwmp-server`, allow it. If you missed the prompt, run this in an administrator terminal:
   `netsh advfirewall firewall add rule name="mkwmp-server" dir=in action=allow program="<full path to mkwmp-server-x86_64-windows.exe>"`
-- **Linux firewall** (ufw): `sudo ufw allow 7000,8905,8906/tcp && sudo ufw allow 3478,10025/udp && sudo ufw allow 49152:49407/udp`.
+- **Linux firewall** (ufw): `sudo ufw allow 7000,8905,8906/tcp && sudo ufw allow 3478,8907,10025/udp && sudo ufw allow 49152:49407/udp`.
 - **Router (internet only):** forward every port in the table to the hosting PC's LAN address. Give that PC a fixed LAN address (a DHCP reservation) so the forwarding keeps working.
 
 ### 3. Players join

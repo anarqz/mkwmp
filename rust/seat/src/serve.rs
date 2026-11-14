@@ -54,6 +54,7 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn std::error:
         lobby_endpoint: s.lobby_endpoint.clone(),
         // The lobby's certificate, if this machine has it: players' patches
         // trust it for this server. Unreadable or not a certificate: none.
+        voice_port: cfg.lobby.voice_port,
         lobby_ca: std::fs::read_to_string(&cfg.tls.cert).ok().and_then(|p| crate::roster::lobby_ca_from_pem(&p)),
     };
     let public = format!("{}:{}", issuer.kid(), issuer.public_key_b64());

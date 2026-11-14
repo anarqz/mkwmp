@@ -43,6 +43,7 @@ public_host = "127.0.0.1"      # IPv4 players reach this server at
 npln_port = 8905               # TLS + h2 (the [tls] pair)
 gamesync_port = 8906           # TLS or h2c, sniffed (0 = none)
 turn_port = 3478               # UDP TURN relay (0 = off)
+voice_port = 8907              # UDP voice chat relay (0 = off), docs/contracts/VOICE_API.md
 nat_port = 10025               # UDP Pia NAT responder (0 = off)
 # relay_ports = "49152:49407"  # TURN relay sockets (firewall range); default ephemeral
 require_ticket = false         # true: sign-in needs a seat ticket

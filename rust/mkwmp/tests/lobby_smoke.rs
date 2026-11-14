@@ -29,6 +29,7 @@ struct Lobby {
     gamesync: u16,
     turn: u16,
     nat: u16,
+    voice: u16,
 }
 
 impl Drop for Lobby {
@@ -58,13 +59,17 @@ fn start() -> (Lobby, rcgen::CertifiedKey) {
 /// `with_seat`: also run `mkwmp server` with signing keys and the roster
 /// enabled, and point the lobby at it (sync every second).
 fn start_with(with_seat: bool) -> (Lobby, rcgen::CertifiedKey) {
-    let dir = std::env::temp_dir().join(format!("mkwmp-lobby-smoke-{}-{with_seat}", std::process::id()));
+    // One folder per lobby: tests run in parallel.
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("mkwmp-lobby-smoke-{}-{with_seat}-{n}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let cert = rcgen::generate_simple_self_signed(vec!["lobby.test".into()]).unwrap();
     std::fs::write(dir.join("cert.pem"), cert.cert.pem()).unwrap();
     std::fs::write(dir.join("key.pem"), cert.key_pair.serialize_pem()).unwrap();
     std::fs::write(dir.join("secret"), [7u8; 32]).unwrap();
     let (npln, gamesync, turn, nat, seat_port) = (free_port(), free_port(), free_udp(), free_udp(), free_port());
+    let voice = free_udp();
     std::fs::write(dir.join("lobby-tokens.txt"), "lt-smoke\n").unwrap();
     // A fixed test key pair (`mkwmp keygen t1`).
     std::fs::write(dir.join("seat.key"), "G7pdXMxFuREdTbldNlub-3RQ2ihATuJMBrfdG9Tx7AY\n").unwrap();
@@ -102,6 +107,7 @@ npln_port = {npln}
 gamesync_port = {gamesync}
 turn_port = {turn}
 nat_port = {nat}
+voice_port = {voice}
 gamesync_host = "lobby.test"
 token_secret_file = "secret"
 [lobby.policy]
@@ -148,7 +154,7 @@ key = "key.pem"
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    (Lobby { child, seat, log, seat_port, dir, npln, gamesync, turn, nat }, cert)
+    (Lobby { child, seat, log, seat_port, dir, npln, gamesync, turn, nat, voice }, cert)
 }
 
 async fn h2c(port: u16) -> SendRequest<Bytes> {
@@ -358,4 +364,75 @@ async fn roster_sync_ends_a_dropped_seat() {
     assert_eq!(kicked.len(), 1, "{log}");
     assert!(kicked[0].contains("Ana"), "{}", kicked[0]);
     assert!(!log.contains("roster call"), "roster errors: {log}");
+}
+
+/// Voice relay end to end: real seat tickets, a real lobby, UDP in and out.
+#[tokio::test(flavor = "multi_thread")]
+async fn voice_relay_carries_a_lobby_room() {
+    use gateway::voice;
+    let (lobby, cert) = start_with(true);
+    let p = lobby.seat_port;
+    let mut tickets = vec![];
+    for name in ["Vox", "Ear"] {
+        let pin = seat_call(p, "POST", "/seat/v1/profiles", None, &format!(r#"{{"name":"{name}"}}"#))["pin"].as_str().unwrap().to_string();
+        let v = seat_call(p, "POST", "/seat/v1/sessions", None, &format!(r#"{{"name":"{name}","pin":"{pin}"}}"#));
+        tickets.push(v["ticket"]["token"].as_str().expect("seated with a ticket").to_string());
+    }
+    let udp = |t: &str| {
+        let u = UdpSocket::bind("127.0.0.1:0").unwrap();
+        u.set_read_timeout(Some(Duration::from_millis(1500))).unwrap();
+        let c = voice::Control { op: voice::OP_SUBSCRIBE, self_flags: 0, mutes: vec![], ticket: t.to_string() };
+        u.send_to(&voice::write_control(&c, &[7; 12]), ("127.0.0.1", lobby.voice)).unwrap();
+        u
+    };
+    let recv = |u: &UdpSocket| {
+        let mut buf = [0u8; 1500];
+        u.recv_from(&mut buf).ok().map(|(n, _)| buf[..n].to_vec())
+    };
+    // Not in a lobby yet: a state with no room.
+    let a = udp(&tickets[0]);
+    assert_eq!(voice::parse_state(&recv(&a).expect("state down")), Some((false, voice::BUNDLE, vec![])));
+    // A bad ticket gets nothing.
+    let x = udp("mkw1.bogus.ticket");
+    assert!(recv(&x).is_none());
+
+    let mut pa = sign_in(&lobby, &cert, &tickets[0]).await;
+    let mut pb = sign_in(&lobby, &cert, &tickets[1]).await;
+    let mut ta = search(&mut pa, "Battle24").await;
+    let mut tb = search(&mut pb, "Battle24").await;
+    ta.next(Duration::from_secs(5)).await.expect("assignment for A");
+    tb.next(Duration::from_secs(5)).await.expect("assignment for B");
+
+    // Both in one lobby: B subscribes, both learn the two seats.
+    let b = udp(&tickets[1]);
+    let (room, _, seats) = voice::parse_state(&recv(&b).expect("state for B")).unwrap();
+    assert!(room);
+    let mut want = vec![lobby::account_id(&pa.uid), lobby::account_id(&pb.uid)];
+    want.sort();
+    let mut got: Vec<u64> = seats.iter().map(|s| s.account).collect();
+    got.sort();
+    assert_eq!(got, want);
+    let a_seat = seats.iter().find(|s| s.account == lobby::account_id(&pa.uid)).unwrap().seat;
+    // A refreshes (its room is looked up again) and talks; B hears it with A's seat.
+    let c = voice::Control { op: voice::OP_SUBSCRIBE, self_flags: 0, mutes: vec![], ticket: tickets[0].clone() };
+    a.send_to(&voice::write_control(&c, &[7; 12]), ("127.0.0.1", lobby.voice)).unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    let up = voice::write(voice::KIND_VOICE, &[1, 0, 0, 9, 0, 0, 0, 27, 1, 2, 3, 4], voice::ATTR_VOICE_UP, &[0xF8, 1, 2]);
+    a.send_to(&up, ("127.0.0.1", lobby.voice)).unwrap();
+    let mut heard = None;
+    while let Some(d) = recv(&b) {
+        if voice::kind_of(&d) == Some(voice::KIND_VOICE) {
+            heard = Some(d);
+            break;
+        }
+    }
+    let d = heard.expect("voice down at B");
+    assert_eq!((d[8 + 8], &d[24..27]), (a_seat, &[0xF8, 1, 2][..]));
+    // Never echoed to the talker.
+    while let Some(d) = recv(&a) {
+        assert_ne!(voice::kind_of(&d), Some(voice::KIND_VOICE));
+        if voice::parse_state(&d).is_some_and(|s| s.0 && s.2.iter().all(|x| x.state == 0)) {
+            break;
+        }
+    }
 }

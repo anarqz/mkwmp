@@ -5,7 +5,7 @@ An mkwmp server is one binary, `mkwmp`, with two parts. `mkwmp host` runs both i
 | Part | What it does | Reached by | Ports |
 | --- | --- | --- | --- |
 | `mkwmp server` | gamertags + PINs, friends, seats, queue, signed seat tickets | the launcher, over HTTP(S) | TCP 7000 |
-| `mkwmp lobby` | the game's online services: matchmaking, sessions, Gamesync, TURN relay, NAT check | the game, directly | TCP 8905, 8906; UDP 3478, 10025, 49152–49407 |
+| `mkwmp lobby` | the game's online services: matchmaking, sessions, Gamesync, TURN relay, NAT check, voice chat relay | the game, directly | TCP 8905, 8906; UDP 3478, 8907, 10025, 49152–49407 |
 
 How the parts fit together: [ARCHITECTURE.md](ARCHITECTURE.md). Seat API and ticket format: [contracts/SEAT_API.md](contracts/SEAT_API.md).
 
@@ -32,7 +32,7 @@ Download `mkwmp-server-x86_64-windows.exe` or `mkwmp-server-x86_64-linux` from t
 
 When Windows asks whether to let it through the firewall, allow it. Players set the launcher's **SERVER** to `http://<that IP>:7000`.
 
-Ports: TCP 7000, 8905, 8906 and UDP 3478, 10025, 49152–49407.
+Ports: TCP 7000, 8905, 8906 and UDP 3478, 8907, 10025, 49152–49407.
 
 ## 2. Linux server: Docker Compose
 
@@ -43,7 +43,7 @@ Docker runs the same `mkwmp host`. Use any Linux machine with Docker, for exampl
 
 - `MKWMP_PUBLIC_IP` is the IPv4 address players reach the machine at: your public IP, or the LAN address for a LAN party. The game takes an address, not a host name.
 - The first start creates the same files as section 1 in the `mkwmp-data` volume. Later starts keep them, and rewrite `server.toml` from `.env`.
-- Open these ports in the firewall: TCP 7000, 8905, 8906 and UDP 3478, 10025, 49152–49407.
+- Open these ports in the firewall: TCP 7000, 8905, 8906 and UDP 3478, 8907, 10025, 49152–49407.
 - Players set the launcher's **SERVER** to `http://<MKWMP_PUBLIC_IP>:7000`, register a gamertag on your server, and press PLAY.
 - Plain `http://` is fine on a LAN. On the internet, PINs and the lobby certificate would travel unencrypted, so use HTTPS (below).
 

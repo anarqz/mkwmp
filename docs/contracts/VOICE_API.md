@@ -20,7 +20,7 @@ Owners:
 - A player's **room** is the lobby the Core has them in (`Matchmaker::lobby_of(uid)`); the relay
   asks `Core::voice_room(uid) -> Option<VoiceRoom { lobby: LobbyId, members: Vec<String /*uid*/> }>`
   each time it routes (cheap; no copy of lobby state in the relay). Not in a lobby: no room, no voice.
-- **Seat**: a stable u8 0..11 per (room, uid), handed out by the relay in subscribe order, kept while
+- **Seat**: a stable u8 0..23 per (room, uid) (a lobby holds up to 24 players), handed out by the relay in subscribe order, kept while
   the subscriber stays in that room, freed when it leaves. Voice down carries the seat; state down
   maps seats to account ids.
 
@@ -37,20 +37,37 @@ length u16, value padded to 4 bytes), big-endian. Anything else is dropped silen
 | `0x3E93` / `0xC0F3` voice up | probe -> relay | txid: `ver=1`, `flags` (bit0 end of talk spurt), `seq u16`, `ts u32` (20 ms units), 4 random bytes. Attribute: one Opus packet, 1-400 bytes. No identity: the relay knows the sender by the endpoint its subscribe bound. Max 548 bytes. |
 | `0x3E93` / `0xC0F4` voice down | relay -> probe | txid: `ver`, `flags`, `seq`, `ts` copied, `seat u8` (the talker's, stamped by the relay), 3 random bytes. Attribute: the Opus packet unchanged. |
 | `0x3E94` / `0xC0F5` control up | probe -> relay | `ver=1`, `op` (1 subscribe/refresh, 2 replace mutes, 3 leave), `self` (bit0 mic muted, bit1 deafened), `count u8` (<= 32), `count x account u64` (the players this listener muted), `ticket_len u16`, `ticket` (the seat ticket `mkw1...`, <= 900 bytes). Max 1200 bytes. |
-| `0x3E94` / `0xC0F6` state down | relay -> probe | `ver=1`, `room` (bit0 in a room with voice), `bundle` (3; 6 when the relay is over budget), `count u8` (<= 12), `count x {seat u8, account u64, state u8 (bit0 talking now)}`. Every subscriber of the room, the listener included. |
+| `0x3E94` / `0xC0F6` state down | relay -> probe | `ver=1`, `room` (bit0 in a room with voice), `bundle` (3; 6 when the relay's voice egress over the last second is past its budget, 2 MiB/s), `count u8` (<= 24), `count x {seat u8, account u64, state u8 (bit0 talking now)}`. Every subscriber of the room, the listener included. |
+
+Notes on the table: lengths in the STUN header count the padded attribute; the attribute length
+is the unpadded value length. A relay seat that is full (25th subscriber) gets state down without
+a seat for it and none of its voice is forwarded.
+
+### 2.1 Test vectors (hex, `rust/gateway/src/voice/tests.rs` `contract_vectors`)
+
+- Voice up, txid `01 00 002a 0000007e deadbeef` (ver 1, flags 0, seq 42, ts 126), Opus `f8 ff fe`:
+  `3e9300082112a4420100002a0000007edeadbeefc0f30003f8fffe00`
+- The same as voice down at seat 5, random `11 22 33`:
+  `3e9300082112a4420100002a0000007e05112233c0f40003f8fffe00`
+- Control up, txid zero, op 1, self 2 (deafened), one mute `0x0123456789abcdef`, ticket `mkw1.a.b`:
+  `3e94001c2112a442000000000000000000000000c0f50016010102010123456789abcdef00086d6b77312e612e620000`
+- State down, txid zero, in a room, bundle 3, seat 2 = account `0x0123456789abcdef` talking:
+  `3e9400142112a442000000000000000000000000c0f6000e01010301020123456789abcdef010000`
 
 ## 3. Relay rules (authority)
 
-1. **Subscribe** (op 1/2): verify the ticket exactly like the lobby's ticket check (Ed25519, not
+1. **Subscribe** (op 1/2; either binds an unbound endpoint): verify the ticket exactly like the lobby's ticket check (Ed25519, not
    expired); uid = uuid5 of the ticket's name. Bind the source endpoint to that uid (a new endpoint
    for the same uid replaces the old one). Store `self` and the mute set. op 2 = same, the mute set
    is replaced. Refresh every 5 s from the probe; a binding with no control up for **15 s** is gone.
-2. **Leave** (op 3, needs the ticket too): drop the binding at once.
+2. **Leave** (op 3, needs the ticket too, from the bound endpoint): drop the binding at once.
 3. **Voice up** from a bound endpoint whose uid has a room and is not mic-muted: forward as voice down
    (seat stamped) to every **other** bound member of the same room who is not deafened and whose mute
    set does not hold the talker's account id. A listener never learns who muted them.
 4. **Limits** per endpoint: 60 voice datagrams/s and 4 KiB/s up (drop the excess); at most 4
-   simultaneous talkers forwarded per room (talking = voice within the last 300 ms).
+   simultaneous talkers forwarded per room (talking = voice within the last 300 ms; a fifth is
+   dropped until one of the four stops). Control up is limited per source address (20/s, burst 40)
+   before its ticket is checked.
 5. **State down** to each subscriber: on subscribe, whenever the room's member set, seats or
    talking flags change, and at least every 1 s.
 6. Datagrams from unbound endpoints (except control up) are dropped; nothing is ever echoed back to

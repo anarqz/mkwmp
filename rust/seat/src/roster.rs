@@ -28,6 +28,8 @@ pub struct Rules {
     /// The lobby's TLS certificate(s), PEM, for the game patch to trust
     /// (a self-hosted lobby has its own; see [`lobby_ca_from_pem`]).
     pub lobby_ca: Option<String>,
+    /// UDP port of the lobby's voice relay (0 = voice off).
+    pub voice_port: u16,
 }
 
 impl Default for Rules {
@@ -43,6 +45,7 @@ impl Default for Rules {
             server_name: "mkwmp".into(),
             lobby_endpoint: "127.0.0.1:8905".into(),
             lobby_ca: None,
+            voice_port: 8907,
         }
     }
 }
@@ -159,6 +162,8 @@ pub struct Status {
     /// patch, which trusts them for this server's lobby.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lobby_ca: Option<String>,
+    /// UDP port of the lobby's voice relay, on the lobby host (0 = voice off).
+    pub voice_port: u16,
     pub seats_total: usize,
     pub seated: usize,
     pub queued: usize,
@@ -426,6 +431,7 @@ impl Roster {
             name: self.rules.server_name.clone(),
             lobby_endpoint: self.rules.lobby_endpoint.clone(),
             lobby_ca: self.rules.lobby_ca.clone(),
+            voice_port: self.rules.voice_port,
             seats_total: self.rules.capacity,
             seated: self.seated,
             queued: self.queue.len(),

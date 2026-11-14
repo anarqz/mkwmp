@@ -143,6 +143,9 @@ pub struct Lobby {
     /// Pia NAT probe responder (UDP). 0 = off.
     #[serde(default = "d_nat")]
     pub nat_port: u16,
+    /// Voice chat relay (UDP, docs/contracts/VOICE_API.md). 0 = voice off.
+    #[serde(default = "d_voice")]
+    pub voice_port: u16,
     /// "lo:hi" UDP range for TURN relay sockets (open it in the firewall).
     #[serde(default)]
     pub relay_ports: Option<String>,
@@ -203,6 +206,7 @@ fn d_npln() -> u16 { 8905 }
 fn d_gamesync() -> u16 { 8906 }
 fn d_turn() -> u16 { 3478 }
 fn d_nat() -> u16 { 10025 }
+fn d_voice() -> u16 { 8907 }
 
 impl Lobby {
     /// `relay_ports` parsed; Err on a malformed range.
@@ -282,6 +286,7 @@ mod tests {
         assert!(cfg.ticket.private_key_file.unwrap().ends_with("seat-ed25519.key"));
         assert_eq!((cfg.lobby.npln_port, cfg.lobby.gamesync_port), (8905, 8906));
         assert_eq!(cfg.lobby.relay_range().unwrap(), None);
+        assert_eq!(cfg.lobby.voice_port, 8907);
         assert!(cfg.tls.cert.ends_with("capture-cert.pem"));
     }
 

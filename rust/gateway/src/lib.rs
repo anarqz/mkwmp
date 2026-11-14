@@ -23,6 +23,7 @@ pub mod log;
 pub mod nat;
 pub mod tls;
 pub mod turn;
+pub mod voice;
 
 pub type ConnId = u64;
 pub type StreamId = u64;

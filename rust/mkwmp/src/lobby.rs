@@ -54,6 +54,21 @@ impl gateway::Backend for Adapter {
     }
 }
 
+/// The voice relay's view of the Core: ticket check, rooms, account ids.
+struct VoiceRooms(lobby::Core);
+
+impl gateway::voice::Rooms for VoiceRooms {
+    fn user(&self, ticket: &str) -> Option<String> {
+        self.0.voice_user(ticket)
+    }
+    fn room(&self, uid: &str) -> Option<(u128, Vec<String>)> {
+        self.0.voice_room(uid).map(|r| (r.lobby.as_u128(), r.members))
+    }
+    fn account(&self, uid: &str) -> u64 {
+        lobby::account_id(uid)
+    }
+}
+
 fn policy(p: &config::LobbyPolicy) -> lobby::Policy {
     let mut out = lobby::Policy::default();
     out.capacity.extend(p.capacity.iter().map(|(k, v)| (k.clone(), *v)));
@@ -145,7 +160,25 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn Error>> {
         relay_ports: l.relay_range()?,
         tls: Some((cfg.tls.cert.clone(), cfg.tls.key.clone())),
     };
-    gateway::serve(gw, Arc::new(Adapter(core))).await?;
+    let voice = if l.voice_port != 0 {
+        let addr = std::net::SocketAddr::new(gw.host, l.voice_port);
+        let sock = tokio::net::UdpSocket::bind(addr).await.map_err(|e| format!("voice relay on {addr}: {e}"))?;
+        gateway::log::line(format!("voice relay on {addr} (udp)"));
+        Some(sock)
+    } else {
+        None
+    };
+    let rooms = Arc::new(VoiceRooms(core.clone()));
+    let voice = async move {
+        match voice {
+            Some(sock) => gateway::voice::run(sock, rooms).await,
+            None => std::future::pending().await,
+        }
+    };
+    tokio::select! {
+        r = gateway::serve(gw, Arc::new(Adapter(core))) => r?,
+        r = voice => r?,
+    }
     Ok(())
 }
 
