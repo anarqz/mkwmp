@@ -1,5 +1,5 @@
 //! Gamesync documents: the client's writes (`WriteDocumentsRequest`) and the in-memory store
-//! each lobby keeps of them. Shapes in docs/RE-MAP.md section 1 (all verified):
+//! each lobby keeps of them. Shapes in resources/docs/RE-MAP.md section 1 (all verified):
 //!
 //! ```text
 //! WriteDocumentsRequest { 1: repeated Write, 2: repeated DefermentOp }

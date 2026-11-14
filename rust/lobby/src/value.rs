@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn decodes_captured_referee_request_values() {
-        // From a real @@RefereeRequest (LAN run 2026-11-13), see server/test_protocol.py.
+        // From a real @@RefereeRequest (LAN run 2026-11-13), see resources/python-lobby/test_protocol.py.
         assert_eq!(Value::decode(&hex("1805")).unwrap(), Value::Int(5));
         assert_eq!(Value::decode(&hex("1001")).unwrap(), Value::Bool(true));
         assert_eq!(Value::decode(&hex("3a06626174746c65")).unwrap(), Value::str("battle"));

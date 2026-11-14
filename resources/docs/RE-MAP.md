@@ -56,7 +56,7 @@ referee is fixed; if it does not, log the return address at `main+0x223a848`.
 - The 36 s referee timeout waits for the **status-0** result (section 4 words it as status 1).
 - The `@@RefereeResult` document id must be a **uuid**, with `request_id` = the request key (`FUN_01e39a5c` parses
   the id; section 5 writes it as `<key>`).
-- Change **kind 3 = REMOVED** and the server should send it for deleted documents; `docs/NETCODE.md` says not to
+- Change **kind 3 = REMOVED** and the server should send it for deleted documents; `resources/docs/NETCODE.md` says not to
   send it, which section 2 corrects.
 - Votes and room state travel over Pia, not Gamesync documents (section 3 (c) mentions votes as documents).
 - `FUN_02141adc` tests "every player retired / out" (mask `G+0xc`), not "every player finished" (section 5.3.2);
@@ -156,7 +156,7 @@ LobbyType <-> play mode (VERIFIED tables):
 
 Complete list: SearchAll, World96, Attraction6, Streamer, Battle24, Survival24, Normal24, Private24. No Regional and
 no 2-player variants. Any private kind uses Private24 whatever the mode. Resource prefix string `/matchmakingConfigs`
-at 0x288824b (ref 0x13eb4e8); live capture shows `tenants/current/matchmakingConfigs/Normal24` (docs/NETCODE.md).
+at 0x288824b (ref 0x13eb4e8); live capture shows `tenants/current/matchmakingConfigs/Normal24` (resources/docs/NETCODE.md).
 
 | Menu option | LobbyType | mode | kind | config |
 |---|---|---|---|---|
@@ -311,7 +311,7 @@ with Duration field 2 seconds (1 s if the option flag is off).
 
 #### 2.5 Server today vs needed
 
-Today (server/mkwmp_server.py): SUBSCRIPTIONS = SubscribePresences + SubscribeFriendUsers get one empty message and
+Today (resources/python-lobby/mkwmp_server.py): SUBSCRIPTIONS = SubscribePresences + SubscribeFriendUsers get one empty message and
 stay open (l.1265-1272); KeepAlive frames are logged and answered with an empty message (l.1016-1029);
 ActivateUser gets an empty reply. Result: empty friend list, and the client never sends its presence.
 
@@ -515,7 +515,7 @@ to big ctx offsets through `mov w,#K; add x,x0,x`), a2-mm.py (murmur3 doc-name h
    `Write{1: Update{1: Document{name, fields}, 2: FieldMask{1: "`field`", ...}}}` where the mask
    lists exactly the fields in that write (run-lan9.log lines 567-821: `PlayerStatic/1` is written
    5 separate times with masks {p2p_sid,p2p_lid}, {name}, {vehicle,driver},
-   {rating_point_coefficient,rating_point_raw_value}). `server/mkwmp_server.py store_write()`
+   {rating_point_coefficient,rating_point_raw_value}). `resources/python-lobby/mkwmp_server.py store_write()`
    builds the stored doc from the incoming fields only, so each partial write wipes the others.
    Consequence (V for the mechanism, I for the causal link): `FUN_0049a5a0` re-reads all fields
    from the latest snapshot, so `p2p_sid` becomes 0 after the next partial write;
@@ -528,7 +528,7 @@ to big ctx offsets through `mov w,#K; add x,x0,x`), a2-mm.py (murmur3 doc-name h
    reader, field 2 Change): kind 1/2 -> snapshot with data (`FUN_0126643c` -> `FUN_01272248`);
    **kind 3 -> takes `Change.3.Document.name` (`FUN_012a0c00`), builds a doc ref (`FUN_0125e250`)
    and delivers a NOT-EXISTS snapshot (`FUN_012663c0`) to the same listener** (0x1271c00, the
-   `iVar2 == 3` branch). docs/NETCODE.md currently says "kind 3 is not a document change (do not
+   `iVar2 == 3` branch). resources/docs/NETCODE.md currently says "kind 3 is not a document change (do not
    send)" - that is wrong. Listener callbacks test `exists` (`FUN_012664b0`), e.g. the `__us`
    member callback erases the member.
 3. **Deferments and explicit deletes are sent by the client and currently ignored.** (V)
@@ -763,7 +763,7 @@ Contents: 0 corrections to existing contracts, 1 ticket state / Track semantics,
 
 | # | Finding | Mark |
 |---|---|---|
-| C1 | **`Member` fields 1 and 2 are swapped in `matchmaking.proto` and in `server/mkwmp_server.py`.** Serializer `0x1405fec`: field 1 = object `+0x10`, field 2 = `+0x18`. Member converter `FUN_013e94c8` parses `+0x10` with the **userSession-name** parser `0x13ea200` (-> `FUN_013e9de0`, strings `tenants`/`gameSessions`/`userSessions`) and `+0x18` with the **user** parser `0xf183d0`. So `Member{1: "tenants/<t>/gameSessions/<g>/userSessions/<u>", 2: "tenants/<t>/users/<u>"}`. The server sends them the other way round today (both parses fail quietly; the game's member tree comes from Gamesync so nothing visibly breaks). | V |
+| C1 | **`Member` fields 1 and 2 are swapped in `matchmaking.proto` and in `resources/python-lobby/mkwmp_server.py`.** Serializer `0x1405fec`: field 1 = object `+0x10`, field 2 = `+0x18`. Member converter `FUN_013e94c8` parses `+0x10` with the **userSession-name** parser `0x13ea200` (-> `FUN_013e9de0`, strings `tenants`/`gameSessions`/`userSessions`) and `+0x18` with the **user** parser `0xf183d0`. So `Member{1: "tenants/<t>/gameSessions/<g>/userSessions/<u>", 2: "tenants/<t>/users/<u>"}`. The server sends them the other way round today (both parses fail quietly; the game's member tree comes from Gamesync so nothing visibly breaks). | V |
 | C2 | `MatchmakingTicket` field 3 (`0x140a0d8` `{1 str, 2 str, 3 varint}`) is the **failure cause**: the consumer reads `+0x28` (field 2 = message) and `+0x30` (field 3 = code) only when state == 5 (`0x138fea0`, case 5). | V |
 | C3 | `GameSession` field 6 is the **password**: the create builder `0x136dbc8` writes `CreateParams+0x28` into `GameSession+0x30` (= field 6, serializer `0x140b440` tag 0x32); the game's setter `FUN_02230870` stores the user-entered string there. On the way back the converter (`0x13dc320`, inside the blob Ghidra shows as `FUN_013dc0c0`) only tests `field6 == "*"` -> bool `info+0x62` = "has password". | V (write path, "*" test) / I (that the bool means "needs password") |
 | C4 | `TrackMatchmakingTicketRequest` is `{1 name, 2 repeated string, 3 repeated string, 4 repeated string}` (serializer `0x13ffcc0`); the client fills 1 and 2 = `["tenants/current/users/current"]` (`FUN_013de500`). Wire-compatible with the repo proto. | V |
@@ -802,7 +802,7 @@ Track consumer `FUN_0138fea0(result*, ctx, request, users, acceptanceHandler, ca
 | 0,1,2, other | "Unknown error. ticketId: <id>" | 2 UNKNOWN | V |
 
 Naming of 1/2 (presumably QUEUED / SEARCHING) is **I**; the client has no code for them, they are only "not final".
-Displayed error = `2321-(code-1)*384` (docs/NETCODE.md section 1): declined 2321-3456, unknown 2321-0384,
+Displayed error = `2321-(code-1)*384` (resources/docs/NETCODE.md section 1): declined 2321-3456, unknown 2321-0384,
 timeout 2321-1152.
 
 #### 1.3 Stream ends with a non-OK status

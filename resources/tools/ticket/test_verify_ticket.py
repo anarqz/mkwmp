@@ -1,6 +1,6 @@
 """Checks verify_ticket.py against the vectors the Rust crate produced.
 
-    python -I tools/ticket/test_verify_ticket.py
+    python -I resources/tools/ticket/test_verify_ticket.py
 
 Regenerate vectors.json (only if the format changes):
 

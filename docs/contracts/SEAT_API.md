@@ -108,7 +108,7 @@ A missing, expired or outdated token answers `401 PRESENCE_NOT_FOUND`: sign in a
 2. It then asks the roster about that `sid`.
 3. It polls the roster about every 10 s for its connected players and drops the ones that are `alive: false`.
 
-**Reference implementations:** `rust/ticket` and `tools/ticket/verify_ticket.py`. Both must pass `tools/ticket/vectors.json`.
+**Reference implementations:** `rust/ticket` and `resources/tools/ticket/verify_ticket.py`. Both must pass `resources/tools/ticket/vectors.json`.
 
 **On the game side:**
 

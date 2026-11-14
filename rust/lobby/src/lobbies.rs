@@ -1,4 +1,4 @@
-//! Lobbies: any number per mode, created on demand and dropped when empty (docs/MULTI-LOBBY.md).
+//! Lobbies: any number per mode, created on demand and dropped when empty (resources/docs/MULTI-LOBBY.md).
 //!
 //! A ticket is placed when its TrackMatchmakingTicket stream opens (so every seat of a
 //! gathering lobby has a tracker to receive its assignment):

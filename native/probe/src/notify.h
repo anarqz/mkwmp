@@ -1,7 +1,7 @@
 // In-game notifications. The server tells the DLL what to show ("Connected to
 // MKWMP", "4th in queue", ...); this is the renderer-agnostic core that holds
 // them. A transport (server -> DLL) feeds notify_push; a renderer (overlay)
-// consumes notify_drain. Both are built on top of this; see docs/OVERLAY.md.
+// consumes notify_drain. Both are built on top of this; see resources/docs/OVERLAY.md.
 #ifndef MKWMP_NOTIFY_H
 #define MKWMP_NOTIFY_H
 

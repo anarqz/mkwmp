@@ -57,13 +57,13 @@ meaning to 8 or changing a server reply.
 Follow-up: `scratch/match-queue.c` confirms +0x468 is an enqueue job ID,
 not a failure code. The completion ring has the sequence 1, 3, 10, 2
 for several attempts; inspect the game-side decision to tear down rather
-than interpreting those job IDs as result codes. `tools/re/watch_match_connection.py`
+than interpreting those job IDs as result codes. `resources/tools/re/watch_match_connection.py`
 reads the operation, flags and completion ring without changing the game.
 
 Two processes now boot from `scratch/game` and `scratch/game-p2`. Run the
 second with `MKWMP_PLAYER=2` and its own profile; its auth response and
 three profile reads used the resource ending `000000000002` in
-`scratch/presence-stream.log`. `tools/prepare_player_two.ps1` stages this
+`scratch/presence-stream.log`. `resources/tools/prepare_player_two.ps1` stages this
 layout with separate binaries, logs and profile and shared game assets.
 The server now leaves SubscribePresences open (method kind 2) and responds
 to KeepAlive frames as they arrive (kind 3). Tests pass; the game still
@@ -84,7 +84,7 @@ to take its recovery path. Trace the flag writer before patching behavior.
 Static reverse engineering is in Ghidra; Python is used for the server,
 read-only process captures, and tests.
 
-`server/local_matchmaking.py` models same-mode two-seat reservation,
+`resources/python-lobby/local_matchmaking.py` models same-mode two-seat reservation,
 membership confirmation, and requeue after an unfilled lobby cancels.
 It is unit tested and has no NPLN wire adapter yet.
 
@@ -143,7 +143,7 @@ it does not establish that the server received a matchmaking ticket.
 On the latest runs the user selected a player and reported an error and a
 return to the menu. The local gRPC log still contains no matchmaking ticket.
 
-The UDP bridge and `server/pia_capture.py --reply` exchange Pia NAT probes on
+The UDP bridge and `resources/python-lobby/pia_capture.py --reply` exchange Pia NAT probes on
 loopback port 10025. The 16-byte packet consists of four big-endian words.
 For types 101–103 the responder sends the same type, the sender port, loopback
 IPv4, and zero. Type 0 is logged and left unanswered. The parser at
@@ -193,7 +193,7 @@ profile-name helper at 0x1e4542c), `scratch/bulk-consumer.c`,
 
 Intercept Mario Kart World's online calls and receive/decode them on a local server.
 **The first real request has now been captured over verified TLS + HTTP/2.**
-See `docs/first-auth-capture.log` and `docs/FINDINGS.md` section 6.
+See `resources/docs/first-auth-capture.log` and `resources/docs/FINDINGS.md` section 6.
 
 The request is `/nn.npln.auth.v1.Auth/IssuePrearrangedUserToken`, authority
 `t-e96531c6-lp1.lp1.t.npln.srv.nintendo.net:443`, with a 96-byte protobuf:
@@ -202,7 +202,7 @@ The request is `/nn.npln.auth.v1.Auth/IssuePrearrangedUserToken`, authority
 - field 3: nested message, field 1 = the probe's dummy account JWT
 
 The auth response is now reconstructed and accepted in-game. See
-`docs/auth-inferred.proto` and `docs/auth-response-capture.log`. The exact RPC response
+`resources/docs/auth-inferred.proto` and `resources/docs/auth-response-capture.log`. The exact RPC response
 has a User message in field 1 and a Token message in **field 2**. The minimal accepted
 response omits User and supplies Token.user (1), access_token (2), refresh_token (3),
 and expires_in (4, google.protobuf.Duration). Field names are inferred; wire tags
@@ -230,9 +230,9 @@ and friend subscription. The latter two now receive an initial empty protobuf
 snapshot and remain open rather than ending/retrying. Their full semantic
 schemas are not yet reconstructed, so do not claim all online features work.
 
-Evidence: docs/online-init-capture.log; scratch/online-stable-game.log.
+Evidence: resources/docs/online-init-capture.log; scratch/online-stable-game.log.
 Tests: native test_bridge.c passes including normalized/repeated clocks and
-invalid clock IDs. New server/test_protocol.py passes a real-socket HTTP/2 test
+invalid clock IDs. New resources/python-lobby/test_protocol.py passes a real-socket HTTP/2 test
 that verifies a subscription stays open while another unary call completes.
 Run: .venv/Scripts/python.exe -I -m unittest discover -s server -p test_protocol.py -v
 
@@ -264,7 +264,7 @@ tests until they resume.
    Real TLS records flow through `nnsocketSendMsg` / `nnsocketRecvMsg`.
    The server must offer TLS with the certificate embedded in `capture_cert.h`.
 3. The decompiler helper searched for the wrong PAC opcode. `pacibsp` is
-   `0xD503237F`; fixed in `tools/ghidra/DecompAddrs.java`. Targeted decompilation
+   `0xD503237F`; fixed in `resources/tools/ghidra/DecompAddrs.java`. Targeted decompilation
    now works in seconds; no full analysis was needed.
 4. The shipped runtime differs from the recovered source checkout. Its native
    `kern_fiber_switch` rejects NULL and `fiber_main` caches a TLS address across
@@ -325,7 +325,7 @@ The private key stays under ignored scratch/, never in source. Default SANs cove
 Start the TLS server and game (Start-Process background helpers with -WindowStyle Hidden):
 
 ```powershell
-.venv\Scripts\python.exe -I server/mkwmp_server.py --port 8901 --log scratch/capture.log --tls-cert scratch/certs/capture-cert.pem --tls-key scratch/certs/capture-key.pem
+.venv\Scripts\python.exe -I resources/python-lobby/mkwmp_server.py --port 8901 --log scratch/capture.log --tls-cert scratch/certs/capture-cert.pem --tls-key scratch/certs/capture-key.pem
 ```
 
 Game environment: `MKWMP_ENABLE=1`, `MKWMP_PORT=8901`, `GRPC_DNS_RESOLVER=native`,
@@ -342,7 +342,7 @@ No test game/server is intentionally left running at handoff.
 - Test source: `native/probe/tests/test_bridge.c`; link with src/log.c and -lws2_32.
   Covers EventFd counter/poll/drain/semaphore/overflow/close/reuse, addrinfo ABI,
   TCP_NODELAY readback, scatter/gather socket I/O, and certificate output. Assertions explicitly stay enabled under -O2.
-- `.venv\Scripts\python.exe -I tools/re/h2client.py 8901 --tls-cert scratch/certs/capture-cert.pem`
+- `.venv\Scripts\python.exe -I resources/tools/re/h2client.py 8901 --tls-cert scratch/certs/capture-cert.pem`
   verifies certificate/hostname, ALPN h2, response framing, successful trailers, and stream end.
 - In-game capture successfully negotiates TLS+h2, sends the auth request and receives empty OK.
 

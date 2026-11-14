@@ -1,7 +1,7 @@
 # Multi-lobby support: what the client does and how the server should do it
 
 Static analysis of `scratch/main.bin` (image offsets) plus the server logs `scratch/run-lan9..11.log`.
-Nothing was run live. Date: 2026-11-13. Builds on `docs/RE-MAP.md`. Work files:
+Nothing was run live. Date: 2026-11-13. Builds on `resources/docs/RE-MAP.md`. Work files:
 `C:\Users\alcmo\.claude\jobs\7b106074\tmp\re-map2\` (`b1.c`, `b2.c` decompiles, `vc*.py` scans).
 
 Marks: **V** = VERIFIED (read in code/data at the address given, or in a log line), **I** = INFERRED.
@@ -38,7 +38,7 @@ Things that need a live check before relying on them are listed in section 5.
 | Gamesync endpoint | host = GameSession field 8, port = field 9, taken from the match assignment; a new TLS connection is opened to it right after the assignment (`run-lan11.log` 256-258) | V |
 | `:authority` | the field-8 host (`authority=gamesync.npln.nintendo.net` on every Gamesync call in the logs) | V |
 | `IssueToken` request | `{1: "userSessions/<id>", 2: "<id>"}` (`run-lan11.log` 259-275). Builder `FUN_0128cb70`: field 1 = `"userSessions" + "/" + s0` (`FUN_012a0c70`), field 2 = `s1`, where `s0`/`s1` are two strings 0x20 apart in the connection info | V |
-| Source of `s0` / `s1` | the same struct holds the parsed MatchedPlayer field 2 at +0x68 and the raw field 3 at +0x88 (`docs/NETCODE.md` section 3), so `s0` = last component of the userSession name and `s1` = MatchedPlayer field 3. Both are the user id today, so the log cannot tell them apart | I |
+| Source of `s0` / `s1` | the same struct holds the parsed MatchedPlayer field 2 at +0x68 and the raw field 3 at +0x88 (`resources/docs/NETCODE.md` section 3), so `s0` = last component of the userSession name and `s1` = MatchedPlayer field 3. Both are the user id today, so the log cannot tell them apart | I |
 | Own user-session document | `docs/__us/<s1>`: `FUN_0126c3b8` builds it from the string at +0x88 (`FUN_01297914`), relative to the handle's base at `handle+0x10` (`FUN_0125e250`) | V |
 | Bearer token | interceptor `FUN_01297258` adds `authorization: bearer <string at token+0x20>` to every Gamesync call except IssueToken / RefreshToken (`FUN_012972fc`) | V |
 | Which token that is | the access token (field 2) of our `IssueToken` reply. The server stores the header but never logs it | I |
@@ -336,4 +336,4 @@ Per lobby, for the log line: id, mode, state, players / capacity, host, age.
   read only in part).
 - How `AttachMeshJob` learns the host for `JoinMesh` (state `WaitHostConstantId`), hence whether
   `mcn` must track Pia's current host.
-- Whether the shared TURN relay (`server/turn_relay.py`) copes with many meshes at once (not read).
+- Whether the shared TURN relay (`resources/python-lobby/turn_relay.py`) copes with many meshes at once (not read).

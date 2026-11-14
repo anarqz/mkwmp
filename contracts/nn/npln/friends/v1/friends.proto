@@ -9,9 +9,9 @@
 // message. Names are inferred (the binary has no descriptors) unless a
 // comment says otherwise. "captured" = seen in client frames logged by the
 // reference server (scratch/presence-stream.log). Consumer analysis:
-// docs/RE-MAP.md part A.2.
+// resources/docs/RE-MAP.md part A.2.
 //
-// How the game uses this (docs/RE-MAP.md 2.3):
+// How the game uses this (resources/docs/RE-MAP.md 2.3):
 //   1. The friend list itself comes from the console (nn::friends). A user
 //      that is not a console friend can never appear.
 //   2. SubscribeFriendUsers maps console account ids to NPLN users.

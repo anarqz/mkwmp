@@ -5,13 +5,13 @@
 //   matchmaker            vtables main+0x30ffca8..0x30ffe28 (4 classes)
 //   resources             vtables main+0x30ffea8..0x3100638 (16 classes)
 // GameSessionService stub constructor main+0x14180ac; per-method stub
-// references are listed in docs/contracts/rpcs.tsv.
+// references are listed in resources/docs/contracts/rpcs.tsv.
 //
 // Field numbers and wire types come from the serializers named on each
 // message. Names are inferred (the binary has no descriptors) unless a
 // comment says otherwise. "captured" = seen in client frames logged by the
 // reference server; "live" = accepted by the game. Consumer analysis:
-// docs/RE-MAP.md section 3.
+// resources/docs/RE-MAP.md section 3.
 //
 // There is no Leave or Update RPC: a player leaves by ending the Gamesync
 // KeepUserSession stream. ListUserSessions and GetUserSession are in the stub
@@ -215,7 +215,7 @@ message MatchedPlayer {
 
 // ----------------------------------------------------------- game session
 
-// Serializer main+0x140b440, converter main+0x13dc320 (docs/RE-MAP.md 3.4).
+// Serializer main+0x140b440, converter main+0x13dc320 (resources/docs/RE-MAP.md 3.4).
 message GameSession {
   // "tenants/<t>/gameSessions/<id>". Must parse.
   string name = 1;
@@ -395,7 +395,7 @@ message IssueMatchmakingIdTokenResponse {
   GameSession game_session = 2;
 }
 
-// Serializer main+0x13f89c0. Field 5 per docs/RE-MAP.md 2.2.
+// Serializer main+0x13f89c0. Field 5 per resources/docs/RE-MAP.md 2.2.
 message IssueUserDelegationTokenRequest {
   string parent = 1;
   string unknown_2 = 2;   // a user resource
@@ -410,7 +410,7 @@ message IssueUserDelegationTokenResponse {
   UserDelegationToken token = 1;
 }
 
-// Serializer main+0x1404b80. Field 4 per docs/RE-MAP.md 2.2.
+// Serializer main+0x1404b80. Field 4 per resources/docs/RE-MAP.md 2.2.
 message UserDelegationToken {
   string unknown_1 = 1;
   string unknown_2 = 2;

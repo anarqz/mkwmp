@@ -1,4 +1,4 @@
-//! Friends and presence (contracts/nn/npln/friends/v1/friends.proto, docs/RE-MAP.md A.2).
+//! Friends and presence (contracts/nn/npln/friends/v1/friends.proto, resources/docs/RE-MAP.md A.2).
 //!
 //! On a community server every other signed-in player is a friend. The game only lists NPLN
 //! friends that are also in the console's system friend list, so the probe fills

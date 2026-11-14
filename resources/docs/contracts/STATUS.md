@@ -69,7 +69,7 @@ Contracts: `contracts/nn/npln/<service>/v1/*.proto`. Shared value types (Value, 
 | matchmaking.v1.GameSessionService | GetGameSessionShortAlias | unary | shape | static | Room ID lookup. |
 | matchmaking.v1.GameSessionService | GetUserSession | unary | none | todo | No caller and no message classes in the binary. |
 | matchmaking.v1.GameSessionService | IssueMatchmakingIdToken | unary | shape | static |  |
-| matchmaking.v1.GameSessionService | IssueUserDelegationToken | unary | shape | static | Packed enum fields taken from docs/RE-MAP.md. |
+| matchmaking.v1.GameSessionService | IssueUserDelegationToken | unary | shape | static | Packed enum fields taken from resources/docs/RE-MAP.md. |
 | matchmaking.v1.GameSessionService | JoinGameSession | unary | shape | static |  |
 | matchmaking.v1.GameSessionService | ListLatencyMeasurementServers | unary | shape | stub-ok | Request captured; empty reply accepted. Server entry fields unnamed. |
 | matchmaking.v1.GameSessionService | ListUserSessions | unary | none | todo | No caller and no message classes in the binary. |

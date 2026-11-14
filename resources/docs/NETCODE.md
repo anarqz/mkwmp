@@ -120,7 +120,7 @@ QueryCollectionIds +0xa0, WriteDocuments +0xb8, BeginTransaction +0xd0,
 CommitTransaction +0xe8, RollbackTransaction +0x100, **KeepUserSession +0x118
 (type 3 = bidi)**, CreateRound +0x130. The API mirrors Firestore.
 
-Recovered with `tools/re/pb_serializers.py` (declaration order; field types
+Recovered with `resources/tools/re/pb_serializers.py` (declaration order; field types
 from tag bytes):
 
 | Serializer | Shape | Identification |
@@ -203,7 +203,7 @@ Value serializer `main+0xf19724` is a **oneof** (discriminator = field number):
 Struct = `{1: repeated Entry{1:key, 2:Value}}` (same key/Value encoding proven
 by ugcstore BulkGetDocuments). gamesync **Document** `main+0x12af860` =
 `{1: Value body, 2: name}` (field 1 is a Value, NOT name-first — unlike
-ugcstore). So the `__us` body is a Value-struct; `server/mkwmp_server.py`
+ugcstore). So the `__us` body is a Value-struct; `resources/python-lobby/mkwmp_server.py`
 `keep_user_session_response` now builds `Document{1: Value-struct{"f": struct{
 gsid,addr,p,mcn,maxu,ipc,dpc}}, 2: name}` wrapped in the Snapshot envelope.
 
@@ -243,7 +243,7 @@ subscribed target with ADDED + CURRENT.
 
 Also: `MKW_ASSUME_FOCUS=1` keeps background windows running (focus ruled out
 as a cause); two instances need `MKW_RESOLUTION=960x540 MKW_FPS=30` or the GPU
-resets (`vkQueueSubmit2 ... -4`). `tools/arrange_windows.ps1` docks P1/P2.
+resets (`vkQueueSubmit2 ... -4`). `resources/tools/arrange_windows.ps1` docks P1/P2.
 
 ### Gamesync documents (2026-11-13, runs d1–d4)
 
@@ -315,7 +315,7 @@ pushed (kind 1 new / 2 modified) to every listener of the doc/collection.
 Station connection completes: 5-packet handshake over loopback (93-byte
 packets, magic `32ab9864`), then total silence on both sides. Both clients
 keep station index `0xfd` (= unassigned; `FUN_0156490c`), so no host
-created the mesh. Game controller (`tools/re/watch_match_connection.py`):
+created the mesh. Game controller (`resources/tools/re/watch_match_connection.py`):
 `job 2, operation 3, phase 1, desired [0,3,0]`, completion `(1,1,0)`.
 Ruled out: probe Pia UDP routing (redirect + port-honouring Bind, no
 rejected sends), unhooked BSD socket overloads (only latency socket),
@@ -329,7 +329,7 @@ assigns station index 0 to the host.
 `AllocateIceServerSet` (serializer `0x1410640`, converter `FUN_013cf8e0`):
 `{1 name, 2 {1 host, 2 port, 3 int}, 3 repeated IceServer{1 host, 2 port,
 3 type (1 = TURN), 4 username, 5 credential}, 4 Duration, 5 Timestamp,
-6 Duration}` pointing at the local TURN relay (`server/turn_relay.py`).
+6 Duration}` pointing at the local TURN relay (`resources/python-lobby/turn_relay.py`).
 After the join each client listens on the collections `docs/__us`,
 `Companion`, `PlayerStatic`, `DPID`, `__gs`, `@@RefereeResult`, `Global`
 (the `__us` collection must list every lobby member).
@@ -366,7 +366,7 @@ The "Ocorreu um erro de comunicação" ~2 min after the lobby join is a
 - **It is never sent**: the per-slot online race context
   (`*(*0x33e7ee0 + 0xa0 + slot*8)`, getter `FUN_0045b24c`) keeps its document
   path handles `+0x8da0/+0x8da8` and player map `+0x28` empty the whole match
-  (`tools/re/watch_session_slots.py`). The same handles gate the
+  (`resources/tools/re/watch_session_slots.py`). The same handles gate the
   `PlayerStatic`/`Companion`/`Global` writes (`FUN_0049952c`, `FUN_00498a80`,
   per-frame `FUN_00497e48`). What fills them is still unknown.
 
@@ -396,7 +396,7 @@ written (`FUN_01e37e98` path: `<gs handle +0x10>@@RefereeRequest/<ctx+0x8da0
   copied from a finished session op by the pollers `FUN_02237d98`…`FUN_02239f60`
   (dispatcher `FUN_02237828`, assign `FUN_0223b804`). The user-session object
   is parsed by `FUN_02255158` (`uid`, `st`, `ussid` at +0x98, …).
-- Live (`tools/re/watch_match_members.py`, P1 during a battle): handle[0] set
+- Live (`resources/tools/re/watch_match_members.py`, P1 during a battle): handle[0] set
   with `+0xa0` = 1 (our `ussid`), but both member trees stay at size 0 for the
   whole match, so the map and `ctx+0x8da0` stay empty, so no referee request
   and no `PlayerStatic`/`Companion`/`Global` writes. The server does answer the
@@ -409,7 +409,7 @@ written (`FUN_01e37e98` path: `<gs handle +0x10>@@RefereeRequest/<ctx+0x8da0
 PC (P1) vs Steam Deck (P2) over LAN, coin battle (Battle24), local Python lobby
 (`run-lan11.log`): matchmaking -> lobby -> arena vote -> battle -> results on both
 -> back to free roam -> new vote with the same players. What made the end work
-(details in docs/RE-MAP.md section 1):
+(details in resources/docs/RE-MAP.md section 1):
 - `__us` member documents need `st = 2` and numeric ids (`docs/__us/<ussid>`), so the
   match player map fills and both clients write `@@RefereeRequest`.
 - `@@RefereeResult` opens with `status 0, result []`; `result` is the ordered list of
@@ -421,7 +421,7 @@ PC (P1) vs Steam Deck (P2) over LAN, coin battle (Battle24), local Python lobby
 - Game document writes are merge writes with a FieldMask (store_write merges).
 Sequence seen: request 21:22:41 (open), reports from P2 and P1 21:24:38 (status 0),
 P1's complete report 21:24:39 -> FINAL.
-Open: multiple lobbies (docs/MULTI-LOBBY.md, in progress), friend rooms, lazy
+Open: multiple lobbies (resources/docs/MULTI-LOBBY.md, in progress), friend rooms, lazy
 probe sign-in timeout on slow hardware.
 ### Remaining to a full race
 1. Initialise the per-slot online race context (find the writer of
@@ -431,9 +431,9 @@ probe sign-in timeout on slow hardware.
 
 ### All Gamesync message classes (vtables)
 
-`tools/re/pb_vtables.py` finds 35 message vtables at `0x30f1cd0 + 0x80*i`
+`resources/tools/re/pb_vtables.py` finds 35 message vtables at `0x30f1cd0 + 0x80*i`
 (i = 0..32) plus `0x30f2d50`, `0x30f2e98`; `_InternalSerialize` is slot 12
-(`vtable+0x60`). Shapes from `tools/re/pb_serializers.py` (heuristic: misses
+(`vtable+0x60`). Shapes from `resources/tools/re/pb_serializers.py` (heuristic: misses
 fields written in repeated loops; "msg" = length-delimited non-string):
 
 | # | Serializer | Fields |

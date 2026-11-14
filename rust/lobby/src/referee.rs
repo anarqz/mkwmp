@@ -1,4 +1,4 @@
-//! The match referee (docs/RE-MAP.md section 1 and "Q4 Referee"; live-verified 2026-11-13).
+//! The match referee (resources/docs/RE-MAP.md section 1 and "Q4 Referee"; live-verified 2026-11-13).
 //!
 //! - Every member writes `@@RefereeRequest/<ussid>/Request/<key>` (create) once per match, with
 //!   the same `<key>`. The first one opens `@@RefereeResult/<uuid>` {request_id = key,

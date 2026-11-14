@@ -1,7 +1,7 @@
 # MKW multiplayer — reverse-engineering findings
 
 **Latest status:** section 6 supersedes the earlier transport/config hypotheses.
-The first auth request has been captured over real TLS + HTTP/2; see HANDOFF.md.
+The first auth request has been captured over real TLS + HTTP/2; see resources/HANDOFF.md.
 
 Target: `C:\Users\alcmo\Downloads\GAMES\Mario Kart World\mkw.exe`
 Source of truth for the runtime: https://github.com/adriadam10/mkw-recomp
@@ -144,7 +144,7 @@ response so the game advances to the next call.
   starts at boot.
 - `nn::ssl` stubbed (bypass TLS) + `nnsocket*` wrapped over real non-blocking winsock with Connect
   redirected to `127.0.0.1:$MKWMP_PORT`; `ssl::Connection::Write/Read` bridged to the socket.
-- Local gRPC capture server `server/mkwmp_server.py` (h2c via `h2`, schema-free protobuf decoder,
+- Local gRPC capture server `resources/python-lobby/mkwmp_server.py` (h2c via `h2`, schema-free protobuf decoder,
   returns empty grpc-status 0). Verified standalone.
 - fs: 1-arg `MountRom`/`Unmount` stubbed; `OpenFile/GetEntryType/ReadFile/GetFileSize/CloseFile`
   log-and-delegate to the recomp's real handlers (resolved from COFF: `ov_open_file` etc.), and
@@ -173,7 +173,7 @@ server.
 ## 6. First in-game capture (2026-11-12, 16:14 local time)
 
 **Verified twice:** a real boot request reaches our server using TLS 1.2 and ALPN h2.
-The exact capture, including raw gRPC body hex, is saved in `docs/first-auth-capture.log`.
+The exact capture, including raw gRPC body hex, is saved in `resources/docs/first-auth-capture.log`.
 
 - Path: `/nn.npln.auth.v1.Auth/IssuePrearrangedUserToken`
 - Authority: `t-e96531c6-lp1.lp1.t.npln.srv.nintendo.net:443`
@@ -199,7 +199,7 @@ was directly captured after fixing scatter/gather socket calls. The server now a
 A self-signed local certificate is returned through BuiltInManager. Its info record has the
 DER length at +8 and pointer at +0x10. The output of GetBuiltInCertificates is a full pointer,
 not a 32-bit size. The public DER is embedded in capture_cert.h; the matching private key and
-PEM live only in ignored scratch/certs. Regenerate with tools/make_capture_cert.ps1 and rebuild.
+PEM live only in ignored scratch/certs. Regenerate with resources/tools/make_capture_cert.ps1 and rebuild.
 
 Other blockers cleared: console addrinfo address pointer at +0x20; matching FreeAddrInfo;
 TCP_NODELAY readback; __errno_location rather than nnsocketGetLastErrno for gRPC's errors;
@@ -240,7 +240,7 @@ TLS h2 client validates certificate/hostname, h2 ALPN, response framing, trailer
 ## 7. Auth response recovered and accepted (2026-11-12, 16:24)
 
 Following the generated response parser and consumers recovered enough of the response to
-pass login. `docs/auth-inferred.proto` records the wire schema and `docs/auth-response-capture.log`
+pass login. `resources/docs/auth-inferred.proto` records the wire schema and `resources/docs/auth-response-capture.log`
 contains the successful exchange and three follow-up requests.
 
 The actual RPC consumer is main+0xeb25c8, name constructor call 0xeb26cc. Its response clone
@@ -284,7 +284,7 @@ and keep their HTTP/2 streams open. A real-socket protocol test validates that
 unary RPCs can complete alongside the open subscription. The latest in-game run
 survived about 56 seconds with no FATAL/assertion, all six boot paths observed,
 and no subscription retry after keeping those streams open. Evidence is saved
-in docs/online-init-capture.log and scratch/online-stable-game.log.
+in resources/docs/online-init-capture.log and scratch/online-stable-game.log.
 
 Visual/menu verification is still pending: the computer-use helper could not
 connect its native pipe. No UI input was performed, and no actual matchmaking

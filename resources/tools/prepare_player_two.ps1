@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$workspace = Split-Path -Parent $PSScriptRoot
+$workspace = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $source = Join-Path $workspace 'scratch/game'
 $target = Join-Path $workspace 'scratch/game-p2'
 $probe = Join-Path $workspace 'native/probe/build/winmm.dll'

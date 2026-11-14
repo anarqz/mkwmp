@@ -241,7 +241,7 @@ GAMESYNC_PORT = 8906
 def match_assignment(tenant, lobby_id, tickets, recipient, now=None):
     """TrackMatchmakingTicket reply announcing a found session to `recipient`.
 
-    Wire layout from the generated serializers (see docs/NETCODE.md):
+    Wire layout from the generated serializers (see resources/docs/NETCODE.md):
       track reply  main+0x1408a40: 1 ticket, 2 config, 4 Player*, 5 state,
                                    6 MatchedPlayer*, 7 GameSession
       MatchedPlayer main+0x140c708: 1 Player, 2 userSession resource,
@@ -646,7 +646,7 @@ def referee_result(name, fields_body, now=None):
                 total = _varint(v, 1)[0]
     result_name = REFEREE_RESULT + str(uuid5(NAMESPACE_URL, "mkwmp-referee/" + key))
     # `result` = ordered race-player indices (0-based) that have finished / been eliminated
-    # (docs/RE-MAP.md 1.4): empty while the match runs.
+    # (resources/docs/RE-MAP.md 1.4): empty while the match runs.
     REFEREE_MATCHES[result_name] = {"key": key, "total": total, "order": []}
     return result_name, referee_document(result_name, now=now)
 

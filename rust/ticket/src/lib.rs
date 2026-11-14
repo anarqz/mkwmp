@@ -160,7 +160,7 @@ impl TicketVerifier {
 mod tests {
     use super::*;
 
-    // Fixed seed so the vectors in tools/ticket/vectors.json are reproducible.
+    // Fixed seed so the vectors in resources/tools/ticket/vectors.json are reproducible.
     pub const TEST_SEED: [u8; 32] = [7; 32];
 
     fn issuer() -> Issuer {

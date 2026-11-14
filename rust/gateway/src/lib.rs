@@ -8,7 +8,7 @@
 //! - Pia NAT responder (`nat_port`, 10025 UDP).
 //!
 //! No NPLN knowledge here: paths and bytes only. Ported from the verified
-//! Python reference (server/mkwmp_server.py, turn_relay.py, pia_capture.py).
+//! Python reference (resources/python-lobby/mkwmp_server.py, turn_relay.py, pia_capture.py).
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;

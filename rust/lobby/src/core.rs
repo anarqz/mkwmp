@@ -887,7 +887,7 @@ impl State {
         }
     }
 
-    // ---- friend rooms (docs/RE-MAP.md 3.2-3.4, 6a) -----------------------------------------
+    // ---- friend rooms (resources/docs/RE-MAP.md 3.2-3.4, 6a) -----------------------------------------
 
     fn session_view_msg(&self, lobby: &Lobby, tenant: &str, now: f64) -> crate::wire::Msg {
         let members: Vec<(String, Vec<u8>)> = lobby

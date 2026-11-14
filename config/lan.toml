@@ -1,4 +1,4 @@
-## LAN test profile for this PC (P1) + the Steam Deck (P2): see docs/TESTING-RUST-LOBBY.md.
+## LAN test profile for this PC (P1) + the Steam Deck (P2): see resources/docs/TESTING-RUST-LOBBY.md.
 ## mkwmp server config (Rust side). Loaded by the seat server and the lobby.
 ## Flow: the launcher joins the seat server -> a free seat gets a signed ticket
 ## (else the player queues) -> the game presents the ticket to the lobby,

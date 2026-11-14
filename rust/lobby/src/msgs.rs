@@ -1,5 +1,5 @@
 //! NPLN request parsers and response encoders. Every layout here is the one the verified
-//! Python reference sends (server/mkwmp_server.py), with its serializer address.
+//! Python reference sends (resources/python-lobby/mkwmp_server.py), with its serializer address.
 
 use crate::value::{Document, Fields, Value};
 use crate::wire::{self, Msg, Result};
@@ -114,7 +114,7 @@ pub struct Member<'a> {
     pub player: &'a [u8],
 }
 
-/// `TrackMatchmakingTicket` reply announcing the session (docs/NETCODE.md):
+/// `TrackMatchmakingTicket` reply announcing the session (resources/docs/NETCODE.md):
 ///   reply main+0x1408a40: 1 ticket, 2 config, 4 Player, 5 state (3 = matched),
 ///                         6 MatchedPlayer*, 7 GameSession
 ///   MatchedPlayer main+0x140c708: 1 Player, 2 userSession, 3 user id
@@ -146,7 +146,7 @@ pub fn assignment(
     out.msg(7, &session).into_bytes()
 }
 
-// ---- GameSessionService: rooms, short aliases, friend sessions (docs/RE-MAP.md 3.2-3.5) ------
+// ---- GameSessionService: rooms, short aliases, friend sessions (resources/docs/RE-MAP.md 3.2-3.5) ------
 
 /// A GameSession as the room / friend-session RPCs show it (serializer main+0x140b440):
 /// 1 name, 2 players, 3 capacity, 4 joinable, 5 visible, 6 "*" when password-protected (never

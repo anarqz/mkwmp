@@ -4,7 +4,7 @@ Updated 2026-11-12. Workspace: C:\Users\alcmo\Projects\mkwmp.
 
 ## Start here (updated 2026-11-12 22:00)
 
-**Two isolated clients sign in, queue, and accept a shared session assignment. Both now get past matchmaking and the session join check and try to reach the Gamesync (P2P setup) server on localhost:8906.** They have not joined each other yet. Read [docs/NETCODE.md](docs/NETCODE.md) first: it has the decoded flow, schemas and experiment log.
+**Two isolated clients sign in, queue, and accept a shared session assignment. Both now get past matchmaking and the session join check and try to reach the Gamesync (P2P setup) server on localhost:8906.** They have not joined each other yet. Read [resources/docs/NETCODE.md](docs/NETCODE.md) first: it has the decoded flow, schemas and experiment log.
 
 What was learned this session:
 
@@ -30,10 +30,10 @@ The user controls every in-game click. Do not use computer control for the game.
 
 If the listeners are already active, reuse them. To start them from the workspace in separate shells:
 
-    .venv/Scripts/python.exe -E -s server/mkwmp_server.py --port 8905 --tls-cert scratch/certs/capture-cert.pem --tls-key scratch/certs/capture-key.pem --log scratch/run-b1.log --announce-matches
+    .venv/Scripts/python.exe -E -s resources/python-lobby/mkwmp_server.py --port 8905 --tls-cert scratch/certs/capture-cert.pem --tls-key scratch/certs/capture-key.pem --log scratch/run-b1.log --announce-matches
 
 (The same process also serves Gamesync on 8906; change with `--gamesync-port`.)
-    .venv/Scripts/python.exe -I server/pia_capture.py --reply --log scratch/pia-replies.log
+    .venv/Scripts/python.exe -I resources/python-lobby/pia_capture.py --reply --log scratch/pia-replies.log
 
 Use a new log filename if preserving an earlier run. The TLS certificate must match native/probe/src/capture_cert.h. Do not start another listener on the same port. Run without --announce-matches to reproduce the verified two-player waiting state without sending experimental assignments. A server restart clears in-memory tickets and token mappings. Fresh game launches after a restart avoid stale connections or missing local account mappings.
 
@@ -63,7 +63,7 @@ Tell the user to choose Online Play → Corrida in each window. Have the first p
 
 ## Current failure and next investigation
 
-**Superseded 2026-11-12 22:00:** items 1–3 below are resolved (see "Start here" and docs/NETCODE.md §§1–4). The current failure is the Gamesync connection on 8906. Item 4 still applies.
+**Superseded 2026-11-12 22:00:** items 1–3 below are resolved (see "Start here" and resources/docs/NETCODE.md §§1–4). The current failure is the Gamesync connection on 8906. Item 4 still applies.
 
 1. A name-only assignment, then a session roster, then a roster plus top-level field 6 all produced **2321-3072 (0x180141)** in both clients. Swapping queue order swaps which client is already in free roam. The second client can fail during the picker. The server shows assignment fan-out but no subsequent session RPC; the game logs show event kind 2, detail 0x1/0x180141/0/0xb/0x6/0 and error caller main+0x25db61c. Do not treat “waiting for other players” as proof of a joined session.
 2. The newest candidate adds member field 2 as tenants/<tenant>/gameSessions/<uuid>/userSessions/<user-id>. Ghidra traced the consumer at main+0x13dbda0 into main+0x13ea200 / main+0x13e9de0, which parses gameSessions and userSessions segments. The exact identifier semantics and completeness of the member data remain unverified. **First action: run the fresh two-client experiment above.**
@@ -74,8 +74,8 @@ Known server limitations: membership confirmation is modeled but not connected t
 
 ## Tools and evidence
 
-- Server: server/mkwmp_server.py, server/local_matchmaking.py, server/pia_capture.py. Probe: native/probe/src/npln.c and native/probe/build.py. Player-two staging: tools/prepare_player_two.ps1.
+- Server: resources/python-lobby/mkwmp_server.py, resources/python-lobby/local_matchmaking.py, resources/python-lobby/pia_capture.py. Probe: native/probe/src/npln.c and native/probe/build.py. Player-two staging: resources/tools/prepare_player_two.ps1.
 - Tests: .venv/Scripts/python.exe -I -m unittest discover -s server -v (six passed at handoff). Direct server launch uses -E -s so it can import its sibling module. Build with ZIG_GLOBAL_CACHE_DIR and ZIG_LOCAL_CACHE_DIR set to scratch subdirectories; see history for the Zig location and native bridge test. Only copy the rebuilt DLL after the user closes both isolated processes.
 - Ghidra: C:/Users/alcmo/Downloads/Ghidra/ghidra_12.1.4_PUBLIC/support/analyzeHeadless.bat; JAVA_HOME is C:/Users/alcmo/Downloads/Ghidra/jdk21. Use scratch/ghidra project mkw, program main.bin, -process main.bin -noanalysis -readOnly -scriptPath tools/ghidra. The raw guest image is based at zero; live guest main base is 0x7000000000. DecompAddrs.java takes output path and addresses; entry:<hex> forces an exact entry for leaf or tail-call functions. InspectWireAddresses.java and FindArm64PageRefs.java handle address and cross-reference lookups.
-- Focused Ghidra outputs: scratch/pia-validation.c, nifm-address-getter.c, ticket-parser.c, track-consumer.c, track-flow.txt, track-serialize.c, session-roster.c, assignment-result.c and member-resource.c. Live capture helper: tools/re/watch_match_connection.py.
+- Focused Ghidra outputs: scratch/pia-validation.c, nifm-address-getter.c, ticket-parser.c, track-consumer.c, track-flow.txt, track-serialize.c, session-roster.c, assignment-result.c and member-resource.c. Live capture helper: resources/tools/re/watch_match_connection.py.
 - Live logs in order: scratch/presence-stream.log (first create and empty-reply abort), match-ticket.log (first Track), track-ticket.log (free roam), two-tickets.log (distinct clients), match-assignment.log (name only), match-roster.log, match-players.log (field 6 still failed), match-user-sessions.log (latest candidate; no ticket yet). Scratch and generated binaries are ignored by Git; keep them on this machine for the next agent.

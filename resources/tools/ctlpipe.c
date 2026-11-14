@@ -3,7 +3,7 @@
 // e.g. ctlpipe.exe mkwctl "press 1 A 6" "shot Z:\tmp\s.png". Commands: press, shot, screen,
 // frame, focus, ... (see mkw-recomp's ctl). Used to drive the Deck's game under Proton, where
 // the pipe lives in the Wine prefix: run it with the same prefix as the game.
-// Build: zig cc -target x86_64-windows-gnu -O2 -o ctlpipe.exe tools/ctlpipe.c
+// Build: zig cc -target x86_64-windows-gnu -O2 -o ctlpipe.exe resources/tools/ctlpipe.c
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>

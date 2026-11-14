@@ -1,5 +1,5 @@
 //! Minimal TURN relay (RFC 5766 subset) for Pia's nn::pia::turn::TurnProtocol,
-//! ported from server/turn_relay.py.
+//! ported from resources/python-lobby/turn_relay.py.
 //!
 //! Pia's mesh attach waits until its TURN client reports ready, so the ICE
 //! server set points here. Handles Binding, Allocate (long-term credentials:

@@ -5,7 +5,7 @@ A server has two parts. Both can run on one machine:
 | Part | What it does | Reached by | Ports |
 | --- | --- | --- | --- |
 | `mkwmp server` (Rust) | seats (player cap), queue, signed tickets, friends | the launcher, over HTTP(S) | `[seats] bind`, default 127.0.0.1:7000 |
-| lobby (Python for now: `server/mkwmp_server.py` + `server/pia_capture.py`) | the game's online services: matchmaking, sessions, Gamesync, TURN relay | the game, directly | TCP 8905, 8906; UDP 10025, 3478, relay range |
+| lobby (Python for now: `resources/python-lobby/mkwmp_server.py` + `resources/python-lobby/pia_capture.py`) | the game's online services: matchmaking, sessions, Gamesync, TURN relay | the game, directly | TCP 8905, 8906; UDP 10025, 3478, relay range |
 
 How the parts work together: docs/ARCHITECTURE.md. Seat API and ticket format: docs/contracts/SEAT_API.md.
 
@@ -19,9 +19,9 @@ Needs Rust (stable) and Python 3.12+ with `h2` and `cryptography`.
 
 2. **Start the lobby** from the repo root, in two shells. Use your LAN IPv4 instead of 127.0.0.1 for other devices:
 
-       python -E -s server/mkwmp_server.py --host 0.0.0.0 --public-host 127.0.0.1 --port 8905 \
+       python -E -s resources/python-lobby/mkwmp_server.py --host 0.0.0.0 --public-host 127.0.0.1 --port 8905 \
          --tls-cert scratch/certs/capture-cert.pem --tls-key scratch/certs/capture-key.pem --announce-matches
-       python -I server/pia_capture.py --host 0.0.0.0 --reply
+       python -I resources/python-lobby/pia_capture.py --host 0.0.0.0 --reply
 
 3. **Set the address handed to players.** In `config/server.toml`, set `[seats] lobby_endpoint` to the lobby's `IPv4:8905`. The game takes an IP address here, not a hostname (yet).
 
@@ -53,7 +53,7 @@ Any small VM works: 1 vCPU and 1 GB is plenty. Pick a generous transfer allowanc
      - `[ticket] kid` and `private_key_file`.
 
 5. **Install the lobby:**
-   - Copy `server/*.py` to `/opt/mkwmp/lobby/`.
+   - Copy `resources/python-lobby/*.py` to `/opt/mkwmp/lobby/`.
    - Create the venv: `python3 -m venv /opt/mkwmp/venv && /opt/mkwmp/venv/bin/pip install h2 cryptography`.
    - Put the lobby's TLS pair in `/opt/mkwmp/keys/lobby-{cert,key}.pem`.
    - Write `PUBLIC_HOST=<public IPv4>` to `/opt/mkwmp/config/lobby.env`.

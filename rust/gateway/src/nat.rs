@@ -1,4 +1,4 @@
-//! Pia NAT probe responder (port of `server/pia_capture.py --reply`).
+//! Pia NAT probe responder (port of `resources/python-lobby/pia_capture.py --reply`).
 //!
 //! A probe is 16 bytes: a big-endian kind (101..=103) and twelve zero bytes.
 //! The reply carries the kind, the sender's port and IPv4 address as seen

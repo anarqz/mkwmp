@@ -2,7 +2,7 @@
 // Recovered from mkw-recomp main.bin. The binary keeps 11 leaderboard
 // message classes (vtables main+0x30f5748..0x30f5c48); only the two used by
 // UpdateHolder are declared here. The other 17 RPCs of the service
-// (docs/contracts/rpcs.tsv) have never been observed.
+// (resources/docs/contracts/rpcs.tsv) have never been observed.
 //
 // Field numbers and wire types come from the serializers named on each
 // message. Names are inferred unless a comment says otherwise.

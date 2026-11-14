@@ -33,7 +33,7 @@
 
 - It accepts a game only with a ticket that verifies against the seat server's public key.
 - It drops players the roster reports as no longer alive.
-- **Today this is the Python reference server** (`server/mkwmp_server.py`). Handlers move to Rust as each is verified in game.
+- **Today this is the Python reference server** (`resources/python-lobby/mkwmp_server.py`). Handlers move to Rust as each is verified in game.
 
 **Why the ticket is signed** even on one VM: the lobby holds only the public key, so the two parts can still be split across machines (or a lobby hosted by someone else) without the lobby being able to mint seats. The seat cap holds because every lobby login needs a ticket the seat server issued.
 
@@ -62,7 +62,7 @@ While the game runs:
 rust/
   mkwmp/       the server binary: `server`, `lobby`, `keygen` subcommands
   seat/        seat server: names, roster (seats/queue/friends), HTTP API
-  ticket/      ticket v1 sign/verify (Python twin: tools/ticket/verify_ticket.py)
+  ticket/      ticket v1 sign/verify (Python twin: resources/tools/ticket/verify_ticket.py)
   lobby/       lobby (Rust port pending; matchmaking core only)
   contracts/   generated prost types + tonic stubs for the NPLN protos
   config/      typed server config loader
@@ -84,4 +84,4 @@ rust/
 
 ## Today vs. target
 
-The Python server (`server/mkwmp_server.py`) is the throwaway capture/prototype: it answers RPCs so we can learn the contracts. As each contract is verified it is ported to the Rust service that owns it. The Python code is not the product.
+The Python server (`resources/python-lobby/mkwmp_server.py`) is the throwaway capture/prototype: it answers RPCs so we can learn the contracts. As each contract is verified it is ported to the Rust service that owns it. The Python code is not the product.

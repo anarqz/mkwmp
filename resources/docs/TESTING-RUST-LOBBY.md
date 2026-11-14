@@ -1,7 +1,7 @@
 # Testing the Rust lobby (official server) on the LAN
 
 The Rust lobby (`mkwmp lobby`, crates `rust/gateway` + `rust/lobby`) replaces the Python reference
-(`server/mkwmp_server.py` + `turn_relay.py` + `pia_capture.py --reply`) for real play. Python stays for
+(`resources/python-lobby/mkwmp_server.py` + `turn_relay.py` + `pia_capture.py --reply`) for real play. Python stays for
 probe development and protocol experiments. Both speak the same protocol; never run both at once
 (same ports).
 
@@ -51,7 +51,7 @@ the PC or the Deck.
    FRIENDS on P1 and be joinable while in a room.
 
 Switching back to Python for a probe experiment: stop `mkwmp`, then start the three Python processes
-as before (`docs/NETCODE.md`).
+as before (`resources/docs/NETCODE.md`).
 
 ## Known differences from the Python server
 

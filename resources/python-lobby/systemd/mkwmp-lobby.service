@@ -1,4 +1,4 @@
-# mkwmp lobby (Python reference server until the Rust port: server/mkwmp_server.py).
+# mkwmp lobby (Python reference server until the Rust port: resources/python-lobby/mkwmp_server.py).
 # Needs /opt/mkwmp/venv (h2, cryptography), the repo's server/ in
 # /opt/mkwmp/lobby, the TLS pair the game probe trusts in /opt/mkwmp/keys, and
 # /opt/mkwmp/config/lobby.env with PUBLIC_HOST=<public IPv4>. See docs/HOSTING.md.

@@ -6,9 +6,9 @@ payload: base64url (no padding) of compact JSON claims
          {"v","iss","kid","sid","name","iat","exp"}.
 sig:     base64url (no padding) of the Ed25519 signature over b"mkw1.<payload>".
 
-The Rust implementation is rust/ticket. Both must pass tools/ticket/vectors.json:
+The Rust implementation is rust/ticket. Both must pass resources/tools/ticket/vectors.json:
 
-    python -I tools/ticket/test_verify_ticket.py
+    python -I resources/tools/ticket/test_verify_ticket.py
 
 Needs the `cryptography` package. Copy this file next to the lobby server,
 or import it from here.

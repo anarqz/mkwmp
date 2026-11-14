@@ -1,6 +1,6 @@
 //! TCP → (TLS) → HTTP/2 → gRPC calls into a [`Backend`].
 //!
-//! What the game relies on (verified against server/mkwmp_server.py):
+//! What the game relies on (verified against resources/python-lobby/mkwmp_server.py):
 //! - Response HEADERS go out as soon as the request HEADERS arrive, before
 //!   any DATA: subscriptions stay open for minutes with no data.
 //! - No idle timeouts on streams; h2 answers the game's PINGs itself.

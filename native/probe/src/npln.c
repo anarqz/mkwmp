@@ -5,7 +5,7 @@
 // nn::ssl stubs below cover other SDK paths, not the captured gRPC transport.
 //
 // Gates, completed local async prerequisites and runtime fiber fixes start NPLN.
-// Winsock carries its TLS records to server/mkwmp_server.py, which terminates
+// Winsock carries its TLS records to resources/python-lobby/mkwmp_server.py, which terminates
 // TLS, decodes the HTTP/2 + protobuf requests and supplies experimental responses.
 //
 // Env: MKWMP_PORT (default 8900), MKWMP_HOST (default 127.0.0.1).
@@ -982,7 +982,7 @@ static const uint64_t kTraceRanges[][2] = {
 };
 
 // Watchpoints: every indirect call to these targets is logged (first 20,
-// then every 200th), with a state dump where useful. See docs/NETCODE.md.
+// then every 200th), with a state dump where useful. See resources/docs/NETCODE.md.
 enum { W_START_P2P, W_P2P_INIT_SEQ, W_US_JOB, W_GAME_CB, W_PLUGIN_A, W_PLUGIN_B, W_COMM_ERROR, W_COUNT };
 static const uint64_t kWatch[W_COUNT] = {
     0x7002236714ull,   // FUN_02236714: game start-P2P (dispatcher request kind 1)

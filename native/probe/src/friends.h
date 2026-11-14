@@ -1,7 +1,7 @@
 // System friend list: what nn::friends::GetFriendList gives the game.
 //
 // The game only shows an NPLN friend (lobby: SubscribeFriendUsers) whose account id is also
-// in the console's friend list (docs/RE-MAP.md, A 2.3 and 2.6). The probe therefore serves the
+// in the console's friend list (resources/docs/RE-MAP.md, A 2.3 and 2.6). The probe therefore serves the
 // launcher's roster as that list:
 //   GET http://<launcher>/local/v1/friends, Authorization: Bearer <launcher_token>
 //   200 {"friends":[{"name":"Ana"}, ...]}   never the caller, at most 100, names 1..20 chars
@@ -19,7 +19,7 @@ enum {
 };
 
 // nn::friends::Friend as the SDK's accessors read it (offsets from the `sdk` module, see
-// docs/RE-MAP.md A 2.6). Everything the probe does not set stays zero, as Friend::Friend()
+// resources/docs/RE-MAP.md A 2.6). Everything the probe does not set stays zero, as Friend::Friend()
 // leaves it.
 typedef struct {
     uint64_t owner[2];        // 0x000 nn::account::Uid of the user whose list this is

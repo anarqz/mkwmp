@@ -2,7 +2,7 @@
 # Run once from an elevated PowerShell:  powershell -ExecutionPolicy Bypass -File tools\lan_firewall.ps1
 # Private-network profile only. Remove with:  Get-NetFirewallRule -DisplayName 'mkwmp *' | Remove-NetFirewallRule
 #Requires -RunAsAdministrator
-$repo = Split-Path -Parent $PSScriptRoot
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $programs = @(
     @{ Name = 'mkwmp server (venv python)'; Path = Join-Path $repo '.venv\Scripts\python.exe' },
     @{ Name = 'mkwmp client P1';            Path = Join-Path $repo 'scratch\game\mkw.exe' },

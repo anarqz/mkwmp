@@ -1,5 +1,5 @@
 // padprobe.exe: what controllers a Windows SDL3 program (and XInput) sees here.
-// Build: zig cc -target x86_64-windows-gnu -O2 -o padprobe.exe tools/padprobe.c
+// Build: zig cc -target x86_64-windows-gnu -O2 -o padprobe.exe resources/tools/padprobe.c
 // Run next to the game's SDL3.dll (e.g. under Proton on the Deck).
 #include <windows.h>
 #include <stdio.h>

@@ -1,6 +1,6 @@
 param(
-    [string]$OutputDirectory = "$PSScriptRoot/../scratch/certs",
-    [string]$HeaderPath = "$PSScriptRoot/../native/probe/src/capture_cert.h",
+    [string]$OutputDirectory = "$PSScriptRoot/../../scratch/certs",
+    [string]$HeaderPath = "$PSScriptRoot/../../native/probe/src/capture_cert.h",
     # gamesync.npln.nintendo.net: the Gamesync channel's TLS authority (main+0x12696a4).
     [string[]]$DnsName = @('*.lp1.t.npln.srv.nintendo.net', 'gamesync.npln.nintendo.net', 'localhost')
 )

@@ -1,6 +1,6 @@
 //! End-to-end through the Core's transport API: game clients sign in, search, get matched,
 //! join the Gamesync session, play a match through the referee and leave. Wire layouts are the
-//! ones the game was verified with (server/mkwmp_server.py).
+//! ones the game was verified with (resources/python-lobby/mkwmp_server.py).
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
