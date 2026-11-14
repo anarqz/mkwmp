@@ -72,6 +72,12 @@ fn policy(p: &config::LobbyPolicy) -> lobby::Policy {
     if let Some(v) = p.connect_timeout_secs {
         out.connect_timeout_secs = v;
     }
+    if p.maxu.is_some() {
+        out.maxu = p.maxu;
+    }
+    if let Some(v) = p.friend_join_public {
+        out.friend_join_public = v;
+    }
     out
 }
 

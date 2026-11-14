@@ -54,6 +54,8 @@ gamesync_host = "gamesync.npln.nintendo.net"  # advertised; the patch redirects 
 # capacity = { Normal24 = 24, Battle24 = 24 }
 # min_start = 2
 # gather_secs = 10
+# maxu = 2                     # __gs/f maxu; default = capacity (try 2 if a match fails right after assignment)
+# friend_join_public = false   # friends may join a matchmade lobby between events (unverified)
 
 [tls]
 # Shared by both endpoints. Paths relative to this file.

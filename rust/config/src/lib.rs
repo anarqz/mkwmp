@@ -181,6 +181,10 @@ pub struct LobbyPolicy {
     pub gather_secs: Option<f64>,
     pub leave_grace_secs: Option<f64>,
     pub connect_timeout_secs: Option<f64>,
+    /// `__gs/f` maxu; unset = the lobby capacity (fallback to try: 2).
+    pub maxu: Option<u32>,
+    /// Friends may join a matchmade lobby between events (unverified).
+    pub friend_join_public: Option<bool>,
 }
 
 fn d_gamesync_host() -> String { "gamesync.npln.nintendo.net".into() }
