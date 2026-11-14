@@ -70,6 +70,7 @@ static int g_lan;
 static struct in_addr g_local_ip;
 static char g_lobby_host[128];   // authoritative lobby from the seated reply (overrides mkwmp.toml)
 static int g_lobby_port;
+static void eager_seat(void);
 static void net_init(void);
 
 // SDK pthread_cond_timedwait reads the SDK clock via a direct call, bypassing
@@ -312,6 +313,7 @@ static void ov_nsa_load_token(Cpu *c) {
     // The seat ticket (mkw1.<payload>.<sig>) is the account token the lobby verifies in
     // IssuePrearrangedUserToken; local tests without a launcher keep the dummy tokens.
     static char ticket[520];
+    eager_seat();
     const char *token = g_second_player ? kSecondDummyToken : kDummyToken;
     if (seat_ticket(ticket, sizeof ticket) ||
         (mkwmp_config()->ticket[0] && snprintf(ticket, sizeof ticket, "%s", mkwmp_config()->ticket) > 0))
@@ -1343,6 +1345,39 @@ static void try_activate(void) {
     ReleaseSRWLockExclusive(&lock);
 }
 
+// MKWMP_EAGER=1 is active from boot, so try_activate never runs: the first account-token load (the sign-in) takes
+// the seat instead, so the lobby gets a real seat ticket and voice starts. Retried on the next sign-in if refused.
+static int g_eager;
+static void eager_seat(void) {
+    static volatile LONG seated;
+    static SRWLOCK lock = SRWLOCK_INIT;
+    if (!g_eager || seated) return;
+    AcquireSRWLockExclusive(&lock);
+    if (!seated) {
+        const MkwmpConfig *cfg = mkwmp_config();
+        SeatReply r;
+        if (!cfg->launcher_port) {
+            voice_online(cfg->host);
+            seated = 1;
+        } else if (seat_acquire(&r, 60 * 1000) == SEAT_SEATED) {
+            char *colon = strrchr(r.lobby, ':');
+            if (r.lobby[0] && colon) {
+                *colon = 0;
+                snprintf(g_lobby_host, sizeof g_lobby_host, "%s", r.lobby);
+                g_lobby_port = atoi(colon + 1);
+            }
+            seat_keepalive_start();
+            friends_online(FRIENDS_WAIT_MS);
+            mlog("eager sign-in: seated");
+            voice_online(g_lobby_host);
+            seated = 1;
+        } else {
+            mlog("eager sign-in: no seat (the lobby will refuse the sign-in)");
+        }
+    }
+    ReleaseSRWLockExclusive(&lock);
+}
+
 #define NREG 64
 static GuestFn g_ours[NREG], g_stock[NREG];
 static unsigned char g_trigger[NREG];
@@ -1500,7 +1535,7 @@ int npln_register(void) {
     const char *nofiber = getenv("MKWMP_NO_FIBER");
     int skip_fiber = !(nofiber && !strcmp(nofiber, "0"));
     const char *eager = getenv("MKWMP_EAGER");
-    if (eager && !strcmp(eager, "1")) { g_active = 1; log_line("MKWMP_EAGER=1: active from start"); }
+    if (eager && !strcmp(eager, "1")) { g_active = 1; g_eager = 1; log_line("MKWMP_EAGER=1: active from start"); }
     int gated = 0;
     for (int i = 0; i < n; i++) {
         if (skip_fiber && strstr(kRegs[i].name, "Fiber")) { log_line(kRegs[i].name); continue; }

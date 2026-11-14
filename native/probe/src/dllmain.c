@@ -41,8 +41,33 @@ static void wine_controller_fixup(void) {
 typedef struct { DWORD packet; WORD buttons; BYTE lt, rt; SHORT lx, ly, rx, ry; } PadState;
 static DWORD WINAPI pad_diag(LPVOID unused) {
     (void)unused;
-    for (int round = 0; round < 3; round++) {
-        Sleep(round ? 15000 : 20000);
+    // Steam Input's virtual pad can appear at any time (seen from 20 s to well over a minute after boot, and again
+    // after a reconnect): three full reports, then a quiet watch every 5 s that rescans whenever XInput has a pad
+    // and SDL has none.
+    for (int round = 0;; round++) {
+        Sleep(round == 0 ? 20000 : round < 3 ? 15000 : 5000);
+        if (round >= 3) {
+            HMODULE xi = LoadLibraryA("xinput1_4.dll"), sdl = GetModuleHandleA("SDL3.dll");
+            DWORD (WINAPI *get)(DWORD, PadState *) = xi ? (void *)GetProcAddress(xi, "XInputGetState") : NULL;
+            uint32_t *(*joys)(int *) = sdl ? (void *)GetProcAddress(sdl, "SDL_GetJoysticks") : NULL;
+            void (*sdl_free)(void *) = sdl ? (void *)GetProcAddress(sdl, "SDL_free") : NULL;
+            void (*quit_sub)(uint32_t) = sdl ? (void *)GetProcAddress(sdl, "SDL_QuitSubSystem") : NULL;
+            int (*init_sub)(uint32_t) = sdl ? (void *)GetProcAddress(sdl, "SDL_InitSubSystem") : NULL;
+            PadState st;
+            int n = 0;
+            uint32_t *ids = joys ? joys(&n) : NULL;
+            if (ids && sdl_free) sdl_free(ids);
+            if (n == 0 && get && get(0, &st) == 0 && quit_sub && init_sub) {
+                quit_sub(0x2000u | 0x200u);   // SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK
+                init_sub(0x2000u | 0x200u);
+                int m = 0;
+                uint32_t *again = joys(&m);
+                if (again && sdl_free) sdl_free(again);
+                static int logged;
+                if (m > 0 || logged++ < 3) mkwmp_log("pad-watch: XInput pad without an SDL joystick: rescanned, %d now", m);
+            }
+            continue;
+        }
         HMODULE xi = LoadLibraryA("xinput1_4.dll");
         DWORD (WINAPI *get)(DWORD, PadState *) = xi ? (void *)GetProcAddress(xi, "XInputGetState") : NULL;
         for (DWORD i = 0; get && i < 4; i++) {
