@@ -404,6 +404,25 @@ written (`FUN_01e37e98` path: `<gs handle +0x10>@@RefereeRequest/<ctx+0x8da0
 - Next: find what inserts into the member tree (the `docs/__us/` listener
   callback, likely gated by a field our `__us` documents lack, e.g. `st`).
 
+### MILESTONE 2026-11-13 21:24: a full online match, start to next vote
+
+PC (P1) vs Steam Deck (P2) over LAN, coin battle (Battle24), local Python lobby
+(`run-lan11.log`): matchmaking -> lobby -> arena vote -> battle -> results on both
+-> back to free roam -> new vote with the same players. What made the end work
+(details in docs/RE-MAP.md section 1):
+- `__us` member documents need `st = 2` and numeric ids (`docs/__us/<ussid>`), so the
+  match player map fills and both clients write `@@RefereeRequest`.
+- `@@RefereeResult` opens with `status 0, result []`; `result` is the ordered list of
+  0-based race-player indices that finished / were eliminated. Each
+  `@@RefereeReport/<uuid>/User/<ussid>` merges into it; the server sends
+  `status 1 + ratings` only when the order is complete AND every player has reported
+  (a faster device reaches time-up first; finalizing early breaks the slower one with
+  0x9b928162). A 10 s grace finalizes a complete order if a reporter is gone.
+- Game document writes are merge writes with a FieldMask (store_write merges).
+Sequence seen: request 21:22:41 (open), reports from P2 and P1 21:24:38 (status 0),
+P1's complete report 21:24:39 -> FINAL.
+Open: multiple lobbies (docs/MULTI-LOBBY.md, in progress), friend rooms, lazy
+probe sign-in timeout on slow hardware.
 ### Remaining to a full race
 1. Initialise the per-slot online race context (find the writer of
    `ctx+0x8da0`/`+0x28`), so `@@RefereeRequest` is sent.
