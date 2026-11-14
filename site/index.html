@@ -78,7 +78,7 @@
       <li><b>Open it and press PLAY</b> (see <a href="#play">Play</a>). The first run installs the game patch (<code>winmm.dll</code>) into the game folder. It also copies your system's <code>winmm.dll</code> there as <code>winmm_host.dll</code>, and saves any <code>winmm.dll</code> already there as <code>winmm.dll.bak</code>. Every download is checked against the release's signature.</li>
       <li><b>Play.</b> The launcher keeps itself and the patch up to date. Without the launcher, the game stays offline as normal.</li>
     </ol>
-    <p class="hint">Game folder after setup: <code>mkw.exe</code>, <code>mkwgame.dll</code>, <code>SDL3.dll</code>, …, <code>winmm.dll</code> (MKWMP), <code>winmm_host.dll</code> (your system's copy), <code>mkwmp.toml</code> and <code>mkwmp-lobby-ca.pem</code> (both written by the launcher for the server you play on). Updates to the patch wait until the game is closed.</p>
+    <p class="hint">Game folder after setup: <code>mkw.exe</code>, <code>mkwgame.dll</code>, <code>SDL3.dll</code>, …, <code>winmm.dll</code> (MKWMP), <code>winmm_host.dll</code> (your system's copy), <code>mkwmp.toml</code> (written by the launcher for the server you play on). Updates to the patch wait until the game is closed.</p>
   </section>
 
   <section id="steamos" class="panel">
@@ -107,7 +107,7 @@ docker compose up -d --build</code></pre>
       <div class="card blue"><h3>PORTS</h3><p>Open TCP <code>7000</code>, <code>8905</code>, <code>8906</code> and UDP <code>3478</code>, <code>10025</code>, <code>49152–49407</code>. Optional HTTPS with a domain: <code>--profile https</code>.</p></div>
       <div class="card green"><h3>SQLITE</h3><p>Gamertags, hashed PINs and friends live in one SQLite file in the Docker volume. Seats are in memory: after a restart, launchers rejoin on their own.</p></div>
     </div>
-    <p class="hint">Your own server needs a game patch from <b>rc.2 or later</b>, which trusts each server's own certificate (the launcher installs it). Without Docker, or behind a Cloudflare tunnel: see the full hosting guide.</p>
+    <p class="hint"><b>Coming with rc.2 (not released yet):</b> players need the rc.2 launcher and game patch to play on a server like this, since they trust each server's own certificate; rc.1 only reaches the official server. Over plain <code>http://</code>, PINs travel unencrypted: for a server on the internet, use the HTTPS profile. Without Docker, or behind a Cloudflare tunnel: see the full hosting guide.</p>
     <nav class="buttons small">
       <a class="btn yellow" href="https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md">Full hosting guide</a>
       <a class="btn blue" href="https://github.com/anarqz/mkwmp">Source code</a>
@@ -126,7 +126,7 @@ docker compose up -d --build</code></pre>
       <dt>Where are my friends and gamertag stored?</dt>
       <dd>On the server you play on, in its database: your gamertag, your PIN (hashed, never in plain text) and your friend list. Deleting your gamertag in the launcher removes all of it.</dd>
       <dt>I forgot my PIN.</dt>
-      <dd>The server's admin can reset it. On the official server, ask on the project's GitHub.</dd>
+      <dd>The server's admin can reset it.</dd>
     </dl>
   </section>
 </main>

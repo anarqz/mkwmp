@@ -11,7 +11,7 @@ How the parts fit together: [ARCHITECTURE.md](ARCHITECTURE.md). Seat API and tic
 
 Gamertags, hashed PINs and friendships are kept in one SQLite file. Seats and queues live in memory: after a restart, launchers rejoin on their own.
 
-> **Game patch version.** A server with its own lobby certificate (every server except the official one) needs players on the **rc.2** game patch or later. That patch trusts the certificate each server publishes. The launcher installs the patch.
+> **Needs rc.2 (not released yet).** A server with its own lobby certificate (every server except the official one) needs players on the **rc.2** launcher and game patch. Those versions trust the certificate each server publishes; rc.1 can only reach the official server.
 
 ## 1. Docker Compose (recommended)
 
@@ -32,6 +32,7 @@ Use any Linux machine with Docker: a small VM (1 vCPU, 1 GB) or a PC on your LAN
   Later starts keep all of these. They rewrite only `server.toml`, from `.env`.
 - Open these ports in the firewall: TCP 7000, 8905, 8906 and UDP 3478, 10025, 49152–49407.
 - Players set the launcher's **SERVER** to `http://<MKWMP_PUBLIC_IP>:7000`, register a gamertag on your server, and press PLAY.
+- Plain `http://` is fine on a LAN. On the internet, PINs and the lobby certificate would travel unencrypted, so use HTTPS (below).
 
 **Check that it's up:** `curl http://<ip>:7000/seat/v1/status`. Logs: `docker compose logs -f lobby seat`.
 

@@ -18,7 +18,7 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 - **Seats and a queue.** Each server has a fixed number of seats. PLAY takes one, or puts you in line. Having the launcher open doesn't take a seat.
 - **Background mode.** Close the launcher and it stays in the system tray, with notifications when a friend comes online, starts playing or sends you a request.
 - **Signed updates.** The launcher updates itself and the game patch from GitHub releases, and checks each download against the release signature.
-- **Host your own** with one Docker Compose command.
+- **Host your own** with one Docker Compose command (players need rc.2, not released yet).
 
 ![Launcher settings: background mode and notifications](site/img/launcher-settings.png)
 
@@ -46,7 +46,7 @@ Then open TCP 7000, 8905, 8906 and UDP 3478, 10025, 49152–49407. Players set t
 
 The first start creates the keys, the lobby's TLS certificate, the config and the SQLite registry, all in a Docker volume. To serve the seat API over HTTPS on your own domain, run `docker compose --profile https up -d`.
 
-Your own server needs players on game patch **rc.2 or later**. That patch trusts the certificate each server publishes, and the launcher installs it.
+> **Not playable yet: needs rc.2.** Players need the **rc.2** launcher and game patch, which aren't released yet. They trust the certificate each server publishes; rc.1 can only reach the official server. Over plain `http://`, PINs travel unencrypted, so for a server on the internet use the HTTPS profile.
 
 More in [docs/HOSTING.md](docs/HOSTING.md): HTTPS, admin commands, backups, and running it without Docker.
 
@@ -57,7 +57,6 @@ Everything builds from this repository. Releases are built by hand from the same
 ### Requirements
 
 - **Rust** (stable): <https://rustup.rs>. The protobuf compiler is vendored, so there's nothing else to install.
-- **Linux launcher:** the usual windowing development packages. On Debian/Ubuntu: `libxkbcommon-dev libgl1-mesa-dev libwayland-dev`.
 - **Game patch:** [zig](https://ziglang.org) 0.15 and Python 3.
 - **Cross-building** (optional): [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) builds the Windows launcher and a static Linux server from macOS or Linux.
 

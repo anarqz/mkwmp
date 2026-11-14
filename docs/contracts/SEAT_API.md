@@ -5,7 +5,7 @@ Our own protocol. Not an NPLN/game contract. Served by `mkwmp server` (crate `ru
 - the launcher (`mkwmp-launcher`, `rust/client`): join, poll/heartbeat, leave; presence and friends;
 - the lobby: the roster, and ticket verification at login.
 
-All state is in memory and dies with the process. Names are compared case-insensitively.
+Seats, queues and presences are in memory and die with the process; profiles (gamertag + PIN hash) and friendships persist in SQLite. Names are compared case-insensitively.
 
 ## 1. Names
 

@@ -7,6 +7,8 @@
 # Needs a Linux host (host networking: the lobby must see players' real
 # addresses). Ports and HTTPS: docs/HOSTING.md.
 
+name: mkwmp
+
 x-mkwmp: &mkwmp
   build:
     context: .
