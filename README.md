@@ -104,7 +104,7 @@ Each player, including you, does three things in the launcher:
 - **The launcher shows the server as offline:** check that the address is right, that TCP 7000 is open (and forwarded), and that the server window is running.
 - **The game says it can't connect after PLAY:** TCP 8905/8906 are blocked, or the player is still on rc.1.
 - **Players reach the lobby but races fail to start:** the UDP ports (3478, 10025, 49152–49407) are blocked or not forwarded.
-- **Your public IP changed:** start once with `--public-ip <new address>`, and players change SERVER in their launcher to match. A dynamic-DNS name for your IP doesn't help here: the game needs the address itself.
+- **Your public IP changed:** start once with `--public-ip <new address>`. Players update SERVER in their launcher, unless it uses a dynamic-DNS name (`http://myname.ddns.net:7000` works there). The server itself always needs the raw IP, because that is what it hands to the game.
 
 ### On a Linux server with Docker
 
