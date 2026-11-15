@@ -39,8 +39,10 @@ static void mlog(const char *fmt, ...) {
     if (g_rt.rt_log) g_rt.rt_log("mkwmp: %s", buf);
 }
 static void rlog(const char *s) { mlog("%s", s); }
+// MKWMP_TRACE_EDGES=1: the probe's debugging detail (every call, hex dumps, every packet). Off for players.
+static int g_trace_edges;
 static void dump_args(const char *name, Cpu *c, int n) {
-    if (!g_rt.rt_log) return;
+    if (!g_rt.rt_log || !g_trace_edges) return;
     uint64_t a[6] = {0};
     for (int i = 0; i < n && i < 6; i++) a[i] = arg_x(c, i);
     mlog("CALL %s x0=%#llx x1=%#llx x2=%#llx x3=%#llx x4=%#llx", name,
@@ -51,7 +53,7 @@ static void dump_cstr(const char *label, const void *p) {
     if (g_rt.rt_log) mlog("%s = %s", label, p ? (const char *)p : "(null)");
 }
 static void rhex(const char *tag, const void *buf, size_t len) {
-    if (!g_rt.rt_log) return;
+    if (!g_rt.rt_log || !g_trace_edges) return;
     static const char H[] = "0123456789abcdef";
     const unsigned char *b = buf;
     char hb[1537];
@@ -868,25 +870,30 @@ static void ov_pia_setsockopt(Cpu *c) {
     ov_sock_setsockopt(c);
 }
 
-// Pia packets: the first 40 each way are logged one by one (enough to see who talks to whom), then
-// one summary line per direction every 10 s. Logging every packet (and dumping it) on the game
-// threads cost the Steam Deck much of its frame rate online (2026-11-15). MKWMP_TRACE_EDGES=1 logs all.
-static int g_trace_edges;   // (tentative; set at registration, see below)
-static int pia_log_packet(int send, unsigned bytes) {
-    static volatile LONG n[2];
+// Pia packets: only important events are logged — the first packet to / from each address (who talks
+// to whom), and one summary per minute. Logging every packet (and dumping it) on the game threads cost
+// the Steam Deck much of its frame rate online (2026-11-15). MKWMP_TRACE_EDGES=1 logs every packet.
+static int pia_log_packet(int send, unsigned bytes, uint32_t ip, uint16_t port) {
     static volatile LONG64 count[2], total[2];
     static volatile LONG64 window_start;
+    static uint64_t seen[64];
+    static volatile LONG nseen;
     InterlockedIncrement64(&count[send]);
     InterlockedAdd64(&total[send], bytes);
-    if (g_trace_edges || InterlockedIncrement(&n[send]) <= 40) return 1;
+    if (g_trace_edges) return 1;
+    int fresh = 0;
+    uint64_t key = (uint64_t)send << 48 | (uint64_t)ip << 16 | port;
+    LONG k = nseen, i = 0;
+    while (i < k && i < 64 && seen[i] != key) i++;
+    if (i == k && k < 64 && InterlockedCompareExchange(&nseen, k + 1, k) == k) { seen[k] = key; fresh = 1; }
     LONG64 now = (LONG64)GetTickCount64(), start = window_start;
-    if (now - start >= 10000 && InterlockedCompareExchange64(&window_start, now, start) == start) {
+    if (now - start >= 60000 && InterlockedCompareExchange64(&window_start, now, start) == start) {
         LONG64 sc = InterlockedExchange64(&count[1], 0), sb = InterlockedExchange64(&total[1], 0);
         LONG64 rc = InterlockedExchange64(&count[0], 0), rb = InterlockedExchange64(&total[0], 0);
         if (start) mlog("Pia UDP last %llds: sent %lld (%lld B), received %lld (%lld B)", (long long)((now - start) / 1000),
                         (long long)sc, (long long)sb, (long long)rc, (long long)rb);
     }
-    return 0;
+    return fresh;
 }
 static void ov_pia_sendto(Cpu *c) {
     SOCKET s = fd_get((int)arg_x(c, 0));
@@ -938,7 +945,7 @@ static void ov_pia_sendto(Cpu *c) {
                  guest && arg_x(c, 5) >= 16 ? guest[6] : 0, guest && arg_x(c, 5) >= 16 ? guest[7] : 0);
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
-    if (len != 16 && pia_log_packet(1, (unsigned)len)) {
+    if (len != 16 && pia_log_packet(1, (unsigned)len, sa.sin_addr.s_addr, sa.sin_port)) {
         struct sockaddr_in local; int ll = sizeof local;
         unsigned lport = getsockname(s, (struct sockaddr *)&local, &ll) ? 0 : ntohs(local.sin_port);
         int has_guest = guest && arg_x(c, 5) >= 16;
@@ -969,7 +976,7 @@ static void ov_pia_recvfrom(Cpu *c) {
         int err = WSAGetLastError();
         g_errno = err == WSAEWOULDBLOCK || err == WSAECONNRESET ? G_EAGAIN : G_EINVAL;
     } else if (out) {
-        if (got != 16 && pia_log_packet(0, (unsigned)got)) {
+        if (got != 16 && pia_log_packet(0, (unsigned)got, sa.sin_addr.s_addr, sa.sin_port)) {
             struct sockaddr_in local; int ll = sizeof local;
             unsigned lport = getsockname(s, (struct sockaddr *)&local, &ll) ? 0 : ntohs(local.sin_port);
             mlog("Pia UDP recv %u <- %s:%u (%d bytes)", lport, inet_ntoa(sa.sin_addr), ntohs(sa.sin_port), got);
@@ -1202,7 +1209,7 @@ static void profile_dispatch(Cpu *c) {
     static int room_trace = -1;
     if (room_trace < 0) {
         const char *e = getenv("MKWMP_TRACE_ROOM");
-        room_trace = !(e && e[0] == '0');
+        room_trace = e && e[0] == '1';   // diagnostics only (SYNCSTATE-RE.md); off for players
     }
     if (room_trace && (c->pc == 0x7001a82d84ull || c->pc == 0x7001a5a444ull || c->pc == 0x7001a60be8ull ||
                        c->pc == 0x7001a5b104ull))
