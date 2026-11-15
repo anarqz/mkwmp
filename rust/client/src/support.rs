@@ -43,11 +43,12 @@ fn system_txt(game: &Path) -> String {
     let expected = crate::probe::bundled().map(|b| b.expected);
     let report = crate::probe::check(game, expected.as_ref());
     format!(
-        "launcher: {}\nos: {} {}\ngame folder: {}\nmkw-recomp: {:?}\n{}\n{}\nwinmm_host.dll: {}\npatch check: {}\n  {}\ntime: {}\n",
+        "launcher: {}\nos: {} {}\ngame folder: {}\nmkw-recomp data folder: {}\nmkw-recomp: {:?}\n{}\n{}\nwinmm_host.dll: {}\npatch check: {}\n  {}\ntime: {}\n",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS,
         std::env::consts::ARCH,
         game.display(),
+        crate::recomp::data_dir(game).display(),
         crate::recomp::identify(game),
         dll_line(game, crate::probe::PROBE),
         dll_line(game, crate::probe::VOICE),
@@ -68,8 +69,10 @@ pub fn save_bundle(dir: &Path, game: &Path) -> Result<(PathBuf, PathBuf), String
         let _ = fs::copy(&p, out.join(p.file_name().unwrap_or_default()));
     }
     let _ = fs::copy(game.join("mkwmp.log"), out.join("mkwmp.log"));
-    let _ = fs::copy(game.join("logs").join("mkw.log"), out.join("mkw.log"));
-    let _ = fs::copy(game.join("logs").join("mkw.1.log"), out.join("mkw.1.log"));
+    // mkw-recomp's own log lives in its data folder (0.1.12 can move it).
+    let data = crate::recomp::data_dir(game);
+    let _ = fs::copy(data.join("logs").join("mkw.log"), out.join("mkw.log"));
+    let _ = fs::copy(data.join("logs").join("mkw.1.log"), out.join("mkw.1.log"));
     if let Ok(t) = fs::read_to_string(game.join("mkwmp.toml")) {
         let _ = fs::write(out.join("mkwmp.toml"), redact_toml(&t));
     }

@@ -107,6 +107,30 @@ pub fn identify(game: &Path) -> Recomp {
     r
 }
 
+/// Where mkw-recomp keeps this installation's data (mkwgame.dll, mkw.ini,
+/// logs/, profile/): the folder with mkw.exe, unless mkw-recomp 0.1.12's
+/// "choose game folder" wrote `game_dir = "<path>"` into the mkw.ini beside
+/// mkw.exe (absolute, or relative to that folder). The game patch's own
+/// files always stay beside mkw.exe.
+pub fn data_dir(game: &Path) -> PathBuf {
+    let Ok(ini) = std::fs::read_to_string(game.join("mkw.ini")) else { return game.to_path_buf() };
+    for line in ini.lines() {
+        let Some((k, v)) = line.split_once('=') else { continue };
+        if !k.trim().eq_ignore_ascii_case("game_dir") {
+            continue;
+        }
+        let v = v.trim();
+        let v = v.strip_prefix('"').and_then(|x| x.strip_suffix('"')).unwrap_or(v);
+        if v.is_empty() {
+            break;
+        }
+        let b = v.as_bytes();
+        let absolute = b[0] == b'/' || b[0] == b'\\' || b.get(1) == Some(&b':');
+        return if absolute { PathBuf::from(v) } else { game.join(v) };
+    }
+    game.to_path_buf()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,5 +154,21 @@ mod tests {
         assert_eq!(identify(&d), Recomp::Unknown);
         std::fs::write(d.join("mkw.exe"), b"another build, other size").unwrap();
         assert_eq!(identify(&d), Recomp::Unknown);
+    }
+
+    #[test]
+    fn data_dir_follows_game_dir_in_mkw_ini() {
+        let d = std::env::temp_dir().join(format!("mkwmp_recomp_dir_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        assert_eq!(data_dir(&d), d);
+        std::fs::write(d.join("mkw.ini"), "[launcher]\nupdate_check = 1\n").unwrap();
+        assert_eq!(data_dir(&d), d);
+        std::fs::write(d.join("mkw.ini"), "[launcher]\ngame_dir = \"/games/mkw data\"\n").unwrap();
+        assert_eq!(data_dir(&d), PathBuf::from("/games/mkw data"));
+        std::fs::write(d.join("mkw.ini"), "GAME_DIR = \"D:\\\\MKW\"\r\n").unwrap();
+        assert_eq!(data_dir(&d), PathBuf::from("D:\\\\MKW"));
+        std::fs::write(d.join("mkw.ini"), "game_dir = \"install\"\n").unwrap();
+        assert_eq!(data_dir(&d), d.join("install"));
     }
 }
