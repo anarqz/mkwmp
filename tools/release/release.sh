@@ -3,11 +3,13 @@
 #
 #   tools/release/release.sh draft    build both launchers and both servers, create the DRAFT
 #                                     release v<version> and upload them
-#   (Windows then builds the game patch and uploads it to the draft:
-#      python native/probe/build.py --version <version>
-#      gh release upload v<version> <copy of winmm.dll named mkwmp-probe-winmm.dll>)
-#   tools/release/release.sh publish  download every asset, write and sign
-#                                     SHA256SUMS, upload it, publish as prerelease
+#   (Windows then builds the game patch and voice chat and uploads them to the draft:
+#      python native/probe/build.py --version <version>; python native/voice/build.py
+#      gh release upload v<version> winmm.dll mkwmp-voice.dll)
+#   tools/release/release.sh publish  download every asset, build the two zips
+#                                     (make_zips.py), write and sign SHA256SUMS,
+#                                     upload, publish (a prerelease when the
+#                                     version has a -suffix)
 #
 # Env: MKWMP_RELEASE_KEY = path of the release signing seed (never in the repo).
 set -eu
@@ -16,7 +18,11 @@ export PATH="$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$HOME/.car
 version="$(sed -n 's/^version = "\(.*\)"/\1/p' rust/Cargo.toml | head -1)"
 tag="v$version"
 out="rust/target/release-assets/$tag"
-assets="mkwmp-launcher-x86_64-windows.exe mkwmp-launcher-x86_64-linux mkwmp-server-x86_64-windows.exe mkwmp-server-x86_64-linux mkwmp-probe-winmm.dll"
+# The loose files: rc.1-rc.3 launchers update themselves from the launcher
+# asset, and a 1.0.0+ launcher with no zip copy fetches the DLLs by name.
+assets="mkwmp-launcher-x86_64-windows.exe mkwmp-launcher-x86_64-linux mkwmp-server-x86_64-windows.exe mkwmp-server-x86_64-linux winmm.dll mkwmp-voice.dll"
+zips="mkwmp-$version-windows-x64.zip mkwmp-$version-linux-x64.zip"
+case "$version" in *-*) pre="--prerelease" ;; *) pre="--latest" ;; esac
 
 case "${1:-}" in
 draft)
@@ -32,11 +38,11 @@ draft)
   cp rust/target/x86_64-pc-windows-gnu/release/mkwmp.exe "$out/mkwmp-server-x86_64-windows.exe"
   cp rust/target/x86_64-unknown-linux-musl/release/mkwmp "$out/mkwmp-server-x86_64-linux"
   # A draft is private and creates no tag; publishing tags the commit below.
-  gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft --prerelease \
+  gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --draft $pre \
     --target "$(git rev-parse HEAD)" --title "mkwmp $version" --notes-file tools/release/notes.md
   gh release upload "$tag" --clobber "$out/mkwmp-launcher-x86_64-windows.exe" "$out/mkwmp-launcher-x86_64-linux" \
     "$out/mkwmp-server-x86_64-windows.exe" "$out/mkwmp-server-x86_64-linux"
-  echo "draft $tag ready; Windows uploads mkwmp-probe-winmm.dll next"
+  echo "draft $tag ready; Windows uploads winmm.dll and mkwmp-voice.dll next"
   ;;
 publish)
   : "${MKWMP_RELEASE_KEY:?set MKWMP_RELEASE_KEY to the release seed file}"
@@ -48,9 +54,10 @@ publish)
     [ -n "$id" ] || { echo "missing asset $a" >&2; exit 1; }
     gh api -H "Accept: application/octet-stream" "repos/{owner}/{repo}/releases/assets/$id" > "$out/dl/$a"
   done
-  (cd "$out/dl" && python3 "$OLDPWD/tools/release/sign_sums.py" "$version" "$MKWMP_RELEASE_KEY" $assets)
-  gh release upload "$tag" --clobber "$out/dl/SHA256SUMS" "$out/dl/SHA256SUMS.sig"
-  gh release edit "$tag" --draft=false --prerelease
+  python3 tools/release/make_zips.py "$version" "$MKWMP_RELEASE_KEY" "$out/dl"
+  (cd "$out/dl" && python3 "$OLDPWD/tools/release/sign_sums.py" "$version" "$MKWMP_RELEASE_KEY" $assets $zips)
+  (cd "$out/dl" && gh release upload "$tag" --clobber $zips SHA256SUMS SHA256SUMS.sig)
+  gh release edit "$tag" --draft=false $pre
   echo "published $tag"
   ;;
 *)

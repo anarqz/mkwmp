@@ -138,6 +138,12 @@ fn probe_is_ours(game: &Path) -> bool {
     mark.trim() == sha256_hex(&cur)
 }
 
+/// Is this an mkwmp probe, whoever copied it (it logs "mkwmp probe <version>")?
+fn looks_like_probe(bytes: &[u8]) -> bool {
+    const MARK: &[u8] = b"mkwmp probe ";
+    bytes.starts_with(b"MZ") && bytes.windows(MARK.len()).any(|w| w == MARK)
+}
+
 fn hash_of(p: &Path) -> Option<String> {
     std::fs::read(p).ok().map(|b| sha256_hex(&b))
 }
@@ -199,10 +205,11 @@ fn pe_exports(b: &[u8]) -> Option<Vec<String>> {
 /// only that our own files are complete).
 pub fn check(game: &Path, expected: Option<&Expected>) -> PatchReport {
     let mut files = vec![];
-    let probe = hash_of(&game.join(PROBE));
+    let probe_bytes = std::fs::read(game.join(PROBE)).ok();
+    let probe = probe_bytes.as_deref().map(sha256_hex);
     let voice = hash_of(&game.join(VOICE));
     let host = std::fs::read(game.join(HOST)).ok();
-    let ours = probe_is_ours(game);
+    let ours = probe_is_ours(game) || probe_bytes.as_deref().is_some_and(looks_like_probe);
     if probe.is_none() && voice.is_none() && !OURS.iter().filter(|f| **f != HOST).any(|f| game.join(f).exists()) {
         return PatchReport { state: PatchState::Missing, files: vec!["no mkwmp file in the game folder".into()] };
     }
@@ -534,6 +541,12 @@ mod tests {
         assert_eq!(r.state, PatchState::Installed, "{:?}", r.files);
         assert!(r.ok());
         assert_eq!(check(&d, None).state, PatchState::Unverified);
+        // Copied by hand (no .mkwmp-probe), nothing to compare with: ours by content.
+        std::fs::remove_file(d.join(".mkwmp-probe")).unwrap();
+        assert_eq!(check(&d, None).state, PatchState::Damaged, "not a probe by content");
+        std::fs::write(d.join(PROBE), b"MZ...mkwmp probe 1.0.0...").unwrap();
+        assert_eq!(check(&d, None).state, PatchState::Unverified);
+        install_probe(&d, b"p1", false).unwrap();
         install_probe(&d, b"p0", false).unwrap(); // an older mkwmp probe
         assert_eq!(check(&d, Some(&want)).state, PatchState::Outdated);
         std::fs::write(d.join(PROBE), b"tampered").unwrap();

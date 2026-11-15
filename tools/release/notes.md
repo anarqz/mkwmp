@@ -1,35 +1,35 @@
-**Developer preview.** Online play works end to end on the official server. Some parts are still being tested; they are marked below.
+**mkwmp 1.0.0**: online races, battles and friend rooms for Mario Kart World on community servers, with lobby voice chat.
 
-New in rc.3:
+Download one zip and unzip it anywhere:
 
-- **Reserved gamertags can sign in.** Registering a reserved gamertag now asks for its PIN, the same as a gamertag that is already taken. In rc.2 it only said the name was reserved.
-- **`launch_command`** in `client.toml`: an optional command the launcher runs to start the game (for example through Proton when the launcher is your Steam shortcut).
-- The game patch is the same as in rc.2 and is not reinstalled.
+- **Windows:** `mkwmp-1.0.0-windows-x64.zip`. Open `mkwmp/mkwmp-launcher.exe`.
+- **Steam Deck / SteamOS / Linux:** `mkwmp-1.0.0-linux-x64.zip`. On a Steam Deck, one command in Desktop Mode installs it and adds it to Steam: `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`.
 
-From rc.2:
+`README.txt` inside each zip has the steps.
 
-- **Host your own server.** `mkwmp-server` is the whole server in one program, for Windows or Linux: run it, answer one question (the address your friends reach you at), and it sets itself up. Steps: [README](https://github.com/anarqz/mkwmp#host-your-own-server).
-- **Each server's own certificate.** The launcher fetches the certificate of the server you play on, and the game patch trusts it.
+What's in it:
 
-Still in this release:
+- **Matchmade races and battles**, start to finish, with any number of lobbies: they open as players arrive and close when they empty. After a match you go back into your lobby.
+- **Friend rooms.** Create a room and have friends join it from their friend card, or by its Room ID with the on-screen keypad (SEARCH GROUP ID).
+- **Voice chat** with the players in your lobby, with echo cancelling and noise suppression. Pick your microphone and output in the launcher's SETTINGS. Mute players from their menu in the game's lobby.
+- **Gamertags and friends.** Register a gamertag and get a 6-digit PIN, and use the PIN to play with the same gamertag on another device. Add friends by gamertag. The launcher shows each friend as playing, online or offline, and notifies you when they come online.
+- **Game patch check.** The line under GAME FOLDER says whether the game patch is installed and is this version, checked by file content against signed checksums. PLAY waits until it is. SETTINGS > GAME PATCH has INSTALL and UNINSTALL. UNINSTALL removes every mkwmp file from the game folder.
+- **Bug reports.** SETTINGS > SAVE LOGS FOR A BUG REPORT collects the launcher's and the game's logs, with no PIN or ticket in them, into a zip for a GitHub issue.
+- **Host your own server.** `mkwmp-server` is the whole server in one program, for Windows or Linux ([README](https://github.com/anarqz/mkwmp#host-your-own-server)).
 
-- **Gamertags.** Register a gamertag in the launcher and get a 6-digit PIN; use the PIN to play with the same gamertag on another device. Gamertags belong to each server. Unused gamertags expire after 6 months.
-- **Matchmaking with any number of lobbies.** Races and battles open new lobbies as players arrive and close them when they empty. The new lobby server is *being tested*.
-- **Friends, kept on the server.** Add friends by gamertag; they accept or decline. The launcher shows each friend as playing, online or offline, and they are your friends in the game too.
-- **Friend rooms** with a Room ID and password: *being tested*.
-- **Background mode.** Closing the launcher keeps it in the system tray, with notifications when a friend comes online, starts playing or sends you a request. Having the launcher open doesn't take a seat on the server.
+Since rc.3:
+
+- The connection error right before each race is fixed.
+- Friends' rooms show on the friend card, even when your friend came online after you.
+- You go back into your lobby after a match.
+- The Room ID field in the launcher is gone; type the Room ID in the game.
+- The Steam Deck runs smoothly: the game patch logs much less.
 
 Files:
 
-- `mkwmp-launcher-x86_64-windows.exe` / `mkwmp-launcher-x86_64-linux` (SteamOS): the launcher. It updates itself and the game patch.
-- `mkwmp-probe-winmm.dll`: the game patch. The launcher installs it as `winmm.dll` in your game folder.
+- `mkwmp-1.0.0-windows-x64.zip` / `mkwmp-1.0.0-linux-x64.zip`: the launcher, the game patch, licenses and a README.
+- `mkwmp-launcher-x86_64-*`, `winmm.dll`, `mkwmp-voice.dll`: the same files loose, for launchers that update themselves.
 - `mkwmp-server-x86_64-windows.exe` / `mkwmp-server-x86_64-linux`: the server, for hosting your own (`mkwmp-server host --help`).
 - `SHA256SUMS` + `SHA256SUMS.sig`: checksums signed with the release key. The launcher verifies them before installing anything.
 
-Known limits:
-
-- After pressing PLAY, your seat is held until you close the game or press STOP, even if you leave Online Play.
-- Self-hosted servers have only been tested without the real game (sign-in, matchmaking, relay); the first real-game runs are coming.
-- Over plain `http://`, PINs cross the network unencrypted. That's fine on a LAN; a public server should use HTTPS (see the README).
-
-Setup guides: https://anarqz.github.io/mkwmp/
+mkwmp is free software under the GNU GPL, version 3 or later. Setup guides: https://anarqz.github.io/mkwmp/
