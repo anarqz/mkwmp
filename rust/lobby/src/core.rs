@@ -149,6 +149,8 @@ struct State {
     friends: Option<HashMap<String, HashSet<String>>>,
     limiter: Limiter,
     swept: f64,
+    /// Presence frames per stream in the current second (burst diagnostics).
+    presence_rate: HashMap<StreamKey, (u64, [u32; 4])>,
 }
 
 struct Inner {
@@ -209,6 +211,7 @@ impl Core {
             friends: None,
             limiter: Limiter::default(),
             swept: 0.0,
+            presence_rate: HashMap::new(),
             cfg,
         };
         Self { inner: Arc::new(Inner { state: Mutex::new(state), clock }) }
@@ -242,6 +245,11 @@ impl Core {
                 let _ = out.send(exhausted(why));
                 return;
             }
+            // Presence KeepAlive: one KeepAliveResponse now (the heartbeat it triggers marks the player
+            // online), then one per social refresh from the timer; never one per client frame (audit 1).
+            if kind == Kind::PresenceKeepAlive {
+                let _ = out.send(Out::Message(social::keepalive_ack()));
+            }
             s.streams.insert(
                 (call.conn, call.stream),
                 Stream { path: call.path.to_owned(), kind, out, user, messages: Vec::new(), peer: call.peer.ip() },
@@ -267,9 +275,7 @@ impl Core {
                 // both players, 2026-11-14). Over the limit a frame is only acknowledged, never
                 // processed, and the stream stays open (the Python reference never ended it).
                 if !allowed && kind == Kind::PresenceKeepAlive {
-                    debug!(?key, "presence frame over the rate limit: acknowledged, not processed");
-                    sends.push((key, Out::Message(social::keepalive_ack())));
-                    s.flush(sends);
+                    debug!(?key, "presence frame over the rate limit: dropped");
                     return;
                 }
                 if !allowed {
@@ -282,7 +288,7 @@ impl Core {
             }
             match kind {
                 Kind::KeepUserSession => s.session_frame(key, body, now, &mut sends),
-                Kind::PresenceKeepAlive => s.keepalive(key, body, &mut sends),
+                Kind::PresenceKeepAlive => s.keepalive(key, body, now, &mut sends),
                 // Unary and server-streaming requests carry one message; extras are ignored.
                 _ => {
                     let st = s.streams.get_mut(&key).expect("checked");
@@ -454,7 +460,13 @@ impl State {
 
     /// The caller's user resource: signed in on this connection, else the bearer token.
     fn caller(&self, key: StreamKey) -> Option<String> {
-        self.conn_user.get(&key.0).cloned().or_else(|| self.streams.get(&key).and_then(|s| s.user.clone()))
+        self.conn_user
+            .get(&key.0)
+            .cloned()
+            .or_else(|| self.streams.get(&key).and_then(|s| s.user.clone()))
+            // A Gamesync connection whose bearer no longer resolves (expired or refreshed token) still
+            // carries this user's KeepUserSession stream: its writes must not be dropped (audit 4).
+            .or_else(|| self.session_user.iter().find(|(k, _)| k.0 == key.0).map(|(_, uid)| format!("tenants/current/users/{uid}")))
     }
 
     fn scope_of(&self, uid: &str) -> Scope {
@@ -650,7 +662,15 @@ impl State {
         let mut transformed: HashMap<String, i64> = HashMap::new();
         for (name, count) in &summary {
             if *count > 0 {
-                transformed.insert(name.clone(), number_of(&mut self.users, name));
+                // upcsid = join order inside the lobby (the real server's `__upcsidn` counter): the
+                // game makes the lowest one the mesh host (resources/docs/LOBBY-RUST-PY-AUDIT.md 2).
+                let id = users::tail(name);
+                let seq = self.mm.lobby_of(id).and_then(|l| self.mm.lobbies.get(&l)).and_then(|l| l.seat(id)).map(|s| s.join_seq as i64);
+                let n = match seq {
+                    Some(n) => n,
+                    None => number_of(&mut self.users, name),
+                };
+                transformed.insert(name.clone(), n);
             }
         }
         let response =
@@ -864,7 +884,7 @@ impl State {
             let lobby = self.mm.lobbies.get_mut(&a.lobby).expect("exists");
             for tid in &a.recipients {
                 if let Some(seat) = lobby.seats.iter().find(|s| s.ticket == *tid) {
-                    let doc = user_session_document(&format!("{US_PREFIX}{}", seat.ussid), seat.uid(), seat.ussid, &lobby.id.to_string(), now as u64);
+                    let doc = user_session_document(&format!("{US_PREFIX}{}", seat.ussid), seat.uid(), seat.ussid, seat.join_seq, &lobby.id.to_string(), now as u64);
                     publish(lobby, &doc, ChangeKind::Added, sends);
                 }
             }
@@ -909,10 +929,33 @@ impl State {
         }
     }
 
-    fn keepalive(&mut self, key: StreamKey, body: &[u8], sends: &mut Sends) {
-        sends.push((key, Out::Message(social::keepalive_ack())));
+    fn keepalive(&mut self, key: StreamKey, body: &[u8], now: f64, sends: &mut Sends) {
+        // No answer per frame: a KeepAliveResponse makes the client send another heartbeat at once,
+        // which looped at round-trip speed (~220 frames/s, audit 1). The timer paces the stream.
         let Some((uid, user)) = self.caller_uid(key) else { return };
-        let changed = match social::parse_keepalive(body) {
+        let parsed = social::parse_keepalive(body);
+        // Diagnostics for the presence burst (hundreds of frames/s after a match assignment): one
+        // line per stream and second when it runs hot, with the frame kinds and the last body.
+        {
+            let kind = match &parsed {
+                Ok(KeepAlive::Open) => 0,
+                Ok(KeepAlive::Heartbeat) => 1,
+                Ok(KeepAlive::Update { .. }) => 2,
+                _ => 3,
+            };
+            let sec = (now as u64, key);
+            let e = self.presence_rate.entry(key).or_insert((sec.0, [0u32; 4]));
+            if e.0 != sec.0 {
+                let total: u32 = e.1.iter().sum();
+                if total >= 20 {
+                    info!(?key, user = %uid, per_sec = total, open = e.1[0], heartbeat = e.1[1], update = e.1[2], other = e.1[3],
+                          last = %body.iter().take(96).map(|b| format!("{b:02x}")).collect::<String>(), "presence burst");
+                }
+                *e = (sec.0, [0; 4]);
+            }
+            e.1[kind] += 1;
+        }
+        let changed = match parsed {
             Ok(KeepAlive::Open) | Ok(KeepAlive::Heartbeat) => self.social.set_online(&uid, &user, true),
             Ok(KeepAlive::Update { attributes, mask }) => {
                 let online = self.social.set_online(&uid, &user, true);
@@ -1088,7 +1131,7 @@ impl State {
             self.solos.remove(&uid);
             let lobby = self.mm.lobbies.get(&lobby_id).expect("exists");
             if let Some(seat) = lobby.seat(&uid) {
-                let doc = user_session_document(&format!("{US_PREFIX}{}", seat.ussid), &uid, seat.ussid, &lobby_id.to_string(), now as u64);
+                let doc = user_session_document(&format!("{US_PREFIX}{}", seat.ussid), &uid, seat.ussid, seat.join_seq, &lobby_id.to_string(), now as u64);
                 publish(lobby, &doc, ChangeKind::Added, sends);
             }
             info!(lobby = %lobby_id, user = %uid, players = lobby.players(), "joined by id");
@@ -1105,6 +1148,7 @@ impl State {
     // ---- leaving ----------------------------------------------------------------------------
 
     fn stream_ended(&mut self, key: StreamKey, now: f64) {
+        self.presence_rate.remove(&key);
         let Some(kind) = self.streams.get(&key).map(|s| s.kind) else { return };
         match kind {
             Kind::Track => {
@@ -1144,7 +1188,6 @@ impl State {
     /// A seat ends (MULTI-LOBBY 2.4): run its deferments and clean up its documents, announce
     /// REMOVED, retire it from open matches, hand over the host, drop the lobby when empty.
     fn leave(&mut self, lobby_id: LobbyId, uid: &str, reason: &str, now: f64, sends: &mut Sends) {
-        let (cfg, policy) = (self.cfg.clone(), self.mm.policy.clone());
         let Some(lobby) = self.mm.lobbies.get_mut(&lobby_id) else { return };
         let Some(seat) = lobby.seat(uid) else { return };
         let (ussid, streams) = (seat.ussid, seat.streams.clone());
@@ -1165,8 +1208,12 @@ impl State {
                 _ => {}
             }
         }
+        // Only the leaver's own documents (named by its uid or ussid): it also last wrote each peer's
+        // signalling inbox `__pgn/All/__stu/<peer uid>` and `__mt/nat_traversal`, which must stay
+        // (LOBBY-RUST-PY-AUDIT.md 3; the game's deferments cover what has to go).
+        let own = [format!("/{uid}"), format!("/{ussid}")];
         for name in lobby.docs.written_by(uid) {
-            if name.starts_with("docs/@@Referee") {
+            if name.starts_with("docs/@@Referee") || !own.iter().any(|s| name.ends_with(s.as_str())) {
                 continue;
             }
             if let Some(doc) = lobby.docs.delete(&name) {
@@ -1188,8 +1235,8 @@ impl State {
             if was_host {
                 lobby.host = lobby.seats.first().map(|s| s.uid().to_owned());
                 lobby.closed = true;
-                let doc = fixed_document(lobby, &cfg, &policy, t);
-                publish(lobby, &doc, ChangeKind::Modified, sends);
+                // `__gs/f` is not republished: `mcn` does not choose the mesh host, and the game's
+                // reaction to a changed fixed document mid-session is unknown (audit 3).
             }
             lobby.refresh_state();
             release_pending(lobby, sends);
@@ -1228,9 +1275,13 @@ impl State {
         if now - self.social_refreshed >= SOCIAL_REFRESH_SECS {
             self.social_refreshed = now;
             let timing = social::presence_timing();
+            let ping = social::keepalive_ack();
             for (k, s) in &self.streams {
                 match s.kind {
                     Kind::Presences => sends.push((*k, Out::Message(timing.clone()))),
+                    // Presence KeepAlive is paced by the server: each KeepAliveResponse{1} makes the
+                    // client send one heartbeat and re-arms its read deadline (audit 1).
+                    Kind::PresenceKeepAlive => sends.push((*k, Out::Message(ping.clone()))),
                     Kind::FriendUsers => sends.push((*k, Out::Message(self.friend_snapshot(*k)))),
                     _ => {}
                 }
@@ -1265,7 +1316,7 @@ fn apply_verdict(lobby: &mut Lobby, v: Verdict, sends: &mut Sends) {
 fn earlier_members_present(lobby: &Lobby, uid: &str, collection: &str) -> bool {
     let Some(me) = lobby.seat(uid) else { return true };
     let have = lobby.docs.ids_in(collection);
-    lobby.seats.iter().filter(|s| s.ussid < me.ussid).all(|s| have.contains(&s.uid()))
+    lobby.seats.iter().filter(|s| s.join_seq < me.join_seq).all(|s| have.contains(&s.uid()))
 }
 
 fn release_pending(lobby: &mut Lobby, sends: &mut Sends) {
@@ -1302,14 +1353,14 @@ fn answer(lobby: &mut Lobby, cfg: &CoreConfig, policy: &Policy, w: Watcher, uid:
     if w.target == US_PREFIX {
         // Every member, named by its numeric ussid (the listener keys members by strtoul(id)).
         for s in &lobby.seats {
-            docs.push(user_session_document(&format!("{US_PREFIX}{}", s.ussid), s.uid(), s.ussid, &pgn, now));
+            docs.push(user_session_document(&format!("{US_PREFIX}{}", s.ussid), s.uid(), s.ussid, s.join_seq, &pgn, now));
         }
     } else if w.target == "docs/__gs/" {
         docs.push(fixed_document(lobby, cfg, policy, now));
         docs.extend(lobby.docs.matching(&w.target).into_iter().filter(|d| d.name != GS_FIXED).cloned());
     } else if let Some(id) = w.target.strip_prefix(US_PREFIX).filter(|id| !id.is_empty()) {
-        let ussid = lobby.seat(id).or_else(|| lobby.seat(uid)).map_or(1, |s| s.ussid);
-        docs.push(user_session_document(&w.target, id, ussid, &pgn, now));
+        let (ussid, seq) = lobby.seat(id).or_else(|| lobby.seat(uid)).map_or((1, 1), |s| (s.ussid, s.join_seq));
+        docs.push(user_session_document(&w.target, id, ussid, seq, &pgn, now));
         docs.push(fixed_document(lobby, cfg, policy, now));
     } else {
         docs.extend(lobby.docs.matching(&w.target).into_iter().cloned());
@@ -1327,12 +1378,12 @@ fn answer(lobby: &mut Lobby, cfg: &CoreConfig, policy: &Policy, w: Watcher, uid:
 
 /// `__us/<id>` (SDK parser FUN_0128b2b4, game parser FUN_02255158). `st` 2 = present; the
 /// member listener (FUN_02254e4c) erases members with any other state.
-fn user_session_document(name: &str, uid: &str, ussid: u32, pgn: &str, now: u64) -> Document {
+fn user_session_document(name: &str, uid: &str, ussid: u32, upcsid: u64, pgn: &str, now: u64) -> Document {
     let fields = Fields::new()
         .with("uid", Value::str(uid))
         .with("ussid", Value::Int(ussid.into()))
         .with("ucsid", Value::Int(ussid.into()))
-        .with("upcsid", Value::Int(ussid.into()))
+        .with("upcsid", Value::Int(upcsid as i64))
         .with("pgn", Value::str(pgn))
         .with("st", Value::Int(2));
     Document::new(name, fields, now)

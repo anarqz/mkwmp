@@ -77,9 +77,10 @@ pub fn presence_batch<'a>(presences: impl IntoIterator<Item = &'a Presence>) -> 
     Msg::new().msg(1, &batch).into_bytes()
 }
 
-/// `KeepAliveTiming{1 Duration, 2 Duration}` (the client reads field 2 as seconds).
+/// `KeepAliveTiming{1 Duration, 2 Duration}`: the client sets its read deadline to now + field 2 seconds
+/// (reader FUN_01227d20, LOBBY-RUST-PY-AUDIT.md 1); every message re-arms it.
 fn timing() -> Msg {
-    Msg::new().msg(1, &wire::seconds(WATCHDOG_SECS)).msg(2, &wire::seconds(WATCHDOG_SECS / 2))
+    Msg::new().msg(1, &wire::seconds(WATCHDOG_SECS)).msg(2, &wire::seconds(WATCHDOG_SECS))
 }
 
 /// `SubscribePresencesResponse{3: timing}`: re-arms the subscription watchdog.

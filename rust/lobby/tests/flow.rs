@@ -297,10 +297,11 @@ fn two_players_match_play_and_leave() {
     assert!(w.core.counts().is_empty());
 }
 
-/// MESH-RUST-DIFF.md H2: the game's mesh host is the lowest `upcsid` it sees in `__pus`, so the
-/// lower-numbered member must be listening first even when the other one searched (joined) first.
+/// MESH-RUST-DIFF.md H2 + LOBBY-RUST-PY-AUDIT.md 2: the game's mesh host is the lowest `upcsid` it
+/// sees in `__pus`; `upcsid` is the join order inside the lobby (the real `__upcsidn` counter), not the
+/// global user number. B signs in second (higher global number) but is seated first: B hosts, A waits.
 #[test]
-fn pus_deferral_follows_the_user_session_number_not_the_search_order() {
+fn pus_host_is_the_first_seated_member_whatever_the_global_numbers() {
     let w = World::new(Policy::default());
     let mut a = sign_in(&w, "dev");
     let mut b = sign_in(&w, lobby::users::SECOND_LOCAL_TOKEN);
@@ -309,18 +310,18 @@ fn pus_deferral_follows_the_user_session_number_not_the_search_order() {
     w.advance(11.0);
     assignment(&mut a).expect("assigned");
     assignment(&mut b).expect("assigned");
-    let ussid_a = ussid_of(&join_session(&w, &mut a));
-    let ussid_b = ussid_of(&join_session(&w, &mut b));
+    let a_us = join_session(&w, &mut a);
+    let b_us = join_session(&w, &mut b);
+    let upcsid = |got: &[Vec<u8>]| changes(got)[0].3.get("upcsid").and_then(Value::as_int).unwrap();
+    assert_eq!((upcsid(&b_us), upcsid(&a_us)), (1, 2), "upcsid = join order in the lobby");
     let pus = "docs/__pgn/All/__pus";
-    let (low, high) = if ussid_a < ussid_b { (&mut a, &mut b) } else { (&mut b, &mut a) };
-    // the higher number waits for the lower one, whatever the search order was
-    let got = send_frame(&w, high, Msg::new().bytes(1, "userSessions/current").msg(3, &listen(3, true, pus)));
-    assert!(got.is_empty(), "higher number deferred");
-    let got = send_frame(&w, low, Msg::new().bytes(1, "userSessions/current").msg(3, &listen(3, true, pus)));
-    assert_eq!(got.len(), 2, "lowest number: answered at once (it hosts)");
-    write(&w, low, &format!("{pus}/{}", low.uid), Fields::new().with("uid", Value::str(&low.uid)), None);
-    let got = pushes(high);
-    assert_eq!(changes(&got)[0].2, format!("{pus}/{}", low.uid), "released with the host's document");
+    let got = send_frame(&w, &mut a, Msg::new().bytes(1, "userSessions/current").msg(3, &listen(3, true, pus)));
+    assert!(got.is_empty(), "the later member is deferred");
+    let got = send_frame(&w, &mut b, Msg::new().bytes(1, "userSessions/current").msg(3, &listen(3, true, pus)));
+    assert_eq!(got.len(), 2, "the first member: answered at once (it hosts)");
+    write(&w, &b, &format!("{pus}/{}", b.uid), Fields::new().with("uid", Value::str(&b.uid)), None);
+    let got = pushes(&mut a);
+    assert_eq!(changes(&got)[0].2, format!("{pus}/{}", b.uid), "released with the host's document");
 }
 
 #[test]
@@ -494,6 +495,18 @@ fn presence_reaches_friends_and_offline_is_announced() {
     assert_eq!(wire::varint_field(presence, 2).unwrap(), Some(1));
     let attr = wire::bytes_field(presence, 3).unwrap().unwrap();
     assert_eq!(wire::str_field(attr, 1).unwrap().as_deref(), Some("SessionId"));
+    // The stream is paced by the server (LOBBY-RUST-PY-AUDIT.md 1): client frames (an update, then
+    // heartbeats {2: {}}) are never answered — an answer makes the client send another heartbeat at
+    // once (the ~220 frames/s loop); the timer sends one KeepAliveResponse per social refresh.
+    for _ in 0..5 {
+        w.core.message(a.conn, ka, &Msg::new().msg(2, &Msg::new()).0);
+    }
+    assert!(messages(&mut acks).is_empty(), "no answer per client frame");
+    w.advance(21.0);
+    w.core.tick();
+    let pings = messages(&mut acks);
+    assert_eq!(pings.len(), 1, "one paced KeepAliveResponse per refresh");
+    assert!(wire::bytes_field(&pings[0], 1).unwrap().is_some());
     // A goes away: offline (state 2) reaches B, and B's friend list drops A.
     w.core.connection_closed(a.conn);
     let got = messages(&mut presences);
@@ -544,6 +557,7 @@ fn room_id_scanning_and_sign_in_floods_are_rate_limited() {
 
     // Sign-in is limited per IP before any user exists.
     let body = Msg::new().bytes(1, "tenants/t").msg(3, &Msg::new().bytes(1, "dev")).into_bytes();
-    let got: Vec<_> = (0..12).map(|_| w.unary(w.id(), SIGN_IN, None, &body).map(|_| ())).collect();
+    let got: Vec<_> = (0..45).map(|_| w.unary(w.id(), SIGN_IN, None, &body).map(|_| ())).collect();
+    assert!(got[..39].iter().all(|r| r.is_ok()), "a LAN party behind one address signs in");
     assert!(got.contains(&Err(8)));
 }

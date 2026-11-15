@@ -53,7 +53,7 @@ pub enum Rule {
 impl Rule {
     pub fn rate(self) -> Rate {
         match self {
-            Rule::SignIn => rate(10.0, 0.2),          // 10 at once, then 12/min
+            Rule::SignIn => rate(40.0, 1.0),          // 40 at once, then 60/min (a LAN party behind one address)
             Rule::GamesyncToken => rate(10.0, 0.2),
             Rule::Ticket => rate(10.0, 0.2),
             Rule::RoomCreate => rate(5.0, 1.0 / 30.0), // 5, then 2/min
