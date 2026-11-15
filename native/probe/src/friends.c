@@ -206,7 +206,8 @@ int friends_list(const uint64_t owner[2], int offset, int count, GFriend *out) {
     return n;
 }
 
-static void refresh(void) {
+// Returns 1 when the launcher answered with a roster.
+static int refresh(void) {
     static char buf[16384];   // 100 names fit several times over; only this thread uses it
     static FriendRoster roster;
     static int last_status = 200, last_count = -1;
@@ -216,7 +217,7 @@ static void refresh(void) {
         // Keep the last good roster: a launcher hiccup must not empty the friend list.
         if (status != last_status) mkwmp_log("friends: launcher answered %d, keeping %d in the list", status, g_latest.count);
         last_status = status;
-        return;
+        return 0;
     }
     last_status = 200;
     AcquireSRWLockExclusive(&g_lock);
@@ -224,20 +225,24 @@ static void refresh(void) {
     ReleaseSRWLockExclusive(&g_lock);
     if (roster.count != last_count) mkwmp_log("friends: %d in the launcher roster", roster.count);
     last_count = roster.count;
+    return 1;
 }
 
 static DWORD WINAPI refresher(LPVOID unused) {
     (void)unused;
     ULONGLONG last = 0;
-    int fetched = 0;
+    int fetched = 0, good = 0;
     for (;;) {
         DWORD wait = REFRESH_MS;
         if (!seat_keepalive_paused()) {   // paused = the player left online
             ULONGLONG now = GetTickCount64();
-            if (!fetched || now - last >= REFRESH_MS) {
-                refresh();
+            if (!fetched || !good || now - last >= REFRESH_MS) {
+                good |= refresh();
                 last = GetTickCount64();
                 fetched = 1;
+                // No roster yet (launcher still loading: 503): the game reads its friend list once,
+                // ~2.5 s after the sign-in, so ask again in a second, not in 15 s.
+                if (!good) wait = 1000;
             } else {
                 wait = (DWORD)(REFRESH_MS - (now - last));   // going online again within 15 s
             }
