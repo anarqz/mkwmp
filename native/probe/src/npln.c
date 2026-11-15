@@ -1301,6 +1301,31 @@ static void profile_dispatch(Cpu *c) {
     // timeout error (FUN_021271c8 -> FUN_01e46958 posts id 0x606314c9 through
     // error service slot 6) so the race can continue without a server referee.
     // MKWMP_SKIP_REFEREE_TIMEOUT=2 drops every communication error (any id).
+    // Every communication error the game posts (an important event): its id and the guest return
+    // addresses that led there, so the producer is known (e.g. 0x9b928162: FUN_0035ce38 or FUN_020d43dc,
+    // RACEEND-RE.md). Once per id and 10 s; the error-service entry is reached via a vtable call.
+    if (target == 0x700222d78cull && c->x[1] && guest_readable((const void *)(uintptr_t)c->x[1], 4)) {
+        uint32_t id = *(const uint32_t *)(uintptr_t)c->x[1];
+        static uint32_t last_id;
+        static ULONGLONG last_ms;
+        ULONGLONG now = GetTickCount64();
+        if (id != last_id || now - last_ms > 10000) {
+            last_id = id;
+            last_ms = now;
+            uint64_t lr[6] = {0};
+            const uint8_t *fp = (const uint8_t *)(uintptr_t)c->x[29];
+            for (int k = 0; k < 6 && guest_readable(fp, 16); k++) {
+                memcpy(&lr[k], fp + 8, 8);
+                uint64_t next;
+                memcpy(&next, fp, 8);
+                fp = (const uint8_t *)(uintptr_t)next;
+            }
+            mlog("communication error %#x posted: caller main+%#llx frames main+%#llx main+%#llx main+%#llx main+%#llx main+%#llx",
+                 id, (unsigned long long)(caller - 0x7000000000ull), (unsigned long long)(lr[0] - 0x7000000000ull),
+                 (unsigned long long)(lr[1] - 0x7000000000ull), (unsigned long long)(lr[2] - 0x7000000000ull),
+                 (unsigned long long)(lr[3] - 0x7000000000ull), (unsigned long long)(lr[4] - 0x7000000000ull));
+        }
+    }
     if (target == 0x700222d78cull && g_skip_referee_timeout && c->x[1] &&
         guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
         (g_skip_referee_timeout == 2 || *(const uint32_t *)(uintptr_t)c->x[1] == 0x606314c9u)) {

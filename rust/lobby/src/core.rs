@@ -731,6 +731,12 @@ impl State {
                     }
                     if let Some(v) = lobby.referee.on_write(name, &fields, &members, now as u64, now) {
                         info!(lobby = %lobby.id, result = %v.doc.name, opened = v.opened, final_ = v.final_, after = %name, "referee");
+                        if v.opened {
+                            // What is being played (battle / race, sub_mode, ratings): never in any log before.
+                            let s = |k: &str| fields.get(k).map(|v| format!("{v:?}")).unwrap_or_default();
+                            info!(lobby = %lobby.id, mode = %s("mode"), sub_mode = %s("sub_mode"), rating = %s("rating_enabled"),
+                                  option = %s("option"), "referee request");
+                        }
                         apply_verdict(lobby, v, sends);
                     }
                 }
