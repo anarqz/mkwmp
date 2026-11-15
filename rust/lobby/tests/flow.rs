@@ -507,13 +507,81 @@ fn presence_reaches_friends_and_offline_is_announced() {
     let pings = messages(&mut acks);
     assert_eq!(pings.len(), 1, "one paced KeepAliveResponse per refresh");
     assert!(wire::bytes_field(&pings[0], 1).unwrap().is_some());
-    // A goes away: offline (state 2) reaches B, and B's friend list drops A.
+    // A goes away: offline (state 2) reaches B. A stays in B's friend list: the list names friends,
+    // presence says who is online.
     w.core.connection_closed(a.conn);
     let got = messages(&mut presences);
     let presence = wire::bytes_field(wire::bytes_field(got.last().unwrap(), 1).unwrap().unwrap(), 1).unwrap().unwrap();
     assert_eq!(wire::varint_field(presence, 2).unwrap(), Some(2));
     let snap = messages(&mut friends);
-    assert!(wire::repeated_bytes(snap.last().unwrap(), 1).unwrap().is_empty());
+    assert_eq!(wire::repeated_bytes(snap.last().unwrap(), 1).unwrap().len(), 1);
+}
+
+/// The game maps the FIRST SubscribeFriendUsers message onto its system friend list and never
+/// reads another (FRIEND-ROOMS-RE.md): that message must name friends that are not signed in yet
+/// and friends connected with a token of an earlier sign-in, and it must wait for the roster.
+#[test]
+fn first_friend_users_message_names_friends_before_they_sign_in() {
+    const FRIENDS: &str = "/nn.npln.friends.v1.Friends/SubscribeFriendUsers";
+    const PRESENCES: &str = "/nn.npln.friends.v1.PresenceService/SubscribePresences";
+    const KEEPALIVE: &str = "/nn.npln.friends.v1.PresenceService/KeepAlive";
+    let parent = Msg::new().bytes(1, "tenants/current/users/current").into_bytes();
+    let users_of = |m: &Vec<u8>| -> Vec<String> {
+        wire::repeated_bytes(m, 1).unwrap().into_iter()
+            .map(|g| wire::str_field(wire::bytes_field(g, 2).unwrap().unwrap(), 2).unwrap().unwrap()).collect()
+    };
+    let e = |name: &str, sid: &str, friends: &[&str]| lobby::RosterEntry {
+        session_id: sid.into(), name: name.into(), alive: true, friends: friends.iter().map(|s| s.to_string()).collect() };
+    let ana = format!("tenants/t-test/users/{}", lobby::users::ticket_user_id("ana"));
+
+    // Roster mode (mkwmp lobby with roster_url): Bia signs in first, Ana holds a seat but her game
+    // has not signed in yet.
+    let w = World::new(Policy::default());
+    w.core.roster(Vec::new());
+    let b = sign_in(&w, &seat_ticket("Bia", "s-bia"));
+    let (_, mut friends) = w.call(b.conn, FRIENDS, Some(&b.token), Some(&parent), true);
+    w.advance(1.0);
+    assert!(messages(&mut friends).is_empty(), "nothing before the roster names Bia's friends");
+    w.core.roster(vec![e("Bia", "s-bia", &["Ana"])]);
+    let first = messages(&mut friends);
+    assert_eq!(users_of(&first[0]), vec![ana.clone()], "Ana is listed before she signs in");
+    // Ana signs in, creates a room and publishes it: Bia's presence stream carries the SessionId.
+    let (_, mut presences) = w.call(b.conn, PRESENCES, Some(&b.token), Some(&parent), true);
+    messages(&mut presences);
+    let a = sign_in(&w, &seat_ticket("Ana", "s-ana"));
+    w.core.roster(vec![e("Bia", "s-bia", &["Ana"]), e("Ana", "s-ana", &["Bia"])]);
+    let (ka, _acks) = w.call(a.conn, KEEPALIVE, Some(&a.token), Some(&Msg::new().msg(3, &Msg::new().bytes(1, "tenants/current/users/current")).0), false);
+    let p = Msg::new().bytes(1, format!("{}/presence", a.user))
+        .msg(3, &Msg::new().bytes(1, "SessionId").msg(2, &Value::str("room-1").encode()));
+    w.core.message(a.conn, ka, &Msg::new().msg(1, &Msg::new().msg(1, &p).msg(2, &Msg::new().bytes(1, "attributes.SessionId"))).0);
+    let got = messages(&mut presences);
+    let presence = wire::bytes_field(wire::bytes_field(got.last().unwrap(), 1).unwrap().unwrap(), 1).unwrap().unwrap();
+    assert_eq!(wire::str_field(presence, 1).unwrap().unwrap(), format!("{ana}/presence"), "same user id as the friend user");
+    assert_eq!(wire::varint_field(presence, 2).unwrap(), Some(1));
+    // A roster that never names the caller: answered at the deadline.
+    let c = sign_in(&w, &seat_ticket("Cid", "s-cid"));
+    let (_, mut late) = w.call(c.conn, FRIENDS, Some(&c.token), Some(&parent), true);
+    w.advance(19.0);
+    assert!(messages(&mut late).is_empty());
+    w.advance(2.0);
+    assert!(!messages(&mut late).is_empty());
+
+    // Development (no roster): a player whose connection carries the token of an earlier sign-in
+    // (lobby restarted, 2026-11-15) is listed too.
+    let w = World::new(Policy::default());
+    let a = sign_in(&w, &dev_ticket("Ana"));
+    w.core.connection_closed(a.conn);
+    let (_ka, _acks) = w.call(w.id(), KEEPALIVE, Some(&a.token), Some(&Msg::new().msg(3, &Msg::new().bytes(1, "tenants/current/users/current")).0), false);
+    let b = sign_in(&w, &dev_ticket("Bia"));
+    let (_, mut friends) = w.call(b.conn, FRIENDS, Some(&b.token), Some(&parent), true);
+    assert_eq!(users_of(&messages(&mut friends)[0]), vec![ana]);
+}
+
+/// An unsigned seat ticket with a seat session id.
+fn seat_ticket(name: &str, sid: &str) -> String {
+    use base64::Engine;
+    let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(format!(r#"{{"name":"{name}","sid":"{sid}"}}"#));
+    format!("mkw1.{payload}.sig")
 }
 
 /// An unsigned seat ticket (accepted only by development lobbies without keys).

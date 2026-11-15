@@ -45,6 +45,8 @@ pub const SESSION_JOIN: &str = "/nn.npln.matchmaking.v1.GameSessionService/JoinG
 pub const SUBSCRIPTIONS: [&str; 1] = ["/nn.npln.maintenance.v1.MaintenanceScheduleService/SubscribeMaintenanceSchedules"];
 /// Seconds between refreshes of the friends/presence streams (client watchdog: 60 s).
 const SOCIAL_REFRESH_SECS: f64 = 20.0;
+/// Longest a first SubscribeFriendUsers answer waits for the caller's seat-roster entry.
+const FRIEND_WAIT_SECS: f64 = 20.0;
 
 const GS_FIXED: &str = "docs/__gs/f";
 const US_PREFIX: &str = "docs/__us/";
@@ -140,6 +142,10 @@ struct State {
     social_refreshed: f64,
     /// The set of online players changed: refresh every friend-users stream at the next flush.
     pending_social: bool,
+    /// SubscribeFriendUsers streams whose first answer waits for the caller's roster entry, with
+    /// their deadline. The game matches that first message to its system friend list once per
+    /// sign-in and never reads a later one (resources/docs/FRIEND-ROOMS-RE.md).
+    friend_wait: HashMap<StreamKey, f64>,
     /// Pushes produced where no send list is at hand (stream ends); sent at the next flush.
     deferred_sends: Sends,
     /// Seat session id (ticket `sid`) per user id, for the seat roster.
@@ -206,6 +212,7 @@ impl Core {
             social: Social::default(),
             social_refreshed: 0.0,
             pending_social: false,
+            friend_wait: HashMap::new(),
             deferred_sends: Sends::new(),
             seat_sessions: HashMap::new(),
             friends: None,
@@ -254,6 +261,13 @@ impl Core {
                 (call.conn, call.stream),
                 Stream { path: call.path.to_owned(), kind, out, user, messages: Vec::new(), peer: call.peer.ip() },
             );
+            // The first friend-users answer is the only one the game uses: hold it until the seat
+            // roster has named the caller's mutual friends.
+            let key = (call.conn, call.stream);
+            if kind == Kind::FriendUsers && s.awaits_roster(key) {
+                debug!(?key, "friend users: first answer waits for the roster");
+                s.friend_wait.insert(key, now + FRIEND_WAIT_SECS);
+            }
         })
     }
 
@@ -314,6 +328,7 @@ impl Core {
                 Kind::Subscription => sends.push((key, Out::Message(Vec::new()))),
                 Kind::Track => s.track(key, &body, now, &mut sends),
                 Kind::Presences => sends.push((key, Out::Message(s.presence_snapshot(key)))),
+                Kind::FriendUsers if s.friend_wait.contains_key(&key) => {}
                 Kind::FriendUsers => sends.push((key, Out::Message(s.friend_snapshot(key)))),
                 Kind::RoomTrack => s.room_track(key, &body, now, &mut sends),
                 Kind::KeepUserSession | Kind::PresenceKeepAlive => {
@@ -389,6 +404,11 @@ impl Core {
                 friends.insert(uid, set);
             }
             s.friends = Some(friends);
+            let ready: Vec<StreamKey> = s.friend_wait.keys().copied().filter(|k| !s.awaits_roster(*k)).collect();
+            for k in ready {
+                s.friend_wait.remove(&k);
+                sends.push((k, Out::Message(s.friend_snapshot(k))));
+            }
             if s.pending_social {
                 // Presence views changed too: resend every presence subscriber its snapshot.
                 let subs: Vec<StreamKey> = s.streams.iter().filter(|(_, st)| st.kind == Kind::Presences).map(|(k, _)| *k).collect();
@@ -442,7 +462,8 @@ impl State {
     fn flush(&mut self, mut sends: Sends) {
         sends.extend(std::mem::take(&mut self.deferred_sends));
         if std::mem::take(&mut self.pending_social) {
-            let subs: Vec<StreamKey> = self.streams.iter().filter(|(_, s)| s.kind == Kind::FriendUsers).map(|(k, _)| *k).collect();
+            let subs: Vec<StreamKey> = self.streams.iter()
+                .filter(|(k, s)| s.kind == Kind::FriendUsers && !self.friend_wait.contains_key(k)).map(|(k, _)| *k).collect();
             for k in subs {
                 sends.push((k, Out::Message(self.friend_snapshot(k))));
             }
@@ -904,13 +925,31 @@ impl State {
         me != other && self.friends.as_ref().map_or(true, |f| f.get(me).is_some_and(|s| s.contains(other)))
     }
 
+    /// The caller is in the seat roster's hands (signed in with a seat session, roster running) but
+    /// its mutual friends have not arrived yet.
+    fn awaits_roster(&self, key: StreamKey) -> bool {
+        let Some((me, _)) = self.caller_uid(key) else { return false };
+        self.seat_sessions.contains_key(&me) && self.friends.as_ref().is_some_and(|f| !f.contains_key(&me))
+    }
+
+    /// `SubscribeFriendUsersResponse` for the caller: every friend the lobby can name, signed in or
+    /// not. The game maps this list onto its system friend list once, from the first message, so
+    /// a friend who signs in later must already be in it; presence says who is online.
     fn friend_snapshot(&self, key: StreamKey) -> Vec<u8> {
-        let me = self.caller_uid(key).map(|(u, _)| u).unwrap_or_default();
-        let mut online: Vec<&str> = self.conn_user.values().map(String::as_str)
-            .filter(|u| self.are_friends(&me, users::tail(u))).collect();
-        online.sort_unstable();
-        online.dedup();
-        social::friend_users(online)
+        let Some((me, user)) = self.caller_uid(key) else { return social::friend_users([]) };
+        let mut ids: std::collections::BTreeSet<&str> = self.conn_user.values()
+            .chain(self.streams.values().filter_map(|s| s.user.as_ref()))
+            .map(|u| users::tail(u))
+            .chain(self.social.presences.keys().map(String::as_str))
+            .filter(|uid| self.are_friends(&me, uid))
+            .collect();
+        // Mutual friends that hold a seat but have not signed in to the lobby yet.
+        ids.extend(self.friends.iter().filter_map(|f| f.get(&me)).flatten().map(String::as_str));
+        ids.remove(me.as_str());
+        let tenant = users::tenant(&user);
+        let list: Vec<String> = ids.into_iter().map(|uid| format!("{tenant}/users/{uid}")).collect();
+        debug!(user = %me, friends = list.len(), "friend users");
+        social::friend_users(list.iter().map(String::as_str))
     }
 
     fn presence_snapshot(&self, key: StreamKey) -> Vec<u8> {
@@ -1154,6 +1193,7 @@ impl State {
 
     fn stream_ended(&mut self, key: StreamKey, now: f64) {
         self.presence_rate.remove(&key);
+        self.friend_wait.remove(&key);
         let Some(kind) = self.streams.get(&key).map(|s| s.kind) else { return };
         match kind {
             Kind::Track => {
@@ -1276,6 +1316,12 @@ impl State {
             self.swept = now;
             self.limiter.sweep(now);
         }
+        // A roster that never names the caller (seat of an earlier boot): answer with what is known.
+        let late: Vec<StreamKey> = self.friend_wait.iter().filter(|(_, at)| now >= **at).map(|(k, _)| *k).collect();
+        for k in late {
+            self.friend_wait.remove(&k);
+            sends.push((k, Out::Message(self.friend_snapshot(k))));
+        }
         // Friends/presence streams: refresh before the client's 60 s watchdog fires.
         if now - self.social_refreshed >= SOCIAL_REFRESH_SECS {
             self.social_refreshed = now;
@@ -1287,7 +1333,7 @@ impl State {
                     // Presence KeepAlive is paced by the server: each KeepAliveResponse{1} makes the
                     // client send one heartbeat and re-arms its read deadline (audit 1).
                     Kind::PresenceKeepAlive => sends.push((*k, Out::Message(ping.clone()))),
-                    Kind::FriendUsers => sends.push((*k, Out::Message(self.friend_snapshot(*k)))),
+                    Kind::FriendUsers if !self.friend_wait.contains_key(k) => sends.push((*k, Out::Message(self.friend_snapshot(*k)))),
                     _ => {}
                 }
             }

@@ -146,6 +146,9 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn Error>> {
             .unwrap_or("")
             .trim()
             .to_string();
+        // Roster mode from the first sign-in: nobody is a friend until the seat server says so, and
+        // a first friend-users answer waits for it.
+        core.roster(Vec::new());
         tokio::spawn(roster_sync(core.clone(), url.trim_end_matches('/').to_string(), token, l.roster_secs.max(1)));
     }
     let gw = gateway::GatewayConfig {
