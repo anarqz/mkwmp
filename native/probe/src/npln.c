@@ -1138,7 +1138,55 @@ static void trace_sdk_message(const Cpu *c) {
                 (unsigned long long)(c->x[30] - 0x7000000000ull), buf);
 }
 
+// Friend-room race start (resources/docs/SYNCSTATE-RE.md 7): the host's SyncState (FUN_01a82d84) waits for
+// every joiner's ready state; log on change what PrivateRoomMain / ReadyVoteSetter / SyncState see, and the
+// host's start event 0x9d424b78, on both machines. MKWMP_TRACE_ROOM=0 turns it off.
+static void trace_room_start(uint64_t target, const uint8_t *node, const uint8_t *arg) {
+    const uint8_t *g = *(const uint8_t **)(uintptr_t)0x70033d2548ull;
+    if (!g || !guest_readable(g + 0x110, 8) || !guest_readable(node, 0x160)) return;
+    uint32_t f110, f114, st[4] = {0}, snap[12] = {0};
+    memcpy(&f110, g + 0x110, 4);
+    memcpy(&f114, g + 0x114, 4);
+    const uint8_t *h = guest_readable(g + 200, 8) ? *(const uint8_t **)(g + 200) : NULL;
+    const uint8_t *s = h && guest_readable(h, 16) ? *(const uint8_t **)(h + 8) : NULL;
+    if (s && guest_readable(s + 8 + 0x24, 16)) memcpy(st, s + 8 + 0x24, 16);
+    const uint8_t *r = guest_readable(g + 0x188, 8) ? *(const uint8_t **)(g + 0x188) : NULL;
+    uint32_t play = 0, vote = 0;
+    uint8_t has = 0;
+    if (r && guest_readable(r, 0x50)) { memcpy(&play, r + 0x40, 4); memcpy(&vote, r + 0x44, 4); has = r[5]; }
+    static uint32_t last[3][12];
+    int k = target == 0x7001a82d84ull ? 0 : target == 0x7001a5a444ull ? 1 : target == 0x7001a60be8ull ? 2 : 3;
+    if (k == 3) {   // PrivateRoomMain event handler: only the host's start event
+        uint32_t id = 0;
+        if (!guest_readable(arg, 8)) return;
+        memcpy(&id, arg + 4, 4);
+        if (id != 0x9d424b78u) return;
+        mlog("room start event: flags %#x/%#x states %u,%u,%u,%u", f110, f114, st[0], st[1], st[2], st[3]);
+        return;
+    }
+    snap[0] = f110; snap[1] = f114; memcpy(snap + 2, st, 16); snap[6] = play; snap[7] = vote; snap[8] = has;
+    if (k == 0) { memcpy(&snap[9], node + 0x28, 4); memcpy(&snap[10], node + 0x2c, 4); }
+    if (k == 1) { snap[9] = node[0x144]; snap[10] = node[0x28]; snap[11] = node[0x38] | (uint32_t)node[0x131] << 8; }
+    if (k == 2) {
+        const uint8_t *p = *(const uint8_t **)(node + 0x28);
+        snap[9] = p && guest_readable(p, 1) ? *p : 2;
+    }
+    if (!memcmp(last[k], snap, sizeof snap)) return;
+    memcpy(last[k], snap, sizeof snap);
+    mlog("%s: flags %#x/%#x states %u,%u,%u,%u playing %#x vote %#x has %u a=%#x b=%#x c=%#x",
+         k == 0 ? "SyncState" : k == 1 ? "PrivateRoomMain" : "ReadyVoteSetter",
+         f110, f114, st[0], st[1], st[2], st[3], play, vote, has, snap[9], snap[10], snap[11]);
+}
+
 static void profile_dispatch(Cpu *c) {
+    static int room_trace = -1;
+    if (room_trace < 0) {
+        const char *e = getenv("MKWMP_TRACE_ROOM");
+        room_trace = !(e && e[0] == '0');
+    }
+    if (room_trace && (c->pc == 0x7001a82d84ull || c->pc == 0x7001a5a444ull || c->pc == 0x7001a60be8ull ||
+                       c->pc == 0x7001a5b104ull))
+        trace_room_start(c->pc, (const uint8_t *)(uintptr_t)c->x[0], (const uint8_t *)(uintptr_t)c->x[1]);
     if (g_trace_edges && g_rt.rt_log) {
         trace_watch(c);
         if (c->pc == 0x70046966a0ull && in_trace_range(c->x[30]))
