@@ -134,8 +134,8 @@ async fn full_port_range_refuses_with_508() {
 }
 
 #[tokio::test]
-async fn allocations_per_ip_are_capped() {
-    let (_r, server) = relay(None).await;
+async fn allocations_per_ip_are_capped_by_evicting_the_oldest() {
+    let (r, server) = relay(None).await;
     let mut socks = vec![];
     for _ in 0..gateway::limits::TURN_ALLOCATIONS_PER_IP {
         let c = UdpSocket::bind((LO, 0)).await.unwrap();
@@ -143,5 +143,6 @@ async fn allocations_per_ip_are_capped() {
         socks.push(c);
     }
     let one_more = UdpSocket::bind((LO, 0)).await.unwrap();
-    assert_eq!(allocate(&one_more, server).await, Err(486));
+    assert!(allocate(&one_more, server).await.is_ok(), "room is made, no 486");
+    assert_eq!(r.allocation_count(), gateway::limits::TURN_ALLOCATIONS_PER_IP);
 }

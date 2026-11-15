@@ -423,8 +423,15 @@ impl Relay {
                 x.expires = Instant::now() + KEEP;
                 return Ok(x.relay_addr);
             }
-            if a.keys().filter(|c| c.ip() == client.ip()).count() >= limits::TURN_ALLOCATIONS_PER_IP {
-                return Err(std::io::Error::new(std::io::ErrorKind::QuotaExceeded, "too many allocations from this address"));
+            // At the cap, this address's least recently refreshed allocation makes room: a game
+            // that restarted (or a household behind one IP) never gets 486 for an hour.
+            let mine: Vec<(SocketAddr, Instant)> =
+                a.iter().filter(|(c, _)| c.ip() == client.ip()).map(|(c, x)| (*c, x.expires)).collect();
+            if mine.len() >= limits::TURN_ALLOCATIONS_PER_IP {
+                if let Some((old, _)) = mine.iter().min_by_key(|(_, e)| *e) {
+                    a.remove(old); // dropping it stops its relay task
+                    line(format!("TURN allocation for {old} evicted (cap {} per address)", limits::TURN_ALLOCATIONS_PER_IP));
+                }
             }
         }
         let relay = Arc::new(self.bind_relay().await?);

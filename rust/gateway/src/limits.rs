@@ -8,10 +8,10 @@
 //! | connection with no streams    | closed after 5 min            |
 //! | gRPC message                  | 4 MiB                         |
 //! | TURN requests per IP          | 50/s (burst 100)              |
-//! | TURN allocations per IP       | 8                             |
+//! | TURN allocations per IP       | 8 (the 9th evicts the oldest) |
 //! | TURN relayed bytes            | 512 KiB/s per allocation      |
 //! | TURN channels per allocation  | 64                            |
-//! | NAT probe replies per IP      | 20/s (burst 40)               |
+//! | NAT probe replies per IP      | 200/s (burst 400)             |
 //!
 //! A household or LAN party shares one IP, hence the generous connection
 //! numbers: a game holds a handful of connections.

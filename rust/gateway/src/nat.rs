@@ -27,8 +27,9 @@ pub fn reply(probe: &[u8], peer: SocketAddr) -> Option<[u8; 16]> {
 
 pub async fn run(sock: UdpSocket) -> std::io::Result<()> {
     let mut buf = [0u8; 2048];
-    // UDP replies can be aimed at a spoofed address: cap them per source.
-    let mut per_ip = crate::limits::PerIp::new(20.0, 40.0);
+    // UDP replies can be aimed at a spoofed address: cap them per source. One game sends ~12
+    // probes in a second when it joins, and a LAN party shares one IP.
+    let mut per_ip = crate::limits::PerIp::new(200.0, 400.0);
     loop {
         let (n, peer) = match sock.recv_from(&mut buf).await {
             Ok(x) => x,
