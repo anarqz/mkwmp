@@ -141,10 +141,11 @@ impl Core {
         if let Ok(b) = &b {
             *self.expected.lock().unwrap_or_else(|p| p.into_inner()) = Some(b.expected.clone());
         }
-        if !(cfg.patch || force) {
-            return Ok(());
-        }
-        install_bundle(&cfg, &b?)
+        let r = if cfg.patch || force { b.and_then(|b| install_bundle(&cfg, &b)) } else { Ok(()) };
+        // The verdict, for bug reports.
+        let report = self.patch_report();
+        note(format!("game patch: {} [{}]", report.summary(update::VERSION), report.files.join("; ")));
+        r
     }
 
     /// What the game folder holds, checked by content against this
