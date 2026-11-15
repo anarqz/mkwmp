@@ -1,0 +1,103 @@
+name: Bug report
+description: Something broke while playing with MKWMP
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The logs are what lets us trace the problem, so please attach them (below).
+        **Never paste your PIN, a ticket or a launcher token** into this issue. The saved logs hide them for you.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Describe the problem. Screenshots or a short video help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the launcher and press PLAY
+        2. Go to Online Play
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows PC
+        - Steam Deck
+        - Other Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Launcher version
+      description: Run `mkwmp-launcher --version`, or see the first lines of the launcher log.
+      placeholder: "0.0.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: server
+    attributes:
+      label: Server
+      options:
+        - Official (mkw.anarqz.dev)
+        - Self-hosted
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: What were you doing
+      options:
+        - Race
+        - Battle
+        - Friend room
+        - Voice chat
+        - Launcher only (before the game)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: time
+    attributes:
+      label: When it happened
+      description: Date, time and your time zone, so we can find it in the logs and on the server.
+      placeholder: "2026-11-15 21:30 UTC+1"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (required)
+      description: |
+        In the launcher open **SETTINGS** and press **SAVE LOGS FOR A BUG REPORT**. It saves a zip in the `logs` folder next to the launcher and opens it. Drag that zip into this box.
+        (Without the window: `mkwmp-launcher --save-logs`.)
+
+        If you cannot, attach these instead:
+        - `logs/launcher-*.log` (next to the launcher)
+        - `mkwmp.log` (in the game folder)
+        - `logs/mkw.log` (in the game folder)
+
+        Do this soon after the problem: only the last 10 launcher sessions are kept.
+      placeholder: Drag the zip here.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before sending
+      options:
+        - label: I attached the logs and did not paste my PIN, ticket or token.
+          required: true

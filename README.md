@@ -196,6 +196,10 @@ Two tests start the real `mkwmp` binary. One plays two clients from sign-in to a
 | `tools/` | release script (`tools/release`) and a local seat server helper (`tools/host`) |
 | `resources/` | research material: reverse-engineering notes and tools, captures, the original Python lobby, handoff notes |
 
+## Reporting a bug
+
+Open an [issue](https://github.com/anarqz/mkwmp/issues/new/choose) and fill in the form. The most useful thing you can add is the logs: in the launcher, open **SETTINGS** and press **SAVE LOGS FOR A BUG REPORT** (or run `mkwmp-launcher --save-logs`), then drag the zip into the issue. It holds the launcher log, the game patch and mkw-recomp logs, with your PIN and tickets left out.
+
 ## Support
 
 MKWMP is made by players, for players. If you'd like to help keep the official server running: [Ko-fi](https://ko-fi.com/anarqz).

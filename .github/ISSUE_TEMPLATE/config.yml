@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Guides and README
+    url: https://anarqz.github.io/mkwmp/
+    about: Step-by-step setup for Windows and the Steam Deck, and the "If something doesn't work" section of the README.

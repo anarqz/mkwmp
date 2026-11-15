@@ -23,6 +23,7 @@ mod log;
 mod notify;
 mod probe;
 mod seat;
+mod support;
 mod tray;
 mod update;
 
@@ -39,12 +40,14 @@ struct Args {
     no_launch: bool,
     no_update: bool,
     tray: bool,
+    save_logs: bool,
 }
 
 fn args() -> Args {
-    let mut a = Args { path: None, headless: false, no_launch: false, no_update: false, tray: false };
+    let mut a = Args { path: None, headless: false, no_launch: false, no_update: false, tray: false, save_logs: false };
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
+            "--save-logs" => a.save_logs = true,
             "--headless" => a.headless = true,
             "--no-launch" => a.no_launch = true,
             "--no-update" => a.no_update = true,
@@ -56,7 +59,7 @@ fn args() -> Args {
             }
             "-h" | "--help" => {
                 console();
-                println!("usage: mkwmp-launcher [--headless | --tray] [--no-launch] [--no-update] [--version] [client.toml]");
+                println!("usage: mkwmp-launcher [--headless | --tray] [--no-launch] [--no-update] [--save-logs] [--version] [client.toml]");
                 std::process::exit(0);
             }
             _ => a.path = Some(arg),
@@ -89,10 +92,21 @@ fn main() {
         console();
     }
     let path = a.path.clone().unwrap_or_else(default_config_path);
+    if a.save_logs {
+        console();
+        let game = ClientConfig::load_or_default(&path).map(|c| c.game).unwrap_or_default();
+        match support::save_and_open(&log::launcher_dir(), &game) {
+            Ok(m) => println!("mkwmp: {m}"),
+            Err(e) => fatal(&e),
+        }
+        return;
+    }
+    log::init(&log::launcher_dir());
     let mut cfg = match ClientConfig::load_or_default(&path) {
         Ok(c) => c,
         Err(e) => fatal(&e),
     };
+    log::header(&cfg, &path);
     if a.no_launch {
         cfg.launch = false;
     }
@@ -254,5 +268,6 @@ async fn wait_idle(core: &Arc<Core>, max: Duration) {
 
 fn fatal(msg: &str) -> ! {
     eprintln!("mkwmp: {msg}");
+    log::line(&format!("fatal: {msg}"));
     std::process::exit(1)
 }

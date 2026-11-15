@@ -657,6 +657,17 @@ impl App {
                     crate::notify::show("Ana is online".into(), "This is how news about your friends will look.".into());
                 }
                 ui.add_space(8.0);
+                if pixel_button(ui, "SAVE LOGS FOR A BUG REPORT", vec2(330.0, 36.0), YELLOW, YELLOW_D, INK, 9.0, true)
+                    .on_hover_text("Collect the launcher and game logs (no PIN or ticket) into a zip to attach to a GitHub issue")
+                    .clicked()
+                {
+                    let game = self.draft.game.clone();
+                    match crate::support::save_and_open(&crate::log::launcher_dir(), &game) {
+                        Ok(m) => crate::notify::show("Logs saved".into(), m),
+                        Err(e) => self.error = Some(e),
+                    }
+                }
+                ui.add_space(8.0);
                 if pixel_button(ui, "DONE", vec2(150.0, 36.0), BLUE, BLUE_D, PAPER, 11.0, true).clicked() {
                     self.settings_open = false;
                 }
