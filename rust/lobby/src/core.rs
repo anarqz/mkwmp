@@ -1071,7 +1071,12 @@ impl State {
 
     fn alias_get(&self, body: &[u8], now: f64) -> Result<Vec<u8>, Out> {
         let alias = msgs::resource_id(body, 1).unwrap_or_default();
-        let lobby = self.mm.room_by_alias(&alias).ok_or_else(|| Out::status(code::NOT_FOUND, "no room with this id"))?;
+        let Some(lobby) = self.mm.room_by_alias(&alias) else {
+            let known: Vec<&str> = self.mm.lobbies.values().filter_map(|l| l.room.as_ref()?.alias.as_deref()).collect();
+            let name = crate::wire::str_field(body, 1).ok().flatten().unwrap_or_default();
+            warn!(asked = %alias, name = %name, ?known, body = %body.iter().map(|b| format!("{b:02x}")).collect::<String>(), "room id lookup: no such room");
+            return Err(Out::status(code::NOT_FOUND, "no room with this id"));
+        };
         let tenant = lobby.seats.first().map_or("tenants/current".to_owned(), |s| users::tenant(&s.user).to_owned());
         Ok(msgs::short_alias(&tenant, &alias, &lobby.id.to_string(), now as u64))
     }

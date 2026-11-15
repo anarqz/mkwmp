@@ -4,6 +4,7 @@
 #include "friends.h"
 #include "launcher.h"
 #include "log.h"
+#include "recomp.h"
 #include "seat.h"
 #include "voice_ui.h"
 #include "../../voice/src/mkwmp_voice.h"
@@ -199,6 +200,48 @@ static void post_pending(void) {
     }
 }
 
+// Room ID for "SEARCH GROUP ID" (user decision 2026-11-15): mkw-recomp has no text-entry window, so
+// nn::swkbd::ShowKeyboard returns the game's default name ("Jogado") unless MKW_SWKBD_ANSWER is set.
+// The player types the 6-digit Room ID in the launcher (GET /local/v1/room); we keep that variable
+// equal to it (both the Win32 and the CRT environment, whichever the runtime reads).
+static void room_id_poll(void) {
+    static char last[16] = "\x01";   // never a real value: the first answer always applies
+    static int missing;               // the launcher has no /local/v1/room (older build): stop asking
+    if (missing > 3) return;
+    char buf[1024];
+    const char *body;
+    int st = launcher_request("GET", "/local/v1/room", buf, sizeof buf, &body);
+    if (st == 404) { missing++; return; }
+    if (st != 200) return;
+    char id[16] = {0};
+    const char *p = strstr(body, "\"roomId\"");
+    if (p && (p = strchr(p + 8, '"'))) {
+        size_t k = 0;
+        for (p++; *p && *p != '"' && k + 1 < sizeof id; p++)
+            if (*p >= '0' && *p <= '9') id[k++] = *p;
+    }
+    if (!strcmp(id, last)) return;
+    memcpy(last, id, sizeof last);
+    SetEnvironmentVariableA("MKW_SWKBD_ANSWER", id[0] ? id : NULL);
+    char kv[48];
+    snprintf(kv, sizeof kv, "MKW_SWKBD_ANSWER=%s", id);
+    _putenv(kv);
+    const char *seen = g_rt.cfg_get ? g_rt.cfg_get("MKW_SWKBD_ANSWER") : NULL;
+    mkwmp_log("room id from the launcher: %s (runtime sees \"%s\")", id[0] ? id : "(none)", seen ? seen : "");
+}
+
+static DWORD WINAPI room_thread(LPVOID unused) {
+    (void)unused;
+    for (;;) {
+        AcquireSRWLockShared(&g_lock);
+        int online = g_online;
+        ReleaseSRWLockShared(&g_lock);
+        if (online) room_id_poll();
+        Sleep(1000);
+    }
+    return 0;
+}
+
 static DWORD WINAPI voice_thread(LPVOID unused) {
     (void)unused;
     char last_ticket[sizeof ((SeatReply *)0)->ticket] = {0};
@@ -273,11 +316,13 @@ static DWORD WINAPI voice_thread(LPVOID unused) {
 
 void voice_online(const char *lobby_host) {
     const MkwmpConfig *cfg = mkwmp_config();
-    if (cfg->voice_port <= 0) return;
     AcquireSRWLockExclusive(&g_lock);
+    g_online = 1;   // also drives the Room ID poll, which does not need voice
+    static HANDLE room;
+    if (!room) room = CreateThread(NULL, 0, room_thread, NULL, 0, NULL);
+    if (cfg->voice_port <= 0) { ReleaseSRWLockExclusive(&g_lock); return; }
     int ok = load_dll();
     if (ok) {
-        g_online = 1;
         snprintf(g_host, sizeof g_host, "%s", lobby_host && *lobby_host ? lobby_host : cfg->host);
         if (!g_thread) g_thread = CreateThread(NULL, 0, voice_thread, NULL, 0, NULL);
         voice_ui_install();
