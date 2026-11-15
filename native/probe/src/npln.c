@@ -1326,6 +1326,20 @@ static void profile_dispatch(Cpu *c) {
                  (unsigned long long)(lr[3] - 0x7000000000ull), (unsigned long long)(lr[4] - 0x7000000000ull));
         }
     }
+    // MKWMP_SKIP_ERROR=<hex id>: drop that one communication error (diagnostics; e.g. 0x9b928162, the
+    // end-of-battle move-count kick a driving Steam Deck player gets, RACEEND-RE.md).
+    static uint32_t skip_id = 1;
+    if (skip_id == 1) {
+        const char *e = getenv("MKWMP_SKIP_ERROR");
+        skip_id = e && *e ? (uint32_t)strtoul(e, NULL, 16) : 0;
+    }
+    if (target == 0x700222d78cull && skip_id && c->x[1] && guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
+        *(const uint32_t *)(uintptr_t)c->x[1] == skip_id) {
+        static volatile LONG skipped_one;
+        if (InterlockedIncrement(&skipped_one) <= 20)
+            mlog("communication error %#x dropped (MKWMP_SKIP_ERROR)", skip_id);
+        return;
+    }
     if (target == 0x700222d78cull && g_skip_referee_timeout && c->x[1] &&
         guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
         (g_skip_referee_timeout == 2 || *(const uint32_t *)(uintptr_t)c->x[1] == 0x606314c9u)) {
