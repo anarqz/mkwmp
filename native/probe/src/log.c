@@ -29,14 +29,16 @@ void log_init(void) {
         wcsncat(path, L"mkwmp.log", MAX_PATH - wcslen(path) - 1);
         // CREATE_ALWAYS truncates: each session starts a fresh log.
         g_fh = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
-                           FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, NULL);
+                           FILE_ATTRIBUTE_NORMAL, NULL);
     }
     g_ready = 1;
     mkwmp_log("=== mkwmp session log ===");
 }
 
-// All output funnels here: "[   1234ms] <line>\r\n", written and flushed under
-// the lock so lines from any thread/fiber stay intact and complete.
+// All output funnels here: "[   1234ms] <line>\r\n", written under the lock so lines from any
+// thread/fiber stay intact and complete. No flush per line: WriteFile hands the bytes to the OS,
+// which keeps them if the game crashes; a FlushFileBuffers (fsync) per line on the game threads
+// cost the Steam Deck (Proton, SD card) a large share of its frame rate online (2026-11-15).
 static void emit(const char *line, size_t len) {
     if (!g_ready) return;
     char stamp[24];
@@ -46,7 +48,6 @@ static void emit(const char *line, size_t len) {
     write_raw(stamp, sn < 0 ? 0 : (size_t)sn);
     write_raw(line, len);
     write_raw("\r\n", 2);
-    if (g_fh != INVALID_HANDLE_VALUE) FlushFileBuffers(g_fh);
     LeaveCriticalSection(&g_cs);
 }
 
