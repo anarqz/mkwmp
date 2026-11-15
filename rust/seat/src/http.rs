@@ -438,6 +438,9 @@ struct RosterBody {
     lobbies: Option<std::collections::BTreeMap<String, usize>>,
 }
 
+/// Accepted friends per roster entry (the friends cap).
+const MAX_ROSTER_FRIENDS: usize = 100;
+
 async fn lobby_roster(State(s): State<AppState>, h: HeaderMap, Json(b): Json<RosterBody>) -> Response {
     if s.lobby_tokens.is_empty() {
         return error(StatusCode::FORBIDDEN, "ROSTER_DISABLED", "no lobby tokens configured");
@@ -462,7 +465,9 @@ async fn lobby_roster(State(s): State<AppState>, h: HeaderMap, Json(b): Json<Ros
         (r.roster(&b.session_ids, now), r.boot_id().to_string())
     };
     // Accepted friends from the registry (one query, no roster lock held),
-    // then which of them are seated.
+    // all of them, seated or not: the game maps the lobby's friend users onto
+    // its friend list once per sign-in, so an offline friend must already be
+    // there when they come online later.
     let keys: Vec<String> = sessions.iter().filter_map(|e| e.name.as_deref().map(crate::names::key)).collect();
     let pairs = match s.registry.friends_among(&keys) {
         Ok(p) => p,
@@ -474,10 +479,14 @@ async fn lobby_roster(State(s): State<AppState>, h: HeaderMap, Json(b): Json<Ros
         let mut friends: Vec<crate::roster::RosterFriend> = pairs
             .iter()
             .filter(|(k, _)| *k == key)
-            .filter_map(|(_, friend)| r.seated(friend))
-            .map(|(session_id, name)| crate::roster::RosterFriend { session_id, name })
+            .map(|(_, friend)| match r.seated(friend) {
+                Some((sid, name)) => crate::roster::RosterFriend { session_id: Some(sid), name, seated: true },
+                None => crate::roster::RosterFriend { session_id: None, name: friend.clone(), seated: false },
+            })
             .collect();
         friends.sort_by_key(|f| crate::names::key(&f.name));
+        friends.dedup_by_key(|f| crate::names::key(&f.name));
+        friends.truncate(MAX_ROSTER_FRIENDS);
         e.friends = friends;
     }
     no_store(json!({"bootId": boot, "sessions": sessions}))

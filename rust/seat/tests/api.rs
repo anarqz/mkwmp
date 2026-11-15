@@ -194,9 +194,20 @@ async fn lobby_roster_reports_liveness_and_mutual_friends() {
     let (st, _) = h.call("POST", "/seat/v1/friends/ana/accept", Some(&tb), None).await;
     assert_eq!(st, StatusCode::NO_CONTENT);
     let (_, r) = h.call("POST", "/seat/v1/lobby/roster", Some("lobby-secret"), Some(body.clone())).await;
-    assert_eq!(r["sessions"][0]["friends"], json!([{"sessionId": b_sid, "name": "bia"}]));
+    assert_eq!(r["sessions"][0]["friends"], json!([{"sessionId": b_sid, "name": "bia", "seated": true}]));
     let (_, f) = h.call("GET", "/seat/v1/friends", Some(&ta), None).await;
     assert_eq!(f["friends"], json!([{"name": "bia", "state": "playing"}]));
+
+    // Bia goes silent past the seat timeout while Ana keeps her seat: Bia
+    // stays in Ana's friends, without a session (the game reads the list once).
+    h.advance(40_000);
+    let a_key = sid_key(&a).1;
+    let (st, _) = h.call("GET", &format!("/seat/v1/sessions/{a_sid}"), Some(&a_key), None).await;
+    assert_eq!(st, StatusCode::OK);
+    h.advance(21_000);
+    let (_, r) = h.call("POST", "/seat/v1/lobby/roster", Some("lobby-secret"), Some(body.clone())).await;
+    assert_eq!(r["sessions"][0]["alive"], true);
+    assert_eq!(r["sessions"][0]["friends"], json!([{"name": "bia", "seated": false}]));
 
     // Ana goes silent past the seat timeout: the lobby sees her gone.
     h.advance(61_000);

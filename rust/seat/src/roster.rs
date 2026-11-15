@@ -147,8 +147,11 @@ pub struct RosterEntry {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RosterFriend {
-    pub session_id: String,
+    /// The friend's seated session; absent when not seated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     pub name: String,
+    pub seated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

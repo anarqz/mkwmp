@@ -49,9 +49,10 @@ Same `Authorization: Bearer <launcher_token>` as `/seat`. The probe polls it (at
 
 | Status | Body | Meaning |
 |---|---|---|
-| 200 | `{"friends":[{"name":"Bia"}, ...]}` | Every accepted friend (stored on the server): playing, then online, then offline, each by name. At most 100 entries; never the caller. The game reads its system list once per sign-in, so offline friends are included; the lobby's presence says who is online in the game. |
+| 200 | `{"friends":[{"name":"Bia","online":true}, ...]}` | Every accepted friend (stored on the server): playing, then online, then offline, each by name. At most 100 entries; never the caller. The game reads its system list once per sign-in, so offline friends are included; the lobby's presence says who is online in the game. `online` = the friend's launcher or game is running. |
 | 401 | `{"state":"unauthorized"}` | Wrong or missing token. |
 | 503 | `{"state":"unavailable","message"}` | PLAY not pressed yet. |
+| 503 | `{"state":"loading","message"}` | The launcher's first friends fetch has not landed within 3 s (an empty list would hide every friend for the whole game session). Retry. |
 
 Served from the launcher's friends cache, which the launcher keeps current with the seat server's friends long-poll (`GET /seat/v1/friends`). Account ids follow the lobby's rule: user id = uuid5(NAMESPACE_URL, "mkwmp-user/" + lower(name)); account id = its first 8 bytes big-endian, top bit cleared, 0 → 1.
 

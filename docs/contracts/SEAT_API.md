@@ -57,7 +57,10 @@ RosterEntry = {
   sessionId,
   alive,             // still seated; false for unknown, queued or gone
   name?,             // when alive
-  friends: [{ sessionId, name }],  // accepted friends (registry) seated now, sorted by name (case-insensitive)
+  friends: [{ sessionId?, name, seated }],  // EVERY accepted friend (registry), seated or not, sorted by name
+                     // (case-insensitive), at most 100; sessionId only when seated. The game maps the
+                     // lobby's friend users onto its friend list once per sign-in, so offline friends
+                     // must already be listed; the lobby's presence says who is online.
 }
 ```
 

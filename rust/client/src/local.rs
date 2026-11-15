@@ -14,7 +14,7 @@
 //!
 //!   GET http://127.0.0.1:<local_port>/local/v1/friends   (same token)
 //!
-//! 200 {"friends":[{"name":"Ana"}, ...]}: every accepted friend (stored on
+//! 200 {"friends":[{"name":"Ana","online":true}, ...]}: every accepted friend (stored on
 //! the server), playing and online first; at most 100. The game reads its
 //! system friend list once per sign-in, so offline friends are there too;
 //! who's online in the game comes from the lobby's presence.
@@ -43,7 +43,7 @@
 //! both (burst 10, 2/s): polling every second is fine.
 
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::extract::State;
 use axum::http::{header, HeaderMap, StatusCode};
@@ -139,6 +139,8 @@ async fn room_clear(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
 }
 
 const MAX_FRIENDS: usize = 100;
+/// How long GET /local/v1/friends waits for the first friends fetch.
+const FRIENDS_WAIT: Duration = Duration::from_secs(3);
 
 async fn friends(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
     if !allow(&FRIENDS_LIMIT) {
@@ -151,9 +153,25 @@ async fn friends(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
         let m = "press PLAY in the mkwmp launcher";
         return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"state": "unavailable", "message": m}))).into_response();
     }
+    // The game reads this once per sign-in, so a cold cache must not answer
+    // an empty list: give the first friends fetch a moment.
+    let deadline = tokio::time::Instant::now() + FRIENDS_WAIT;
+    let all = loop {
+        if let Some(f) = core.ui().friends.list {
+            break f.friends;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            let m = "friends are still loading: retry";
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"state": "loading", "message": m}))).into_response();
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
     // The server already orders them: playing, online, offline; by name.
-    let all = core.ui().friends.list.map(|f| f.friends).unwrap_or_default();
-    let list: Vec<_> = all.into_iter().take(MAX_FRIENDS).map(|f| json!({"name": f.name})).collect();
+    let list: Vec<_> = all
+        .into_iter()
+        .take(MAX_FRIENDS)
+        .map(|f| json!({"name": f.name, "online": f.state != "offline"}))
+        .collect();
     Json(json!({"friends": list})).into_response()
 }
 
