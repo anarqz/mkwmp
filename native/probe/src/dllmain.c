@@ -8,6 +8,7 @@
 // from mkw.exe's COFF symbols and registers our NPLN overrides -- which it can do here because
 // DllMain runs at process init, before the exe entry point, i.e. before the recomp's ldr_load.
 #include "coff.h"
+#include "keypad.h"
 #include "log.h"
 #include "recomp.h"
 
@@ -154,6 +155,7 @@ static void probe_init(void) {
         log_kv("hostfn_add_override", (uint64_t)(uintptr_t)g_rt.hostfn_add_override);
         int n = npln_register();
         if (n >= 0) log_kv("overrides registered", (uint64_t)n);
+        keypad_install();   // x64 detours of runtime functions: needs no override slot
     } else {
         log_line("ERROR: failed to resolve recomp runtime; probe inactive");
     }

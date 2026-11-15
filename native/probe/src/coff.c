@@ -33,6 +33,17 @@ static const char *const kNames[] = {
     "kern_core_back",
     // optional: the dispatch host registry (guesthook.c)
     "g_host",
+    // optional: the on-screen keypad (keypad.c): the runtime's text-entry stub, its overlay frame, Dear ImGui
+    "text_entry_run",
+    "_Z17menu_notice_shownv",
+    "_Z16menu_notice_drawff",
+    "_ZN5ImGui21GetForegroundDrawListEv",
+    "_ZN10ImDrawList13AddRectFilledERK6ImVec2S2_jfi",
+    "_ZN10ImDrawList7AddRectERK6ImVec2S2_jfif",
+    "_ZN10ImDrawList7AddTextEP6ImFontfRK6ImVec2jPKcS6_fPK6ImVec4",
+    "_ZN5ImGui12CalcTextSizeEPKcS1_bf",
+    "_ZN5ImGui11GetFontSizeEv",
+    "_ZN5ImGui5GetIOEv",
 };
 enum { N_RT = 6, N_SYMS = sizeof(kNames) / sizeof(kNames[0]) };
 static void *g_slots[N_SYMS];
