@@ -50,6 +50,8 @@ const GAP: f32 = 24.0;
 const CARD_W: f32 = (COLUMN - GAP) / 2.0;
 /// Width inside a card (card minus border and margins).
 const INNER: f32 = CARD_W - 44.0;
+/// The FRIENDS card's ROOM ID row, under its list.
+const ROOM_ROW: f32 = 40.0;
 /// Both cards' content height (fixed by design, so they always match).
 const CARD_H: f32 = 258.0;
 
@@ -138,6 +140,10 @@ struct App {
     draft: ClientConfig,
     /// The "add a friend" field.
     friend_entry: String,
+    /// The ROOM ID field; `room_sent`: it reached the core (so the core
+    /// clearing it, by expiry or the game's DELETE, clears the field).
+    room_entry: String,
+    room_sent: bool,
     /// A friend waiting for "remove?" confirmation.
     confirm_unfriend: Option<String>,
     pin_entry: String,
@@ -163,6 +169,8 @@ impl App {
             core,
             draft,
             friend_entry: String::new(),
+            room_entry: String::new(),
+            room_sent: false,
             confirm_unfriend: None,
             pin_entry: String::new(),
             error: None,
@@ -497,7 +505,7 @@ impl App {
             // The lists, scrolling inside the card's fixed height.
             // What is left of the fixed card height (the card pads itself to
             // CARD_H, so measure from the cursor, not the content size).
-            let h = (ui.min_rect().top() + CARD_H - ui.cursor().top() - 2.0).max(60.0);
+            let h = (ui.min_rect().top() + CARD_H - ui.cursor().top() - 2.0 - ROOM_ROW).max(60.0);
             egui::ScrollArea::vertical().max_height(h).min_scrolled_height(h).auto_shrink([false, false]).show(ui, |ui| {
                 ui.set_width(INNER - 12.0);
                 ui.spacing_mut().item_spacing.y = 2.0;
@@ -553,7 +561,49 @@ impl App {
                     }
                 }
             });
+            self.room_row(ui);
         })
+    }
+
+    /// ROOM ID: the 6 digits the game's "search group ID" keyboard gets
+    /// (the game has no text entry here). Held for 10 minutes, never saved.
+    fn room_row(&mut self, ui: &mut egui::Ui) {
+        let live = self.core.room();
+        if self.room_sent && live.is_none() {
+            self.room_entry.clear(); // expired, or the game used it
+            self.room_sent = false;
+        }
+        let tip = "Type a Room ID, then press SEARCH GROUP ID in the game";
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("ROOM ID").font(pixel(9.0)).color(INK)).on_hover_text(tip);
+            let r = ui
+                .add(
+                    TextEdit::singleline(&mut self.room_entry)
+                        .hint_text("6 digits")
+                        .char_limit(6)
+                        .margin(vec2(8.0, 6.0))
+                        .desired_width(84.0),
+                )
+                .on_hover_text(tip);
+            if r.changed() {
+                self.room_entry.retain(|c| c.is_ascii_digit());
+                self.core.set_room(&self.room_entry);
+                self.room_sent = self.core.room().is_some();
+            }
+            let has = !self.room_entry.is_empty();
+            if small_button(ui, "X", 24.0, RED, RED_D, has).on_hover_text("Clear the Room ID").clicked() {
+                self.room_entry.clear();
+                self.core.set_room("");
+                self.room_sent = false;
+            }
+            let (text, c) = match &live {
+                Some((_, left)) => (format!("ready · {} min", left.as_secs().div_ceil(60)), GREEN_D),
+                None if has => ("needs 6 digits".to_string(), RED_D),
+                None => ("for SEARCH GROUP ID".to_string(), MUTED),
+            };
+            ui.label(RichText::new(text).size(12.0).color(c));
+        });
     }
 
     fn settings_dialog(&mut self, ctx: &egui::Context) {

@@ -96,7 +96,14 @@ pub struct Core {
     friends_wake: Notify,
     /// One config write at a time (the window and the local API both save).
     cfg_write: std::sync::Mutex<()>,
+    /// The Room ID typed in the window for the game's "search group ID"
+    /// keyboard, and when it was set. Not saved; expires after ROOM_TTL.
+    room: std::sync::Mutex<Option<(String, std::time::Instant)>>,
 }
+
+/// A typed Room ID answers the game's keyboard for this long, so a later
+/// name or text keyboard isn't answered with it.
+pub const ROOM_TTL: Duration = Duration::from_secs(600);
 
 impl Core {
     pub fn new(config_path: String, cfg: ClientConfig) -> Arc<Self> {
@@ -119,11 +126,32 @@ impl Core {
             presence: Mutex::new(None),
             friends_wake: Notify::new(),
             cfg_write: std::sync::Mutex::new(()),
+            room: std::sync::Mutex::new(None),
         })
     }
 
     pub fn ui(&self) -> Ui {
         self.ui.lock().unwrap().clone()
+    }
+
+    /// The Room ID for the game (6 digits) and the time it has left; None if
+    /// unset or expired.
+    pub fn room(&self) -> Option<(String, Duration)> {
+        let mut r = self.room.lock().unwrap_or_else(|p| p.into_inner());
+        match r.as_ref() {
+            Some((id, at)) if at.elapsed() < ROOM_TTL => Some((id.clone(), ROOM_TTL - at.elapsed())),
+            Some(_) => {
+                *r = None;
+                None
+            }
+            None => None,
+        }
+    }
+
+    /// Set (exactly 6 digits) or clear (anything else) the Room ID.
+    pub fn set_room(&self, id: &str) {
+        let ok = id.len() == 6 && id.bytes().all(|b| b.is_ascii_digit());
+        *self.room.lock().unwrap_or_else(|p| p.into_inner()) = ok.then(|| (id.to_string(), std::time::Instant::now()));
     }
 
     pub fn token(&self) -> &str {
