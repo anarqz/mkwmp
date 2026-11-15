@@ -301,15 +301,17 @@ def write_runner(dest, game, proton, root):
         return run
     prefix = dest / "proton-prefix"
     run.write_text(f"""#!/bin/sh
-# Starts the game through Proton 10.0 (written by the mkwmp installer; run it again to refresh).
+# Starts the game through Proton 10.0 (written by the mkwmp installer; delete it and run the
+# installer again to have it rewritten). Saves live in the game folder (profile/), not in the prefix.
 export STEAM_COMPAT_CLIENT_INSTALL_PATH={toml_str(root)}
 export STEAM_COMPAT_DATA_PATH={toml_str(prefix)}
-mkdir -p "$STEAM_COMPAT_DATA_PATH"
 # The same as the site's Steam launch options: load the patch, native DNS, and the
 # recomp's mesh/focus switches.
 export WINEDLLOVERRIDES="winmm=n,b" GRPC_DNS_RESOLVER=native MKW_MESH_COMPUTE=1 MKW_ASSUME_FOCUS=1
+mkdir -p "$STEAM_COMPAT_DATA_PATH" {toml_str(game / 'logs')}
 cd {toml_str(game)} || exit 1
-exec {toml_str(proton / 'proton')} run ./mkw.exe --play "$@"
+# waitforexitandrun: returns only when the game exits (the launcher then frees the seat).
+exec {toml_str(proton / 'proton')} waitforexitandrun {toml_str(game / 'mkw.exe')} --play "$@" >> {toml_str(game / 'logs/proton-launcher.log')} 2>&1
 """)
     run.chmod(0o755)
     return run
@@ -319,17 +321,55 @@ def steam_running():
     return subprocess.run(["pgrep", "-x", "steam"], capture_output=True).returncode == 0
 
 
+def game_mode():
+    return subprocess.run(["pgrep", "-f", "gamescope-session"], capture_output=True).returncode == 0 or \
+        os.environ.get("XDG_CURRENT_DESKTOP", "").lower() == "gamescope"
+
+
 def close_steam():
+    """Steam rewrites shortcuts.vdf when it exits, so it must be closed first."""
     if not steam_running():
         return False
-    say("closing Steam (it starts again at the end)")
-    subprocess.run(["steam", "-shutdown"], capture_output=True)
+    if game_mode():
+        die("Steam is in Game Mode: switch to Desktop Mode (Steam menu, Power, Switch to Desktop) and run this again")
+    if ask("Steam is running. Close it now? It opens again at the end. [Y/n] ").lower().startswith("n"):
+        die("close Steam yourself, then run this again")
+    say("closing Steam")
+    subprocess.run(["steam", "-shutdown"], capture_output=True, timeout=30)
     for _ in range(60):
         if not steam_running():
             time.sleep(2)  # let it finish writing its files
             return True
         time.sleep(1)
-    die("Steam did not close; close it yourself and run this again")
+    die("Steam did not close; close it yourself (Steam menu, Exit) and run this again")
+
+
+def compat_unmap(root, appid):
+    """A shortcut forced through Proton has an entry in config.vdf CompatToolMapping; the
+    launcher is a Linux program, so ours must not. Only that block is searched (the same
+    appid also appears elsewhere in config.vdf)."""
+    f = root / "config/config.vdf"
+    if not f.exists():
+        return
+    text = f.read_text(errors="surrogateescape")
+    m = re.search(r'"CompatToolMapping"\s*\{', text)
+    if not m:
+        return
+    # The block's extent, by brace depth.
+    depth, i = 1, m.end()
+    while i < len(text) and depth:
+        depth += {"{": 1, "}": -1}.get(text[i], 0)
+        i += 1
+    block = text[m.end():i - 1]
+    entry = re.search(r'\n?[ \t]*"' + str(appid) + r'"\s*\{[^{}]*\}', block)
+    if not entry:
+        return
+    shutil.copy2(f, f.with_name(f"config.vdf.bak-mkwmp-{time.strftime('%Y%m%d-%H%M%S')}"))
+    block = block[:entry.start()] + block[entry.end():]
+    tmp = f.with_name("config.vdf.new")
+    tmp.write_text(text[:m.end()] + block + text[i - 1:], errors="surrogateescape")
+    os.replace(tmp, f)
+    say("removed the Proton setting from the shortcut (the launcher runs natively)")
 
 
 def add_shortcut(root, dest):
@@ -394,6 +434,7 @@ def add_shortcut(root, dest):
         tmp = f.with_name("shortcuts.vdf.new")
         tmp.write_bytes(b"\x00shortcuts\x00" + vdf_dump(sc) + b"\x08")
         os.replace(tmp, f)
+        compat_unmap(root, app)
         say(f"Steam shortcut \"{NAME}\" ready for Steam user {u.name}")
 
 
@@ -435,7 +476,8 @@ def main():
     try:
         add_shortcut(root, dest)
     finally:
-        start_steam()  # also when it was closed: the shortcut shows up
+        if was_running:
+            start_steam()
     say(f"done. In Steam: {NAME}. First run: register a gamertag; the launcher installs the game patch (INSTALL under GAME FOLDER).")
 
 
