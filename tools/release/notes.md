@@ -1,9 +1,17 @@
-**mkwmp 1.0.0**: online races, battles and friend rooms for Mario Kart World on community servers, with lobby voice chat.
+**mkwmp 1.0.1**: the launcher now checks your mkw-recomp version.
+
+- **mkw-recomp 0.1.10 only.** The game patch is built for mkw-recomp 0.1.10, and newer releases (0.1.11, 0.1.12) change what it hooks. If the game folder has another version, the line under GAME FOLDER says so, PLAY stays off, and **GET 0.1.10** opens its download page. Support for 0.1.12 is being worked on.
+- The game patch check's per-file lines say "verified" (1.0.0 showed empty boxes there), and the launcher's log records the check's result and the mkw-recomp version.
+- The game patch and voice chat are the same as in 1.0.0.
+
+---
+
+**From 1.0.0** (**mkwmp 1.0.0**: online races, battles and friend rooms for Mario Kart World on community servers, with lobby voice chat.)
 
 Download one zip and unzip it anywhere:
 
-- **Windows:** `mkwmp-1.0.0-windows-x64.zip`. Open `mkwmp/mkwmp-launcher.exe`.
-- **Steam Deck / SteamOS / Linux:** `mkwmp-1.0.0-linux-x64.zip`. On a Steam Deck, one command in Desktop Mode installs it and adds it to Steam: `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`.
+- **Windows:** `mkwmp-1.0.1-windows-x64.zip`. Open `mkwmp/mkwmp-launcher.exe`.
+- **Steam Deck / SteamOS / Linux:** `mkwmp-1.0.1-linux-x64.zip`. On a Steam Deck, one command in Desktop Mode installs it and adds it to Steam: `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`.
 
 `README.txt` inside each zip has the steps.
 
@@ -27,7 +35,7 @@ Since rc.3:
 
 Files:
 
-- `mkwmp-1.0.0-windows-x64.zip` / `mkwmp-1.0.0-linux-x64.zip`: the launcher, the game patch, licenses and a README.
+- `mkwmp-1.0.1-windows-x64.zip` / `mkwmp-1.0.1-linux-x64.zip`: the launcher, the game patch, licenses and a README.
 - `mkwmp-launcher-x86_64-*`, `winmm.dll`, `mkwmp-voice.dll`: the same files loose, for launchers that update themselves.
 - `mkwmp-server-x86_64-windows.exe` / `mkwmp-server-x86_64-linux`: the server, for hosting your own (`mkwmp-server host --help`).
 - `SHA256SUMS` + `SHA256SUMS.sig`: checksums signed with the release key. The launcher verifies them before installing anything.
