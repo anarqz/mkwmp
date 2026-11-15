@@ -261,7 +261,18 @@ impl Core {
                 _ => None,
             };
             if let Some(rule) = stream_rule {
-                if !s.limiter.allow(rule, &s.subject(key), now) {
+                let allowed = s.limiter.allow(rule, &s.subject(key), now);
+                // Presence: the game sends bursts of hundreds of KeepAlive frames (race start, match
+                // assignment) and treats an ended stream as a lost connection ("connection error" on
+                // both players, 2026-11-14). Over the limit a frame is only acknowledged, never
+                // processed, and the stream stays open (the Python reference never ended it).
+                if !allowed && kind == Kind::PresenceKeepAlive {
+                    debug!(?key, "presence frame over the rate limit: acknowledged, not processed");
+                    sends.push((key, Out::Message(social::keepalive_ack())));
+                    s.flush(sends);
+                    return;
+                }
+                if !allowed {
                     warn!(?key, ?rule, "stream over its rate limit: ended");
                     sends.push((key, exhausted("stream messages")));
                     s.stream_ended(key, now);
