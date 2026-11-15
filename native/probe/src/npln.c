@@ -1328,10 +1328,16 @@ static void profile_dispatch(Cpu *c) {
     }
     // MKWMP_SKIP_ERROR=<hex id>: drop that one communication error (diagnostics; e.g. 0x9b928162, the
     // end-of-battle move-count kick a driving Steam Deck player gets, RACEEND-RE.md).
+    // Default under Wine/Proton (user decision for 1.0.0, 2026-11-15): the Steam Deck gets 0x9b928162 from
+    // the kart watchdog (FUN_020d4ab0 -> FUN_02624bf0) at the end of every battle round while driving; the
+    // PC never does. Dropping it, a 3-round friend battle ran to the end. MKWMP_SKIP_ERROR=0 turns it off.
     static uint32_t skip_id = 1;
     if (skip_id == 1) {
         const char *e = getenv("MKWMP_SKIP_ERROR");
-        skip_id = e && *e ? (uint32_t)strtoul(e, NULL, 16) : 0;
+        HMODULE nt = GetModuleHandleA("ntdll.dll");
+        int wine = nt && GetProcAddress(nt, "wine_get_version");
+        skip_id = e && *e ? (uint32_t)strtoul(e, NULL, 16) : wine ? 0x9b928162u : 0;
+        if (skip_id) mlog("communication error %#x will be dropped (%s)", skip_id, e && *e ? "MKWMP_SKIP_ERROR" : "Proton default");
     }
     if (target == 0x700222d78cull && skip_id && c->x[1] && guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
         *(const uint32_t *)(uintptr_t)c->x[1] == skip_id) {
