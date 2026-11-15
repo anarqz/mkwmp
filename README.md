@@ -6,21 +6,24 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 
 > MKWMP is an unofficial community project, not affiliated with or endorsed by Nintendo. You need your own copy of the game.
 >
-> **Status: developer preview** ([v0.0.1-rc.3](https://github.com/anarqz/mkwmp/releases)). Online races and battles work end to end. The new lobby server, friend rooms and self-hosted servers with the real game are being tested.
+> **Version 1.0.0** ([download](https://github.com/anarqz/mkwmp/releases/latest)): matchmade races and battles, friend rooms, lobby voice chat and self-hosted servers.
 
-![The MKWMP launcher: gamertag and PIN, server, game folder, friends with requests and who is playing, and the PLAY button](site/img/launcher-main.png)
+![The MKWMP launcher: gamertag and PIN, server, game folder with the game patch check, friends with requests and who is playing, and the PLAY button](site/img/launcher-main.png)
 
 ## What it does
 
 - **Gamertags.** Register one in the launcher and get a 6-digit PIN, which lets you use the same gamertag on another PC or a Steam Deck.
 - **Friends, kept on the server.** Add friends by gamertag; they accept or decline. You see who is playing, online or offline, and they're your friends in the game too.
-- **Matchmaking with any number of lobbies.** Races and battles open new lobbies as players arrive and close them when they empty.
+- **Matchmaking with any number of lobbies.** Races and battles open new lobbies as players arrive and close them when they empty. After a match you go back into your lobby.
+- **Friend rooms.** Create a room; friends join from their friend card, or by Room ID with the game's on-screen keypad.
+- **Voice chat** with the players in your lobby, with echo cancelling and noise suppression. Pick your microphone and output in SETTINGS; mute players from the game's lobby menu.
 - **Seats and a queue.** Each server has a fixed number of seats. PLAY takes one, or puts you in line. Having the launcher open doesn't take a seat.
 - **Background mode.** Close the launcher and it stays in the system tray, with notifications when a friend comes online, starts playing or sends you a request.
+- **Game patch check.** The line under GAME FOLDER says whether the patch is installed and is this version, checked by content against signed checksums. SETTINGS → GAME PATCH installs or removes it.
 - **Signed updates.** The launcher updates itself and the game patch from GitHub releases, and checks each download against the release signature.
 - **Host your own** on a PC with one program, or on a Linux server with Docker Compose.
 
-![Launcher settings: background mode and notifications](site/img/launcher-settings.png)
+![Launcher settings: background mode, notifications, game patch, and voice chat devices, volumes and muted players](site/img/launcher-settings.png)
 
 ## Play
 

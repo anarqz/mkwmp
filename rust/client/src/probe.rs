@@ -220,7 +220,7 @@ pub fn check(game: &Path, expected: Option<&Expected>) -> PatchReport {
             files.push("winmm.dll: missing".into());
             damaged = true;
         }
-        (Some(h), Some(e)) if *h == e.probe => files.push(format!("winmm.dll: v{} ✓", e.version)),
+        (Some(h), Some(e)) if *h == e.probe => files.push(format!("winmm.dll: v{}, verified", e.version)),
         (Some(_), Some(_)) if ours => {
             files.push("winmm.dll: another mkwmp version".into());
             outdated = true;
@@ -237,7 +237,7 @@ pub fn check(game: &Path, expected: Option<&Expected>) -> PatchReport {
             files.push("mkwmp-voice.dll: missing".into());
             damaged = true;
         }
-        (Some(h), Some((Some(want), v))) if h == want => files.push(format!("mkwmp-voice.dll: v{v} ✓")),
+        (Some(h), Some((Some(want), v))) if h == want => files.push(format!("mkwmp-voice.dll: v{v}, verified")),
         (Some(_), Some(_)) => {
             files.push("mkwmp-voice.dll: another version, or changed".into());
             outdated = true;
@@ -255,7 +255,7 @@ pub fn check(game: &Path, expected: Option<&Expected>) -> PatchReport {
             false
         }
         Some(_) => {
-            files.push("winmm_host.dll: the system's winmm.dll ✓".into());
+            files.push("winmm_host.dll: the system's winmm.dll".into());
             true
         }
     };
