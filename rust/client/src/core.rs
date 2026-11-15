@@ -144,6 +144,8 @@ impl Core {
         let r = if cfg.patch || force { b.and_then(|b| install_bundle(&cfg, &b)) } else { Ok(()) };
         // The verdict, for bug reports.
         let report = self.patch_report();
+        let rc = crate::recomp::identify(&cfg.game);
+        note(format!("game: {}", rc.problem().unwrap_or_else(|| rc.explain())));
         note(format!("game patch: {} [{}]", report.summary(update::VERSION), report.files.join("; ")));
         r
     }
@@ -362,6 +364,10 @@ impl Core {
         launch::write_lobby_ca(&cfg.game, lobby_ca.as_deref()).map_err(|e| format!("writing {}: {e}", launch::LOBBY_CA))?;
         if let Err(e) = self.sync_patch(false).await {
             note(format!("game patch: {e}"));
+        }
+        let rc = crate::recomp::identify(&cfg.game);
+        if !rc.ok() {
+            return Err(format!("{} ({})", rc.problem().unwrap_or_default(), rc.explain()));
         }
         let patch = self.patch_report();
         if !patch.ok() {

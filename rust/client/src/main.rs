@@ -22,6 +22,7 @@ mod local;
 mod log;
 mod notify;
 mod probe;
+mod recomp;
 mod seat;
 mod support;
 mod tray;

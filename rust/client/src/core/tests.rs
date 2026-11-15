@@ -119,7 +119,7 @@ fn setup(server: &str) -> (Arc<Core>, PathBuf) {
     let _ = std::fs::remove_dir_all(&dir);
     let game = dir.join("game");
     std::fs::create_dir_all(&game).unwrap();
-    std::fs::write(game.join("mkw.exe"), "").unwrap();
+    std::fs::write(game.join("mkw.exe"), crate::recomp::TEST_EXE).unwrap();
     std::fs::write(game.join("mkwmp.toml"), "lobby = \"old:8905\"\nticket = \"mkw1.old\"\nvoice_port = 8907\n").unwrap();
     // An installed game patch (no expected hashes in tests: "not verified").
     crate::probe::install_probe(&game, b"probe", false).unwrap();

@@ -692,6 +692,21 @@ impl App {
         if !self.draft.game.join("mkw.exe").exists() {
             return;
         }
+        let rc = crate::recomp::identify(&self.draft.game);
+        if let Some(p) = rc.problem() {
+            ui.horizontal(|ui| {
+                ui.set_height(24.0);
+                light(ui, RED);
+                ui.label(RichText::new(p).size(12.0).color(RED_D)).on_hover_text(rc.explain());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let get = format!("GET {}", crate::recomp::RECOMMENDED);
+                    if small_button(ui, &get, 96.0, BLUE, BLUE_D, true).on_hover_text(crate::recomp::DOWNLOAD).clicked() {
+                        let _ = open::that(crate::recomp::DOWNLOAD);
+                    }
+                });
+            });
+            return;
+        }
         let r = self.patch_report();
         let color = if r.ok() { GREEN_D } else { RED_D };
         ui.horizontal(|ui| {
@@ -859,7 +874,7 @@ impl App {
         let gh = Rect::from_center_size(pos2((row.left() + play.left()) / 2.0, row.center().y), side);
         let kofi = Rect::from_center_size(pos2((play.right() + row.right()) / 2.0, row.center().y), side);
 
-        let problem = self.draft.problem().or_else(|| {
+        let problem = self.draft.problem().or_else(|| crate::recomp::identify(&self.draft.game).problem()).or_else(|| {
             let r = self.patch_report();
             (!r.ok()).then(|| r.summary(crate::update::VERSION))
         });

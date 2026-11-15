@@ -43,11 +43,12 @@ fn system_txt(game: &Path) -> String {
     let expected = crate::probe::bundled().map(|b| b.expected);
     let report = crate::probe::check(game, expected.as_ref());
     format!(
-        "launcher: {}\nos: {} {}\ngame folder: {}\n{}\n{}\nwinmm_host.dll: {}\npatch check: {}\n  {}\ntime: {}\n",
+        "launcher: {}\nos: {} {}\ngame folder: {}\nmkw-recomp: {:?}\n{}\n{}\nwinmm_host.dll: {}\npatch check: {}\n  {}\ntime: {}\n",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS,
         std::env::consts::ARCH,
         game.display(),
+        crate::recomp::identify(game),
         dll_line(game, crate::probe::PROBE),
         dll_line(game, crate::probe::VOICE),
         if game.join(crate::probe::HOST).exists() { "present" } else { "missing" },
