@@ -1205,7 +1205,47 @@ static void trace_room_start(uint64_t target, const uint8_t *node, const uint8_t
          f110, f114, st[0], st[1], st[2], st[3], play, vote, has, snap[9], snap[10], snap[11]);
 }
 
+// End-of-battle idle kick 0x9b928162 (resources/docs/RACEEND-RE.md): FUN_0035ce38 kicks a player whose
+// move counter (ctrl+0x1e8, frames with a position change >= 0.1) is under 20 after 3000 frames, at the
+// moment its battle ends. MKWMP_TRACE_KART=1 logs the controller state once per second and on change;
+// MKWMP_NO_IDLE_KICK=1 keeps the counter at 20 (diagnostic guard).
+static int g_trace_kart = -1, g_no_idle_kick;
+static void trace_kart_watchdog(uint8_t *ctrl) {
+    if (!guest_readable(ctrl, 0x200)) return;
+    const uint8_t *info = *(const uint8_t **)(ctrl + 0x28);
+    int32_t player = -1;
+    if (info && guest_readable(info, 0x40)) memcpy(&player, info + 0x3c, 4);
+    if (player < 0 || player >= 24) return;
+    uint32_t state, frames, cc, strikes;
+    int32_t moves;
+    float pos[2];
+    memcpy(&state, ctrl + 0x40, 4); memcpy(&frames, ctrl + 0xb8, 4); memcpy(&cc, ctrl + 0x1cc, 4);
+    memcpy(&strikes, ctrl + 0x1d0, 4); memcpy(&moves, ctrl + 0x1e8, 4); memcpy(pos, ctrl + 0x1d4, 8);
+    if (g_no_idle_kick && state == 5 && frames > 2900 && moves < 20) {
+        moves = 20;
+        memcpy(ctrl + 0x1e8, &moves, 4);
+        static volatile LONG said;
+        if (InterlockedIncrement(&said) <= 5) mlog("kart watchdog: move count raised (player %d)", player);
+    }
+    if (!g_trace_kart) return;
+    static uint32_t last_state[24];
+    static ULONGLONG last_ms[24];
+    ULONGLONG now = GetTickCount64();
+    if (state == last_state[player] && now - last_ms[player] < 1000) return;
+    last_state[player] = state;
+    last_ms[player] = now;
+    mlog("kart watchdog: player %d state %u frames %u moves %d fe=%u cc=%#x strikes %u pos %.1f,%.1f",
+         player, state, frames, moves, ctrl[0x1fe], cc, strikes, (double)pos[0], (double)pos[1]);
+}
+
 static void profile_dispatch(Cpu *c) {
+    if (g_trace_kart < 0) {
+        const char *e = getenv("MKWMP_TRACE_KART"), *k = getenv("MKWMP_NO_IDLE_KICK");
+        g_trace_kart = e && e[0] == '1';
+        g_no_idle_kick = k && k[0] == '1';
+    }
+    if ((g_trace_kart || g_no_idle_kick) && (c->pc == 0x70020d43dcull || c->pc == 0x700035a9a0ull))
+        trace_kart_watchdog((uint8_t *)(uintptr_t)c->x[0]);
     static int room_trace = -1;
     if (room_trace < 0) {
         const char *e = getenv("MKWMP_TRACE_ROOM");
