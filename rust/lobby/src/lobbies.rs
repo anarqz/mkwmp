@@ -36,7 +36,8 @@ pub struct Policy {
     /// Seconds after assignment during which an OPEN lobby still takes players (0 = never;
     /// late join before the vote is not verified yet, MULTI-LOBBY E1).
     pub join_window_secs: f64,
-    /// Lobbies between events take players (MULTI-LOBBY E2, not verified yet).
+    /// Lobbies between events take players (MULTI-LOBBY E2: verified with the real game on the
+    /// LAN, 2026-11-15: a player who dropped after a battle searched again and rejoined the lobby).
     pub rejoin: bool,
     /// `__gs/f` `maxu`; `None` = the lobby capacity.
     pub maxu: Option<u32>,
@@ -58,7 +59,7 @@ impl Default for Policy {
             min_start: 2,
             gather_secs: 10.0,
             join_window_secs: 0.0,
-            rejoin: false,
+            rejoin: true,
             maxu: None,
             leave_grace_secs: 5.0,
             connect_timeout_secs: 120.0,
