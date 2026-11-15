@@ -109,7 +109,10 @@ fn unary_rule(path: &str) -> Rule {
         GS_ISSUE_TOKEN | GS_REFRESH_TOKEN => Rule::GamesyncToken,
         MM_CREATE => Rule::Ticket,
         ROOM_CREATE | ALIAS_CREATE => Rule::RoomCreate,
-        ALIAS_GET | SESSION_GET | SESSION_BATCH_GET => Rule::RoomLookup,
+        ALIAS_GET => Rule::RoomLookup,
+        // The friend list polls its friends' sessions every ~5-10 s (FUN_02227ad0): names it
+        // learned from presence, not a Room ID scan (live 2026-11-15: half the polls were refused).
+        SESSION_GET | SESSION_BATCH_GET => Rule::Read,
         SESSION_JOIN => Rule::Join,
         GS_WRITE_DOCUMENTS => Rule::Write,
         GS_GET_DOCUMENT | BULK_GET => Rule::Read,

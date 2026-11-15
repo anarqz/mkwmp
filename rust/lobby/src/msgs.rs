@@ -173,8 +173,10 @@ pub fn game_session(v: &SessionView<'_>) -> Msg {
     let name = session_name(v.tenant, v.lobby);
     let mut m = Msg::new()
         .bytes(1, &name)
-        .varint(2, v.players as u64)
-        .varint(3, v.capacity as u64)
+        // Verified live 2026-11-15: the friend card shows "<field 2>/<field 3>" as max/current
+        // ("CORRIDA 24/1" with these swapped, and the game refused the join as full).
+        .varint(2, v.capacity as u64)
+        .varint(3, v.players as u64)
         .varint(4, u64::from(v.joinable))
         .varint(5, 1);
     if v.password {
