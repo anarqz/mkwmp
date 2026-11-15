@@ -39,8 +39,11 @@ fn dll_line(game: &Path, name: &str) -> String {
 }
 
 fn system_txt(game: &Path) -> String {
+    // Against the zip's signed list when there is one (no network here).
+    let expected = crate::probe::bundled().map(|b| b.expected);
+    let report = crate::probe::check(game, expected.as_ref());
     format!(
-        "launcher: {}\nos: {} {}\ngame folder: {}\n{}\n{}\nwinmm_host.dll: {}\ntime: {}\n",
+        "launcher: {}\nos: {} {}\ngame folder: {}\n{}\n{}\nwinmm_host.dll: {}\npatch check: {}\n  {}\ntime: {}\n",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS,
         std::env::consts::ARCH,
@@ -48,6 +51,8 @@ fn system_txt(game: &Path) -> String {
         dll_line(game, crate::probe::PROBE),
         dll_line(game, crate::probe::VOICE),
         if game.join(crate::probe::HOST).exists() { "present" } else { "missing" },
+        report.summary(env!("CARGO_PKG_VERSION")),
+        report.files.join("\n  "),
         crate::log::timestamp(),
     )
 }

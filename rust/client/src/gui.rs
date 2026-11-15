@@ -51,7 +51,6 @@ const CARD_W: f32 = (COLUMN - GAP) / 2.0;
 /// Width inside a card (card minus border and margins).
 const INNER: f32 = CARD_W - 44.0;
 /// The FRIENDS card's ROOM ID row, under its list.
-const ROOM_ROW: f32 = 40.0;
 /// Both cards' content height (fixed by design, so they always match).
 const CARD_H: f32 = 258.0;
 
@@ -135,15 +134,14 @@ fn pixel(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("pixel".into()))
 }
 
+/// An INSTALL/UNINSTALL in flight: its outcome lands here.
+type PatchJob = std::sync::Arc<std::sync::Mutex<Option<Result<String, String>>>>;
+
 struct App {
     core: Arc<Core>,
     draft: ClientConfig,
     /// The "add a friend" field.
     friend_entry: String,
-    /// The ROOM ID field; `room_sent`: it reached the core (so the core
-    /// clearing it, by expiry or the game's DELETE, clears the field).
-    room_entry: String,
-    room_sent: bool,
     /// A friend waiting for "remove?" confirmation.
     confirm_unfriend: Option<String>,
     pin_entry: String,
@@ -160,6 +158,11 @@ struct App {
     frames: u32,
     shot_taken: bool,
     settings_open: bool,
+    /// SETTINGS → GAME PATCH: what the folder holds (checked once a second),
+    /// the running INSTALL/UNINSTALL, and its outcome (text, is_error).
+    patch_state: Option<(std::time::Instant, std::path::PathBuf, crate::probe::PatchReport)>,
+    patch_job: Option<PatchJob>,
+    patch_note: Option<(String, bool)>,
 }
 
 impl App {
@@ -169,8 +172,6 @@ impl App {
             core,
             draft,
             friend_entry: String::new(),
-            room_entry: String::new(),
-            room_sent: false,
             confirm_unfriend: None,
             pin_entry: String::new(),
             error: None,
@@ -180,6 +181,9 @@ impl App {
             tray,
             start_in_tray,
             frames: 0,
+            patch_state: None,
+            patch_job: None,
+            patch_note: None,
             shot_taken: false,
             settings_open: false,
         }
@@ -452,7 +456,7 @@ impl App {
                     }
                 }
             });
-            ui.add_space(2.0);
+            self.patch_line(ui, busy);
             let mut steam = !self.draft.launch;
             if ui
                 .add_enabled(!busy, egui::Checkbox::new(&mut steam, "I start the game from Steam (Steam Deck)"))
@@ -505,7 +509,7 @@ impl App {
             // The lists, scrolling inside the card's fixed height.
             // What is left of the fixed card height (the card pads itself to
             // CARD_H, so measure from the cursor, not the content size).
-            let h = (ui.min_rect().top() + CARD_H - ui.cursor().top() - 2.0 - ROOM_ROW).max(60.0);
+            let h = (ui.min_rect().top() + CARD_H - ui.cursor().top() - 2.0).max(60.0);
             egui::ScrollArea::vertical().max_height(h).min_scrolled_height(h).auto_shrink([false, false]).show(ui, |ui| {
                 ui.set_width(INNER - 12.0);
                 ui.spacing_mut().item_spacing.y = 2.0;
@@ -561,49 +565,7 @@ impl App {
                     }
                 }
             });
-            self.room_row(ui);
         })
-    }
-
-    /// ROOM ID: the 6 digits the game's "search group ID" keyboard gets
-    /// (the game has no text entry here). Held for 10 minutes, never saved.
-    fn room_row(&mut self, ui: &mut egui::Ui) {
-        let live = self.core.room();
-        if self.room_sent && live.is_none() {
-            self.room_entry.clear(); // expired, or the game used it
-            self.room_sent = false;
-        }
-        let tip = "Type a Room ID, then press SEARCH GROUP ID in the game";
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("ROOM ID").font(pixel(9.0)).color(INK)).on_hover_text(tip);
-            let r = ui
-                .add(
-                    TextEdit::singleline(&mut self.room_entry)
-                        .hint_text("6 digits")
-                        .char_limit(6)
-                        .margin(vec2(8.0, 6.0))
-                        .desired_width(84.0),
-                )
-                .on_hover_text(tip);
-            if r.changed() {
-                self.room_entry.retain(|c| c.is_ascii_digit());
-                self.core.set_room(&self.room_entry);
-                self.room_sent = self.core.room().is_some();
-            }
-            let has = !self.room_entry.is_empty();
-            if small_button(ui, "X", 24.0, RED, RED_D, has).on_hover_text("Clear the Room ID").clicked() {
-                self.room_entry.clear();
-                self.core.set_room("");
-                self.room_sent = false;
-            }
-            let (text, c) = match &live {
-                Some((_, left)) => (format!("ready · {} min", left.as_secs().div_ceil(60)), GREEN_D),
-                None if has => ("needs 6 digits".to_string(), RED_D),
-                None => ("for SEARCH GROUP ID".to_string(), MUTED),
-            };
-            ui.label(RichText::new(text).size(12.0).color(c));
-        });
     }
 
     fn settings_dialog(&mut self, ctx: &egui::Context) {
@@ -638,6 +600,8 @@ impl App {
                     changed |= ui.checkbox(&mut b.notify_online, "a friend comes online").changed();
                     changed |= ui.checkbox(&mut b.notify_playing, "a friend starts playing").changed();
                     changed |= ui.checkbox(&mut b.notify_requests, "someone sends me a friend request").changed();
+                    ui.add_space(6.0);
+                    self.patch_settings(ui);
                 });
                 ui.add_space(20.0);
                 ui.vertical(|ui| {
@@ -675,6 +639,107 @@ impl App {
         });
         if r.should_close() {
             self.settings_open = false;
+        }
+    }
+
+    /// The game folder's patch check, redone every 2 s or when the folder changes.
+    fn patch_report(&mut self) -> crate::probe::PatchReport {
+        if let Some((at, game, r)) = &self.patch_state {
+            if at.elapsed() < Duration::from_secs(2) && *game == self.draft.game {
+                return r.clone();
+            }
+        }
+        let r = self.core.patch_report();
+        self.patch_state = Some((std::time::Instant::now(), self.draft.game.clone(), r.clone()));
+        r
+    }
+
+    /// Collect a finished INSTALL/UNINSTALL.
+    fn poll_patch_job(&mut self) {
+        let done = self.patch_job.as_ref().and_then(|job| job.lock().unwrap().take());
+        if let Some(r) = done {
+            self.patch_note = Some(match r {
+                Ok(m) => (m, false),
+                Err(e) => (e, true),
+            });
+            self.patch_job = None;
+            self.patch_state = None;
+            self.draft.patch = self.core.ui().cfg.patch;
+        }
+    }
+
+    fn start_patch_job(&mut self, ctx: &egui::Context, install: bool) {
+        let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+        self.patch_job = Some(slot.clone());
+        self.patch_note = None;
+        let core = self.core.clone();
+        let ctx = ctx.clone();
+        tokio::spawn(async move {
+            let r = if install {
+                core.patch_install().await.map(|()| "Game patch installed.".to_string())
+            } else {
+                core.patch_uninstall().await.map(|_| "Removed. PLAY needs INSTALL again.".to_string())
+            };
+            *slot.lock().unwrap() = Some(r);
+            ctx.request_repaint();
+        });
+    }
+
+    /// One line under GAME FOLDER: the patch verdict (per-file detail on
+    /// hover) and INSTALL when it is not right.
+    fn patch_line(&mut self, ui: &mut egui::Ui, busy: bool) {
+        self.poll_patch_job();
+        if !self.draft.game.join("mkw.exe").exists() {
+            return;
+        }
+        let r = self.patch_report();
+        let color = if r.ok() { GREEN_D } else { RED_D };
+        ui.horizontal(|ui| {
+            ui.set_height(24.0);
+            light(ui, if r.ok() { GREEN } else { RED });
+            let text = if self.patch_job.is_some() { "Working on the game patch…".to_string() } else { r.summary(crate::update::VERSION) };
+            ui.label(RichText::new(text).size(12.0).color(color)).on_hover_text(r.files.join("\n"));
+            if !r.ok() {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let idle = self.patch_job.is_none() && !busy;
+                    if small_button(ui, "INSTALL", 96.0, GREEN, GREEN_D, idle).clicked() {
+                        self.start_patch_job(ui.ctx(), true);
+                    }
+                });
+            }
+        });
+    }
+
+    /// GAME PATCH in SETTINGS: the verdict, INSTALL / UNINSTALL.
+    fn patch_settings(&mut self, ui: &mut egui::Ui) {
+        use crate::probe::PatchState;
+        self.poll_patch_job();
+        section(ui, "GAME PATCH");
+        if !self.draft.game.join("mkw.exe").exists() {
+            hint(ui, "Set the game folder (the one with mkw.exe) first.", MUTED);
+            return;
+        }
+        let r = self.patch_report();
+        hint(ui, &r.summary(crate::update::VERSION), if r.ok() { GREEN_D } else { RED_D });
+        for f in &r.files {
+            hint(ui, f, MUTED);
+        }
+        let idle = self.patch_job.is_none();
+        ui.horizontal(|ui| {
+            let install = pixel_button(ui, "INSTALL", vec2(150.0, 30.0), GREEN, GREEN_D, PAPER, 9.0, idle)
+                .on_hover_text("Put the game patch and voice chat in the game folder (or repair them)");
+            let uninstall = pixel_button(ui, "UNINSTALL", vec2(150.0, 30.0), RED, RED_D, PAPER, 9.0, idle && r.state != PatchState::Missing)
+                .on_hover_text("Remove every mkwmp file from the game folder and put back what was there");
+            if install.clicked() {
+                self.start_patch_job(ui.ctx(), true);
+            } else if uninstall.clicked() {
+                self.start_patch_job(ui.ctx(), false);
+            }
+        });
+        if !idle {
+            hint(ui, "Working…", MUTED);
+        } else if let Some((m, err)) = &self.patch_note {
+            hint(ui, m, if *err { RED_D } else { GREEN_D });
         }
     }
 
@@ -794,7 +859,10 @@ impl App {
         let gh = Rect::from_center_size(pos2((row.left() + play.left()) / 2.0, row.center().y), side);
         let kofi = Rect::from_center_size(pos2((play.right() + row.right()) / 2.0, row.center().y), side);
 
-        let problem = self.draft.problem();
+        let problem = self.draft.problem().or_else(|| {
+            let r = self.patch_report();
+            (!r.ok()).then(|| r.summary(crate::update::VERSION))
+        });
         let enabled = busy || problem.is_none();
         let (label, fill, dark) = if busy { ("STOP", BLUE, BLUE_D) } else { ("PLAY", RED, RED_D) };
         let mut resp = pixel_button_at(ui, play, "play", label, fill, dark, PAPER, 26.0, enabled);

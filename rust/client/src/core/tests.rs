@@ -121,6 +121,10 @@ fn setup(server: &str) -> (Arc<Core>, PathBuf) {
     std::fs::create_dir_all(&game).unwrap();
     std::fs::write(game.join("mkw.exe"), "").unwrap();
     std::fs::write(game.join("mkwmp.toml"), "lobby = \"old:8905\"\nticket = \"mkw1.old\"\nvoice_port = 8907\n").unwrap();
+    // An installed game patch (no expected hashes in tests: "not verified").
+    crate::probe::install_probe(&game, b"probe", false).unwrap();
+    crate::probe::install_file(&game, crate::probe::VOICE, b"voice", false).unwrap();
+    std::fs::write(game.join(crate::probe::HOST), crate::probe::fake_winmm()).unwrap();
     let cfg = ClientConfig {
         server: server.into(),
         name: "Ana".into(),
@@ -137,6 +141,7 @@ fn setup(server: &str) -> (Arc<Core>, PathBuf) {
             mutes: vec![crate::config::VoiceMute { account: "42".into(), name: "Bia".into() }],
             ..Default::default()
         },
+        patch: true,
     };
     let path = dir.join("client.toml");
     cfg.save(path.to_str().unwrap()).unwrap();

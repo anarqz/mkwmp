@@ -27,7 +27,8 @@ pub const REPO: &str = "anarqz/mkwmp";
 /// Public release keys (`kid:base64url`). The private half never leaves the
 /// release machine.
 pub const RELEASE_KEYS: &[&str] = &["release1:Zuvb-AuF9DcXEzXRSu49EFrb2ilCQnJl1e4ApQJI9Dw"];
-pub const PROBE_ASSET: &str = "mkwmp-probe-winmm.dll";
+/// The game patch (native/probe), installed as `<game>/winmm.dll`.
+pub const PROBE_ASSET: &str = "winmm.dll";
 /// The voice engine (native/voice), installed as `<game>/mkwmp-voice.dll`.
 pub const VOICE_ASSET: &str = "mkwmp-voice.dll";
 

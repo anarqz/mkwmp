@@ -122,6 +122,7 @@ mod tests {
             launch_command: String::new(),
             background: Default::default(),
             voice: Default::default(),
+            patch: true,
         }
     }
 

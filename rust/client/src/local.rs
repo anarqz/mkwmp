@@ -32,15 +32,6 @@
 //!
 //! GET is polled every 2 s (burst 10, 2/s); the two POSTs share a bucket
 //! (burst 20, 2/s). A malformed body: 400.
-//!
-//! The Room ID typed in the window, for the game's "search group ID"
-//! keyboard (same token, any time):
-//!
-//!   GET    /local/v1/room   200 {"roomId":"731605"} or {"roomId":""}
-//!   DELETE /local/v1/room   204 (used: clear it)
-//!
-//! Not saved; it clears itself 10 min after it was typed. One bucket for
-//! both (burst 10, 2/s): polling every second is fine.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -62,7 +53,6 @@ pub fn router(core: Arc<Core>) -> Router {
         .route("/local/v1/voice", get(voice))
         .route("/local/v1/voice/devices", post(voice_devices))
         .route("/local/v1/voice/mute", post(voice_mute))
-        .route("/local/v1/room", get(room).delete(room_clear))
         .with_state(core)
 }
 
@@ -84,7 +74,6 @@ static SEAT_LIMIT: Mutex<Bucket> = Mutex::new(Bucket::new(10.0, 1.0));
 static FRIENDS_LIMIT: Mutex<Bucket> = Mutex::new(Bucket::new(10.0, 1.0));
 static VOICE_LIMIT: Mutex<Bucket> = Mutex::new(Bucket::new(10.0, 2.0));
 static VOICE_POST_LIMIT: Mutex<Bucket> = Mutex::new(Bucket::new(20.0, 2.0));
-static ROOM_LIMIT: Mutex<Bucket> = Mutex::new(Bucket::new(10.0, 2.0));
 
 fn allow(bucket: &Mutex<Bucket>) -> bool {
     let mut b = bucket.lock().unwrap_or_else(|p| p.into_inner());
@@ -114,28 +103,6 @@ fn authorized(core: &Core, h: &HeaderMap) -> bool {
 
 fn unauthorized() -> Response {
     (StatusCode::UNAUTHORIZED, Json(json!({"state": "unauthorized"}))).into_response()
-}
-
-async fn room(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
-    if !allow(&ROOM_LIMIT) {
-        return limited();
-    }
-    if !authorized(&core, &h) {
-        return unauthorized();
-    }
-    let id = core.room().map(|(id, _)| id).unwrap_or_default();
-    Json(json!({"roomId": id})).into_response()
-}
-
-async fn room_clear(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
-    if !allow(&ROOM_LIMIT) {
-        return limited();
-    }
-    if !authorized(&core, &h) {
-        return unauthorized();
-    }
-    core.set_room("");
-    StatusCode::NO_CONTENT.into_response()
 }
 
 const MAX_FRIENDS: usize = 100;
@@ -317,28 +284,6 @@ mod tests {
             json!({"enabled": true, "input": "", "output": "", "inputGain": 100, "outputGain": 100,
                    "mutes": [{"account": "123", "name": "Bia2"}]})
         );
-    }
-
-    #[tokio::test]
-    async fn room_route_over_http() {
-        let path = std::env::temp_dir().join(format!("mkwmp_local_room_{}.toml", std::process::id()));
-        let core = Core::new(path.to_str().unwrap().into(), crate::config::ClientConfig::default());
-        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}/local/v1/room", l.local_addr().unwrap());
-        let app = router(core.clone());
-        tokio::spawn(async move { axum::serve(l, app).await });
-        let http = reqwest::Client::new();
-        let tok = core.token().to_string();
-        let get = || async { http.get(&url).bearer_auth(&tok).send().await.unwrap().json::<serde_json::Value>().await.unwrap() };
-        assert_eq!(http.get(&url).send().await.unwrap().status(), 401);
-        assert_eq!(get().await, json!({"roomId": ""}));
-        core.set_room("12345"); // not 6 digits: nothing
-        assert_eq!(get().await, json!({"roomId": ""}));
-        core.set_room("731605");
-        assert_eq!(get().await, json!({"roomId": "731605"}));
-        assert_eq!(http.delete(&url).bearer_auth(&tok).send().await.unwrap().status(), 204);
-        assert_eq!(get().await, json!({"roomId": ""}));
-        assert!(core.room().is_none());
     }
 
     #[tokio::test]

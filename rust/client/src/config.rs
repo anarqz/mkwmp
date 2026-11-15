@@ -53,6 +53,11 @@ pub struct ClientConfig {
     /// Voice chat (`[voice]`, docs/contracts/VOICE_API.md §4).
     #[serde(default)]
     pub voice: Voice,
+    /// Keep the game patch (winmm.dll, the voice engine) in the game folder.
+    /// UNINSTALL in SETTINGS turns it off and removes every mkwmp file there;
+    /// INSTALL turns it back on. PLAY needs it.
+    #[serde(default = "yes")]
+    pub patch: bool,
 }
 
 /// Lobby voice chat. The window edits the switches, devices and volumes; the
@@ -191,6 +196,7 @@ impl Default for ClientConfig {
             launch_command: String::new(),
             background: Background::default(),
             voice: Voice::default(),
+            patch: true,
         }
     }
 }
@@ -232,6 +238,9 @@ impl ClientConfig {
         }
         if !self.game.join("mkw.exe").exists() {
             return Some("Set the game folder (the one with mkw.exe)".into());
+        }
+        if !self.patch {
+            return Some("Install the game patch first: SETTINGS, GAME PATCH, INSTALL".into());
         }
         None
     }

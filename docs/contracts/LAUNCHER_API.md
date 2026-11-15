@@ -64,20 +64,7 @@ account a u64 in decimal); the two POSTs answer `204`, `400` for a malformed bod
 10 then 2/s; the POSTs share a bucket, burst 20 then 2/s. Saved in client.toml `[voice]`; the
 launcher keeps at most 64 devices per list and 500 mutes.
 
-## Room ID: GET /local/v1/room, DELETE /local/v1/room
+## Room ID (removed in 1.0.0)
 
-Same bearer; works without PLAY. The game's "search group ID" button opens the system keyboard
-(`nn::swkbd::ShowKeyboard`), which has no text entry under mkw-recomp. The player types the 6-digit
-Room ID in the launcher's FRIENDS card (ROOM ID field), goes back to the game and presses the
-button; the probe answers the keyboard with it.
-
-| Request | Status | Body | Meaning |
-|---|---|---|---|
-| `GET` | 200 | `{"roomId":"731605"}` | A Room ID was typed (exactly 6 digits) in the last 10 minutes. |
-| `GET` | 200 | `{"roomId":""}` | None typed, cleared, or older than 10 minutes. |
-| `DELETE` | 204 | | Used: clear it (the window's field empties too). |
-| either | 401 | `{"state":"unauthorized"}` | Wrong or missing token. |
-| either | 429 | `{"state":"limited"}` | Over the limit: burst 10, then 2/s (both share it); polling every 1 s is fine. |
-
-Never saved: a launcher restart forgets it. It expires 10 minutes after it was typed, so a later
-name or text keyboard is not answered with it.
+`/local/v1/room` is gone: the probe's on-screen keypad answers the game's "search group ID"
+keyboard. The launcher answers 404, and the probe stops asking after four 404s.

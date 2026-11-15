@@ -96,14 +96,9 @@ pub struct Core {
     friends_wake: Notify,
     /// One config write at a time (the window and the local API both save).
     cfg_write: std::sync::Mutex<()>,
-    /// The Room ID typed in the window for the game's "search group ID"
-    /// keyboard, and when it was set. Not saved; expires after ROOM_TTL.
-    room: std::sync::Mutex<Option<(String, std::time::Instant)>>,
+    /// The hashes this launcher's game patch must have, once known.
+    expected: std::sync::Mutex<Option<probe::Expected>>,
 }
-
-/// A typed Room ID answers the game's keyboard for this long, so a later
-/// name or text keyboard isn't answered with it.
-pub const ROOM_TTL: Duration = Duration::from_secs(600);
 
 impl Core {
     pub fn new(config_path: String, cfg: ClientConfig) -> Arc<Self> {
@@ -126,7 +121,7 @@ impl Core {
             presence: Mutex::new(None),
             friends_wake: Notify::new(),
             cfg_write: std::sync::Mutex::new(()),
-            room: std::sync::Mutex::new(None),
+            expected: std::sync::Mutex::new(None),
         })
     }
 
@@ -134,24 +129,60 @@ impl Core {
         self.ui.lock().unwrap().clone()
     }
 
-    /// The Room ID for the game (6 digits) and the time it has left; None if
-    /// unset or expired.
-    pub fn room(&self) -> Option<(String, Duration)> {
-        let mut r = self.room.lock().unwrap_or_else(|p| p.into_inner());
-        match r.as_ref() {
-            Some((id, at)) if at.elapsed() < ROOM_TTL => Some((id.clone(), ROOM_TTL - at.elapsed())),
-            Some(_) => {
-                *r = None;
-                None
-            }
-            None => None,
+    /// Learn the expected hashes and, when the patch is on, install it.
+    /// `force`: install even with `patch` off (INSTALL). Never fatal to the
+    /// caller beyond the returned error.
+    pub async fn sync_patch(&self, force: bool) -> Result<(), String> {
+        let cfg = self.ui().cfg;
+        if !cfg.game.join("mkw.exe").exists() {
+            return Ok(());
+        }
+        let b = patch_files(&cfg).await;
+        if let Ok(b) = &b {
+            *self.expected.lock().unwrap_or_else(|p| p.into_inner()) = Some(b.expected.clone());
+        }
+        if !(cfg.patch || force) {
+            return Ok(());
+        }
+        install_bundle(&cfg, &b?)
+    }
+
+    /// What the game folder holds, checked by content against this
+    /// launcher's signed hashes.
+    pub fn patch_report(&self) -> probe::PatchReport {
+        let game = self.ui().cfg.game;
+        let expected = self.expected.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        probe::check(&game, expected.as_ref())
+    }
+
+    /// SETTINGS → GAME PATCH → INSTALL: turn the patch on, save, install.
+    pub async fn patch_install(&self) -> Result<(), String> {
+        let mut cfg = self.ui().cfg;
+        cfg.patch = true;
+        self.set_config(cfg)?;
+        self.sync_patch(true).await?;
+        let r = self.patch_report();
+        if r.ok() {
+            Ok(())
+        } else {
+            Err(format!("{}: {}", r.summary(update::VERSION), r.files.join("; ")))
         }
     }
 
-    /// Set (exactly 6 digits) or clear (anything else) the Room ID.
-    pub fn set_room(&self, id: &str) {
-        let ok = id.len() == 6 && id.bytes().all(|b| b.is_ascii_digit());
-        *self.room.lock().unwrap_or_else(|p| p.into_inner()) = ok.then(|| (id.to_string(), std::time::Instant::now()));
+    /// SETTINGS → GAME PATCH → UNINSTALL: turn the patch off (so nothing puts
+    /// it back), save, and remove every mkwmp file from the game folder.
+    pub async fn patch_uninstall(&self) -> Result<Vec<String>, String> {
+        if self.seat().await.is_some() {
+            return Err("Press STOP first".into());
+        }
+        let mut cfg = self.ui().cfg;
+        cfg.patch = false;
+        self.set_config(cfg.clone())?;
+        let done = probe::uninstall(&cfg.game, probe::game_running())?;
+        for line in &done {
+            note(format!("uninstall: {line}"));
+        }
+        Ok(done)
     }
 
     pub fn token(&self) -> &str {
@@ -328,11 +359,12 @@ impl Core {
         // Always the current server's: a stale file from another server
         // would make the game reject this one's lobby.
         launch::write_lobby_ca(&cfg.game, lobby_ca.as_deref()).map_err(|e| format!("writing {}: {e}", launch::LOBBY_CA))?;
-        if cfg.update {
-            sync_probe(&cfg).await;
+        if let Err(e) = self.sync_patch(false).await {
+            note(format!("game patch: {e}"));
         }
-        if let Some(msg) = probe::ensure_host(&cfg.game) {
-            note(format!("winmm_host.dll: {msg}"));
+        let patch = self.patch_report();
+        if !patch.ok() {
+            return Err(format!("{} ({})", patch.summary(update::VERSION), patch.files.join("; ")));
         }
         let addr = format!("127.0.0.1:{}", cfg.local_port);
         let write = |ticket: Option<&str>, lobby: &str| {
@@ -637,6 +669,9 @@ impl Core {
     pub async fn updates(self: Arc<Self>) -> Option<PathBuf> {
         let cfg = self.ui().cfg;
         if !cfg.update {
+            if let Err(e) = self.sync_patch(false).await {
+                note(format!("game patch: {e}"));
+            }
             self.set(|u| u.update = "updates off".into());
             return None;
         }
@@ -652,51 +687,67 @@ impl Core {
                 Err(e) => note(format!("update check failed: {e}")),
             }
         }
-        if cfg.game.join("mkw.exe").exists() {
-            sync_probe(&cfg).await;
+        if let Err(e) = self.sync_patch(false).await {
+            note(format!("game patch: {e}"));
         }
         self.set(|ui| ui.update = "up to date".into());
         None
     }
 }
 
-/// Bring the game patch in line with this launcher's release. Never fatal.
-pub async fn sync_probe(cfg: &ClientConfig) {
+/// The game patch files for this launcher's version and the hashes they must
+/// have: from the release zip's `game/` folder when its signed list is for
+/// this version, else (with updates on) downloaded from this launcher's own
+/// release and checked against its signed SHA256SUMS.
+async fn patch_files(cfg: &ClientConfig) -> Result<probe::Bundle, String> {
+    if let Some(b) = probe::bundled() {
+        return Ok(b);
+    }
+    if !cfg.update {
+        return Err("no game/ folder next to the launcher, and updates are off".into());
+    }
     let u = update::Updater::new();
-    let (r, sums) = match update::own_release(&u).await {
-        Ok(x) => x,
-        Err(e) => {
-            note(format!("game patch check failed: {e}"));
-            return;
-        }
+    let (r, sums) = update::own_release(&u).await?;
+    let expected = probe::Expected {
+        version: update::VERSION.to_string(),
+        probe: sums.0.get(update::PROBE_ASSET).cloned().ok_or("the release lists no game patch")?,
+        voice: sums.0.get(update::VOICE_ASSET).cloned(),
     };
-    match u.asset(&r, &sums, update::PROBE_ASSET).await {
-        Ok(bytes) => match probe::install_probe(&cfg.game, &bytes, probe::game_running()) {
-            Ok(probe::ProbeAction::UpToDate) => {}
-            Ok(probe::ProbeAction::Installed { backup }) => {
-                note(format!("installed the game patch {}", r.tag_name));
-                if let Some(b) = backup {
-                    note(format!("your previous winmm.dll is saved as {}", b.display()));
-                }
+    let probe = u.asset(&r, &sums, update::PROBE_ASSET).await.map_err(|e| format!("game patch download failed: {e}"))?;
+    let voice = match expected.voice {
+        Some(_) => Some(u.asset(&r, &sums, update::VOICE_ASSET).await.map_err(|e| format!("voice chat download failed: {e}"))?),
+        None => None,
+    };
+    Ok(probe::Bundle { expected, probe, voice })
+}
+
+/// Put `b` in the game folder. Notes what it did.
+fn install_bundle(cfg: &ClientConfig, b: &probe::Bundle) -> Result<(), String> {
+    let tag = format!("v{}", b.expected.version);
+    let running = probe::game_running();
+    match probe::install_probe(&cfg.game, &b.probe, running) {
+        Ok(probe::ProbeAction::UpToDate) => {}
+        Ok(probe::ProbeAction::Installed { backup }) => {
+            note(format!("installed the game patch {tag}"));
+            if let Some(bak) = backup {
+                note(format!("your previous winmm.dll is saved as {}", bak.display()));
             }
-            Ok(probe::ProbeAction::GameRunning) => note("a game patch update is ready; close the game first"),
-            Err(e) => note(format!("installing the game patch failed: {e}")),
-        },
-        Err(e) => note(format!("game patch download failed: {e}")),
+        }
+        Ok(probe::ProbeAction::GameRunning) => return Err("close the game first: a game patch update is ready".into()),
+        Err(e) => return Err(format!("installing the game patch failed: {e}")),
     }
-    // Voice chat's engine, from the same release (older releases have none).
-    if !r.assets.iter().any(|a| a.name == update::VOICE_ASSET) {
-        return;
-    }
-    match u.asset(&r, &sums, update::VOICE_ASSET).await {
-        Ok(bytes) => match probe::install_file(&cfg.game, probe::VOICE, &bytes, probe::game_running()) {
-            Ok(probe::ProbeAction::Installed { .. }) => note(format!("installed voice chat {}", r.tag_name)),
-            Ok(probe::ProbeAction::GameRunning) => note("a voice chat update is ready; close the game first"),
+    if let Some(bytes) = &b.voice {
+        match probe::install_file(&cfg.game, probe::VOICE, bytes, running) {
+            Ok(probe::ProbeAction::Installed { .. }) => note(format!("installed voice chat {tag}")),
+            Ok(probe::ProbeAction::GameRunning) => return Err("close the game first: a voice chat update is ready".into()),
             Ok(probe::ProbeAction::UpToDate) => {}
-            Err(e) => note(format!("installing voice chat failed: {e}")),
-        },
-        Err(e) => note(format!("voice chat download failed: {e}")),
+            Err(e) => return Err(format!("installing voice chat failed: {e}")),
+        }
     }
+    if let Some(msg) = probe::ensure_host(&cfg.game) {
+        note(format!("winmm_host.dll: {msg}"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
