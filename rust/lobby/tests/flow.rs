@@ -460,6 +460,13 @@ fn friend_room_create_room_id_and_join() {
     assert_eq!(wire::str_field(mp, 3).unwrap().as_deref(), Some(guest.uid.as_str()));
     let gs = wire::bytes_field(&joined, 2).unwrap().unwrap();
     assert_eq!(wire::repeated_bytes(gs, 12).unwrap().len(), 2);
+    // SYNCSTATE-RE.md 9: a room's attributes carry the integer `rule` = 3 (the game never writes
+    // it; without it the joiner plays the room as a public Race lobby and the race never starts).
+    let attrs = wire::bytes_field(gs, 11).unwrap().unwrap();
+    let rule = wire::repeated_bytes(attrs, 1).unwrap().into_iter()
+        .find(|e| wire::str_field(e, 1).ok().flatten().as_deref() == Some("rule"))
+        .expect("rule attribute");
+    assert_eq!(Value::decode(wire::bytes_field(rule, 2).unwrap().unwrap()).unwrap(), Value::Int(3));
     let c = changes(&pushes(&mut host));
     assert_eq!(c[0].1, ChangeKind::Added as u64, "host sees the new member");
     // The guest's Gamesync session is the room's.

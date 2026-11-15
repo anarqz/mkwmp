@@ -1058,7 +1058,7 @@ impl State {
         self.deferred_sends.extend(sends);
         let ussid = self.users.number(&uid);
         let creation = uuid::Uuid::new_v4();
-        let room = Room { password: req.password, attributes: req.attributes, creation_ticket: creation, alias: None };
+        let room = Room { password: req.password, attributes: with_room_rule(req.attributes), creation_ticket: creation, alias: None };
         let player = req.players.first().cloned().unwrap_or_default();
         let (lobby, _) = self.mm.create_room(&user, &req.mode, player, req.players.len(), room, ussid, now);
         info!(lobby = %lobby, user = %uid, "friend room created");
@@ -1441,6 +1441,21 @@ fn user_session_document(name: &str, uid: &str, ussid: u32, upcsid: u64, pgn: &s
         .with("pgn", Value::str(pgn))
         .with("st", Value::Int(2));
     Document::new(name, fields, now)
+}
+
+/// A friend room's GameSession attributes as the server would publish them: the creator's own
+/// (`rom_id`, `course_id`, `user_name`) plus the integer `rule` = 3 (group / course-vote lobby).
+/// The game never writes `rule`; without it a joiner reads rule 0 = a public Race lobby, sets
+/// `RandomMatchSession`, stalls in GroupPlayModeSelector and the host's SyncState times out
+/// (0x46b96f91; resources/docs/SYNCSTATE-RE.md 9). Attributes = `{1: entry{1 key, 2 Value}}`.
+fn with_room_rule(mut attributes: Vec<u8>) -> Vec<u8> {
+    let has = crate::wire::repeated_bytes(&attributes, 1)
+        .is_ok_and(|es| es.iter().any(|e| crate::wire::str_field(e, 1).ok().flatten().as_deref() == Some("rule")));
+    if !has {
+        let entry = crate::wire::Msg::new().bytes(1, "rule").msg(2, &Value::Int(3).encode());
+        attributes.extend(crate::wire::Msg::new().msg(1, &entry).into_bytes());
+    }
+    attributes
 }
 
 /// `__gs/f` (parser FUN_01267698): gsid, addr, p (NAT probe port), mcn (mesh creator),

@@ -5,6 +5,13 @@
 `scratch/syncstate-re/` (`ss1.c` .. `ss13.c`, `pia1.c`, `dc.ps1`, `rates.py`, `sizes.py`, `speed.py`,
 `piatab.py`). Nothing under `rust/` or `native/` was changed. V = read in code or in a log, I = inferred.
 
+> **Update (same day, after the room trace): read section 9 first.** The trace shows the joiner carries static
+> flag `RandomMatchSession`: it treats the friend room as a public Race lobby. The cause found in code is a
+> missing session attribute: the joiner reads the integer attribute **`rule`** from the `GameSession` the lobby
+> returns, and a missing `rule` reads as 0 = public Race. This is a lobby fix (section 9.4). It supersedes
+> answer 4 below ("nothing to fix in `rust/lobby`"), the candidate ranking of section 5 and the test plan of
+> section 7. Sections 2 to 4 stand.
+
 ## 1. Short answers
 
 1. **SyncState waits for a P2P value, not for the lobby.** It waits until every player in `JoinPlayers` has a
@@ -248,3 +255,150 @@ Order by cost. Each step has the log line that decides.
   `.ainb` here.
 - The successful matchmade battle has no Deck or PC log in `scratch/syncstate-1535`, so "same machines pass in
   matchmaking" rests on the brief.
+
+## 9. Follow-up: what the room trace shows, and the cause
+
+Logs: `scratch/syncstate-1535/pc-mkwmp-trace.log`, `deck-mkwmp-trace.log` (probe hooks of section 7).
+New decompiles in `scratch/syncstate-re/`: `ss14.c`..`ss16.c`, `ssi.c`, `flag4.c`, `rule*.c`, `gsrule.c`, `gsd.c`,
+`mgr1.c`..`mgr3.c`; graph dump `ainb2.py`.
+
+### 9.1 The trace
+
+| Machine | ms | Line | Meaning |
+|---|---|---|---|
+| P1 | 60985.. | `PrivateRoomMain: flags .../0x4988948` | static flags: `CourseVoteSession` (0x8), **no 0x10** |
+| P1 | 61141 | `room start event`, `ReadyVoteSetter ... playing 0x3 vote 0x3 a=0x1` | host left `PrivateRoomMain`, sent the start, state 1 |
+| P1 | 61203 | `SyncState: ... states 1,0,0,0 a=0x3` | expects players 0 and 1; player 1 (P2) is at 0 |
+| P2 | 32358.. | `PrivateRoomMain: flags .../0x180358` .. `0x4980b58` | static flags have **0x10 = `RandomMatchSession`** and 0x8 from the first line on |
+| P2 | 53953 | `room start event: flags 0x2/0x4988b58` | the host's start arrived; `P2PReady` (0x4000000) and 0x8 are set, so it is accepted |
+| P2 | 53996, 54076 | `PrivateRoomMain ... a=0x1 b=0`, then `flags 0x800000c2 ... states 1,0,0,0 ... b=0x1` | start accepted, `node+0x28` set; P2 sees P1's state 1 |
+| P2 | 54076 to 119830 | nothing | no `ReadyVoteSetter` line for 65 s |
+| P2 | 119830 | `room start event: flags .../0x4988b5c states 1,0,0,0`, then `ReadyVoteSetter ... playing 0x2 a=0x1`, `SyncState ... a=0x2` | P1 is gone (playing 0x3 -> 0x2); P2 is now the host and this start event is **its own** |
+
+So (a) of the follow-up: the second `0x9d424b78` is not a resend by P1. The PC crashed, the Deck became host
+and ran `StartTimeoutCounter` itself (the hook logs the sender's own event too, as on P1 at 61141). V
+
+After the first event every gate of section 2 held on P2 and `PrivateRoomMain` took its exit: at 54076 the exit
+test of `FUN_01a5a444` (`node+0x28 && G188+5 && G188+0x44`, disassembly 0x1a5a4b0..0x1a5a50c) is true with
+`b=0x1 has 1 vote 0x3`. V. The graph then goes (re-read from `PrivateRoom.module.ainb`, `ainb2.py`):
+node 1 `PrivateRoomMain` -> node 28 `GroupPlayModeSelector` {Wait -> DummyEndAction; Race, Survival -> 27
+`SendVoteElection`; Battle -> 29 `SyncBattleAnybodyRule` -> 27} -> 4 `StartTimeoutCounter` -> 32
+`ReadyVoteSetter` -> 38 `SyncRacePlayerInfo` -> 39 `PreloadPlayer` -> 31 `SyncState`. P2 did not reach node 32,
+so it sat in node 28, 27 or 4. Node 27 finishes in its enter (`FUN_01a73514`) and node 4 (`FUN_01a7b910`) has no
+wait, so it is node 28. I (no hook on it).
+
+`GroupPlayModeSelector` update `FUN_01a46670` branches on `RandomMatchSession`:
+- clear (a room): child chosen from the host's replicated group play mode `G188[0]` (0 Race, 1 Survival,
+  2/3 Battle), "Wait" while `G188[1]` is 0;
+- set (a public lobby): child chosen from the local controller mode `**(G+0xd8)`; **returns without choosing
+  while that is 0**. V (code); that this is what held P2 is I.
+
+### 9.2 Why the joiner has `RandomMatchSession`
+
+Only `FUN_0211d0d4(G, &mode)` sets 0x10 (with 0x8): for mode 0 or 5 it sets `RandomMatchSession |
+CourseVoteSession`, `G188[4..5]`, interval 30 and controller mode 2 or 5. V (the other sites with 0x10 on
+`G+0x114` are clears: `FUN_00c04100`, `FUN_00c737bc`, `FUN_0211d314`, LobbyJoin enter `FUN_01a4c20c`).
+Callers: `AnybodyMain` (`FUN_01a30810` case 7, the public search) and **`SyncSessionInfo`** update
+`FUN_01a829f8`, which runs on a non-host:
+
+    mode = M+0x7fc;  kind = M[0x4b4] ? M[0x4a8] : M[8];  if (kind != 0) mode = 3;
+    mode 5 or 6 -> FUN_0211d0d4;  mode 3 -> flags |= CourseVoteSession only;  mode 0 -> FUN_0211d0d4
+
+`M+8` selects the backend in `FUN_0261eff4` (0 = the NPLN path, 1 and 2 = other managers), so it is 0 for every
+internet session, room or not. V. So a joiner is "private" only when `M+0x7fc == 3`.
+
+`M+0x7fc` of a joiner comes from the session it was shown:
+- Room ID: `CheckShortIdSession` 0x1a3a734: `LobbyType = FUN_021424d0(FUN_01e3f370(session info))`, then
+  `StartMatchmake` sets `M+0x7fc = FUN_021424a8(LobbyType)`.
+- Friend card: list entry `+0x48 = FUN_01e3f0d0(index)` (`FUN_02134b8c`), handed on as LobbyType by
+  `LobbySelectTarget`.
+- `FUN_01e3f370` / `FUN_01e3f0d0`: no session info -> 3; otherwise the session attribute **`rule`**
+  (string 0x28da353) through `FUN_0223f22c` + `FUN_00f131c0`, which returns the integer only when the value's
+  kind is 3 (int) and **0 otherwise, also when the attribute is missing**.
+- Tables: `FUN_021424d0` (0x29c93b0) rule 0 -> LobbyType 1, 3 -> 2, 5 -> 3, 6 -> 4; `FUN_021424a8` (0x292b810)
+  LobbyType 1 -> mode 0, 2 -> 3, 3 -> 5, 4 -> 6.
+
+All V. The client never writes a session attribute `rule`: the string has four references, all readers
+(`FUN_01e3f370`, `FUN_01e3f0d0`, the friend entry getter at 0x1e36a8c, and `FUN_00498a80` which reads
+`prp["rule"]` of the Gamesync document `__gs/m`). The create request carries `rom_id`, `course_id`, `user_name`
+only (RE-MAP 3.2), and no log shows an UpdateGameSession call. So on the real service `rule` is put there by
+the server (I: from the matchmaking config; `Private24` = 3).
+
+The Rust lobby returns the creator's attributes unchanged (`core.rs` `room_create` l.1061 ->
+`session_view_msg` -> `msgs::game_session` field 11) in GetGameSession, BatchGetGameSessions,
+JoinGameSession and TrackGameSessionCreationTicket. No `rule` -> the joiner reads 0 -> LobbyType 1 (public
+Race) -> mode 0 -> `RandomMatchSession`. V for each step in code, and the flag is in the trace; the link
+"missing `rule` is what set it in this run" is I until the test of 9.5.
+
+### 9.3 What this explains
+
+- P2 accepts the start but stalls in the play-mode selector; P1 waits 25 s in SyncState (this document).
+- The up to 15 s in which P1 can do nothing after picking the mode: the joiner applies the host's rule replica
+  only when `FUN_01a80590` holds, and that needs `RandomMatchSession` clear; the host waits for it
+  (`WaitSyncPlayMode`, 900 frames, RE-MAP 4.3). I
+- P2's chat not shown on P1 while P1 -> P2 works: P2 runs public-lobby logic in a room. I (the chat event
+  0x2f815dfc was not traced).
+- Matchmade battles work: both sides are public and take the same branches.
+- (b) of the follow-up: nothing is missing on the host side. The host admits the joiner: P1 has
+  `playing 0x3` and expected mask `a=0x3`. Player indexes are agreed peer to peer in the station manager
+  (vtable 0x325dac0: join queue `FUN_02249774`, promotion `FUN_02249a90`, slot table `FUN_0224cee8`), with no
+  Gamesync or GameSession member list involved. V. The `__us` ADDED push the lobby sends on a join is enough
+  for this phase.
+
+### 9.4 Fix (proposal, not compiled)
+
+`rust/lobby/src/core.rs`, `room_create`: store the attributes with `rule` added when the creator did not send
+one. `Attributes` = `{1: entry{1 key, 2 Value}}`, the same shape as `Fields::encode`; `Value::Int` is field 3,
+the kind `FUN_00f131c0` wants.
+
+```diff
+-        let room = Room { password: req.password, attributes: req.attributes, creation_ticket: creation, alias: None };
++        let room = Room { password: req.password, attributes: with_rule(req.attributes), creation_ticket: creation, alias: None };
+```
+```rust
+/// Joiners read the int session attribute `rule` (FUN_01e3f370 / FUN_01e3f0d0); a missing one reads as 0,
+/// a public Race lobby (resources/docs/SYNCSTATE-RE.md 9). 3 = friend room.
+fn with_rule(mut attributes: Vec<u8>) -> Vec<u8> {
+    let has = crate::wire::repeated_bytes(&attributes, 1)
+        .is_ok_and(|es| es.iter().any(|e| crate::wire::str_field(e, 1).ok().flatten().as_deref() == Some("rule")));
+    if !has {
+        let entry = crate::wire::Msg::new().bytes(1, "rule").msg(2, &Value::Int(3).encode());
+        attributes.extend(crate::wire::Msg::new().msg(1, &entry).into_bytes());
+    }
+    attributes
+}
+```
+
+Test to add (`rust/lobby/tests/flow.rs`): create a room with attributes `{rom_id, course_id, user_name}`;
+GetGameSession, BatchGetGameSessions and the JoinGameSession reply must carry field 11 with `rule` = int 3 and
+the three original entries unchanged.
+
+Second step, only if 9.5 still fails: author `docs/__gs/m` = `{cp: false, ip: false, pw: "", ebf: false,
+bfmin: 0, bfmax: 0, prp: {rule: 3}}` in the answer to the `docs/__gs/` listen (parser `FUN_012673cc`; the
+game copies `prp["rule"]` to `ctx+0xdc` in `FUN_00498a80`; its consumer was not traced). The client may then
+update `cp` on that document and the write must be accepted (MULTI-LOBBY.md 2.2).
+
+No probe change is needed. (c) of the follow-up: making the joiner act on the first event, or suppressing
+`0x46b96f91`, treats the symptom; with suppression both sides sit forever because the joiner never leaves the
+selector.
+
+### 9.5 Confirmation in the next run (trace probe on both machines)
+
+1. Joiner, from its first `PrivateRoomMain:` line: second flags word **without 0x10** (for example
+   `0x...348` / `0x...b48` where it was `0x...358` / `0x...b58`).
+2. Joiner, within a second of `room start event`: `ReadyVoteSetter: ... a=0x1`, then `SyncState: ...`.
+3. Host: a `SyncState:` line with `states 1,1,0,0` (or no second line at all because it leaves at once), and
+   no `controller event ... 0x46b96f91`.
+4. No dead time on the host after picking the rules; chat from the joiner appears on the host.
+
+If 1 fails with the fix deployed, dump field 11 of the GetGameSession / BatchGetGameSessions reply and check
+the `rule` entry (key, Value field 3). If 1 holds and 2 fails, hook `GroupPlayModeSelector` update
+`0x7001a46670` (log `G188[0]`, `G188[1]`, `**(G+0xd8)`, `node+0x1e`).
+
+### 9.6 Corrections to earlier sections
+
+- Section 5: candidate 1 ("P2 never accepted the start") is refuted by the trace; candidate 2 (Deck speed) is
+  refuted by the run with the Deck at 0.93 to 1.00x. The cause is on the joiner, after the accept.
+- Section 7, test 1 (`MKWMP_SKIP_REFEREE_TIMEOUT=2`): the observed result (both sit forever) fits 9.1.
+- Section 3: the Deck's slow room was mostly the probe's own logging (fixed in 4b62fee, 1153967); the 7.7 s
+  stall of run A and its Pia drop (section 4) are a separate matter from the SyncState failure.
