@@ -21,6 +21,10 @@ const KNOWN: &[(&str, &str)] = &[
     ("0.1.10", "4fe39fc71d04ed46caf07476e9cdc688f7438f472983c424a2d27e62febcbdcb"),
     ("0.1.11", "8d65b3e3beae4411ea0bf195da8841dc2f23414bc85eedfa593c9f39f54d2a43"),
     ("0.1.12", "fbd215a5f232e9fc786bb4a7e5823d0d7a64ad04e09f50ed37b1cb2d5d66d1b1"),
+    // 0.1.13: the probe's names, .ovr, Cpu prefix, 64-slot table and detour prologues were checked
+    // against this mkw.exe (resources/docs/RECOMP-0.1.13.md), but nobody played it, so it is known
+    // and not supported: the window can name the version instead of saying "Unknown".
+    ("0.1.13", "1c47ffa2502a1ee92c2d01da0791802c18bf6c3365040c2b4fa1c91dacbc8695"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +147,7 @@ mod tests {
         assert_eq!(identify_bytes(&[]), Recomp::Unknown);
         assert!(Recomp::Supported("0.1.10").ok() && Recomp::Supported("0.1.10").problem().is_none());
         assert!(SUPPORTED.iter().all(|v| KNOWN.iter().any(|(k, _)| k == v)), "every supported release has a known hash");
+        assert!(KNOWN.contains(&("0.1.13", "1c47ffa2502a1ee92c2d01da0791802c18bf6c3365040c2b4fa1c91dacbc8695")) && !SUPPORTED.contains(&"0.1.13"), "0.1.13 is known by hash only: no live test yet");
     }
 
     #[test]
