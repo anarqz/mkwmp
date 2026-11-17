@@ -707,6 +707,14 @@ impl App {
             });
             return;
         }
+        if let Some(p) = crate::recomp::game_problem(&self.draft.game) {
+            ui.horizontal(|ui| {
+                ui.set_height(24.0);
+                light(ui, RED);
+                ui.label(RichText::new(p).size(12.0).color(RED_D));
+            });
+            return;
+        }
         let r = self.patch_report();
         let color = if r.ok() { GREEN_D } else { RED_D };
         ui.horizontal(|ui| {
@@ -874,10 +882,16 @@ impl App {
         let gh = Rect::from_center_size(pos2((row.left() + play.left()) / 2.0, row.center().y), side);
         let kofi = Rect::from_center_size(pos2((play.right() + row.right()) / 2.0, row.center().y), side);
 
-        let problem = self.draft.problem().or_else(|| crate::recomp::identify(&self.draft.game).problem()).or_else(|| {
-            let r = self.patch_report();
-            (!r.ok()).then(|| r.summary(crate::update::VERSION))
-        });
+        let game = &self.draft.game;
+        let problem = self
+            .draft
+            .problem()
+            .or_else(|| crate::recomp::identify(game).problem())
+            .or_else(|| crate::recomp::game_problem(game))
+            .or_else(|| {
+                let r = self.patch_report();
+                (!r.ok()).then(|| r.summary(crate::update::VERSION))
+            });
         let enabled = busy || problem.is_none();
         let (label, fill, dark) = if busy { ("STOP", BLUE, BLUE_D) } else { ("PLAY", RED, RED_D) };
         let mut resp = pixel_button_at(ui, play, "play", label, fill, dark, PAPER, 26.0, enabled);

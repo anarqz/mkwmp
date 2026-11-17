@@ -146,6 +146,7 @@ impl Core {
         let report = self.patch_report();
         let rc = crate::recomp::identify(&cfg.game);
         note(format!("game: {}", rc.problem().unwrap_or_else(|| rc.explain())));
+        note(crate::recomp::game_line(&cfg.game));
         note(format!("game patch: {} [{}]", report.summary(update::VERSION), report.files.join("; ")));
         r
     }
@@ -355,6 +356,11 @@ impl Core {
     async fn session(self: &Arc<Self>) -> Result<(), String> {
         let cfg = self.ui().cfg;
         if let Some(p) = cfg.problem() {
+            return Err(p);
+        }
+        // Before any patch write or network call: the patch's hooks only fit some game versions.
+        note(crate::recomp::game_line(&cfg.game));
+        if let Some(p) = crate::recomp::game_problem(&cfg.game) {
             return Err(p);
         }
         let seat = Arc::new(Seat::new(&cfg));
