@@ -139,6 +139,13 @@ pub fn data_dir(game: &Path) -> PathBuf {
 /// Game versions the game patch has guest-address tables for. On any other
 /// version its hooks would write into unrelated game memory.
 pub const GAMES: &[&str] = &["1.0.0"];
+/// Live tests only: `MKWMP_ALLOW_GAME_180=1` also lets game 1.8.0 play (the game patch
+/// switches its version-specific hooks by build itself).
+pub const ALLOW_180_ENV: &str = "MKWMP_ALLOW_GAME_180";
+
+fn allowed(version: &str) -> bool {
+    GAMES.contains(&version) || (version == "1.8.0" && std::env::var(ALLOW_180_ENV).is_ok_and(|v| v == "1"))
+}
 
 /// The game version mkw-recomp set up, from `<data dir>/setup-state.json`
 /// (`"generate": "<RT_GAME_ID> <game version> <hash>"`, under `done`). None
@@ -178,13 +185,15 @@ pub fn game_problem(game: &Path) -> Option<String> {
 
 fn game_problem_for(version: Option<&str>) -> Option<String> {
     let v = version?;
-    (!GAMES.contains(&v)).then(|| format!("Game {v}: MKWMP supports game {}; {v} support is coming", GAMES.join(" or ")))
+    (!allowed(v)).then(|| format!("Game {v}: MKWMP supports game {}; {v} support is coming", GAMES.join(" or ")))
 }
 
 /// One line for logs and bug reports.
 pub fn game_line(game: &Path) -> String {
     match game_version(game) {
-        Some(v) => format!("game version: {v}{}", if GAMES.contains(&v.as_str()) { "" } else { " (not supported)" }),
+        Some(v) if GAMES.contains(&v.as_str()) => format!("game version: {v}"),
+        Some(v) if allowed(&v) => format!("game version: {v} (allowed by {ALLOW_180_ENV}=1, live test)"),
+        Some(v) => format!("game version: {v} (not supported)"),
         None => "game version: unknown (no setup-state.json generate)".into(),
     }
 }
@@ -259,5 +268,11 @@ mod tests {
         std::fs::write(d.join("data/setup-state.json"), j).unwrap();
         assert_eq!(game_version(&d).as_deref(), Some("1.8.0"), "read from the data dir");
         assert!(game_problem(&d).is_some() && game_line(&d).contains("not supported"));
+        // The live-test override lets 1.8.0 (only) through. This is the only test that reads it.
+        std::env::set_var(ALLOW_180_ENV, "1");
+        let (on, other, line) = (game_problem(&d), game_problem_for(Some("1.9.0")), game_line(&d));
+        std::env::remove_var(ALLOW_180_ENV);
+        assert_eq!(on, None);
+        assert!(other.is_some() && line.contains("live test"), "{line}");
     }
 }
