@@ -39,6 +39,23 @@ Owners: **W** = WINDOWS-MKWMP (probe, RE, docs). **M** = MACBOOK-MKWMP (rust/ lo
 4. Build, run the native tests and `tools/recomp/check_release.py`. Offline smoke test on 1.8.0: title -> menus ->
    `mkwmp.log` shows "game build: 1.8.0", the hooks installed and no fault.
 
+**Status 2026-11-17: items 1-4 are in the probe (static; the smoke test is still to run).** What differs from the list:
+- The table is `native/probe/src/gameaddrs.c` (`struct game_addrs`, rows 1.0.0 and 1.8.0). At the game's first gated SDK
+  call the probe checks the six guards read-only and logs `game build 1.8.0: address table row found, 6 of 6 guards ok`;
+  the hooks themselves still go in when Online Play opens (`voice-ui: ... hooks installed (game 1.8.0, 26 plates)`,
+  `game build 1.8.0: version-specific hooks on`).
+- Off on 1.8.0 (zero fields): `MKWMP_TRACE_ROOM`, `MKWMP_TRACE_KART`, `MKWMP_NO_IDLE_KICK` (refused, logged), the
+  Proton default skip of `0x9b928162` (`MKWMP_SKIP_ERROR=9b928162` still works), two trace ranges.
+- The runtime's 64 override slots were all taken. `GetCurrentIpConfigInfo(InAddr*)` got the slot of
+  `nn::socket::FreeAddrInfo(AddrInfo*)`: typed `GetAddrInfo` results are now ring entries and the runtime's stock
+  `FreeAddrInfo` (a bare `ret` in 0.1.10, 0.1.12, 0.1.13; `check_release.py` checks it) serves the name.
+- `nn::socket::Recv` has a tested handler (`ov_pia_recv`) but **no slot**: the raw ICMP socket is refused
+  (`EPROTONOSUPPORT`), and with it refused nothing reaches `Recv` (its one caller is the ICMP receive of `PingJob`,
+  which never starts while the ping socket's open count is 0; the transport start discards the failed open). Evidence
+  in the comment above `ov_pia_socket`. To register it later, another override has to give up its slot.
+- subsdk0 (`movie`): calls from that module to the gated overrides (`Close`, `GetLastError`, `EventFd*`) always get the
+  runtime's stock handlers (`gate_call`, by return address), so its task queue never holds a descriptor of the probe.
+
 ## Phase 2: lobby speaks 1.8.0 (M; items in `GAME-1.8.0-PROTOCOL.md` §6-7)
 1. **Version key** on Ticket/Lobby (`lobbies.rs:102, 398, 403`; `msgs.rs:75-84`) and on friend rooms (`msgs.rs:211-220`,
    `social.rs:44-57`). 1.8.0 = the Player has `npln_user_id`; also log `rom_id` ("cv%d") so a live capture confirms it.
