@@ -72,6 +72,36 @@ pub fn ice_server_set(host: &str, port: u16, now: u64) -> Vec<u8> {
         .into_bytes()
 }
 
+/// Game versions the lobby keeps apart: Pia's header version byte differs (0x0F vs 0x10)
+/// and each drops the other's packets, so they can never share a mesh
+/// (resources/docs/GAME-1.8.0-PROTOCOL.md 3, 5).
+pub const GAME_100: &str = "1.0.0";
+pub const GAME_180: &str = "1.8.0";
+
+/// The game version a Player (field 2 = attributes, `{1: entry{1 key, 2 Value}}`) belongs to:
+/// 1.8.0 adds `npln_user_id` and `clutch_id` (builder 0x20ffc50); 1.0.0 sends `rom_id`,
+/// `batching_key`, `course_id`. None when the Player carries no attributes. Also returns
+/// `rom_id` ("cv<N>"), for the logs.
+pub fn player_game(player: &[u8]) -> (Option<&'static str>, Option<String>) {
+    let Some(attrs) = wire::bytes_field(player, 2).ok().flatten().and_then(|a| Fields::decode(a).ok()) else {
+        return (None, None);
+    };
+    let rom = attrs.get("rom_id").and_then(Value::as_str).map(str::to_owned);
+    let game = if attrs.contains("npln_user_id") {
+        Some(GAME_180)
+    } else if attrs.contains("rom_id") {
+        Some(GAME_100)
+    } else {
+        None
+    };
+    (game, rom)
+}
+
+/// Matchmaking configs 1.8.0 added (mode 7) whose capacity and referee rules are not known yet.
+pub fn unsupported_mode(mode: &str) -> bool {
+    mode.starts_with("Clutch")
+}
+
 /// `CreateMatchmakingTicket` request: `{2: Ticket{2 config, 4 repeated Player}}`.
 pub struct TicketRequest {
     pub mode: String,
@@ -271,9 +301,19 @@ pub fn bulk_get_names(buf: &[u8]) -> Result<Vec<String>> {
 }
 
 /// One BulkGetDocuments result: `{1: Document{1 name, 2 {Rating: 1500.0}}}` (the game reads
-/// "Rating" at 0x49c54c; 1500 is its own default).
-pub fn bulk_get_result(name: &str) -> Vec<u8> {
-    let fields = Fields::new().with("Rating", Value::Double(1500.0));
+/// "Rating" at 0x49c54c; 1500 is its own default). 1.8.0's reader (0x6f4a30, one branch at
+/// 0x6f4dc8) also reads RaceCount, RatingDisplay, RatingCoefficient, DriverId and StickerId
+/// unguarded; a missing RatingCoefficient would read 0.0. 1.0.0 gets exactly what it always did.
+pub fn bulk_get_result(name: &str, game: Option<&str>) -> Vec<u8> {
+    let mut fields = Fields::new().with("Rating", Value::Double(1500.0));
+    if game == Some(GAME_180) {
+        fields = fields
+            .with("RaceCount", Value::Int(0))
+            .with("RatingDisplay", Value::Int(1500))
+            .with("RatingCoefficient", Value::Double(1.0))
+            .with("DriverId", Value::Int(0))
+            .with("StickerId", Value::Int(0));
+    }
     Msg::new().msg(1, &Msg::new().bytes(1, name).msg(2, &fields.encode())).into_bytes()
 }
 
@@ -420,4 +460,20 @@ mod tests {
         assert_eq!(parse_ticket_name(&m), Some(id));
         assert_eq!(parse_ticket_name(&Msg::new().bytes(1, format!("x/{id}")).0), None);
     }
+
+    #[test]
+    fn player_game_from_attributes() {
+        let p = |attrs: Fields| Msg::new().bytes(1, "u").msg(2, &attrs.encode()).into_bytes();
+        let v100 = Fields::new().with("rom_id", Value::str("cv1")).with("batching_key", Value::str("cv1_world0")).with("course_id", Value::Int(3));
+        assert_eq!(player_game(&p(v100.clone())), (Some(GAME_100), Some("cv1".into())));
+        let v180 = v100.with("npln_user_id", Value::str("abc")).with("clutch_id", Value::str(""));
+        assert_eq!(player_game(&p(v180)).0, Some(GAME_180));
+        assert_eq!(player_game(&Msg::new().bytes(1, "u").into_bytes()), (None, None));
+        assert_eq!(player_game(b""), (None, None));
+        assert!(unsupported_mode("Clutch24") && unsupported_mode("ClutchSurvival24") && !unsupported_mode("Normal24"));
+        // 1.0.0 rating documents are unchanged.
+        assert_eq!(bulk_get_result("n", Some(GAME_100)), bulk_get_result("n", None));
+        assert_ne!(bulk_get_result("n", Some(GAME_180)), bulk_get_result("n", None));
+    }
 }
+

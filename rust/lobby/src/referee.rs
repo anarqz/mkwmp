@@ -70,7 +70,7 @@ impl Match {
             && self.reporters.len() + self.retired.len() >= self.total
     }
 
-    fn document(&self, name: &str, now: u64) -> Document {
+    fn document(&self, name: &str, now: u64, session_count: bool) -> Document {
         let mut order = self.order.clone();
         if self.final_ {
             order.extend(self.retired_indices());
@@ -82,6 +82,10 @@ impl Match {
         if self.final_ {
             let ratings = self.players.iter().fold(Fields::new(), |f, u| f.with(&u.to_string(), Value::Double(RATING)));
             fields.set("ratings", Value::Map(ratings));
+        }
+        if session_count && self.final_ {
+            // 1.8.0's result reader (0x6f972c) reads it unguarded when status != 0.
+            fields.set("user_session_count", Value::Int(self.players.len() as i64));
         }
         Document { name: name.to_owned(), fields, create_time: self.create_time, update_time: now }
     }
@@ -100,13 +104,15 @@ pub struct Verdict {
 pub struct Referee {
     /// Salt for result ids, so two lobbies never share a result document id.
     salt: String,
+    /// Final results carry `user_session_count` (game 1.8.0 lobbies).
+    pub session_count: bool,
     matches: HashMap<String, Match>,
     answered: HashSet<String>,
 }
 
 impl Referee {
     pub fn new(salt: impl Into<String>) -> Self {
-        Self { salt: salt.into(), matches: HashMap::new(), answered: HashSet::new() }
+        Self { salt: salt.into(), session_count: false, matches: HashMap::new(), answered: HashSet::new() }
     }
 
     /// Any result not final yet.
@@ -127,6 +133,7 @@ impl Referee {
     }
 
     fn open(&mut self, rest: &str, fields: &Fields, members: &[u32], now: u64) -> Option<Verdict> {
+        let session_count = self.session_count;
         let parts: Vec<&str> = rest.split('/').collect();
         let [_, "Request", key] = parts[..] else { return None };
         if !self.answered.insert(key.to_owned()) {
@@ -167,12 +174,13 @@ impl Referee {
             final_: false,
             create_time: now,
         };
-        let doc = m.document(&name, now);
+        let doc = m.document(&name, now, session_count);
         self.matches.insert(name, m);
         Some(Verdict { doc, opened: true, final_: false })
     }
 
     fn report(&mut self, rest: &str, fields: &Fields, now: u64, mono: f64) -> Option<Verdict> {
+        let session_count = self.session_count;
         let parts: Vec<&str> = rest.split('/').collect();
         let [uuid, "User", ussid] = parts[..] else { return None };
         let name = format!("{RESULT}{uuid}");
@@ -187,7 +195,7 @@ impl Referee {
             m.players.insert(u);
         }
         Self::settle(m, mono);
-        Some(Verdict { doc: m.document(&name, now), opened: false, final_: m.final_ })
+        Some(Verdict { doc: m.document(&name, now, session_count), opened: false, final_: m.final_ })
     }
 
     fn settle(m: &mut Match, mono: f64) {
@@ -199,6 +207,7 @@ impl Referee {
 
     /// A member left the lobby: retire them from every open match.
     pub fn retire(&mut self, ussid: u32, now: u64, mono: f64) -> Vec<Verdict> {
+        let session_count = self.session_count;
         let mut out = Vec::new();
         for (name, m) in &mut self.matches {
             if m.final_ || !m.players.contains(&ussid) {
@@ -206,18 +215,19 @@ impl Referee {
             }
             m.retired.insert(ussid);
             Self::settle(m, mono);
-            out.push(Verdict { doc: m.document(name, now), opened: false, final_: m.final_ });
+            out.push(Verdict { doc: m.document(name, now, session_count), opened: false, final_: m.final_ });
         }
         out
     }
 
     /// Finalize complete results whose grace has passed.
     pub fn tick(&mut self, now: u64, mono: f64) -> Vec<Verdict> {
+        let session_count = self.session_count;
         let mut out = Vec::new();
         for (name, m) in &mut self.matches {
             if !m.final_ && m.complete_at.is_some_and(|t| mono - t >= GRACE_SECS) {
                 m.final_ = true;
-                out.push(Verdict { doc: m.document(name, now), opened: false, final_: true });
+                out.push(Verdict { doc: m.document(name, now, session_count), opened: false, final_: true });
             }
         }
         out
@@ -302,5 +312,18 @@ mod tests {
         let na = a.on_write("docs/@@RefereeRequest/1/Request/k", &f, &[], 0, 0.0).unwrap().doc.name;
         let nb = b.on_write("docs/@@RefereeRequest/1/Request/k", &f, &[], 0, 0.0).unwrap().doc.name;
         assert_ne!(na, nb);
+    }
+
+    #[test]
+    fn game_180_final_results_count_user_sessions() {
+        for on in [false, true] {
+            let mut r = Referee::new("lobby-a");
+            r.session_count = on;
+            let id = open(&mut r);
+            r.on_write(&format!("{REPORT}{id}/User/1"), &report(&[1, 0]), &[], 1, 1.0).unwrap();
+            let v = r.on_write(&format!("{REPORT}{id}/User/2"), &report(&[1, 0]), &[], 2, 2.0).unwrap();
+            assert_eq!(status(&v), 1);
+            assert_eq!(v.doc.fields.get("user_session_count"), on.then_some(&Value::Int(2)), "on = {on}");
+        }
     }
 }
