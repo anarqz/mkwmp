@@ -1,6 +1,6 @@
 **mkwmp 1.0.2**: mkw-recomp 0.1.12 support (new).
 
-- **mkw-recomp 0.1.10 or 0.1.12.** The launcher now also accepts mkw-recomp 0.1.12. Support for it is new: the game patch, voice chat and the Room ID keypad load on 0.1.12 and it connects to the server, but a full online race between 0.1.12 and 0.1.10 players hasn't been tested yet. If matches go out of sync, tell us in an issue; meanwhile mkw-recomp 0.1.10 is still the tested choice. 0.1.11 isn't supported.
+- **mkw-recomp 0.1.10 or 0.1.12.** The launcher now also accepts mkw-recomp 0.1.12. Support for it is new: online matches between two players on 0.1.12 work, but a match between 0.1.12 and 0.1.10 players hasn't been tested yet, so play with friends on the same version. If a match goes out of sync, tell us in an issue. 0.1.11 isn't supported.
 - If you use mkw-recomp 0.1.12's "choose game folder", SAVE LOGS FOR A BUG REPORT finds the game's log in that folder.
 
 ---
