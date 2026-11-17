@@ -1,5 +1,5 @@
 // Voice in the game's own menus (no overlay; resources/docs/VOICE-RE.md §3, §6). The game has no voice UI and no
-// per-player menu, so the online pause menu's player list (UIPageOnlinePauseMenu, 24 name plates, display only) gets
+// per-player menu, so the online pause menu's player list (UIPageOnlinePauseMenu, 24 name plates in 1.0.0 and 26 in 1.8.0, display only) gets
 // one: every frame while it is open, each plate's name is relabelled with the player's voice state, and a cursor over
 // the list toggles the mute of the highlighted player.
 //   [voice]  "Ana  ((o))"  talking now        "Ana  [MUTED]"  muted by this player
@@ -10,6 +10,7 @@
 #include "voice_ui.h"
 
 #include "friends.h"
+#include "gameaddrs.h"
 #include "guesthook.h"
 #include "log.h"
 #include "voice.h"
@@ -19,21 +20,10 @@
 #include <stdio.h>
 #include <string.h>
 
-// main.bin offsets (VOICE-RE.md §3.1, §3.2)
-enum {
-    VT_ONLINE_PAUSE = 0x3248970,
-    SLOT_OPEN = 7,
-    SLOT_FRAME = 11,
-    FN_PLATE_TEXT = 0x21deb68,   // FUN_021deb68(ctl, char16*): writes the plate's two name panes
-    PAGE_PLATES = 0x770,
-    PLATE_SIZE = 0x150,
-    PAGE_COUNT = 0x3d80,
-    PAGE_ENTRIES = 0x3d88,
-    ENTRY_NAME = 0x18,
-    ENTRY_ME = 0x78,
-    ROWS = 24,
-    LABEL = 64,
-};
+// The page's vtable, its plate function and its layout are per game build (gameaddrs.h; VOICE-RE.md §3.1, §3.2).
+// ga is set once the row's guards passed, before the hooks are installed.
+enum { ROWS_MAX = GAME_ROWS_MAX, LABEL = 64 };
+static const struct game_addrs *ga;
 
 static uint64_t g_orig_open, g_orig_frame;
 static int g_trace;
@@ -42,8 +32,8 @@ static struct {
     int open;            // the menu is open (set by the open hook, cleared when frames stop)
     ULONGLONG last_frame;
     int cursor;          // row index, -1 = none
-    uint16_t shown[ROWS][LABEL];
-    int shown_valid[ROWS];
+    uint16_t shown[ROWS_MAX][LABEL];
+    int shown_valid[ROWS_MAX];
     int prev_buttons;
 } g;
 
@@ -111,9 +101,9 @@ static void name_utf8(const uint16_t *name, size_t n, char *out, size_t cap) {
 }
 
 static void apply(Cpu *c, uint64_t page) {
-    int count = *(int32_t *)(uintptr_t)(page + PAGE_COUNT);
-    if (count < 0 || count > ROWS) return;
-    uint64_t *entries = (uint64_t *)(uintptr_t)(page + PAGE_ENTRIES);
+    int count = *(int32_t *)(uintptr_t)(page + ga->page_count);
+    if (count < 0 || count > ga->rows) return;
+    uint64_t *entries = (uint64_t *)(uintptr_t)(page + ga->page_entries);
     static int traced;
     if (g_trace && !traced) {
         traced = 1;
@@ -129,7 +119,7 @@ static void apply(Cpu *c, uint64_t page) {
         for (int tries = 0; tries < count; tries++) {
             at = at < 0 ? (step > 0 ? 0 : count - 1) : (at + step + count) % count;
             uint64_t e = entries[at];
-            if (e && !*(uint8_t *)(uintptr_t)(e + ENTRY_ME)) break;   // never the player's own row
+            if (e && !*(uint8_t *)(uintptr_t)(e + ga->entry_me)) break;   // never the player's own row
         }
         g.cursor = at;
     }
@@ -138,13 +128,13 @@ static void apply(Cpu *c, uint64_t page) {
     for (int i = 0; i < count; i++) {
         uint64_t e = entries[i];
         if (!e) continue;
-        const uint16_t *name = *(const uint16_t **)(uintptr_t)(e + ENTRY_NAME);
+        const uint16_t *name = *(const uint16_t **)(uintptr_t)(e + ga->entry_name);
         if (!name) continue;
         size_t n = u16len(name, 32);
         // strip a label we wrote earlier if the game hands our text back (it keeps its own copy, so normally not)
         char utf8[40];
         name_utf8(name, n, utf8, sizeof utf8);
-        int me = *(uint8_t *)(uintptr_t)(e + ENTRY_ME) != 0;
+        int me = *(uint8_t *)(uintptr_t)(e + ga->entry_me) != 0;
         uint64_t account = friends_account_id(utf8);
         if (i == g.cursor && (pressed & BTN_TOGGLE) && !me && active) voice_set_muted(account, utf8, !voice_is_muted(account));
 
@@ -164,7 +154,7 @@ static void apply(Cpu *c, uint64_t page) {
         uint64_t sp = c->sp;
         c->sp = (sp - sizeof label - 64) & ~15ull;
         memcpy((void *)(uintptr_t)c->sp, label, sizeof label);
-        guest_call(c, GUEST_MAIN(FN_PLATE_TEXT), 2, page + PAGE_PLATES + (uint64_t)i * PLATE_SIZE, c->sp, 0, 0);
+        guest_call(c, ga->fn_plate_text, 2, page + ga->page_plates + (uint64_t)i * ga->plate_size, c->sp, 0, 0);
         c->sp = sp;
     }
 }
@@ -194,7 +184,7 @@ static void hook_frame(Cpu *c) {
     g.last_frame = now;
     // the game refills the plates when its list changes (info+0xe12): our cache must not hide the new text
     static int last_count = -1;
-    int count = *(int32_t *)(uintptr_t)(page + PAGE_COUNT);
+    int count = *(int32_t *)(uintptr_t)(page + ga->page_count);
     if (count != last_count) { memset(g.shown_valid, 0, sizeof g.shown_valid); last_count = count; }
     apply(c, page);
     (void)saved;
@@ -213,11 +203,24 @@ void voice_ui_install(void) {
         if (v[0] == '0') { mkwmp_log("voice-ui: off (MKWMP_VOICE_UI=0)"); return; }
     }
     int build = game_build();
-    if (build != GAME_100) {   // VT_ONLINE_PAUSE, FN_PLATE_TEXT and the page layout are 1.0.0's
-        mkwmp_log("voice-ui: off (game build %s; the menu hooks are for 1.0.0)", game_build_name(build));
+    const struct game_addrs *row = game_addrs_for(build);
+    if (!row) {   // no table row: the vtable, the plate function and the page layout are unknown
+        mkwmp_log("voice-ui: off (game build %s; no menu hooks for it)", game_build_name(build));
+        if (build == GAME_UNKNOWN) done = 0;   // main is not mapped yet: a later call decides
         return;
     }
-    int ok = guesthook_vtable(GUEST_MAIN(VT_ONLINE_PAUSE), SLOT_OPEN, hook_open, &g_orig_open) &&
-             guesthook_vtable(GUEST_MAIN(VT_ONLINE_PAUSE), SLOT_FRAME, hook_frame, &g_orig_frame);
-    mkwmp_log("voice-ui: online pause menu hooks %s", ok ? "installed" : "NOT installed");
+    // Install-time guards (GAME-1.8.0-ADDRESSES.md §3): both vtable slots hold the game's own functions and the plate
+    // function starts as expected. Checked before any slot is written.
+    if (row->rows > ROWS_MAX ||
+        !game_guard_slot("voice-ui open", row->vt_online_pause, row->slot_open, row->fn_pause_open) ||
+        !game_guard_slot("voice-ui frame", row->vt_online_pause, row->slot_frame, row->fn_pause_frame) ||
+        !game_guard_words("voice-ui plate text", row->fn_plate_text, row->plate_text_words, 4)) {
+        mkwmp_log("voice-ui: off (game build %s: guard mismatch, hooks NOT installed)", game_build_name(build));
+        return;
+    }
+    ga = row;
+    int ok = guesthook_vtable(ga->vt_online_pause, ga->slot_open, hook_open, &g_orig_open) &&
+             guesthook_vtable(ga->vt_online_pause, ga->slot_frame, hook_frame, &g_orig_frame);
+    mkwmp_log("voice-ui: online pause menu hooks %s (game %s, %d plates)", ok ? "installed" : "NOT installed",
+              game_build_name(build), ga->rows);
 }

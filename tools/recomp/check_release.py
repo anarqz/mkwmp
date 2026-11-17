@@ -343,6 +343,8 @@ class Probe:
         npln = strip_comments(rd("npln.c"))
         self.regs = re.findall(r'\{\s*"([^"]+)"\s*,', c_block(npln, r"kRegs\s*\[\s*\]\s*="))
         self.extra_regs = re.findall(r'hostfn_add_override\(\s*"([^"]+)"', npln)
+        # names the probe leaves to the runtime and whose stock handler it relies on (static const char kStock...[])
+        self.stock_needed = re.findall(r'\bkStock\w+\[\]\s*=\s*"([^"]+)"', npln)
         m = re.search(r"RUNTIME_OVERRIDE_MAX\s*=\s*(\d+)", npln)
         self.override_max = int(m.group(1)) if m else 64
         m = re.search(r"HOST_CAP\s*=\s*(\d+)", strip_comments(rd("guesthook.c")))
@@ -617,6 +619,14 @@ def main() -> int:
         ok(f"{len(regs)} probe override names: {stock} of the {len(probe.regs)} kRegs have a stock handler, as before")
     if len(regs) > probe.override_max + 2:
         warn(f"{len(regs)} override names against a runtime table of {probe.override_max}")
+    for name in probe.stock_needed:
+        if name in regs:
+            fail(f"{name}: npln.c both overrides it and relies on its stock handler")
+        elif name in nn_:
+            ok(f"stock handler the probe relies on (not overridden): {name}")
+        else:
+            fail(f"{name}: no stock handler in NEW; npln.c relies on it (typed GetAddrInfo results are never freed "
+                 "by the SDK), so it falls back to overriding it and drops its newest override")
     if args.ovr_dump:
         args.ovr_dump.mkdir(parents=True, exist_ok=True)
         (args.ovr_dump / "ovr-old.txt").write_text("\n".join(on_) + "\n")

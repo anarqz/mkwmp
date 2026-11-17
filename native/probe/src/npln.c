@@ -15,6 +15,7 @@
 #include "lobby_ca.h"
 #include "seat.h"
 #include "friends.h"
+#include "gameaddrs.h"
 #include "guesthook.h"
 #include "voice.h"
 
@@ -65,7 +66,7 @@ static void rhex(const char *tag, const void *buf, size_t len) {
 }
 
 // Linux errno numbers the game reads
-enum { G_EINTR = 4, G_EAGAIN = 11, G_EINVAL = 22, G_EINPROGRESS = 115 };
+enum { G_EINTR = 4, G_EAGAIN = 11, G_EINVAL = 22, G_EPROTONOSUPPORT = 93, G_EINPROGRESS = 115 };
 static _Thread_local int g_errno;
 
 // LAN mode (server host not loopback): see net_init.
@@ -110,13 +111,32 @@ static void ov_clock_gettime(Cpu *c) {
     ret_x(c, 0);
 }
 
+// The return address of gRPC's pthread_cond_timedwait call in the running game build (gameaddrs.h), 0 when there is
+// none: an unknown build, or the instruction before it is not the expected BL (then every timed wait keeps the SDK's
+// own clock). Decided once main is mapped: until then (GAME_UNKNOWN) nothing is cached and the next call asks again.
+static uint64_t grpc_timedwait_gate(void) {
+    static volatile LONG state;        // 0 undecided, 1 decided
+    static volatile LONG64 gate;
+    if (state) return (uint64_t)gate;
+    int build = game_build();
+    if (build == GAME_UNKNOWN) return 0;
+    const struct game_addrs *ga = game_addrs_for(build);
+    uint64_t lr = ga && game_guard_words("gRPC timed wait call", ga->grpc_timedwait_lr - 4, &ga->grpc_timedwait_bl, 1)
+                      ? ga->grpc_timedwait_lr : 0;
+    InterlockedExchange64(&gate, (LONG64)lr);
+    if (!InterlockedExchange(&state, 1) && !lr)
+        mkwmp_log("game build %s: gRPC timed waits keep the SDK clock (no verified call site)", game_build_name(build));
+    return lr;
+}
+
 static void ov_cond_timedwait(Cpu *c) {
     uint64_t cond = arg_x(c, 0), mutex = arg_x(c, 1);
     const int64_t *deadline = arg_p(c, 2);
     uint64_t original = g_rt.ldr_symbol("pthread_cond_timedwait");
     uint64_t clockwait = g_rt.ldr_symbol("pthread_cond_clockwait");
     // Only the verified gRPC call site converts its deadline to clock ID 0.
-    if (c->x[30] != 0x700104a8bcull || !clockwait || !deadline ||
+    uint64_t gate = grpc_timedwait_gate();
+    if (!gate || c->x[30] != gate || !clockwait || !deadline ||
         deadline[1] < 0 || deadline[1] >= 1000000000) {
         ret_x(c, original ? g_rt.rt_call(c, original, 3, cond, mutex,
                                         (uint64_t)(uintptr_t)deadline) : G_EINVAL);
@@ -286,6 +306,9 @@ static void ov_nickname(Cpu *c) {
 static void ov_nifm_ip_config(Cpu *c) {
     // nn::nifm returns network-order in_addr values. Loopback mode advertises
     // 127.0.0.1 (the Pia transport binds there); LAN mode this machine's address.
+    // Both overloads land here: (in_addr *) x5, and 1.8.0's (nn::socket::InAddr *) x5 that Pia 7.3 calls when its
+    // transport starts (main+0x1661d90, through ov_nifm_ip_config_inaddr); InAddr is the same four network-order
+    // bytes (the caller byte-swaps the first one into its ping state).
     net_init();
     uint8_t fields[5][4] = {
         {127, 0, 0, 1}, {255, 0, 0, 0}, {0}, {0}, {0}
@@ -784,15 +807,32 @@ static void ov_sock_freeaddrinfo(Cpu *c) {
         ai = next;
     }
 }
+// Results of the typed nn::socket::GetAddrInfo(..., AddrInfo **) are not heap blocks but entries of this ring, so
+// nothing has to free them: nn::socket::FreeAddrInfo(AddrInfo *) is left to the runtime's stock handler, which does
+// nothing (kStockFreeAddrInfo; its override slot went to the second GetCurrentIpConfigInfo overload, see kRegs).
+// The game frees a result right after copying the address out; an entry is reused 64 lookups later.
+enum { TYPED_AI_RING = 64 };
+static struct { GAddrInfo ai; uint8_t sa[16]; } g_typed_ai[TYPED_AI_RING];
+static volatile LONG g_typed_ai_next;
+
 static void sock_getaddrinfo(Cpu *c, const char *label, int cpp_layout) {
     net_init();
     dump_cstr(label, arg_p(c, 0));
     void **res = arg_p(c, 3);
     if (!res) { ret_x(c, (uint64_t)-1); return; }
     *res = NULL;
-    GAddrInfo *ai = calloc(1, sizeof *ai);
-    uint8_t *sa = calloc(1, 16);   // console sockaddr_in: len,family,port,addr,zero[8]
-    if (!ai || !sa) { free(ai); free(sa); ret_x(c, (uint64_t)-1); return; }
+    GAddrInfo *ai;
+    uint8_t *sa;   // console sockaddr_in: len,family,port,addr,zero[8]
+    if (cpp_layout) {
+        unsigned slot = (unsigned)(InterlockedIncrement(&g_typed_ai_next) - 1) % TYPED_AI_RING;
+        memset(&g_typed_ai[slot], 0, sizeof g_typed_ai[slot]);
+        ai = &g_typed_ai[slot].ai;
+        sa = g_typed_ai[slot].sa;
+    } else {
+        ai = calloc(1, sizeof *ai);
+        sa = calloc(1, 16);
+        if (!ai || !sa) { free(ai); free(sa); ret_x(c, (uint64_t)-1); return; }
+    }
     sa[0] = 16; sa[1] = 2;                      // len=16, AF_INET=2
     memcpy(sa + 2, &g_server.sin_port, 2);      // port (network order)
     // Keep an explicit numeric service other than 443 (see ov_sock_connect).
@@ -816,9 +856,29 @@ static void ov_sock_getaddrinfo(Cpu *c) { sock_getaddrinfo(c, "nnsocketGetAddrIn
 static void ov_sock_getaddrinfo_cpp(Cpu *c) { sock_getaddrinfo(c, "nn::socket::GetAddrInfo typed node", 1); }
 
 // Pia's separate datagram path. Keep it loopback-only; gRPC still uses TCP.
+//
+// Socket(AF_INET, SOCK_RAW = 3, IPPROTO_ICMP = 1) is Pia 7.3's ping socket (game 1.8.0 only; 1.0.0's Pia opens only
+// UDP). It is refused with EPROTONOSUPPORT: no socket, nothing sent. Read in the 1.8.0 main (capstone, 2026-11-17):
+//   - main+0x1655b20 (socket open, reached from +0x1656db0 `mov w1,#2; mov w2,#3; mov w3,#1`): Socket() < 0 ->
+//     GetLastError -> +0x1655dd0 maps the errno (a jump table over 1..110, Linux numbering) to a pia::Result; 93 and
+//     22 share the plain "invalid argument" case (result 0x12407, no extra call). No path aborts.
+//   - main+0x1660f10 (ping socket open) turns that into result 0x12408. Its only caller, the transport start
+//     +0x16fdd10, passes the same result slot straight to +0x1661d90 (the GetCurrentIpConfigInfo wrapper), which
+//     overwrites it, and then returns success unconditionally: the failed open is not checked.
+//   - A ping is only requested by +0x16fe1c8 -> +0x1660dd0, which returns result 0x12408 while the socket's open
+//     count (+0xc) is 0 and never starts the PingJob; the caller only skips setting a flag on a non-zero result.
+//     So SendTo and nn::socket::Recv (+0x1656ff0, only used by the ICMP receive +0x1661c10) are never reached, and
+//     the close (+0x1660d30) does nothing for a socket that is not open.
+// If a live run shows Pia needs the ping after all, answer the echo on our relay instead (GAME-1.8.0-PLAN.md 1.2).
 static void ov_pia_socket(Cpu *c) {
     net_init();
     dump_args("Pia Socket", c, 3);
+    if (arg_x(c, 0) == 2 && ((unsigned)arg_x(c, 1) & 0xf) == 3 && arg_x(c, 2) == 1) {
+        static volatile LONG said;
+        if (InterlockedCompareExchange(&said, 1, 0) == 0)
+            mlog("Pia ping socket (raw ICMP) refused: EPROTONOSUPPORT, pings stay off");
+        g_errno = G_EPROTONOSUPPORT; ret_x(c, UINT64_MAX); return;
+    }
     if (arg_x(c, 0) != 2 || ((unsigned)arg_x(c, 1) & 0xf) != 2) {
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
@@ -991,6 +1051,25 @@ static void ov_pia_recvfrom(Cpu *c) {
     ret_x(c, (uint64_t)(int64_t)got);
 }
 
+// ssize_t nn::socket::Recv(int fd, void *buf, size_t n, MsgFlag flags): RecvFrom without the address (game 1.8.0:
+// Pia 7.3's ICMP receive, main+0x1656ff0). Not in kRegs: with the ping socket refused (ov_pia_socket) the game never
+// calls it, and the runtime's 64 override slots are all taken (see kRegs). Register it if a ping socket is ever
+// opened here; tests/test_bridge.c exercises it meanwhile.
+__attribute__((unused)) static void ov_pia_recv(Cpu *c) {
+    SOCKET s = fd_get((int)arg_x(c, 0));
+    char *buf = arg_p(c, 1);
+    uint64_t cap = arg_x(c, 2);
+    if (s == INVALID_SOCKET || !buf || cap > INT_MAX) {
+        g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
+    }
+    int got = recv(s, buf, (int)cap, 0);   // the probe's sockets are non-blocking, so MSG_DONTWAIT is implied
+    if (got == SOCKET_ERROR) {
+        int err = WSAGetLastError();
+        g_errno = err == WSAEWOULDBLOCK || err == WSAECONNRESET ? G_EAGAIN : G_EINVAL;
+    }
+    ret_x(c, (uint64_t)(int64_t)got);
+}
+
 static void ov_pia_errno(Cpu *c) { ret_x(c, (unsigned)g_errno); }
 
 // ===========================================================================
@@ -998,55 +1077,38 @@ static void ov_pia_errno(Cpu *c) { ret_x(c, (unsigned)g_errno); }
 // ===========================================================================
 static GuestFn original_dispatch;
 
+// Everything profile_dispatch matches or reads through is per game build: A is the running build's row of
+// gameaddrs.h, copied by install_profile_dispatch_trace once its guards passed (a field whose guard failed is
+// zeroed). Until then, and for an unknown build, A is all zero and every check below is off: a zero address never
+// matches (at()).
+static struct game_addrs A;
+static inline int at(uint64_t value, uint64_t addr) { return addr && value == addr; }
+
+// JoinRandomSessionJob step functions (WaitAutoConnect, ..., StartMeshStartup, DisconnectNetwork, CreateMesh,
+// JoinMesh).
 static int is_pia_join_step(uint64_t target) {
-    switch (target) {
-    case 0x700156015cull: // WaitAutoConnect
-    case 0x70015602dcull:
-    case 0x7001560414ull:
-    case 0x7001560c10ull: // StartMeshStartup
-    case 0x7001560f28ull: // DisconnectNetwork
-    case 0x700156102cull: // CreateMesh
-    case 0x7001561798ull: // JoinMesh
-        return 1;
-    default:
-        return 0;
-    }
+    for (int i = 0; i < GAME_PIA_STEPS; i++)
+        if (at(target, A.pia_join_step[i])) return 1;
+    return 0;
 }
 
 // Opt-in (MKWMP_TRACE_EDGES=1) coverage of indirect calls made from NPLN
 // matchmaking/game-session/Gamesync code. Each distinct caller->target pair is
 // logged once with a millisecond tick, so a run shows which code executed
 // between a match assignment and the resulting error.
-// Traced code ranges (guest addresses): NPLN, Pia, the game's matchmaking
-// sequence (AIGlobalSeq*).
-static const uint64_t kTraceRanges[][2] = {
-    {0x7001200000ull, 0x7001440000ull},   // NPLN matchmaking / gamesync
-    {0x7001500000ull, 0x7001700000ull},   // Pia
-    {0x7001a00000ull, 0x7001b00000ull},   // game matchmaking sequence
-    {0x7002230000ull, 0x7002240000ull},   // game online-session manager (drives Pia)
-    {0x7002240000ull, 0x7002250000ull},   // its request dispatcher (FUN_02248cf0)
-    {0x7000495000ull, 0x70004a0000ull},   // game document writer (FUN_0049c9d8)
-    {0x7001e30000ull, 0x7001e42000ull},   // online race controller (PlayerStatic/Companion)
-    {0x7000195000ull, 0x7000196000ull},   // its caller (FUN_01e377c4 call site)
-    {0x7002120000ull, 0x7002130000ull},   // race comm-error raisers (FUN_02126ad4/021271c8)
-};
+// Traced code ranges (guest addresses): A.trace_ranges, i.e. NPLN, Pia, the game's matchmaking
+// sequence (AIGlobalSeq*), the online-session manager and the race controller.
 
 // Watchpoints: every indirect call to these targets is logged (first 20,
 // then every 200th), with a state dump where useful. See resources/docs/NETCODE.md.
+// The targets are A.watch[] in this order, then A.errsvc_post for W_COMM_ERROR (error service slot 6: post
+// communication error, reason 37, kind 12). The names are the 1.0.0 functions' (logs stay comparable).
 enum { W_START_P2P, W_P2P_INIT_SEQ, W_US_JOB, W_GAME_CB, W_PLUGIN_A, W_PLUGIN_B, W_COMM_ERROR, W_COUNT };
-static const uint64_t kWatch[W_COUNT] = {
-    0x7002236714ull,   // FUN_02236714: game start-P2P (dispatcher request kind 1)
-    0x7001285d20ull,   // FUN_01285d20: P2P initial sequence (thread run method)
-    0x700126c3b8ull,   // FUN_0126c3b8: Gamesync user-session job run (P2P start gate at +0x140)
-    0x700223d768ull,   // game callback invoked by Pia session layer at matchmaking start
-    0x70016279e4ull,   // NplnPlugin/session-layer entry (Pia -> plugin)
-    0x7001629020ull,   // NplnPlugin/session-layer entry (Pia -> plugin)
-    0x700222d78cull,   // error service slot 6: post communication error (reason 37, kind 12)
-};
+_Static_assert(W_COMM_ERROR == GAME_WATCH, "game_addrs.watch holds every watchpoint but comm_error");
+static uint64_t watch_addr(int w) { return w == W_COMM_ERROR ? A.errsvc_post : A.watch[w]; }
 static const char *const kWatchName[W_COUNT] = {"start_p2p", "p2p_init_seq", "us_job_run", "game_cb_223d768",
                                                 "plugin_16279e4", "plugin_1629020", "comm_error"};
-// Optional field dump at x0 + off: count qwords.
-static const uint16_t kWatchDumpOff[W_COUNT] = {0, 0, 0x130, 0, 0, 0, 0};
+// Optional field dump at x0 + off (W_US_JOB: A.us_job_dump): count qwords.
 static const uint8_t kWatchDumpCount[W_COUNT] = {0, 0, 12, 0, 0, 0, 0};
 static volatile LONG g_watch_hits[W_COUNT];
 
@@ -1059,22 +1121,23 @@ static int guest_readable(const void *p, size_t n) {
 
 static void trace_watch(const Cpu *c) {
     for (int w = 0; w < W_COUNT; w++) {
-        if (c->pc != kWatch[w]) continue;
+        if (!at(c->pc, watch_addr(w))) continue;
         LONG n = InterlockedIncrement(&g_watch_hits[w]);
         if (n > 20 && n % 200) return;
         const uint8_t *mgr = (const uint8_t *)(uintptr_t)c->x[0];
-        if (w == W_START_P2P && guest_readable(mgr + 0x12b8, 0x18)) {
-            // FUN_01a9637c(mgr, -1): slots at +0x12c0 (0x148 bytes each), count
-            // +0x12b8, current index +0x12c8; slot handle count at slot+0.
+        if (w == W_START_P2P && guest_readable(mgr + A.mgr_count, 0x18)) {
+            // FUN_01a9637c(mgr, -1): slots at +mgr_slots (mgr_slot_size bytes each), count
+            // +mgr_count, current index +mgr_cur; slot handle count at slot+0.
             uint64_t slots; uint32_t count, cur, handles = 0xffffffff;
-            memcpy(&slots, mgr + 0x12c0, 8); memcpy(&count, mgr + 0x12b8, 4); memcpy(&cur, mgr + 0x12c8, 4);
-            const uint8_t *slot = (const uint8_t *)(uintptr_t)(slots + (uint64_t)(cur < count ? cur : 0) * 0x148);
+            memcpy(&slots, mgr + A.mgr_slots, 8); memcpy(&count, mgr + A.mgr_count, 4); memcpy(&cur, mgr + A.mgr_cur, 4);
+            const uint8_t *slot =
+                (const uint8_t *)(uintptr_t)(slots + (uint64_t)(cur < count ? cur : 0) * A.mgr_slot_size);
             if (slots && guest_readable(slot, 4)) memcpy(&handles, slot, 4);
             g_rt.rt_log("mkwmp: watch #%ld %s caller=main+%#llx mgr=%p slots=%#llx count=%u cur=%u handles=%u",
-                        (long)n, kWatchName[w], (unsigned long long)(c->x[30] - 0x7000000000ull),
+                        (long)n, kWatchName[w], (unsigned long long)(c->x[30] - GUEST_MAIN(0)),
                         (const void *)mgr, (unsigned long long)slots, count, cur, handles);
             mkwmp_log("watch #%ld %s caller=main+%#llx count=%u cur=%u handles=%u", (long)n, kWatchName[w],
-                      (unsigned long long)(c->x[30] - 0x7000000000ull), count, cur, handles);
+                      (unsigned long long)(c->x[30] - GUEST_MAIN(0)), count, cur, handles);
         } else if (w == W_COMM_ERROR) {
             // x1 = error info {u32, u32, u64, u32}; also the caller's caller via x29.
             const uint8_t *info = (const uint8_t *)(uintptr_t)c->x[1];
@@ -1087,26 +1150,27 @@ static void trace_watch(const Cpu *c) {
             }
             if (guest_readable(info, 24)) memcpy(w, info, 24);
             mkwmp_log("watch #%ld comm_error caller=main+%#llx frames=%#llx %#llx %#llx %#llx %#llx %#llx info=%016llx %016llx %016llx",
-                      (long)n, (unsigned long long)(c->x[30] - 0x7000000000ull),
-                      (unsigned long long)(lr[0] - 0x7000000000ull), (unsigned long long)(lr[1] - 0x7000000000ull),
-                      (unsigned long long)(lr[2] - 0x7000000000ull), (unsigned long long)(lr[3] - 0x7000000000ull),
-                      (unsigned long long)(lr[4] - 0x7000000000ull), (unsigned long long)(lr[5] - 0x7000000000ull),
+                      (long)n, (unsigned long long)(c->x[30] - GUEST_MAIN(0)),
+                      (unsigned long long)(lr[0] - GUEST_MAIN(0)), (unsigned long long)(lr[1] - GUEST_MAIN(0)),
+                      (unsigned long long)(lr[2] - GUEST_MAIN(0)), (unsigned long long)(lr[3] - GUEST_MAIN(0)),
+                      (unsigned long long)(lr[4] - GUEST_MAIN(0)), (unsigned long long)(lr[5] - GUEST_MAIN(0)),
                       (unsigned long long)w[0], (unsigned long long)w[1], (unsigned long long)w[2]);
             g_rt.rt_log("mkwmp: comm_error caller=main+%#llx frames=%#llx %#llx %#llx %#llx",
-                        (unsigned long long)(c->x[30] - 0x7000000000ull), (unsigned long long)(lr[0] - 0x7000000000ull),
-                        (unsigned long long)(lr[1] - 0x7000000000ull), (unsigned long long)(lr[2] - 0x7000000000ull),
-                        (unsigned long long)(lr[3] - 0x7000000000ull));
+                        (unsigned long long)(c->x[30] - GUEST_MAIN(0)), (unsigned long long)(lr[0] - GUEST_MAIN(0)),
+                        (unsigned long long)(lr[1] - GUEST_MAIN(0)), (unsigned long long)(lr[2] - GUEST_MAIN(0)),
+                        (unsigned long long)(lr[3] - GUEST_MAIN(0)));
         } else {
             mkwmp_log("watch #%ld %s caller=main+%#llx x0=%#llx x1=%#llx x2=%#llx x3=%#llx", (long)n,
-                      kWatchName[w], (unsigned long long)(c->x[30] - 0x7000000000ull),
+                      kWatchName[w], (unsigned long long)(c->x[30] - GUEST_MAIN(0)),
                       (unsigned long long)c->x[0], (unsigned long long)c->x[1],
                       (unsigned long long)c->x[2], (unsigned long long)c->x[3]);
-            if (kWatchDumpCount[w] && guest_readable(mgr + kWatchDumpOff[w], kWatchDumpCount[w] * 8u)) {
+            unsigned dump_off = w == W_US_JOB ? A.us_job_dump : 0;
+            if (kWatchDumpCount[w] && guest_readable(mgr + dump_off, kWatchDumpCount[w] * 8u)) {
                 char line[512]; int len = 0;
                 for (int k = 0; k < kWatchDumpCount[w] && len < (int)sizeof line - 24; k++) {
-                    uint64_t v; memcpy(&v, mgr + kWatchDumpOff[w] + k * 8, 8);
+                    uint64_t v; memcpy(&v, mgr + dump_off + k * 8, 8);
                     len += snprintf(line + len, sizeof line - len, " +%#x=%#llx",
-                                    (unsigned)(kWatchDumpOff[w] + k * 8), (unsigned long long)v);
+                                    dump_off + (unsigned)k * 8, (unsigned long long)v);
                 }
                 mkwmp_log("watch %s fields:%s", kWatchName[w], line);
             }
@@ -1115,8 +1179,8 @@ static void trace_watch(const Cpu *c) {
     }
 }
 static int in_trace_range(uint64_t a) {
-    for (size_t i = 0; i < sizeof kTraceRanges / sizeof kTraceRanges[0]; i++)
-        if (a >= kTraceRanges[i][0] && a < kTraceRanges[i][1]) return 1;
+    for (int i = 0; i < GAME_TRACE_RANGES; i++)
+        if (A.trace_ranges[i][1] && a >= A.trace_ranges[i][0] && a < A.trace_ranges[i][1]) return 1;
     return 0;
 }
 #define EDGE_SLOTS 16384
@@ -1126,7 +1190,7 @@ static volatile LONG64 g_edges[EDGE_SLOTS];
 
 static void trace_edge(uint64_t caller, uint64_t target, const Cpu *c) {
     if (!in_trace_range(caller)) return;
-    uint64_t key = ((caller - 0x7000000000ull) << 32) ^ (target - 0x7000000000ull);
+    uint64_t key = ((caller - GUEST_MAIN(0)) << 32) ^ (target - GUEST_MAIN(0));
     if (!key) return;
     uint64_t h = key * 0x9E3779B97F4A7C15ull;
     for (unsigned probe = 0; probe < 64; probe++) {
@@ -1136,8 +1200,8 @@ static void trace_edge(uint64_t caller, uint64_t target, const Cpu *c) {
         if (seen == 0) {
             mlog("edge t=%llu caller=main+%#llx target=main+%#llx x0=%#llx x1=%#llx x2=%#llx",
                         (unsigned long long)GetTickCount64(),
-                        (unsigned long long)(caller - 0x7000000000ull),
-                        (unsigned long long)(target - 0x7000000000ull),
+                        (unsigned long long)(caller - GUEST_MAIN(0)),
+                        (unsigned long long)(target - GUEST_MAIN(0)),
                         (unsigned long long)c->x[0], (unsigned long long)c->x[1],
                         (unsigned long long)c->x[2]);
             return;
@@ -1145,9 +1209,11 @@ static void trace_edge(uint64_t caller, uint64_t target, const Cpu *c) {
     }
 }
 
-// main+0x46966a0 constructs a string from a C string in x1 (used for error
-// messages such as "Timed out to get my UserSession." and resource names).
+// The sdk's memmove (1.0.0: 0x70046966a0; the sdk module moves between game builds, so it is looked up by name)
+// copies a C string from x1 when a string is constructed (error messages such as
+// "Timed out to get my UserSession." and resource names).
 // Mirror the ones built by NPLN matchmaking/Gamesync code into mkw.log.
+static uint64_t g_sdk_memmove;
 static void trace_sdk_message(const Cpu *c) {
     const char *msg = (const char *)(uintptr_t)c->x[1];
     if ((uintptr_t)msg < 0x10000) return;
@@ -1163,40 +1229,46 @@ static void trace_sdk_message(const Cpu *c) {
     buf[n] = 0;
     mlog("sdk-msg t=%llu caller=main+%#llx \"%s\"",
                 (unsigned long long)GetTickCount64(),
-                (unsigned long long)(c->x[30] - 0x7000000000ull), buf);
+                (unsigned long long)(c->x[30] - GUEST_MAIN(0)), buf);
 }
 
 // Friend-room race start (resources/docs/SYNCSTATE-RE.md 7): the host's SyncState (FUN_01a82d84) waits for
 // every joiner's ready state; log on change what PrivateRoomMain / ReadyVoteSetter / SyncState see, and the
 // host's start event 0x9d424b78, on both machines. MKWMP_TRACE_ROOM=0 turns it off.
 static void trace_room_start(uint64_t target, const uint8_t *node, const uint8_t *arg) {
-    const uint8_t *g = *(const uint8_t **)(uintptr_t)0x70033d2548ull;
-    if (!g || !guest_readable(g + 0x110, 8) || !guest_readable(node, 0x160)) return;
+    if (!A.game_global) return;
+    const uint8_t *g = *(const uint8_t **)(uintptr_t)A.game_global;
+    if (!g || !guest_readable(g + A.g_flags, 8) || !guest_readable(node, A.room_node_size)) return;
     uint32_t f110, f114, st[4] = {0}, snap[12] = {0};
-    memcpy(&f110, g + 0x110, 4);
-    memcpy(&f114, g + 0x114, 4);
-    const uint8_t *h = guest_readable(g + 200, 8) ? *(const uint8_t **)(g + 200) : NULL;
+    memcpy(&f110, g + A.g_flags, 4);
+    memcpy(&f114, g + A.g_flags2, 4);
+    const uint8_t *h = guest_readable(g + A.g_handle, 8) ? *(const uint8_t **)(g + A.g_handle) : NULL;
     const uint8_t *s = h && guest_readable(h, 16) ? *(const uint8_t **)(h + 8) : NULL;
-    if (s && guest_readable(s + 8 + 0x24, 16)) memcpy(st, s + 8 + 0x24, 16);
-    const uint8_t *r = guest_readable(g + 0x188, 8) ? *(const uint8_t **)(g + 0x188) : NULL;
+    if (s && guest_readable(s + A.sess_states, 16)) memcpy(st, s + A.sess_states, 16);
+    const uint8_t *r = guest_readable(g + A.g_room, 8) ? *(const uint8_t **)(g + A.g_room) : NULL;
     uint32_t play = 0, vote = 0;
     uint8_t has = 0;
-    if (r && guest_readable(r, 0x50)) { memcpy(&play, r + 0x40, 4); memcpy(&vote, r + 0x44, 4); has = r[5]; }
+    if (r && guest_readable(r, 0x50)) {
+        memcpy(&play, r + A.room_play, 4); memcpy(&vote, r + A.room_vote_bits, 4); has = r[A.room_has];
+    }
     static uint32_t last[3][12];
-    int k = target == 0x7001a82d84ull ? 0 : target == 0x7001a5a444ull ? 1 : target == 0x7001a60be8ull ? 2 : 3;
+    int k = target == A.room_sync ? 0 : target == A.room_main ? 1 : target == A.room_vote ? 2 : 3;
     if (k == 3) {   // PrivateRoomMain event handler: only the host's start event
         uint32_t id = 0;
         if (!guest_readable(arg, 8)) return;
         memcpy(&id, arg + 4, 4);
-        if (id != 0x9d424b78u) return;
+        if (id != A.room_start_event) return;
         mlog("room start event: flags %#x/%#x states %u,%u,%u,%u", f110, f114, st[0], st[1], st[2], st[3]);
         return;
     }
     snap[0] = f110; snap[1] = f114; memcpy(snap + 2, st, 16); snap[6] = play; snap[7] = vote; snap[8] = has;
-    if (k == 0) { memcpy(&snap[9], node + 0x28, 4); memcpy(&snap[10], node + 0x2c, 4); }
-    if (k == 1) { snap[9] = node[0x144]; snap[10] = node[0x28]; snap[11] = node[0x38] | (uint32_t)node[0x131] << 8; }
+    if (k == 0) { memcpy(&snap[9], node + A.sync_a, 4); memcpy(&snap[10], node + A.sync_b, 4); }
+    if (k == 1) {
+        snap[9] = node[A.main_a]; snap[10] = node[A.main_b];
+        snap[11] = node[A.main_c] | (uint32_t)node[A.main_d] << 8;
+    }
     if (k == 2) {
-        const uint8_t *p = *(const uint8_t **)(node + 0x28);
+        const uint8_t *p = *(const uint8_t **)(node + A.vote_ptr);
         snap[9] = p && guest_readable(p, 1) ? *p : 2;
     }
     if (!memcmp(last[k], snap, sizeof snap)) return;
@@ -1212,19 +1284,21 @@ static void trace_room_start(uint64_t target, const uint8_t *node, const uint8_t
 // MKWMP_NO_IDLE_KICK=1 keeps the counter at 20 (diagnostic guard).
 static int g_trace_kart = -1, g_no_idle_kick;
 static void trace_kart_watchdog(uint8_t *ctrl) {
-    if (!guest_readable(ctrl, 0x200)) return;
-    const uint8_t *info = *(const uint8_t **)(ctrl + 0x28);
+    if (!guest_readable(ctrl, A.kart_size)) return;
+    const uint8_t *info = *(const uint8_t **)(ctrl + A.kart_info);
     int32_t player = -1;
-    if (info && guest_readable(info, 0x40)) memcpy(&player, info + 0x3c, 4);
+    if (info && guest_readable(info, 0x40)) memcpy(&player, info + A.kart_player, 4);
     if (player < 0 || player >= 24) return;
     uint32_t state, frames, cc, strikes;
     int32_t moves;
     float pos[2];
-    memcpy(&state, ctrl + 0x40, 4); memcpy(&frames, ctrl + 0xb8, 4); memcpy(&cc, ctrl + 0x1cc, 4);
-    memcpy(&strikes, ctrl + 0x1d0, 4); memcpy(&moves, ctrl + 0x1e8, 4); memcpy(pos, ctrl + 0x1d4, 8);
-    if (g_no_idle_kick && state == 5 && frames > 2900 && moves < 20) {
+    memcpy(&state, ctrl + A.kart_state, 4); memcpy(&frames, ctrl + A.kart_frames, 4);
+    memcpy(&cc, ctrl + A.kart_error, 4);
+    memcpy(&strikes, ctrl + A.kart_strikes, 4); memcpy(&moves, ctrl + A.kart_moves, 4);
+    memcpy(pos, ctrl + A.kart_pos, 8);
+    if (g_no_idle_kick && A.kart_idle_kick && state == 5 && frames > 2900 && moves < 20) {
         moves = 20;
-        memcpy(ctrl + 0x1e8, &moves, 4);
+        memcpy(ctrl + A.kart_moves, &moves, 4);
         static volatile LONG said;
         if (InterlockedIncrement(&said) <= 5) mlog("kart watchdog: move count raised (player %d)", player);
     }
@@ -1236,7 +1310,7 @@ static void trace_kart_watchdog(uint8_t *ctrl) {
     last_state[player] = state;
     last_ms[player] = now;
     mlog("kart watchdog: player %d state %u frames %u moves %d fe=%u cc=%#x strikes %u pos %.1f,%.1f",
-         player, state, frames, moves, ctrl[0x1fe], cc, strikes, (double)pos[0], (double)pos[1]);
+         player, state, frames, moves, ctrl[A.kart_fe], cc, strikes, (double)pos[0], (double)pos[1]);
 }
 
 static void profile_dispatch(Cpu *c) {
@@ -1245,29 +1319,32 @@ static void profile_dispatch(Cpu *c) {
         g_trace_kart = e && e[0] == '1';
         g_no_idle_kick = k && k[0] == '1';
     }
-    if ((g_trace_kart || g_no_idle_kick) && (c->pc == 0x70020d43dcull || c->pc == 0x700035a9a0ull))
+    if ((g_trace_kart || g_no_idle_kick) && (at(c->pc, A.kart_entry[0]) || at(c->pc, A.kart_entry[1])))
         trace_kart_watchdog((uint8_t *)(uintptr_t)c->x[0]);
     static int room_trace = -1;
     if (room_trace < 0) {
         const char *e = getenv("MKWMP_TRACE_ROOM");
         room_trace = e && e[0] == '1';   // diagnostics only (SYNCSTATE-RE.md); off for players
     }
-    if (room_trace && (c->pc == 0x7001a82d84ull || c->pc == 0x7001a5a444ull || c->pc == 0x7001a60be8ull ||
-                       c->pc == 0x7001a5b104ull))
+    if (room_trace && (at(c->pc, A.room_sync) || at(c->pc, A.room_main) || at(c->pc, A.room_vote) ||
+                       at(c->pc, A.room_event)))
         trace_room_start(c->pc, (const uint8_t *)(uintptr_t)c->x[0], (const uint8_t *)(uintptr_t)c->x[1]);
     if (g_trace_edges && g_rt.rt_log) {
         trace_watch(c);
-        if (c->pc == 0x70046966a0ull && in_trace_range(c->x[30]))
+        if (at(c->pc, g_sdk_memmove) && in_trace_range(c->x[30]))
             trace_sdk_message(c);
         trace_edge(c->x[30], c->pc, c);
     }
     // The lifted BLR uses rt_dispatch. This call retrieves the completed
     // BulkGetDocuments result into the guest's x8 return buffer.
-    uint32_t *result = c->x[30] == 0x7001e463dcull && c->pc == 0x700146a200ull
+    uint32_t *result = at(c->x[30], A.bulkget_lr) && at(c->pc, A.bulkget_fn)
         ? (void *)(uintptr_t)c->x[8] : NULL;
     uint64_t target = c->pc;
     uint64_t caller = c->x[30];
-    if (target == 0x7001e3f91cull && c->x[1] && g_rt.rt_log) {
+    // (Every read through a matched register below is checked with guest_readable first: a row whose address is
+    // only "high" confidence must not fault the game.)
+    if (at(target, A.ctl_event_sink) && c->x[1] && g_rt.rt_log &&
+        guest_readable((const void *)(uintptr_t)c->x[1], 7 * sizeof(uint32_t))) {
         uint32_t event[7];
         memcpy(event, (const void *)(uintptr_t)c->x[1], sizeof event);
         if (event[0])
@@ -1276,28 +1353,32 @@ static void profile_dispatch(Cpu *c) {
                         (unsigned long long)caller);
     }
     // These BLRs select the next controller phase and prepare a new operation.
-    uint32_t *next_phase = caller == 0x700261f894ull ? (void *)(uintptr_t)c->x[1] : NULL;
+    uint32_t *next_phase = at(caller, A.ctl_next_lr) ? (void *)(uintptr_t)c->x[1] : NULL;
     uint64_t operation = next_phase ? c->x[2] : c->x[1];
-    int trace_operation = (next_phase || caller == 0x700261f044ull) &&
+    int trace_operation = (next_phase || at(caller, A.ctl_prepare_lr)) &&
                           (operation == 2 || operation == 3 || operation == 10);
     uint32_t desired_mode = 0, desired_phase = 0, game_flags = 0;
     if (trace_operation) {
         const uint8_t *controller = (void *)(uintptr_t)c->x[0];
-        memcpy(&desired_mode, controller + 0x4a8, sizeof desired_mode);
-        memcpy(&desired_phase, controller + 0x4ac, sizeof desired_phase);
-        const uint8_t *global = *(const uint8_t **)(uintptr_t)0x70033d2548ull;
-        if (global) memcpy(&game_flags, global + 0x118, sizeof game_flags);
+        if (guest_readable(controller + A.ctl_mode, 4) && guest_readable(controller + A.ctl_phase, 4)) {
+            memcpy(&desired_mode, controller + A.ctl_mode, sizeof desired_mode);
+            memcpy(&desired_phase, controller + A.ctl_phase, sizeof desired_phase);
+        }
+        const uint8_t *global = A.game_global ? *(const uint8_t **)(uintptr_t)A.game_global : NULL;
+        if (global && guest_readable(global + A.g_flags3, 4)) memcpy(&game_flags, global + A.g_flags3, sizeof game_flags);
     }
     // The game's sequence callbacks are upstream of the Pia join job.
-    const uint8_t *seq = (target == 0x7001a93138ull || target == 0x7001a79fa0ull)
+    const uint8_t *seq = (at(target, A.seq_wait) || at(target, A.seq_start))
         ? (void *)(uintptr_t)c->x[0] : NULL;
     uint32_t seq_before[2] = {0};
-    if (seq) memcpy(seq_before, seq + 0x28, sizeof seq_before);
+    if (seq && !guest_readable(seq + A.seq_phase, sizeof seq_before)) seq = NULL;
+    if (seq) memcpy(seq_before, seq + A.seq_phase, sizeof seq_before);
     // JoinRandomSessionJob stores its current step and error inline. Only
     // inspect known step functions for this build and log state transitions.
     const uint8_t *job = is_pia_join_step(target) ? (void *)(uintptr_t)c->x[0] : NULL;
     uint64_t before = 0;
-    if (job) memcpy(&before, job + 0x38, sizeof before);
+    if (job && !guest_readable(job, A.join_error + 4u)) job = NULL;
+    if (job) memcpy(&before, job + A.join_step, sizeof before);
     // Experiment (MKWMP_SKIP_REFEREE_TIMEOUT=1): drop the race-start referee
     // timeout error (FUN_021271c8 -> FUN_01e46958 posts id 0x606314c9 through
     // error service slot 6) so the race can continue without a server referee.
@@ -1305,7 +1386,8 @@ static void profile_dispatch(Cpu *c) {
     // Every communication error the game posts (an important event): its id and the guest return
     // addresses that led there, so the producer is known (e.g. 0x9b928162: FUN_0035ce38 or FUN_020d43dc,
     // RACEEND-RE.md). Once per id and 10 s; the error-service entry is reached via a vtable call.
-    if (target == 0x700222d78cull && c->x[1] && guest_readable((const void *)(uintptr_t)c->x[1], 4)) {
+    int error_post = at(target, A.errsvc_post);
+    if (error_post && c->x[1] && guest_readable((const void *)(uintptr_t)c->x[1], 4)) {
         uint32_t id = *(const uint32_t *)(uintptr_t)c->x[1];
         static uint32_t last_id;
         static ULONGLONG last_ms;
@@ -1322,9 +1404,9 @@ static void profile_dispatch(Cpu *c) {
                 fp = (const uint8_t *)(uintptr_t)next;
             }
             mlog("communication error %#x posted: caller main+%#llx frames main+%#llx main+%#llx main+%#llx main+%#llx main+%#llx",
-                 id, (unsigned long long)(caller - 0x7000000000ull), (unsigned long long)(lr[0] - 0x7000000000ull),
-                 (unsigned long long)(lr[1] - 0x7000000000ull), (unsigned long long)(lr[2] - 0x7000000000ull),
-                 (unsigned long long)(lr[3] - 0x7000000000ull), (unsigned long long)(lr[4] - 0x7000000000ull));
+                 id, (unsigned long long)(caller - GUEST_MAIN(0)), (unsigned long long)(lr[0] - GUEST_MAIN(0)),
+                 (unsigned long long)(lr[1] - GUEST_MAIN(0)), (unsigned long long)(lr[2] - GUEST_MAIN(0)),
+                 (unsigned long long)(lr[3] - GUEST_MAIN(0)), (unsigned long long)(lr[4] - GUEST_MAIN(0)));
         }
     }
     // MKWMP_SKIP_ERROR=<hex id>: drop that one communication error (diagnostics; e.g. 0x9b928162, the
@@ -1332,28 +1414,29 @@ static void profile_dispatch(Cpu *c) {
     // Default under Wine/Proton (user decision for 1.0.0, 2026-11-15): the Steam Deck gets 0x9b928162 from
     // the kart watchdog (FUN_020d4ab0 -> FUN_02624bf0) at the end of every battle round while driving; the
     // PC never does. Dropping it, a 3-round friend battle ran to the end. MKWMP_SKIP_ERROR=0 turns it off.
+    // The default id is the build's (A.proton_skip_error): none on 1.8.0 until its error-post row is proven live.
     static uint32_t skip_id = 1;
     if (skip_id == 1) {
         const char *e = getenv("MKWMP_SKIP_ERROR");
         HMODULE nt = GetModuleHandleA("ntdll.dll");
         int wine = nt && GetProcAddress(nt, "wine_get_version");
-        skip_id = e && *e ? (uint32_t)strtoul(e, NULL, 16) : wine ? 0x9b928162u : 0;
+        skip_id = e && *e ? (uint32_t)strtoul(e, NULL, 16) : wine ? A.proton_skip_error : 0;
         if (skip_id) mlog("communication error %#x will be dropped (%s)", skip_id, e && *e ? "MKWMP_SKIP_ERROR" : "Proton default");
     }
-    if (target == 0x700222d78cull && skip_id && c->x[1] && guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
+    if (error_post && skip_id && c->x[1] && guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
         *(const uint32_t *)(uintptr_t)c->x[1] == skip_id) {
         static volatile LONG skipped_one;
         if (InterlockedIncrement(&skipped_one) <= 20)
             mlog("communication error %#x dropped (MKWMP_SKIP_ERROR)", skip_id);
         return;
     }
-    if (target == 0x700222d78cull && g_skip_referee_timeout && c->x[1] &&
+    if (error_post && g_skip_referee_timeout && c->x[1] &&
         guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
-        (g_skip_referee_timeout == 2 || *(const uint32_t *)(uintptr_t)c->x[1] == 0x606314c9u)) {
+        (g_skip_referee_timeout == 2 || *(const uint32_t *)(uintptr_t)c->x[1] == A.err_referee_timeout)) {
         static volatile LONG skipped;
         if (InterlockedIncrement(&skipped) <= 50)
             mkwmp_log("communication error %#x suppressed (caller main+%#llx)",
-                      *(const uint32_t *)(uintptr_t)c->x[1], (unsigned long long)(caller - 0x7000000000ull));
+                      *(const uint32_t *)(uintptr_t)c->x[1], (unsigned long long)(caller - GUEST_MAIN(0)));
         return;
     }
     original_dispatch(c);
@@ -1361,25 +1444,26 @@ static void profile_dispatch(Cpu *c) {
         mlog("Match controller %s op=%llu target=%#llx ret=%#llx next_phase=%u desired=%u/%u flags=%#x",
                     next_phase ? "complete" : "prepare", (unsigned long long)operation,
                     (unsigned long long)target, (unsigned long long)c->x[0],
-                    next_phase ? *next_phase : 0, desired_mode, desired_phase, game_flags);
+                    next_phase && guest_readable(next_phase, 4) ? *next_phase : 0, desired_mode, desired_phase,
+                    game_flags);
     if (seq && g_rt.rt_log) {
         uint32_t after[2];
-        memcpy(after, seq + 0x28, sizeof after);
+        memcpy(after, seq + A.seq_phase, sizeof after);
         if (memcmp(seq_before, after, sizeof after))
             mlog("Matchmake %s phase=%u/%u -> %u/%u",
-                        target == 0x7001a93138ull ? "wait" : "start",
+                        target == A.seq_wait ? "wait" : "start",
                         seq_before[0], seq_before[1], after[0], after[1]);
     }
-    if (result && g_rt.rt_log)
+    if (result && g_rt.rt_log && guest_readable(result, 4))
         mlog("BulkGetDocuments completion=%u (target=%#llx)",
                     *result, (unsigned long long)target);
     if (job && g_rt.rt_log) {
         uint64_t after, label;
         uint32_t error;
-        memcpy(&after, job + 0x38, sizeof after);
+        memcpy(&after, job + A.join_step, sizeof after);
         if (before == after) return;
-        memcpy(&label, job + 0x48, sizeof label);
-        memcpy(&error, job + 0xd8, sizeof error);
+        memcpy(&label, job + A.join_label, sizeof label);
+        memcpy(&error, job + A.join_error, sizeof error);
         mlog("Pia JoinRandomSession step=%#llx next=%#llx label=%#llx error=%#x",
                     (unsigned long long)target, (unsigned long long)after,
                     (unsigned long long)label, error);
@@ -1390,14 +1474,35 @@ static void install_profile_dispatch_trace(void) {
     static volatile LONG attempted;
     uint8_t *base = (void *)GetModuleHandleW(L"mkwgame.dll");
     if (!base || InterlockedCompareExchange(&attempted, 1, 0)) return;
-    // profile_dispatch matches 1.0.0 guest pcs and reads/writes through their registers (error skips, idle-kick
-    // guard, traces): on any other build it would act on unrelated code, so it is not installed at all.
+    // profile_dispatch matches guest pcs of one game build and reads/writes through their registers (error skips,
+    // idle-kick guard, traces): on a build without a table row it would act on unrelated code, so it is not
+    // installed at all.
     int build = game_build();
-    if (build != GAME_100) {
+    const struct game_addrs *row = game_addrs_for(build);
+    if (!row) {
         mlog("game build %s: version-specific hooks off (BulkGetDocuments/Pia tracing, communication-error skips)",
              game_build_name(build));
+        if (build == GAME_UNKNOWN) InterlockedExchange(&attempted, 0);   // main is not mapped yet: ask again
         return;
     }
+    struct game_addrs a = *row;
+    // Install-time guards (GAME-1.8.0-ADDRESSES.md §3). The error-service post is the one functional target here:
+    // slot 6 of its vtable must hold it and it must start as expected, else nothing matches it (no skip, no log).
+    if (!game_guard_slot("error service post", a.errsvc_vtable, 6, a.errsvc_post) ||
+        !game_guard_words("error service post", a.errsvc_post, a.errsvc_words, 2)) {
+        mlog("game build %s: error-service guard mismatch, communication-error log and skips off",
+             game_build_name(build));
+        a.errsvc_post = 0;
+        a.proton_skip_error = 0;
+    }
+    const char *kick = getenv("MKWMP_NO_IDLE_KICK");
+    if (kick && kick[0] == '1' && !a.kart_idle_kick)
+        mlog("game build %s: MKWMP_NO_IDLE_KICK refused (the kart state field is not confirmed for this build)",
+             game_build_name(build));
+    g_sdk_memmove = g_rt.ldr_symbol ? g_rt.ldr_symbol("memmove") : 0;
+    A = a;   // before the hook goes in: profile_dispatch only ever sees the whole row
+    mlog("game build %s: version-specific hooks on (error service %s, idle-kick guard %s)", game_build_name(build),
+         a.errsvc_post ? "verified" : "off", a.kart_idle_kick ? "available" : "unavailable");
     IMAGE_DOS_HEADER *dos = (void *)base;
     if (dos->e_magic != IMAGE_DOS_SIGNATURE) return;
     IMAGE_NT_HEADERS64 *nt = (void *)(base + dos->e_lfanew);
@@ -1564,16 +1669,45 @@ static void eager_seat(void) {
     ReleaseSRWLockExclusive(&lock);
 }
 
+// nn::nifm::GetCurrentIpConfigInfo(nn::socket::InAddr * x5), game 1.8.0 (Pia 7.3's transport start). The runtime has
+// no handler under this name, so gate_call cannot keep it dormant: while the probe is dormant it answers as the
+// runtime answers the in_addr overload (no network, or the LAN address with MKW_LAN), afterwards as the probe does.
+static void ov_nifm_ip_config_inaddr(Cpu *c) {
+    if (!g_active) {
+        static GuestFn stock;
+        if (!stock) stock = stock_handler("_ZN2nn4nifm22GetCurrentIpConfigInfoEP7in_addrS2_S2_S2_S2_");
+        if (stock) { stock(c); return; }
+    }
+    ov_nifm_ip_config(c);
+}
+
 #define NREG 64
 static GuestFn g_ours[NREG], g_stock[NREG];
 static unsigned char g_trigger[NREG];
 static const char *g_gate_name[NREG];
+// A call from a guest module that must keep the runtime's own handlers whatever the probe's state (gameaddrs.h
+// stock_lo/hi): game 1.8.0's subsdk0 "movie" imports nn::socket::Close, GetLastError and EventFd/EventFdRead/
+// EventFdWrite for its task queue (subsdk0+0x17680, +0x18da0, with nn::socket::Select, which nobody overrides). Those
+// names are gRPC's too. Served by the probe once active, the movie code would get descriptors of the probe's table
+// (fd_new) and hand them to the SDK's Select, and its Close(fd) could close a gRPC or Pia socket of the same number.
+// With the stock handlers it behaves exactly as in offline mkw-recomp, before and after Online Play is opened.
+// (Its nn::fs imports reach the probe's fs overrides, which pass everything but _npln:/npln_config.json through.)
+static int stock_only_caller(uint64_t lr) {
+    const struct game_addrs *ga = game_addrs();
+    return ga && ga->stock_hi && lr >= ga->stock_lo && lr < ga->stock_hi;
+}
+
 static void gate_call(int i, Cpu *c) {
+    // The first gated call (about 3 s into the boot, long before any hook): say in mkwmp.log which game build runs
+    // and whether its table row fits it.
+    static volatile LONG checked;
+    if (!checked && game_build() != GAME_UNKNOWN && !InterlockedExchange(&checked, 1)) game_addrs_selfcheck();
+    if (g_stock[i] && stock_only_caller(c->x[30])) { g_stock[i](c); return; }
     if (!g_active && g_stock[i]) {
         static volatile LONG seen[NREG];
         if (!InterlockedExchange(&seen[i], 1) || g_trigger[i])
             mlog("dormant call: %s caller=main+%#llx", g_gate_name[i],
-                 (unsigned long long)(c->x[30] - 0x7000000000ull));
+                 (unsigned long long)(c->x[30] - GUEST_MAIN(0)));
         // The game makes one automatic sign-in at boot (nifm request ~5 s in, before the title
         // screen) and one per Online Play click, from the same caller (main+0x2247a7c). Decline
         // the boot one (stock "no network": the menu stays offline, no seat taken); every later
@@ -1607,6 +1741,9 @@ static const Reg kRegs[] = {
     {"_ZN2nn4nifm18IsNetworkAvailableEv", ov_nifm_is_network_available},
     {"_ZN2nn4nifm27SubmitNetworkRequestAndWaitEv", ov_nifm_submit_wait},
     {"_ZN2nn4nifm22GetCurrentIpConfigInfoEP7in_addrS2_S2_S2_S2_", ov_nifm_ip_config},
+    // Game 1.8.0 only (Pia 7.3's transport start, main+0x1661d90; no stock handler in the runtime). It took the slot
+    // of nn::socket::FreeAddrInfo(AddrInfo *), which the runtime's stock handler now serves (kStockFreeAddrInfo).
+    {"_ZN2nn4nifm22GetCurrentIpConfigInfoEPNS_6socket6InAddrES3_S3_S3_S3_", ov_nifm_ip_config_inaddr},
     {"_ZN2nn7account32IsNetworkServiceAccountAvailableEPbRKNS0_10UserHandleE", ov_nsa_available},
     {"_ZN2nn7account36EnsureNetworkServiceAccountAvailableERKNS0_10UserHandleE", ov_ok},
     {"_ZN2nn7account26GetNetworkServiceAccountIdEPNS0_23NetworkServiceAccountIdERKNS0_10UserHandleE", ov_nsa_get_id},
@@ -1645,7 +1782,8 @@ static const Reg kRegs[] = {
     {"_ZN2nn6socket11GetAddrInfoEPKcS2_PKNS0_8AddrInfoEPPS3_", ov_sock_getaddrinfo_cpp},
     {"_ZN2nn6socket4PollEP6pollfdmi", ov_sock_poll},
     {"_ZN2nn6socket4BindEiPKNS0_8SockAddrEj", ov_pia_bind},
-    {"_ZN2nn6socket12FreeAddrInfoEPNS0_8AddrInfoE", ov_sock_freeaddrinfo},
+    // (nn::socket::FreeAddrInfo(AddrInfo *) is left to the runtime: g_typed_ai needs no free. nn::socket::Recv,
+    //  new in game 1.8.0, is not registered either: no slot is left and nothing reaches it, see ov_pia_recv.)
     {"_ZN2nn3err9ShowErrorERKNS0_18ErrorResultVariantE", ov_show_error_variant},
     {"_ZN2nn6socket6SendToEiPKvmNS0_7MsgFlagEPKNS0_8SockAddrEj", ov_pia_sendto},
     {"_ZN2nn7friends27CheckFriendListAvailabilityEPbRKNS_7account3UidE", ov_friend_list_available},
@@ -1681,12 +1819,19 @@ static const Reg kRegs[] = {
 // 0.1.10). Every hostfn_add_override call of npln_register counts: kRegs, where the two
 // *Fiber entries are registered only with MKWMP_NO_FIBER=0, and otherwise the core-mask pair
 // in their place. Both ways must fit, and each kRegs entry needs its own gate.
+// The table is full: 64 kRegs entries, 62 + the core-mask pair registered by default. A new override needs the slot
+// of an old one (game 1.8.0's GetCurrentIpConfigInfo(InAddr *) took FreeAddrInfo(AddrInfo *)'s).
 enum {
     RUNTIME_OVERRIDE_MAX = 64,
     N_REGS = sizeof(kRegs) / sizeof(kRegs[0]),
     N_FIBER_REGS = 2,       // SwitchToFiber, InitializeFiber
     N_CORE_MASK_REGS = 2,   // nnosGetThreadCoreMask, nnosSetThreadCoreMask
 };
+// The typed FreeAddrInfo must have a stock (do-nothing) handler: the SDK's own would free a g_typed_ai entry.
+// tools/recomp/check_release.py reads this name and fails a runtime release without it.
+static const char kStockFreeAddrInfo[] = "_ZN2nn6socket12FreeAddrInfoEPNS0_8AddrInfoE";
+static const char kIpConfigInAddr[] = "_ZN2nn4nifm22GetCurrentIpConfigInfoEPNS_6socket6InAddrES3_S3_S3_S3_";
+static void ov_nothing(Cpu *c) { (void)c; }
 _Static_assert(N_REGS <= NREG, "one gate per kRegs entry");
 _Static_assert(N_REGS <= RUNTIME_OVERRIDE_MAX, "runtime override limit (MKWMP_NO_FIBER=0)");
 _Static_assert(N_REGS - N_FIBER_REGS + N_CORE_MASK_REGS <= RUNTIME_OVERRIDE_MAX, "runtime override limit");
@@ -1723,8 +1868,16 @@ int npln_register(void) {
     const char *eager = getenv("MKWMP_EAGER");
     if (eager && !strcmp(eager, "1")) { g_active = 1; g_eager = 1; log_line("MKWMP_EAGER=1: active from start"); }
     int gated = 0;
+    int stock_free = stock_handler(kStockFreeAddrInfo) != NULL;
     for (int i = 0; i < n; i++) {
         if (skip_fiber && strstr(kRegs[i].name, "Fiber")) { log_line(kRegs[i].name); continue; }
+        if (!stock_free && !strcmp(kRegs[i].name, kIpConfigInAddr)) {
+            // A runtime without that stock handler (none of the supported ones): the slot goes back to FreeAddrInfo,
+            // as a no-op, and game 1.8.0's Pia keeps the SDK's GetCurrentIpConfigInfo(InAddr *).
+            mlog("npln: no stock FreeAddrInfo(AddrInfo *) in this runtime: overriding it instead of %s", kIpConfigInAddr);
+            g_rt.hostfn_add_override(kStockFreeAddrInfo, ov_nothing);
+            continue;
+        }
         g_ours[i] = kRegs[i].fn;
         g_gate_name[i] = kRegs[i].name;
         g_stock[i] = stock_handler(kRegs[i].name);

@@ -1,7 +1,10 @@
 // The Room ID keypad's state machine / layout (keypad_logic.h) and the inline hook (detour.c), the latter on
 // stand-in functions that start with the very prologues keypad.c patches in mkw.exe.
-//   zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_keypad.exe
-//     native\probe\tests\test_keypad.c native\probe\src\detour.c
+//
+//   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"
+//   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_keypad.exe `
+//       native\probe\tests\test_keypad.c native\probe\src\detour.c
+//   scratch\test_keypad.exe
 #include "../src/detour.h"
 #include "../src/keypad_logic.h"
 

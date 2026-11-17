@@ -1,9 +1,11 @@
 // Friend list: uuid5 / account ids against python's uuid module, the launcher's JSON, and the
 // nn::friends::Friend structs GetFriendList hands to the game.
 //
-// zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o test_friends.exe
-//   tests/test_friends.c src/friends.c src/uuid5.c src/launcher.c src/seat.c src/config.c
-//   src/notify.c src/log.c -lws2_32
+//   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"; $s = "native\probe\src"
+//   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_friends.exe `
+//       native\probe\tests\test_friends.c $s\friends.c $s\uuid5.c $s\launcher.c $s\seat.c $s\config.c $s\notify.c `
+//       $s\lobby_ca.c $s\log.c -lws2_32
+//   scratch\test_friends.exe
 #undef NDEBUG
 #include <assert.h>
 #include <stdio.h>

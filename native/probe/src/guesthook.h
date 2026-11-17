@@ -13,8 +13,9 @@ enum { GUEST_MAIN_BASE_HI = 0x70 };              // main is loaded at 0x70000000
 #define GUEST_MAIN(off) (0x7000000000ull + (uint64_t)(off))
 
 // Which game build is mapped at 0x7000000000: identified by main's MOD0 offset (main+4) and its GNU build-id note
-// (resources/docs/GAME-1.8.0-ADDRESSES.md §1). Every main+0x... constant in the probe is for GAME_100; version-specific
-// hooks must check game_build() == GAME_100 before touching guest memory. Cached after the first known answer.
+// (resources/docs/GAME-1.8.0-ADDRESSES.md §1). Every main+0x... constant of the probe is in the build's row of
+// gameaddrs.h: version-specific hooks take it from game_addrs() and stay off without a row. Cached after the first
+// known answer.
 enum { GAME_OTHER = -1, GAME_UNKNOWN = 0, GAME_100 = 100, GAME_180 = 180 };   // UNKNOWN = main not mapped yet
 int game_build(void);
 const char *game_build_name(int build);

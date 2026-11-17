@@ -1,4 +1,12 @@
-// Real Winsock integration test for the gRPC wakeup descriptor.
+// Real Winsock integration test for the gRPC wakeup descriptor, the socket bridge and (it #includes npln.c) the
+// per-build logic of profile_dispatch.
+//
+//   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"; $s = "native\probe\src"
+//   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_bridge.exe `
+//       native\probe\tests\test_bridge.c native\probe\tests\stub_coff.c $s\log.c $s\config.c $s\notify.c `
+//       $s\friends.c $s\lobby_ca.c $s\seat.c $s\voice.c $s\voice_ui.c $s\guesthook.c $s\gameaddrs.c `
+//       $s\launcher.c $s\uuid5.c -lws2_32
+//   scratch\test_bridge.exe
 #undef NDEBUG
 #include <assert.h>
 #include <stdarg.h>
@@ -32,6 +40,9 @@ static uint64_t sdk_clock(Cpu *c, uint64_t fn, int n, ...) {
     out[1] = 456;
     return 0;
 }
+
+static int dispatched;
+static void count_dispatch(Cpu *c) { (void)c; dispatched++; }
 
 static uint64_t call2(GuestFn fn, uint64_t a, uint64_t b) {
     Cpu c = {0}; c.x[0] = a; c.x[1] = b;
@@ -103,7 +114,13 @@ int main(void) {
     ov_sock_getaddrinfo_cpp(&dns);
     assert(dns.x[0] == 0 && ai && ai->ai_family == 2);
     assert(ai->ai_canonname && (uint8_t)ai->ai_canonname[1] == 2 && !ai->ai_addr && !ai->ai_next);
-    call2(ov_sock_freeaddrinfo, (uintptr_t)ai, 0);
+    // The typed result is a ring entry (nothing to free: FreeAddrInfo(AddrInfo *) stays the runtime's no-op), and
+    // the next lookup does not overwrite it.
+    GAddrInfo *typed_first = ai;
+    assert(ai == &g_typed_ai[0].ai && ai->ai_canonname == (char *)g_typed_ai[0].sa);
+    dns.x[0] = (uintptr_t)"capture.local";
+    ov_sock_getaddrinfo_cpp(&dns);
+    assert(dns.x[0] == 0 && ai == &g_typed_ai[1].ai && typed_first->ai_family == 2);
     Cpu sock = {0}; ov_sock_socket(&sock); fd = (int)sock.x[0];
     int32_t option = 1; uint32_t length = 4;
     sock.x[0] = fd; sock.x[1] = 6; sock.x[2] = 1;
@@ -173,7 +190,102 @@ int main(void) {
     datagram.x[4] = (uintptr_t)guest_peer; datagram.x[5] = sizeof guest_peer;
     ov_pia_sendto(&datagram);
     assert(datagram.x[0] == UINT64_MAX && g_errno == G_EINVAL);
+    // nn::socket::Recv (game 1.8.0): a datagram without its address; EAGAIN when empty; EINVAL for a foreign fd.
+    guest_peer[4] = 127;
+    memcpy(guest_peer + 2, &address.sin_port, 2);
+    datagram.x[0] = from_fd; datagram.x[1] = (uintptr_t)"ping"; datagram.x[2] = 4;
+    datagram.x[4] = (uintptr_t)guest_peer; datagram.x[5] = sizeof guest_peer;
+    ov_pia_sendto(&datagram);
+    assert(datagram.x[0] == 4 && readable(to_fd));
+    Cpu rx = {0};
+    rx.x[0] = to_fd; rx.x[1] = (uintptr_t)echoed; rx.x[2] = sizeof echoed;
+    ov_pia_recv(&rx);
+    assert(rx.x[0] == 4 && memcmp(echoed, "ping", 4) == 0);
+    rx.x[0] = to_fd; rx.x[1] = (uintptr_t)echoed; rx.x[2] = sizeof echoed;
+    ov_pia_recv(&rx);
+    assert(rx.x[0] == UINT64_MAX && g_errno == G_EAGAIN);
+    rx.x[0] = NFD; rx.x[1] = (uintptr_t)echoed; rx.x[2] = sizeof echoed;
+    ov_pia_recv(&rx);
+    assert(rx.x[0] == UINT64_MAX && g_errno == G_EINVAL);
     call2(ov_sock_close, from_fd, 0); call2(ov_sock_close, to_fd, 0);
+    // Pia 7.3's ping socket, Socket(AF_INET, SOCK_RAW, IPPROTO_ICMP): refused with EPROTONOSUPPORT, no descriptor.
+    // Any other non-datagram socket keeps EINVAL.
+    Cpu raw = {0};
+    raw.x[0] = 2; raw.x[1] = 3; raw.x[2] = 1;
+    g_errno = 0;
+    ov_pia_socket(&raw);
+    assert(raw.x[0] == UINT64_MAX && g_errno == G_EPROTONOSUPPORT);
+    raw.x[0] = 2; raw.x[1] = 1; raw.x[2] = 6;
+    ov_pia_socket(&raw);
+    assert(raw.x[0] == UINT64_MAX && g_errno == G_EINVAL);
+    for (int i = 0; i < NFD; i++) assert(!g_used[i]);
+    // GetCurrentIpConfigInfo(InAddr * x5), the overload Pia 7.3 calls: loopback mode answers 127.0.0.1 / 255.0.0.0.
+    // (No .ovr section in this test exe, so there is no stock handler to stay dormant with.)
+    uint8_t ip[5][4];
+    memset(ip, 0xee, sizeof ip);
+    Cpu ipc = {0};
+    for (int i = 0; i < 5; i++) ipc.x[i] = (uintptr_t)ip[i];
+    ov_nifm_ip_config_inaddr(&ipc);
+    assert(ipc.x[0] == 0 && !memcmp(ip[0], "\x7f\0\0\1", 4) && !memcmp(ip[1], "\xff\0\0\0", 4) && !ip[2][0]);
+    // No game is mapped here: no table row, so no gRPC call-site gate, no stock-only module, nothing to match.
+    assert(game_build() == GAME_UNKNOWN && game_addrs() == NULL);
+    assert(grpc_timedwait_gate() == 0 && grpc_timedwait_gate() == 0);
+    assert(!stock_only_caller(0x7003800010ull) && !stock_only_caller(0x7001000000ull));
+    assert(!at(0, A.errsvc_post) && !at(0, A.ctl_next_lr) && !is_pia_join_step(0) && !in_trace_range(0x7001300000ull));
+    assert(watch_addr(W_COMM_ERROR) == 0 && watch_addr(W_START_P2P) == 0);
+    // profile_dispatch works from the installed row A. The referee-timeout skip (MKWMP_SKIP_REFEREE_TIMEOUT=1):
+    const struct game_addrs *r100 = game_addrs_for(GAME_100), *r180 = game_addrs_for(GAME_180);
+    original_dispatch = count_dispatch;
+    g_skip_referee_timeout = 1;
+    uint32_t error_info[6] = {0x606314c9};
+    Cpu pd = {0};
+    pd.pc = r100->errsvc_post; pd.x[1] = (uintptr_t)error_info;
+    profile_dispatch(&pd);
+    assert(dispatched == 1);                       // no row installed: nothing matches, the call goes through
+    A = *r100;
+    profile_dispatch(&pd);
+    assert(dispatched == 1);                       // 1.0.0: dropped at its error-service post
+    error_info[0] = 0x1234;
+    profile_dispatch(&pd);
+    assert(dispatched == 2);                       // another id is posted
+    A = *r180;
+    error_info[0] = 0x606314c9;
+    profile_dispatch(&pd);
+    assert(dispatched == 3);                       // 1.8.0: the 1.0.0 address is unrelated code
+    pd.pc = r180->errsvc_post;
+    profile_dispatch(&pd);
+    assert(dispatched == 3);                       // ... its own post is the one that is dropped
+    A.errsvc_post = 0;                             // what a failed error-service guard leaves
+    profile_dispatch(&pd);
+    assert(dispatched == 4);
+    g_skip_referee_timeout = 0;
+    // MKWMP_NO_IDLE_KICK: raises the move counter on 1.0.0's kart watchdog; refused on 1.8.0 (no entries, flag off).
+    struct { uint8_t pad[0x3c]; int32_t player; } kart_info = {.player = 3};
+    uint8_t ctrl[0x200] = {0};
+    const uint8_t *kart_info_p = (const uint8_t *)&kart_info;
+    uint32_t kart_state = 5, kart_frames = 3000;
+    int32_t kart_moves = 2;
+    memcpy(ctrl + r100->kart_info, &kart_info_p, 8);
+    memcpy(ctrl + r100->kart_state, &kart_state, 4);
+    memcpy(ctrl + r100->kart_frames, &kart_frames, 4);
+    memcpy(ctrl + r100->kart_moves, &kart_moves, 4);
+    g_trace_kart = 0; g_no_idle_kick = 1;
+    Cpu kd = {0};
+    kd.x[0] = (uintptr_t)ctrl;
+    A = *r180;
+    kd.pc = r100->kart_entry[1];
+    profile_dispatch(&kd);
+    kd.pc = 0;                                     // a zero entry never matches, even a zero pc
+    profile_dispatch(&kd);
+    memcpy(&kart_moves, ctrl + r100->kart_moves, 4);
+    assert(kart_moves == 2 && dispatched == 6);
+    A = *r100;
+    kd.pc = r100->kart_entry[1];
+    profile_dispatch(&kd);
+    memcpy(&kart_moves, ctrl + r100->kart_moves, 4);
+    assert(kart_moves == 20 && dispatched == 7);
+    g_no_idle_kick = 0;
+    memset(&A, 0, sizeof A);
     uint8_t cert_buffer[2048]; GCertificateInfo *info = NULL;
     Cpu cert = {0}; cert.x[0] = (uintptr_t)&info; cert.x[1] = (uintptr_t)cert_buffer;
     cert.x[2] = sizeof cert_buffer;

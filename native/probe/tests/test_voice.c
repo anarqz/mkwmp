@@ -1,7 +1,11 @@
 // voice_parse_settings (voice.h): the launcher's GET /local/v1/voice answer.
-//   zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_voice.exe native\probe\tests\test_voice.c
-//     native\probe\src\voice.c native\probe\src\log.c native\probe\src\config.c native\probe\src\launcher.c
-//     native\probe\src\seat.c native\probe\src\friends.c native\probe\src\uuid5.c native\probe\src\notify.c -lws2_32
+// (voice.c installs the menu hooks, so voice_ui.c and what it needs come along; coff.c defines g_rt.)
+//
+//   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"; $s = "native\probe\src"
+//   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_voice.exe `
+//       native\probe\tests\test_voice.c $s\voice.c $s\voice_ui.c $s\guesthook.c $s\gameaddrs.c $s\coff.c $s\log.c `
+//       $s\config.c $s\launcher.c $s\seat.c $s\friends.c $s\uuid5.c $s\notify.c -lws2_32
+//   scratch\test_voice.exe
 #include "../src/voice.h"
 
 #include <stdio.h>
