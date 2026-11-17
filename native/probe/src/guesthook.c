@@ -13,6 +13,43 @@ static uint64_t g_next_fake = 0x00000FF000000000ull;   // far outside every gues
 
 void *coff_symbol(const char *name);
 
+static int mapped(uint64_t addr, size_t n) {
+    MEMORY_BASIC_INFORMATION mi;
+    if (!VirtualQuery((const void *)(uintptr_t)addr, &mi, sizeof mi) || mi.State != MEM_COMMIT ||
+        (mi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+        return 0;
+    return addr + n <= (uint64_t)(uintptr_t)mi.BaseAddress + mi.RegionSize;
+}
+
+int game_build(void) {
+    static const struct { int build; uint32_t mod0; uint32_t note; uint8_t id[16]; } kBuilds[] = {
+        {GAME_100, 0x02830054u, 0x30a7e78u,
+         {0x9e, 0x24, 0x44, 0x38, 0xc3, 0xd8, 0xef, 0x1c, 0x70, 0x3a, 0x6a, 0x85, 0xef, 0x99, 0xc4, 0xf0}},
+        {GAME_180, 0x02bb3060u, 0x346ba64u,
+         {0xd0, 0x0e, 0x4f, 0x39, 0x9e, 0x41, 0x1d, 0x06, 0x13, 0xaa, 0x8d, 0x26, 0xb1, 0xc0, 0x2f, 0xef}},
+    };
+    static volatile LONG cached;
+    if (cached) return cached;
+    uint64_t main = GUEST_MAIN(0);
+    if (!mapped(main + 4, 4)) return GAME_UNKNOWN;   // not loaded yet: ask again later
+    uint32_t mod0 = *(const uint32_t *)(uintptr_t)(main + 4);
+    int build = GAME_UNKNOWN;
+    for (size_t i = 0; i < sizeof kBuilds / sizeof kBuilds[0]; i++) {
+        if (kBuilds[i].mod0 != mod0) continue;
+        uint64_t id = main + kBuilds[i].note;
+        if (mapped(id, 16) && !memcmp((const void *)(uintptr_t)id, kBuilds[i].id, 16)) build = kBuilds[i].build;
+        break;
+    }
+    if (build == GAME_UNKNOWN) build = GAME_OTHER;   // mapped but not a build we know: final
+    InterlockedExchange(&cached, build);
+    mkwmp_log("game build: %s (main+4 = %#x)", game_build_name(build), mod0);
+    return build;
+}
+
+const char *game_build_name(int build) {
+    return build == GAME_100 ? "1.0.0" : build == GAME_180 ? "1.8.0" : build == GAME_UNKNOWN ? "not loaded" : "unknown";
+}
+
 int guesthook_init(void) {
     if (g_host) return 1;
     g_host = (HostEntry *)coff_symbol("g_host");

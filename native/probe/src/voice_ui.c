@@ -212,6 +212,11 @@ void voice_ui_install(void) {
         GetEnvironmentVariableA("MKWMP_VOICE_UI", v, sizeof v);
         if (v[0] == '0') { mkwmp_log("voice-ui: off (MKWMP_VOICE_UI=0)"); return; }
     }
+    int build = game_build();
+    if (build != GAME_100) {   // VT_ONLINE_PAUSE, FN_PLATE_TEXT and the page layout are 1.0.0's
+        mkwmp_log("voice-ui: off (game build %s; the menu hooks are for 1.0.0)", game_build_name(build));
+        return;
+    }
     int ok = guesthook_vtable(GUEST_MAIN(VT_ONLINE_PAUSE), SLOT_OPEN, hook_open, &g_orig_open) &&
              guesthook_vtable(GUEST_MAIN(VT_ONLINE_PAUSE), SLOT_FRAME, hook_frame, &g_orig_frame);
     mkwmp_log("voice-ui: online pause menu hooks %s", ok ? "installed" : "NOT installed");

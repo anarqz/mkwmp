@@ -15,6 +15,7 @@
 #include "lobby_ca.h"
 #include "seat.h"
 #include "friends.h"
+#include "guesthook.h"
 #include "voice.h"
 
 #include <winsock2.h>
@@ -1389,6 +1390,14 @@ static void install_profile_dispatch_trace(void) {
     static volatile LONG attempted;
     uint8_t *base = (void *)GetModuleHandleW(L"mkwgame.dll");
     if (!base || InterlockedCompareExchange(&attempted, 1, 0)) return;
+    // profile_dispatch matches 1.0.0 guest pcs and reads/writes through their registers (error skips, idle-kick
+    // guard, traces): on any other build it would act on unrelated code, so it is not installed at all.
+    int build = game_build();
+    if (build != GAME_100) {
+        mlog("game build %s: version-specific hooks off (BulkGetDocuments/Pia tracing, communication-error skips)",
+             game_build_name(build));
+        return;
+    }
     IMAGE_DOS_HEADER *dos = (void *)base;
     if (dos->e_magic != IMAGE_DOS_SIGNATURE) return;
     IMAGE_NT_HEADERS64 *nt = (void *)(base + dos->e_lfanew);
