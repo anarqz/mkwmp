@@ -1,0 +1,43 @@
+# 1.0.0 main-module addresses the probe hard-codes (native/probe/src). Format: <hex> <kind> # comment
+104a8bc F  # npln.c:118 return address of the gRPC pthread_cond_timedwait call site
+222d78c F  # npln.c:1043,1307,1342,1349 error service: post communication error (skip target)
+21deb68 F  # voice_ui.c:27 FN_PLATE_TEXT
+20d43dc D  # npln.c:1247 kart watchdog (idle kick) entry A
+035a9a0 D  # npln.c:1247 kart watchdog (idle kick) entry B
+156015c D  # npln.c:1002 Pia JoinRandomSession step WaitAutoConnect
+15602dc D  # npln.c:1003 Pia join step
+1560414 D  # npln.c:1004 Pia join step
+1560c10 D  # npln.c:1005 StartMeshStartup
+1560f28 D  # npln.c:1006 DisconnectNetwork
+156102c D  # npln.c:1007 CreateMesh
+1561798 D  # npln.c:1008 JoinMesh
+2236714 D  # npln.c:1037 watch start_p2p
+1285d20 D  # npln.c:1038 watch P2P initial sequence
+126c3b8 D  # npln.c:1039 watch Gamesync user-session job run
+223d768 D  # npln.c:1040 watch game callback from Pia session layer
+16279e4 D  # npln.c:1041 watch NplnPlugin entry
+1629020 D  # npln.c:1042 watch NplnPlugin entry
+1a82d84 D  # npln.c:1185,1254 room trace SyncState
+1a5a444 D  # npln.c:1185,1254 room trace PrivateRoomMain
+1a60be8 D  # npln.c:1185,1254 room trace ReadyVoteSetter
+1a5b104 D  # npln.c:1255 room trace PrivateRoomMain event handler
+46966a0 D  # npln.c:1259 string-from-C-string constructor (sdk-msg trace)
+1e463dc D  # npln.c:1265 return address: BulkGetDocuments result retrieval call site
+146a200 D  # npln.c:1265 target: BulkGetDocuments result getter
+1e3f91c D  # npln.c:1269 controller event sink
+261f894 D  # npln.c:1278 return address: controller next-phase BLR
+261f044 D  # npln.c:1280 return address: controller prepare-operation BLR
+1a93138 D  # npln.c:1291 matchmake sequence "wait"
+1a79fa0 D  # npln.c:1291 matchmake sequence "start"
+2247a7c D  # npln.c:1569 (comment only) nifm request caller
+# functions referenced only in comments / docs, used to validate struct offsets
+1a9637c S  # mgr+0x12b8/0x12c0/0x12c8 slot accessor (FUN_01a9637c)
+035ce38 S  # FUN_0035ce38 idle kick: ctrl+0x1e8 etc.
+20d4ab0 S  # FUN_020d4ab0 kart watchdog
+2624bf0 S  # FUN_02624bf0
+2126ad4 S  # race comm-error raiser
+21271c8 S  # race comm-error raiser (referee timeout 0x606314c9)
+1e46958 S  # FUN_01e46958
+2248cf0 S  # request dispatcher
+049c9d8 S  # document writer
+1e377c4 S  # online race controller
