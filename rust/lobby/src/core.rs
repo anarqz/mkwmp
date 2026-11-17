@@ -41,6 +41,16 @@ pub const ALIAS_GET: &str = "/nn.npln.matchmaking.v1.GameSessionService/GetGameS
 pub const SESSION_GET: &str = "/nn.npln.matchmaking.v1.GameSessionService/GetGameSession";
 pub const SESSION_BATCH_GET: &str = "/nn.npln.matchmaking.v1.GameSessionService/BatchGetGameSessions";
 pub const SESSION_JOIN: &str = "/nn.npln.matchmaking.v1.GameSessionService/JoinGameSession";
+/// Services game 1.8.0 (NPLN 1.47) has and 1.0.0 does not: answered empty/OK and logged, since
+/// whether the online flow waits on Appconfig is unknown (GAME-1.8.0-PROTOCOL.md 2.1).
+pub const STUBS_180: [&str; 6] = [
+    "/nn.npln.appconfig.v1.Appconfig/FindApplicationConfig",
+    "/nn.npln.appconfig.v1.Appconfig/PullModifiedApplicationConfig",
+    "/nn.npln.appconfig.v1.Appconfig/IssueAttachmentUris",
+    "/nn.npln.leaderboard.v1.LeaderboardService/BrowseIndexesLeaderboard",
+    "/nn.npln.leaderboard.v1.LeaderboardService/EstimateScoreRank",
+    "/nn.npln.ugcstore.v1.Ugcstore/BulkGetDocumentShortAliases",
+];
 /// Server-streaming subscriptions answered with an empty snapshot and kept open.
 pub const SUBSCRIPTIONS: [&str; 1] = ["/nn.npln.maintenance.v1.MaintenanceScheduleService/SubscribeMaintenanceSchedules"];
 /// Seconds between refreshes of the friends/presence streams (client watchdog: 60 s).
@@ -137,6 +147,9 @@ struct State {
     users: Directory,
     mm: Matchmaker,
     solos: HashMap<String, Lobby>,
+    /// Game version each user last showed in a Player (ticket, room, join): keeps Room ID
+    /// lookups, friends' sessions and rating documents to that version.
+    games: HashMap<String, &'static str>,
     streams: HashMap<StreamKey, Stream>,
     conn_user: HashMap<ConnId, String>,
     /// KeepUserSession stream -> user id (from its own `docs/__us/<uid>` listen or bearer).
@@ -209,6 +222,7 @@ impl Core {
             users: Directory::default(),
             mm: Matchmaker::new(policy),
             solos: HashMap::new(),
+            games: HashMap::new(),
             streams: HashMap::new(),
             conn_user: HashMap::new(),
             session_user: HashMap::new(),
@@ -552,20 +566,25 @@ impl State {
                 Ok(Vec::new())
             }
             ALIAS_CREATE => self.alias_create(body, now),
-            ALIAS_GET => self.alias_get(body, now),
+            ALIAS_GET => self.alias_get(key, body, now),
             SESSION_GET => self.session_get(body, now),
-            SESSION_BATCH_GET => Ok(self.session_batch_get(body, now)),
+            SESSION_BATCH_GET => Ok(self.session_batch_get(key, body, now)),
             SESSION_JOIN => self.session_join(key, body, now, sends),
+            p if STUBS_180.contains(&p) => {
+                info!(path = p, user = %subject, bytes = body.len(), body = %body.iter().take(64).map(|b| format!("{b:02x}")).collect::<String>(), "1.8.0 stub call");
+                Ok(Vec::new())
+            }
             BULK_GET => {
+                let game = self.caller(key).and_then(|u| self.games.get(users::tail(&u)).copied());
                 let mut names = msgs::bulk_get_names(body).unwrap_or_default();
                 names.truncate(caps::BATCH_NAMES);
                 if names.is_empty() {
                     Err(Out::status(code::INVALID_ARGUMENT, "no documents requested"))
                 } else {
                     for name in &names[..names.len() - 1] {
-                        sends.push((key, Out::Message(msgs::bulk_get_result(name))));
+                        sends.push((key, Out::Message(msgs::bulk_get_result(name, game))));
                     }
-                    Ok(msgs::bulk_get_result(&names[names.len() - 1]))
+                    Ok(msgs::bulk_get_result(&names[names.len() - 1], game))
                 }
             }
             _ => Ok(Vec::new()),
@@ -819,6 +838,10 @@ impl State {
     fn create_ticket(&mut self, key: StreamKey, body: &[u8], now: f64, sends: &mut Sends) -> Result<Vec<u8>, Out> {
         let user = self.caller(key).ok_or_else(|| Out::status(code::UNAUTHENTICATED, "not signed in"))?;
         let req = msgs::parse_ticket_request(body).ok_or_else(|| Out::status(code::INVALID_ARGUMENT, "invalid ticket"))?;
+        if msgs::unsupported_mode(&req.mode) {
+            warn!(user = %users::tail(&user), mode = %req.mode, "ticket refused: mode not supported yet");
+            return Err(Out::status(code::FAILED_PRECONDITION, "this mode is not available on this server yet"));
+        }
         let uid = users::tail(&user).to_owned();
         let tenant = users::tenant(&user).to_owned();
         // One search per player: a repeated request while still gathering is the same ticket;
@@ -835,8 +858,10 @@ impl State {
             }
         }
         let player = req.players.first().cloned().unwrap_or_default();
+        let (game, rom) = msgs::player_game(&player);
+        self.note_game(&uid, game);
         let id = self.mm.create(&user, &req.mode, player, req.players.len());
-        info!(user = %uid, mode = %req.mode, ticket = %id, "ticket created");
+        info!(user = %uid, mode = %req.mode, ticket = %id, game = game.unwrap_or("unknown"), rom_id = rom.as_deref().unwrap_or("-"), "ticket created");
         Ok(ticket_name(&tenant, &id.to_string()))
     }
 
@@ -922,6 +947,18 @@ impl State {
     }
 
     // ---- friends and presence ---------------------------------------------------------------
+
+    /// Remember the game version a user's Player showed.
+    fn note_game(&mut self, uid: &str, game: Option<&'static str>) {
+        if let Some(g) = game {
+            self.games.insert(uid.to_owned(), g);
+        }
+    }
+
+    /// The caller's last known game version.
+    fn caller_game(&self, key: StreamKey) -> Option<&'static str> {
+        self.caller(key).and_then(|u| self.games.get(users::tail(&u)).copied())
+    }
 
     fn caller_uid(&self, key: StreamKey) -> Option<(String, String)> {
         self.caller(key).map(|u| (users::tail(&u).to_owned(), u))
@@ -1058,6 +1095,10 @@ impl State {
     fn room_create(&mut self, key: StreamKey, body: &[u8], now: f64) -> Result<Vec<u8>, Out> {
         let user = self.caller(key).ok_or_else(|| Out::status(code::UNAUTHENTICATED, "not signed in"))?;
         let req = msgs::parse_room_request(body).ok_or_else(|| Out::status(code::INVALID_ARGUMENT, "invalid room request"))?;
+        if msgs::unsupported_mode(&req.mode) {
+            warn!(user = %users::tail(&user), mode = %req.mode, "room refused: mode not supported yet");
+            return Err(Out::status(code::FAILED_PRECONDITION, "this mode is not available on this server yet"));
+        }
         let uid = users::tail(&user).to_owned();
         let mut sends = Sends::new();
         self.leave_current(&uid, now, &mut sends);
@@ -1066,8 +1107,10 @@ impl State {
         let creation = uuid::Uuid::new_v4();
         let room = Room { password: req.password, attributes: with_room_rule(req.attributes), creation_ticket: creation, alias: None };
         let player = req.players.first().cloned().unwrap_or_default();
+        let (game, rom) = msgs::player_game(&player);
+        self.note_game(&uid, game);
         let (lobby, _) = self.mm.create_room(&user, &req.mode, player, req.players.len(), room, ussid, now);
-        info!(lobby = %lobby, user = %uid, "friend room created");
+        info!(lobby = %lobby, user = %uid, game = game.unwrap_or("unknown"), rom_id = rom.as_deref().unwrap_or("-"), "friend room created");
         let name = format!("{}/gameSessionCreationTickets/{creation}", users::tenant(&user));
         Ok(crate::wire::Msg::new().bytes(1, name).into_bytes())
     }
@@ -1117,9 +1160,10 @@ impl State {
         Ok(msgs::short_alias(&tenant, alias, &lobby_id.to_string(), now as u64))
     }
 
-    fn alias_get(&self, body: &[u8], now: f64) -> Result<Vec<u8>, Out> {
+    fn alias_get(&self, key: StreamKey, body: &[u8], now: f64) -> Result<Vec<u8>, Out> {
         let alias = msgs::resource_id(body, 1).unwrap_or_default();
-        let Some(lobby) = self.mm.room_by_alias(&alias) else {
+        let game = self.caller_game(key);
+        let Some(lobby) = self.mm.room_by_alias(&alias).filter(|l| l.same_game(game)) else {
             let known: Vec<&str> = self.mm.lobbies.values().filter_map(|l| l.room.as_ref()?.alias.as_deref()).collect();
             let name = crate::wire::str_field(body, 1).ok().flatten().unwrap_or_default();
             warn!(asked = %alias, name = %name, ?known, body = %body.iter().map(|b| format!("{b:02x}")).collect::<String>(), "room id lookup: no such room");
@@ -1141,13 +1185,15 @@ impl State {
     }
 
     /// Friends' sessions by the ids they publish as `SessionId`; unknown ids are omitted.
-    fn session_batch_get(&self, body: &[u8], now: f64) -> Vec<u8> {
+    fn session_batch_get(&self, key: StreamKey, body: &[u8], now: f64) -> Vec<u8> {
+        let game = self.caller_game(key);
         let mut names = crate::wire::repeated_bytes(body, 2).unwrap_or_default();
         names.truncate(caps::BATCH_NAMES);
         let mut out = crate::wire::Msg::new();
         for n in names {
             let id = users::tail(&String::from_utf8_lossy(n)).to_owned();
-            let Some(lobby) = uuid::Uuid::parse_str(&id).ok().and_then(|id| self.mm.lobbies.get(&id)) else { continue };
+            // Another game version's session is no use to the caller: omitted like an unknown id.
+            let Some(lobby) = uuid::Uuid::parse_str(&id).ok().and_then(|id| self.mm.lobbies.get(&id)).filter(|l| l.same_game(game)) else { continue };
             let tenant = lobby.seats.first().map_or("tenants/current".to_owned(), |s| users::tenant(&s.user).to_owned());
             out = out.msg(1, &self.session_view_msg(lobby, &tenant, now));
         }
@@ -1160,9 +1206,16 @@ impl State {
         let lobby_id = uuid::Uuid::parse_str(&req.lobby).map_err(|_| Out::status(code::NOT_FOUND, "no such game session"))?;
         let uid = users::tail(&user).to_owned();
         let players = req.players.len().max(1);
+        let game = req.players.first().and_then(|p| msgs::player_game(p).0);
+        self.note_game(&uid, game);
+        let game = game.or_else(|| self.games.get(&uid).copied());
         {
             let lobby = self.mm.lobbies.get(&lobby_id).ok_or_else(|| Out::status(code::NOT_FOUND, "no such game session"))?;
             if lobby.seat(&uid).is_none() {
+                if !lobby.same_game(game) {
+                    info!(lobby = %lobby_id, user = %uid, game = game.unwrap_or("unknown"), lobby_game = lobby.game.unwrap_or("unknown"), "join refused: other game version");
+                    return Err(Out::status(code::NOT_FOUND, "no such game session"));
+                }
                 if let Some(room) = &lobby.room {
                     if !room.password.is_empty() && room.password != req.password {
                         if !self.limiter.allow(Rule::WrongPassword, &uid, now) {

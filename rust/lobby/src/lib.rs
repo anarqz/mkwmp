@@ -20,7 +20,7 @@ pub mod users;
 pub mod value;
 pub mod wire;
 
-pub use crate::core::{Core, VoiceRoom};
+pub use crate::core::{Core, VoiceRoom, STUBS_180};
 pub use crate::social::account_id;
 pub use crate::lobbies::{ModeCounts, Policy};
 pub use crate::msgs::ice;

@@ -104,6 +104,8 @@ pub struct Ticket {
     /// User resource, `tenants/<t>/users/<id>`.
     pub user: String,
     pub mode: String,
+    /// Game version from the Player (`msgs::player_game`); None = no attributes.
+    pub game: Option<&'static str>,
     /// The client's serialized Player (ticket field 4), echoed in assignments.
     pub player: Vec<u8>,
     pub players: usize,
@@ -155,6 +157,8 @@ impl Seat {
 pub struct Lobby {
     pub id: LobbyId,
     pub mode: String,
+    /// Game version of its first ticket; only that version is placed or let in here.
+    pub game: Option<&'static str>,
     pub state: State,
     pub capacity: usize,
     pub created: f64,
@@ -191,11 +195,14 @@ pub struct Room {
 }
 
 impl Lobby {
-    fn new(mode: &str, capacity: usize, now: f64) -> Self {
+    fn new(mode: &str, game: Option<&'static str>, capacity: usize, now: f64) -> Self {
         let id = Uuid::new_v4();
+        let mut referee = Referee::new(id.to_string());
+        referee.session_count = game == Some(crate::msgs::GAME_180);
         Self {
             id,
             mode: mode.to_owned(),
+            game,
             state: State::Gathering,
             capacity,
             created: now,
@@ -207,11 +214,16 @@ impl Lobby {
             closed: false,
             secret: rand::random(),
             docs: Store::default(),
-            referee: Referee::new(id.to_string()),
+            referee,
             watchers: Vec::new(),
             pending: Vec::new(),
             room: None,
         }
+    }
+
+    /// Whether a player of `game` may share this lobby (unknown on either side = yes).
+    pub fn same_game(&self, game: Option<&str>) -> bool {
+        self.game.is_none() || game.is_none() || self.game == game
     }
 
     /// Whether a JoinGameSession (friend room by Room ID, or a friend's `SessionId`) may enter.
@@ -224,13 +236,14 @@ impl Lobby {
     /// A private one-player space for a user who is not seated anywhere (documents written
     /// before or outside a match). Not part of matchmaking.
     pub fn solo(user: &str, ussid: u32, now: f64) -> Self {
-        let mut lobby = Self::new("solo", 1, now);
+        let mut lobby = Self::new("solo", None, 1, now);
         lobby.state = State::Open;
         lobby.assigned_at = Some(now);
         let ticket = Ticket {
             id: Uuid::nil(),
             user: user.to_owned(),
             mode: "solo".into(),
+            game: None,
             player: Vec::new(),
             players: 1,
             lobby: Some(lobby.id),
@@ -353,6 +366,7 @@ impl Matchmaker {
             id: Uuid::new_v4(),
             user: user.to_owned(),
             mode: mode.to_owned(),
+            game: crate::msgs::player_game(&player).0,
             player,
             players: players.max(1),
             lobby: None,
@@ -395,14 +409,14 @@ impl Matchmaker {
         let best = self
             .lobbies
             .values()
-            .filter(|l| l.mode == ticket.mode && l.joinable(&self.policy, ticket.players, now))
+            .filter(|l| l.mode == ticket.mode && l.game == ticket.game && l.joinable(&self.policy, ticket.players, now))
             .max_by(|a, b| a.players().cmp(&b.players()).then(b.created.total_cmp(&a.created)));
         if let Some(l) = best {
             return l.id;
         }
-        let lobby = Lobby::new(&ticket.mode, self.policy.capacity(&ticket.mode), now);
+        let lobby = Lobby::new(&ticket.mode, ticket.game, self.policy.capacity(&ticket.mode), now);
         let id = lobby.id;
-        tracing::info!(lobby = %id, mode = %ticket.mode, "lobby created");
+        tracing::info!(lobby = %id, mode = %ticket.mode, game = ticket.game.unwrap_or("unknown"), "lobby created");
         self.lobbies.insert(id, lobby);
         id
     }
@@ -424,7 +438,8 @@ impl Matchmaker {
 
     /// A friend room with its creator seated (no gathering: assigned at once).
     pub fn create_room(&mut self, user: &str, mode: &str, player: Vec<u8>, players: usize, room: Room, ussid: u32, now: f64) -> (LobbyId, TicketId) {
-        let mut lobby = Lobby::new(mode, self.policy.capacity(mode), now);
+        let game = crate::msgs::player_game(&player).0;
+        let mut lobby = Lobby::new(mode, game, self.policy.capacity(mode), now);
         lobby.state = State::Open;
         lobby.assigned_at = Some(now);
         lobby.room = Some(room);

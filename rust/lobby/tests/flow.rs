@@ -636,3 +636,105 @@ fn room_id_scanning_and_sign_in_floods_are_rate_limited() {
     assert!(got[..39].iter().all(|r| r.is_ok()), "a LAN party behind one address signs in");
     assert!(got.contains(&Err(8)));
 }
+
+/// A Player as game 1.0.0 (rom_id, batching_key, course_id) or 1.8.0 (+ npln_user_id, clutch_id) sends it.
+fn versioned_player(game_180: bool) -> Msg {
+    let mut attrs = Fields::new()
+        .with("rom_id", Value::str("cv1"))
+        .with("batching_key", Value::str("cv1_world0"))
+        .with("course_id", Value::Int(0));
+    if game_180 {
+        attrs = attrs.with("npln_user_id", Value::str("0123456789abcdef")).with("clutch_id", Value::str(""));
+    }
+    Msg::new().bytes(1, "tenants/current/users/current").msg(2, &attrs.encode())
+}
+
+fn search_as(w: &World, p: &mut Player, mode: &str, game_180: bool) -> Result<(), u32> {
+    let body = Msg::new()
+        .msg(2, &Msg::new().bytes(2, format!("tenants/current/matchmakingConfigs/{mode}")).msg(4, &versioned_player(game_180)))
+        .into_bytes();
+    let reply = w.unary(p.conn, CREATE, Some(&p.token), &body)?;
+    let name = wire::str_field(&reply, 1).unwrap().unwrap();
+    p.ticket = format!("tenants/current/matchmakingTickets/{}", name.rsplit('/').next().unwrap());
+    let (_, rx) = w.call(p.conn, TRACK, Some(&p.token), Some(&Msg::new().bytes(1, &p.ticket).0), true);
+    p.track = Some(rx);
+    Ok(())
+}
+
+#[test]
+fn game_versions_never_meet() {
+    // Pia 1.0.0 and 1.8.0 drop each other's packets (GAME-1.8.0-PROTOCOL.md 3): never one lobby.
+    let mut policy = Policy::default();
+    policy.capacity.insert("Normal24".into(), 2);
+    let w = World::new(policy);
+    let mut ps: Vec<Player> = ["ana", "bia", "caio", "duda"].iter().map(|n| sign_in(&w, &dev_ticket(n))).collect();
+    for (i, p) in ps.iter_mut().enumerate() {
+        search_as(&w, p, "Normal24", i % 2 == 1).unwrap(); // 1.0.0, 1.8.0, 1.0.0, 1.8.0
+    }
+    let s: Vec<String> = ps.iter_mut().map(|p| assignment(p).expect("full lobby assigns").0).collect();
+    assert_eq!(s[0], s[2], "the two 1.0.0 players");
+    assert_eq!(s[1], s[3], "the two 1.8.0 players");
+    assert_ne!(s[0], s[1]);
+
+    // Clutch modes (1.8.0 mode 7) are refused until captured.
+    let mut e = sign_in(&w, &dev_ticket("enzo"));
+    assert_eq!(search_as(&w, &mut e, "Clutch24", true), Err(9));
+    assert_eq!(search_as(&w, &mut e, "ClutchSurvival24", true), Err(9));
+
+    // New 1.8.0 services answer empty/OK.
+    for path in lobby::STUBS_180 {
+        assert_eq!(w.unary(e.conn, path, Some(&e.token), b""), Ok(Vec::new()), "{path}");
+    }
+
+    // Rating documents: 1.8.0 callers get the extra keys, 1.0.0 callers exactly what they always got.
+    let bulk = Msg::new().bytes(2, "docs/Rating/x").into_bytes();
+    let rating = |p: &Player| {
+        let r = w.unary(p.conn, "/nn.npln.ugcstore.v1.Ugcstore/BulkGetDocuments", Some(&p.token), &bulk).unwrap();
+        let doc = wire::bytes_field(&r, 1).unwrap().unwrap();
+        Fields::decode(wire::bytes_field(doc, 2).unwrap().unwrap()).unwrap()
+    };
+    let old = rating(&ps[0]);
+    assert_eq!(old, Fields::new().with("Rating", Value::Double(1500.0)));
+    let new = rating(&ps[1]);
+    assert_eq!(new.get("RatingCoefficient"), Some(&Value::Double(1.0)));
+    assert!(new.contains("RaceCount") && new.contains("RatingDisplay") && new.contains("DriverId") && new.contains("StickerId"));
+}
+
+#[test]
+fn friend_rooms_stay_with_their_game_version() {
+    let w = World::new(Policy::default());
+    let mut host = sign_in(&w, &dev_ticket("Ana"));
+    let old = sign_in(&w, &dev_ticket("Bia"));
+    let new = sign_in(&w, &dev_ticket("Caio"));
+    // Host on 1.8.0 creates a room and a Room ID.
+    let session = Msg::new().msg(11, &Fields::new().with("rom_id", Value::str("cv1")).encode());
+    let ticket = Msg::new().bytes(2, "tenants/current/matchmakingConfigs/Private24").msg(3, &versioned_player(true)).msg(6, &session);
+    let reply = w.unary(host.conn, &format!("{GSS}CreateGameSessionCreationTicket"), Some(&host.token),
+        &Msg::new().bytes(1, "tenants/current").msg(2, &ticket).0).unwrap();
+    let ct = wire::str_field(&reply, 1).unwrap().unwrap();
+    let (_, mut rx) = w.call(host.conn, &format!("{GSS}TrackGameSessionCreationTicket"), Some(&host.token), Some(&Msg::new().bytes(1, &ct).0), true);
+    let out = drain(&mut rx);
+    let Out::Message(created) = &out[0] else { panic!() };
+    let gs_name = wire::str_field(wire::bytes_field(created, 6).unwrap().unwrap(), 1).unwrap().unwrap();
+    join_session(&w, &mut host);
+    let a = w.unary(host.gs_conn, &format!("{GSS}CreateGameSessionShortAlias"), Some(&host.token),
+        &Msg::new().bytes(1, "tenants/current").msg(2, &Msg::new().bytes(2, &gs_name)).0).unwrap();
+    let room_id = wire::str_field(&a, 1).unwrap().unwrap().rsplit('/').next().unwrap().to_owned();
+
+    // The 1.0.0 player (known from its search) can't find or join it; the 1.8.0 player can.
+    let mut o = old;
+    search_as(&w, &mut o, "Normal24", false).unwrap();
+    let lookup = Msg::new().bytes(1, format!("tenants/current/GameSessionShortAliases/{room_id}")).into_bytes();
+    assert_eq!(w.unary(o.conn, &format!("{GSS}GetGameSessionShortAlias"), Some(&o.token), &lookup), Err(5));
+    let join = |p: &Player, v180: bool| {
+        w.unary(p.conn, &format!("{GSS}JoinGameSession"), Some(&p.token),
+            &Msg::new().bytes(1, &gs_name).msg(3, &versioned_player(v180)).into_bytes())
+    };
+    assert_eq!(join(&o, false), Err(5));
+    let batch = Msg::new().bytes(2, &gs_name).into_bytes();
+    let listed = |p: &Player| wire::repeated_bytes(&w.unary(p.conn, &format!("{GSS}BatchGetGameSessions"), Some(&p.token), &batch).unwrap(), 1).unwrap().len();
+    assert_eq!(listed(&o), 0, "a friend's other-version room is hidden");
+    assert!(w.unary(new.conn, &format!("{GSS}GetGameSessionShortAlias"), Some(&new.token), &lookup).is_ok(), "unknown version: allowed");
+    assert!(join(&new, true).is_ok());
+    assert_eq!(listed(&new), 1);
+}
