@@ -1,6 +1,6 @@
 //! Which mkw-recomp the game folder holds. The game patch hooks one runtime
 //! build (addresses, symbols, fiber and host-function layout), so MKWMP runs
-//! only with mkw-recomp 0.1.10. `mkw.exe` carries no version string; each
+//! only with the mkw-recomp releases in SUPPORTED. `mkw.exe` carries no version string; each
 //! release's mkw.exe (the Windows build, also what runs under Proton) has its
 //! own SHA-256, taken from the official release zips.
 
@@ -11,7 +11,7 @@ use std::time::SystemTime;
 use crate::update::sha256_hex;
 
 /// The runtimes the game patch supports (KNOWN names their mkw.exe).
-pub const SUPPORTED: &[&str] = &["0.1.10"];
+pub const SUPPORTED: &[&str] = &["0.1.10", "0.1.12"];
 /// What the window recommends installing.
 pub const RECOMMENDED: &str = "0.1.10";
 pub const DOWNLOAD: &str = "https://github.com/adriadam10/mkw-recomp/releases/tag/v0.1.10";
@@ -136,10 +136,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_0_1_10_is_supported() {
+    fn only_supported_releases_pass() {
         assert_eq!(identify_bytes(b"not mkw.exe"), Recomp::Unknown);
         assert!(!Recomp::Unknown.ok() && Recomp::Unknown.problem().unwrap().contains("0.1.10"));
-        assert!(Recomp::Other("0.1.12").problem().unwrap().contains("0.1.12: MKWMP needs"));
+        assert!(Recomp::Other("0.1.11").problem().unwrap().contains("0.1.11: MKWMP needs 0.1.10 or 0.1.12"));
+        assert_eq!(identify_bytes(&[]), Recomp::Unknown);
         assert!(Recomp::Supported("0.1.10").ok() && Recomp::Supported("0.1.10").problem().is_none());
         assert!(SUPPORTED.iter().all(|v| KNOWN.iter().any(|(k, _)| k == v)), "every supported release has a known hash");
     }
