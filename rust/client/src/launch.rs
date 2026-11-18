@@ -78,29 +78,17 @@ pub fn write_lobby_ca(game_dir: &Path, pem: Option<&str>) -> std::io::Result<()>
     }
 }
 
-/// Start mkw.exe in the game directory.
-/// Start the game: `launch_command` when set (e.g. through Proton on the Steam
-/// Deck, where the launcher itself is the Steam shortcut), else `mkw.exe --play`.
-/// The command runs in the game folder (`sh -c` on Unix, `cmd /C` on Windows).
-pub fn spawn_game(game_dir: &Path, launch_command: &str) -> std::io::Result<Child> {
-    let cmd = launch_command.trim();
-    if cmd.is_empty() {
-        return Command::new(game_dir.join("mkw.exe")).arg("--play").current_dir(game_dir).spawn();
+/// Start `mkw.exe --play` in the game directory.
+pub fn spawn_game(game_dir: &Path) -> std::io::Result<Child> {
+    // Tests can't execute the fake mkw.exe (it holds identification bytes, not a
+    // real binary), so under `cfg(test)` a stand-in just marks that the game
+    // would have started.
+    #[cfg(test)]
+    {
+        return Command::new("sh").arg("-c").arg("echo up > started").current_dir(game_dir).spawn();
     }
-    #[cfg(unix)]
-    let mut c = {
-        let mut c = Command::new("sh");
-        c.arg("-c").arg(cmd);
-        c
-    };
-    #[cfg(windows)]
-    let mut c = {
-        use std::os::windows::process::CommandExt;
-        let mut c = Command::new("cmd");
-        c.arg("/C").arg(cmd).creation_flags(0x0800_0000); // CREATE_NO_WINDOW: no console flash
-        c
-    };
-    c.current_dir(game_dir).spawn()
+    #[cfg(not(test))]
+    Command::new(game_dir.join("mkw.exe")).arg("--play").current_dir(game_dir).spawn()
 }
 
 #[cfg(test)]
@@ -119,7 +107,6 @@ mod tests {
             local_port: 47820,
             update: true,
             slot,
-            launch_command: String::new(),
             background: Default::default(),
             voice: Default::default(),
             patch: true,

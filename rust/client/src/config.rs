@@ -26,8 +26,7 @@ pub struct ClientConfig {
     pub pin: String,
     /// Game directory (contains mkw.exe).
     pub game: PathBuf,
-    /// Start the game. false: only hold the seat (start the game yourself,
-    /// e.g. from Steam on SteamOS).
+    /// Start the game. false: only hold the seat (start the game yourself).
     #[serde(default = "yes")]
     pub launch: bool,
     /// When to take a seat: "start" (default) or "online".
@@ -42,11 +41,6 @@ pub struct ClientConfig {
     /// Loopback testing only: player two sets slot = 2.
     #[serde(default = "one")]
     pub slot: u8,
-    /// How to start the game when `launch` is on. Empty: `mkw.exe --play`.
-    /// Steam Deck (the launcher is the Steam shortcut): a script that runs the
-    /// game through Proton, e.g. "~/mkwmp/run-game.sh".
-    #[serde(default)]
-    pub launch_command: String,
     /// Tray, notifications and start-up behaviour (`[background]`).
     #[serde(default)]
     pub background: Background,
@@ -82,8 +76,7 @@ pub struct Voice {
     /// Players muted from the game's menus, by account id.
     #[serde(default)]
     pub mutes: Vec<VoiceMute>,
-    /// The devices the game last reported (a native launcher on the Deck cannot
-    /// see Wine's).
+    /// The devices the game last reported.
     #[serde(default)]
     pub inputs: Vec<VoiceDevice>,
     #[serde(default)]
@@ -173,11 +166,6 @@ fn one() -> u8 {
 
 pub const OFFICIAL_SERVER: &str = "https://mkw.anarqz.dev";
 
-/// SteamOS (Steam Deck and others): the game starts from Steam.
-pub fn is_steamos() -> bool {
-    std::fs::read_to_string("/etc/os-release").is_ok_and(|s| s.contains("ID=steamos"))
-}
-
 impl Default for ClientConfig {
     fn default() -> Self {
         // A launcher dropped into the game folder finds mkw.exe next to it.
@@ -188,12 +176,11 @@ impl Default for ClientConfig {
             name: String::new(),
             pin: String::new(),
             game,
-            launch: !is_steamos(),
+            launch: true,
             seat: SeatMode::Start,
             local_port: local_port(),
             update: true,
             slot: 1,
-            launch_command: String::new(),
             background: Background::default(),
             voice: Voice::default(),
             patch: true,

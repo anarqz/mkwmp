@@ -2,8 +2,8 @@
 //!
 //! Everything is laid out on a fixed 480 × 800 design canvas and the whole
 //! canvas is scaled to fit the window (uniform zoom, centred), like a game
-//! screen: resizing never re-flows or stretches the layout. Steam Deck Game
-//! Mode opens it fullscreen, which simply scales it up.
+//! screen: resizing never re-flows or stretches the layout. Under gamescope
+//! it opens fullscreen, which simply scales it up.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -54,9 +54,9 @@ const INNER: f32 = CARD_W - 44.0;
 /// Both cards' content height (fixed by design, so they always match).
 const CARD_H: f32 = 258.0;
 
-/// Steam Deck Game Mode (gamescope): open fullscreen, and no tray (gamescope
-/// has none, so closing the window really closes). Not `SteamDeck=1`: Desktop
-/// Mode sets it too.
+/// Under gamescope (e.g. a console-style Game Mode): open fullscreen, and no
+/// tray (gamescope has none, so closing the window really closes). Not
+/// `SteamDeck=1`: Desktop Mode sets it too.
 pub fn game_mode() -> bool {
     std::env::var_os("SteamGamepadUI").is_some()
         || std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
@@ -457,14 +457,6 @@ impl App {
                 }
             });
             self.patch_line(ui, busy);
-            let mut steam = !self.draft.launch;
-            if ui
-                .add_enabled(!busy, egui::Checkbox::new(&mut steam, "I start the game from Steam (Steam Deck)"))
-                .changed()
-            {
-                self.draft.launch = !steam;
-                self.save();
-            }
         })
     }
 
@@ -584,7 +576,7 @@ impl App {
                         changed |= ui.checkbox(&mut b.close_to_tray, "Keep running in the system tray when I close the window").changed();
                     });
                     if !has_tray {
-                        hint(ui, "No system tray here (Steam Deck Game Mode): closing quits.", MUTED);
+                        hint(ui, "No system tray here (gamescope): closing quits.", MUTED);
                     }
                     if crate::autostart::supported() {
                         if ui.checkbox(&mut b.start_with_system, "Start with my computer, in the tray").changed() {
@@ -1289,14 +1281,14 @@ fn status_pill(ui: &mut egui::Ui, st: &crate::core::Ui, draft: &ClientConfig, er
         },
         SessionView::Starting => ("CONNECTING…".into(), SKY_TEXT),
         SessionView::Failed(e) => (e.clone(), BAD),
-        SessionView::Running { phase, game_running, steam } => match phase {
+        SessionView::Running { phase, game_running, self_launch } => match phase {
             Phase::Refused(m) => (m.clone(), BAD),
             Phase::Busy(m) => (m.clone(), YELLOW),
             Phase::Joining => ("TAKING A SEAT…".into(), SKY_TEXT),
             Phase::Queued(n) => (format!("SERVER FULL · YOU ARE #{n} IN THE QUEUE"), YELLOW),
-            Phase::WaitingForGame if *steam && !game_running => ("START THE GAME FROM STEAM".into(), SKY_TEXT),
+            Phase::WaitingForGame if *self_launch && !game_running => ("START THE GAME YOURSELF".into(), SKY_TEXT),
             Phase::WaitingForGame => ("IN GAME · PICK ONLINE PLAY".into(), SKY_TEXT),
-            Phase::Seated if *steam && !game_running => ("SEATED · START THE GAME FROM STEAM".into(), GOOD),
+            Phase::Seated if *self_launch && !game_running => ("SEATED · START THE GAME YOURSELF".into(), GOOD),
             Phase::Seated => ("SEATED · HAVE FUN!".into(), GOOD),
         },
     };

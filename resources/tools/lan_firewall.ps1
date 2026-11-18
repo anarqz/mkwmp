@@ -1,4 +1,4 @@
-# Allow LAN peers (e.g. the Steam Deck) to reach the mkwmp server and the test clients.
+# Allow LAN peers (e.g. another PC) to reach the mkwmp server and the test clients.
 # Run once from an elevated PowerShell:  powershell -ExecutionPolicy Bypass -File tools\lan_firewall.ps1
 # Private-network profile only. Remove with:  Get-NetFirewallRule -DisplayName 'mkwmp *' | Remove-NetFirewallRule
 #Requires -RunAsAdministrator

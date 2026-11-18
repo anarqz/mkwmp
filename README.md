@@ -27,14 +27,13 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 
 ## Play
 
-1. Set up **mkw-recomp 0.1.13** (Windows build; 0.1.10 and 0.1.12 also work) with your own copy of the game, version **1.0.0 or 1.8.0**. Players only meet others on the same game version. On a Steam Deck, run it through Proton 10.0.
-2. Download the zip for your system from the [latest release](https://github.com/anarqz/mkwmp/releases/latest) and unzip it anywhere:
-   - `mkwmp-<version>-windows-x64.zip` for Windows;
-   - `mkwmp-<version>-linux-x64.zip` for SteamOS and Linux. On a Steam Deck, one command in Desktop Mode (Konsole) installs it to `~/mkwmp` and adds it to Steam:
-     `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`
+1. Set up **mkw-recomp 0.1.13** (Windows build; 0.1.10 and 0.1.12 also work) with your own copy of the game, version **1.0.0 or 1.8.0**. Players only meet others on the same game version.
+2. Download `mkwmp-<version>-windows-x64.zip` from the [latest release](https://github.com/anarqz/mkwmp/releases/latest) and unzip it anywhere.
 3. Open `mkwmp-launcher`, register a gamertag and pick the game folder. The line under GAME FOLDER says whether the game patch is installed; press **INSTALL** if it isn't, then **PLAY**. SETTINGS → GAME PATCH → UNINSTALL removes every mkwmp file from the game folder.
 
-Step-by-step guides for Windows and the Steam Deck: <https://anarqz.github.io/mkwmp/>.
+> **Running the game through Proton is no longer supported.** Steam Deck and Linux will return **natively** through mkw-recomp's planned plugin / mod-loader API. For now, MKWMP runs on Windows.
+
+Step-by-step guide for Windows: <https://anarqz.github.io/mkwmp/>.
 
 ## Host your own server
 

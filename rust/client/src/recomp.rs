@@ -1,7 +1,7 @@
 //! Which mkw-recomp the game folder holds. The game patch hooks one runtime
 //! build (addresses, symbols, fiber and host-function layout), so MKWMP runs
 //! only with the mkw-recomp releases in SUPPORTED. Each release's mkw.exe (the
-//! Windows build, also what runs under Proton) is identified by its SHA-256,
+//! Windows build) is identified by its SHA-256,
 //! taken from the official release zips (0.1.13's also carries the string
 //! "0.1.13", older ones carry none).
 //!

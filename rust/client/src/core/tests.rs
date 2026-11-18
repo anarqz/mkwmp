@@ -135,7 +135,6 @@ fn setup(server: &str) -> (Arc<Core>, PathBuf) {
         local_port: 47820,
         update: false,
         slot: 1,
-        launch_command: "echo up > started".into(),
         background: Default::default(),
         voice: Voice {
             mutes: vec![crate::config::VoiceMute { account: "42".into(), name: "Bia".into() }],

@@ -2,8 +2,8 @@
 //! (friends list current, notifications on), without holding a seat.
 //!
 //! - Windows / macOS: `tray-icon` (left click opens; menu: Open, Quit).
-//! - Linux (KDE / Steam Deck desktop mode): a StatusNotifierItem via `ksni`.
-//! - Steam Deck Game Mode has no tray: the window simply stays a window.
+//! - Linux (a desktop with a StatusNotifier host, e.g. KDE): via `ksni`.
+//! - Under gamescope there is no tray: the window simply stays a window.
 //!
 //! [`WINDOW`] hides and shows the launcher window from any thread. On Windows
 //! it drives the native window directly (a hidden eframe window does not run
