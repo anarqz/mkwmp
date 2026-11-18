@@ -77,6 +77,16 @@ static int g_lobby_port;
 static void eager_seat(void);
 static void net_init(void);
 
+// Guest symbols never move once the modules are loaded, but ldr_symbol is a linear strcmp scan over every symbol:
+// overrides on hot paths (1.8.0's SDK calls pthread_cond_timedwait and clock_gettime constantly) must not pay it per
+// call. A miss (0) is retried.
+static uint64_t sym_once(volatile LONG64 *slot, const char *name) {
+    uint64_t v = (uint64_t)*slot;
+    if (!v && g_rt.ldr_symbol) InterlockedExchange64(slot, (LONG64)(v = g_rt.ldr_symbol(name)));
+    return v;
+}
+#define SYM(name) ({ static volatile LONG64 slot_; sym_once(&slot_, name); })
+
 // SDK pthread_cond_timedwait reads the SDK clock via a direct call, bypassing
 // this import override. Keep successful SDK timestamps in the same epoch.
 // gRPC reads the output even on SDK clock failure, so supply a fallback then.
@@ -84,7 +94,7 @@ static void ov_clock_gettime(Cpu *c) {
     int id = (int)arg_x(c, 0);
     int64_t *out = arg_p(c, 1);
     if (out && g_rt.ldr_symbol && g_rt.rt_call) {
-        uint64_t original = g_rt.ldr_symbol("clock_gettime");
+        uint64_t original = SYM("clock_gettime");
         if (original && !g_rt.rt_call(c, original, 2, (uint64_t)(unsigned)id, (uint64_t)(uintptr_t)out)
             && out[1] >= 0 && out[1] < 1000000000) {
             ret_x(c, 0);
@@ -132,8 +142,8 @@ static uint64_t grpc_timedwait_gate(void) {
 static void ov_cond_timedwait(Cpu *c) {
     uint64_t cond = arg_x(c, 0), mutex = arg_x(c, 1);
     const int64_t *deadline = arg_p(c, 2);
-    uint64_t original = g_rt.ldr_symbol("pthread_cond_timedwait");
-    uint64_t clockwait = g_rt.ldr_symbol("pthread_cond_clockwait");
+    uint64_t original = SYM("pthread_cond_timedwait");
+    uint64_t clockwait = SYM("pthread_cond_clockwait");
     // Only the verified gRPC call site converts its deadline to clock ID 0.
     uint64_t gate = grpc_timedwait_gate();
     if (!gate || c->x[30] != gate || !clockwait || !deadline ||
@@ -143,7 +153,7 @@ static void ov_cond_timedwait(Cpu *c) {
         return;
     }
     int64_t now[2], mono[2];
-    uint64_t gettime = g_rt.ldr_symbol("clock_gettime");
+    uint64_t gettime = SYM("clock_gettime");
     c->x[0] = 0;
     c->x[1] = (uintptr_t)now;
     ov_clock_gettime(c);
@@ -364,8 +374,8 @@ static void ov_nsa_load_token(Cpu *c) {
 }
 static void ov_nsa_async_event(Cpu *c) {
     uint64_t event = arg_x(c, 1);
-    uint64_t create = g_rt.ldr_symbol("_ZN2nn2os17CreateSystemEventEPNS0_15SystemEventTypeENS0_14EventClearModeEb");
-    uint64_t signal = g_rt.ldr_symbol("_ZN2nn2os17SignalSystemEventEPNS0_15SystemEventTypeE");
+    uint64_t create = SYM("_ZN2nn2os17CreateSystemEventEPNS0_15SystemEventTypeENS0_14EventClearModeEb");
+    uint64_t signal = SYM("_ZN2nn2os17SignalSystemEventEPNS0_15SystemEventTypeE");
     if (!event || !create || !signal) { ret_x(c, (uint64_t)-1); return; }
     uint64_t result = g_rt.rt_call(c, create, 3, event, (uint64_t)0, (uint64_t)1);
     if (!result) {
@@ -378,8 +388,8 @@ static void ov_clock_init(Cpu *c) {
     // The SDK's task reserves 0x90 bytes plus an initialized flag. Use its
     // leading storage for a genuine SystemEvent, leaving that flag clear.
     uint64_t task = arg_x(c, 0);
-    uint64_t create = g_rt.ldr_symbol("_ZN2nn2os17CreateSystemEventEPNS0_15SystemEventTypeENS0_14EventClearModeEb");
-    uint64_t signal = g_rt.ldr_symbol("_ZN2nn2os17SignalSystemEventEPNS0_15SystemEventTypeE");
+    uint64_t create = SYM("_ZN2nn2os17CreateSystemEventEPNS0_15SystemEventTypeENS0_14EventClearModeEb");
+    uint64_t signal = SYM("_ZN2nn2os17SignalSystemEventEPNS0_15SystemEventTypeE");
     if (!task || !create || !signal) { ret_x(c, (uint64_t)-1); return; }
     uint64_t result = g_rt.rt_call(c, create, 3, task, (uint64_t)0, (uint64_t)1);
     if (!result) g_rt.rt_call(c, signal, 1, task);
@@ -389,7 +399,7 @@ static void ov_clock_init(Cpu *c) {
 static void ov_clock_event(Cpu *c) { /* event is at offset zero; x0 already points to it */ (void)c; }
 static void ov_clock_destroy(Cpu *c) {
     uint64_t task = arg_x(c, 0);
-    uint64_t destroy = g_rt.ldr_symbol("_ZN2nn2os18DestroySystemEventEPNS0_15SystemEventTypeE");
+    uint64_t destroy = SYM("_ZN2nn2os18DestroySystemEventEPNS0_15SystemEventTypeE");
     if (destroy && task && *(uint8_t *)(uintptr_t)(task + 0x28)) g_rt.rt_call(c, destroy, 1, task);
 }
 static void ov_nsd_env_id(Cpu *c) {
