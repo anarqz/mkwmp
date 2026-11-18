@@ -1,4 +1,10 @@
-**mkwmp 1.1.0**: game 1.8.0 support, and mkw-recomp 0.1.13 (recommended).
+**mkwmp 1.1.1**: launcher fix. No game or lobby change.
+
+- If another MKWMP launcher is still running (for example the old one right after an update), the new launcher waits for it to close instead of running beside it. Until the old one is gone, PLAY says "Another MKWMP launcher is running: close it". Before this fix, Online Play could bounce back to the menu until you restarted.
+
+---
+
+**From 1.1.0** (**mkwmp 1.1.0**: game 1.8.0 support, and mkw-recomp 0.1.13 (recommended).)
 
 - **Game 1.8.0.** MKWMP now plays game version 1.8.0 as well as 1.0.0. Players only meet others on the same game version: matchmaking, friend rooms and Room IDs keep 1.0.0 and 1.8.0 apart, because the two versions can't play together. To move to 1.8.0, apply the 1.8.0 update to your own game in mkw-recomp; MKWMP doesn't include any game data. The new 1.8.0 modes Clutch 24 and Clutch Survival 24 aren't available yet.
 - **mkw-recomp 0.1.13** is the recommended version. 0.1.10 and 0.1.12 still work.
@@ -18,8 +24,8 @@
 
 Download one zip and unzip it anywhere:
 
-- **Windows:** `mkwmp-1.1.0-windows-x64.zip`. Open `mkwmp/mkwmp-launcher.exe`.
-- **Steam Deck / SteamOS / Linux:** `mkwmp-1.1.0-linux-x64.zip`. On a Steam Deck, one command in Desktop Mode installs it and adds it to Steam: `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`.
+- **Windows:** `mkwmp-1.1.1-windows-x64.zip`. Open `mkwmp/mkwmp-launcher.exe`.
+- **Steam Deck / SteamOS / Linux:** `mkwmp-1.1.1-linux-x64.zip`. On a Steam Deck, one command in Desktop Mode installs it and adds it to Steam: `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`.
 
 `README.txt` inside each zip has the steps.
 
@@ -43,7 +49,7 @@ Since rc.3:
 
 Files:
 
-- `mkwmp-1.1.0-windows-x64.zip` / `mkwmp-1.1.0-linux-x64.zip`: the launcher, the game patch, licenses and a README.
+- `mkwmp-1.1.1-windows-x64.zip` / `mkwmp-1.1.1-linux-x64.zip`: the launcher, the game patch, licenses and a README.
 - `mkwmp-launcher-x86_64-*`, `winmm.dll`, `mkwmp-voice.dll`: the same files loose, for launchers that update themselves.
 - `mkwmp-server-x86_64-windows.exe` / `mkwmp-server-x86_64-linux`: the server, for hosting your own (`mkwmp-server host --help`).
 - `SHA256SUMS` + `SHA256SUMS.sig`: checksums signed with the release key. The launcher verifies them before installing anything.
