@@ -99,7 +99,7 @@ pub const GAME_180: &str = "1.8.0";
 /// The game version a Player (field 2 = attributes, `{1: entry{1 key, 2 Value}}`) belongs to:
 /// 1.8.0 adds `npln_user_id` and `clutch_id` (builder 0x20ffc50); 1.0.0 sends `rom_id`,
 /// `batching_key`, `course_id`. None when the Player carries no attributes. Also returns
-/// `rom_id` ("cv<N>"), for the logs.
+/// `rom_id` ("cv<N>": cv1 on 1.0.0, cv13 on 1.8.0, live T1 2026-11-18), for the logs.
 pub fn player_game(player: &[u8]) -> (Option<&'static str>, Option<String>) {
     let Some(attrs) = wire::bytes_field(player, 2).ok().flatten().and_then(|a| Fields::decode(a).ok()) else {
         return (None, None);
