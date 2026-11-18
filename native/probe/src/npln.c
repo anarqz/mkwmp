@@ -4,7 +4,7 @@
 // SendMsg/RecvMsg; it trusts the CA the probe returns (lobby_ca.h: the server's own, else capture_cert.h).
 // nn::ssl stubs below cover other SDK paths, not the captured gRPC transport.
 //
-// Gates, completed local async prerequisites and runtime fiber fixes start NPLN.
+// Gates and completed local async prerequisites start NPLN.
 // Winsock carries its TLS records to resources/python-lobby/mkwmp_server.py, which terminates
 // TLS, decodes the HTTP/2 + protobuf requests and supplies experimental responses.
 //
@@ -292,57 +292,6 @@ static void ov_get_thread_core_mask(Cpu *c) {
     ret_x(c, 0);
 }
 static void ov_set_thread_core_mask(Cpu *c) { ret_x(c, 0); }
-static void ov_fiber_switch(Cpu *c) {
-    // The shipped runtime rejects NULL, although GetCurrentFiber returns NULL
-    // on a thread's base context. Its lower-level switch already supports it.
-    if (!arg_x(c, 0) && g_dele.fiber_switch_to && c->thread) {
-        g_dele.fiber_switch_to(c->thread, c, NULL);
-    } else if (g_dele.fiber_switch) g_dele.fiber_switch(c);
-}
-typedef struct {
-    uint64_t addr, func, arg, stack, size;
-    Cpu *cpu;
-    void *host;
-    int state;
-    volatile LONG running;
-} RecompFiber;
-static void fiber_entry(void *p) {
-    RecompFiber *f = p;
-    uint8_t *thread = g_dele.current_cpu()->thread;
-    RecompFiber **leaving = (RecompFiber **)(thread + 0x1e0);
-    if (*leaving) { InterlockedExchange(&(*leaving)->running, 0); *leaving = NULL; }
-    *(int *)(thread + 4) = 0;
-    uint64_t next = g_rt.rt_call(f->cpu, f->func, 1, f->arg);
-    f->state = 2;
-    RecompFiber *to = NULL;
-    if (next) {
-        for (int i = 0; i < 1024; i++) {
-            RecompFiber *candidate = g_dele.fibers[i];
-            if (candidate && candidate->addr == next) { to = candidate; break; }
-        }
-        if (!to) { rlog("fiber returned an unknown target"); abort(); }
-    }
-    // rt_call can migrate the fiber. The shipped fiber_main caches &tcur
-    // across that call; fetch the current thread again through the runtime.
-    thread = g_dele.current_cpu()->thread;
-    g_dele.fiber_switch_to(thread, f->cpu, to);
-    abort();
-}
-static void ov_fiber_initialize(Cpu *c) {
-    uint64_t addr = arg_x(c, 0);
-    if (g_dele.fiber_initialize) g_dele.fiber_initialize(c);
-    if (g_dele.fibers) {
-        for (int i = 0; i < 1024; i++) {
-            RecompFiber *f = g_dele.fibers[i];
-            if (f && f->addr == addr) {
-                g_dele.fiber_free(f->host);
-                f->host = g_dele.fiber_new(256u * 1024u * 1024u, fiber_entry, f);
-                if (!f->host) abort();
-                break;
-            }
-        }
-    }
-}
 static void ov_nifm_is_network_available(Cpu *c) { ret_x(c, 1); }
 static GuestFn stock_handler(const char *name);
 // Going online may wait this long for the launcher's friend roster: the game reads its friend
@@ -1874,8 +1823,6 @@ static const Reg kRegs[] = {
     {"_ZN2nn6socket12GetLastErrnoEv", ov_pia_errno},
     {"clock_gettime", ov_clock_gettime},
     // socket C-API
-    {"_ZN2nn2os13SwitchToFiberEPNS0_9FiberTypeE", ov_fiber_switch},
-    {"_ZN2nn2os15InitializeFiberEPNS0_9FiberTypeEPFS2_PvES3_S3_mi", ov_fiber_initialize},
     {"_ZN2nn6socket7EventFdEmNS0_12EventFdFlagsE", ov_eventfd},
     {"_ZN2nn6socket11EventFdReadEiPm", ov_eventfd_read},
     {"_ZN2nn6socket12EventFdWriteEim", ov_eventfd_write},
@@ -1895,15 +1842,14 @@ static const Reg kRegs[] = {
 };
 // The runtime keeps overrides in a fixed table of 64: its hostfn_add_override ends the
 // process past that ("hostfn_add_override: more than 64"; cmp rax, 0x40 in mkw.exe 1.0.8 and
-// 0.1.10). Every hostfn_add_override call of npln_register counts: kRegs, where the two
-// *Fiber entries are registered only with MKWMP_NO_FIBER=0, and otherwise the core-mask pair
-// in their place. Both ways must fit, and each kRegs entry needs its own gate.
-// The table is full: 64 kRegs entries, 62 + the core-mask pair registered by default. A new override needs the slot
-// of an old one (game 1.8.0's GetCurrentIpConfigInfo(InAddr *) took FreeAddrInfo(AddrInfo *)'s).
+// 0.1.10). Every hostfn_add_override call of npln_register counts: kRegs and the core-mask pair,
+// and each kRegs entry needs its own gate.
+// The table is full: 62 kRegs entries + the core-mask pair. A new override needs the slot of an old one (game
+// 1.8.0's GetCurrentIpConfigInfo(InAddr *) took FreeAddrInfo(AddrInfo *)'s). The SwitchToFiber / InitializeFiber
+// workaround for runtime 1.0.8 (resources/docs/FINDINGS.md) was removed: every supported runtime fixed it.
 enum {
     RUNTIME_OVERRIDE_MAX = 64,
     N_REGS = sizeof(kRegs) / sizeof(kRegs[0]),
-    N_FIBER_REGS = 2,       // SwitchToFiber, InitializeFiber
     N_CORE_MASK_REGS = 2,   // nnosGetThreadCoreMask, nnosSetThreadCoreMask
 };
 // The typed FreeAddrInfo must have a stock (do-nothing) handler: the SDK's own would free a g_typed_ai entry.
@@ -1912,8 +1858,7 @@ static const char kStockFreeAddrInfo[] = "_ZN2nn6socket12FreeAddrInfoEPNS0_8Addr
 static const char kIpConfigInAddr[] = "_ZN2nn4nifm22GetCurrentIpConfigInfoEPNS_6socket6InAddrES3_S3_S3_S3_";
 static void ov_nothing(Cpu *c) { (void)c; }
 _Static_assert(N_REGS <= NREG, "one gate per kRegs entry");
-_Static_assert(N_REGS <= RUNTIME_OVERRIDE_MAX, "runtime override limit (MKWMP_NO_FIBER=0)");
-_Static_assert(N_REGS - N_FIBER_REGS + N_CORE_MASK_REGS <= RUNTIME_OVERRIDE_MAX, "runtime override limit");
+_Static_assert(N_REGS + N_CORE_MASK_REGS <= RUNTIME_OVERRIDE_MAX, "runtime override limit");
 
 int npln_register(void) {
     // Opt-in: engage only if mkwmp.toml is present (or MKWMP_ENABLE=1 for tests).
@@ -1931,25 +1876,16 @@ int npln_register(void) {
     g_skip_referee_timeout = skip ? atoi(skip) : 0;
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     if (!g_rt.hostfn_add_override || !g_rt.ldr_count) { log_line("npln_register: runtime not resolved"); return -1; }
-    if (!g_dele.fiber_initialize || !g_dele.fiber_switch || !g_dele.fiber_switch_to ||
-        !g_dele.fibers || !g_dele.fiber_new || !g_dele.fiber_free || !g_dele.current_cpu ||
-        !g_dele.core_away || !g_dele.core_back) {
-        log_line("npln_register: required fiber delegates missing; capture disabled"); return -1;
+    if (!g_dele.core_away || !g_dele.core_back) {
+        log_line("npln_register: kern_core_away/back missing; capture disabled"); return -1;
     }
     if (g_rt.ldr_count() != 0) { log_line("npln_register: TOO LATE"); return -1; }
     int n = N_REGS;
-    // Fibers are left to the runtime by default (mkw-recomp 0.1.10, whose fiber
-    // internals differ from the 1.0.8 build the fiber workaround targets); the freed
-    // override slots take the core-mask pair. MKWMP_NO_FIBER=0 restores the fiber
-    // overrides (older runtimes).
-    const char *nofiber = getenv("MKWMP_NO_FIBER");
-    int skip_fiber = !(nofiber && !strcmp(nofiber, "0"));
     const char *eager = getenv("MKWMP_EAGER");
     if (eager && !strcmp(eager, "1")) { g_active = 1; g_eager = 1; log_line("MKWMP_EAGER=1: active from start"); }
     int gated = 0;
     int stock_free = stock_handler(kStockFreeAddrInfo) != NULL;
     for (int i = 0; i < n; i++) {
-        if (skip_fiber && strstr(kRegs[i].name, "Fiber")) { log_line(kRegs[i].name); continue; }
         if (!stock_free && !strcmp(kRegs[i].name, kIpConfigInAddr)) {
             // A runtime without that stock handler (none of the supported ones): the slot goes back to FreeAddrInfo,
             // as a no-op, and game 1.8.0's Pia keeps the SDK's GetCurrentIpConfigInfo(InAddr *).
@@ -1961,24 +1897,21 @@ int npln_register(void) {
         g_gate_name[i] = kRegs[i].name;
         g_stock[i] = stock_handler(kRegs[i].name);
         g_trigger[i] = !strcmp(kRegs[i].name, "_ZN2nn4nifm27SubmitNetworkRequestAndWaitEv");
-        // Never gated: fs overrides only log and delegate; fibers are runtime fixes; nn::account
+        // Never gated: fs overrides only log and delegate; nn::account
         // is checked once at boot (IsNetworkServiceAccountAvailable) and cached, so a stock
         // "no network account" there makes the first Online Play click fail (GetNickname gives
         // the launcher name offline too); CancelNetworkRequest calls the stock one itself.
-        if (!strncmp(kRegs[i].name, "_ZN2nn2fs", 9) || strstr(kRegs[i].name, "Fiber") ||
-            !strncmp(kRegs[i].name, "_ZN2nn7account", 14) || strstr(kRegs[i].name, "CancelNetworkRequest"))
+        if (!strncmp(kRegs[i].name, "_ZN2nn2fs", 9) || !strncmp(kRegs[i].name, "_ZN2nn7account", 14) || strstr(kRegs[i].name, "CancelNetworkRequest"))
             g_stock[i] = NULL;
         gated += g_stock[i] != NULL;
         g_rt.hostfn_add_override(kRegs[i].name, g_stock[i] ? kGates[i] : kRegs[i].fn);
     }
     mlog("npln: %d overrides gated (dormant until Online)%s", gated, g_active ? ", but MKWMP_EAGER" : "");
-    if (skip_fiber) {
-        // The freed slots take the core-mask pair: runtime 0.1.10 aborts the SDK's
-        // GetThreadCoreMask (result 0xe801) on the online start-up path (main+0x14c5bc0).
-        g_rt.hostfn_add_override("nnosGetThreadCoreMask", ov_get_thread_core_mask);
-        g_rt.hostfn_add_override("nnosSetThreadCoreMask", ov_set_thread_core_mask);
-        log_line("core-mask overrides registered");
-    }
+    // Runtime 0.1.10 aborts the SDK's GetThreadCoreMask (result 0xe801) on the online start-up path
+    // (main+0x14c5bc0).
+    g_rt.hostfn_add_override("nnosGetThreadCoreMask", ov_get_thread_core_mask);
+    g_rt.hostfn_add_override("nnosSetThreadCoreMask", ov_set_thread_core_mask);
+    log_line("core-mask overrides registered");
     log_kv("npln_register: overrides", (uint64_t)n);
     return n;
 }

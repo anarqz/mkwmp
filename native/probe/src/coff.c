@@ -22,13 +22,6 @@ static const char *const kNames[] = {
     "ov_read_file",
     "ov_file_size",
     "ov_close_file",
-    "fiber_switch_to",
-    "kern_fiber_switch",
-    "kern_fiber_initialize",
-    "g_fibers",
-    "plat_fiber_new",
-    "plat_fiber_free",
-    "kern_cpu",
     "kern_core_away",
     "kern_core_back",
     // optional: the dispatch host registry (guesthook.c)
@@ -173,15 +166,8 @@ int coff_resolve_runtime(void) {
         g_dele.fs_read_file  = (GuestFn)slots[8];
         g_dele.fs_file_size  = (GuestFn)slots[9];
         g_dele.fs_close_file = (GuestFn)slots[10];
-        g_dele.fiber_switch_to = (void (*)(void *, const Cpu *, void *))slots[11];
-        g_dele.fiber_switch = (GuestFn)slots[12];
-        g_dele.fiber_initialize = (GuestFn)slots[13];
-        g_dele.fibers = (void **)slots[14];
-        g_dele.fiber_new = (void *(*)(size_t, void (*)(void *), void *))slots[15];
-        g_dele.fiber_free = (void (*)(void *))slots[16];
-        g_dele.current_cpu = (Cpu *(*)(void))slots[17];
-        g_dele.core_away = (int (*)(void))slots[18];
-        g_dele.core_back = (void (*)(int *))slots[19];
+        g_dele.core_away = (int (*)(void))slots[11];
+        g_dele.core_back = (void (*)(int *))slots[12];
 
         int req = 0;
         for (int k = 0; k < N_RT; k++) req += slots[k] != NULL;

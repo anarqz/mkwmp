@@ -60,13 +60,6 @@ typedef struct {
     GuestFn fs_read_file;   // ov_read_file
     GuestFn fs_file_size;   // ov_file_size
     GuestFn fs_close_file;  // ov_close_file
-    void (*fiber_switch_to)(void *thread, const Cpu *from, void *to);
-    GuestFn fiber_switch;
-    GuestFn fiber_initialize;
-    void **fibers;
-    void *(*fiber_new)(size_t stack_size, void (*entry)(void *), void *arg);
-    void (*fiber_free)(void *fiber);
-    Cpu *(*current_cpu)(void);
     int (*core_away)(void);
     void (*core_back)(int *away);
 } Delegates;
