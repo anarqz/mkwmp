@@ -1,5 +1,5 @@
 # Keeps the probe's platform-neutral core and the voice library portable while mkw-recomp's plugin API does not
-# exist yet (resources/docs/PLUGIN-API-READINESS.md): both must build for Linux with no Windows dependency, and the
+# exist yet (docs/PLUGIN-API-READINESS.md): both must build for Linux with no Windows dependency, and the
 # Windows winmm.dll / mkwmp-voice.dll must still build. Nothing is uploaded or released.
 name: probe-linux
 
