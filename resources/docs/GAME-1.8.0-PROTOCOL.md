@@ -396,3 +396,70 @@ change is needed. `MKWMP_SKIP_ERROR=884b839c` is not a workaround: it drops the 
 
 Not proven statically: that nothing else blocks after the seat check passes (next step is `0x297af60`: controller
 state 2, `+0x4d4 == 0`, `+0x48c == 0`, then op 3), and the exact meaning of the 26 cap.
+
+## 10. Comm error 0x660ac5da (T2c mid-race, 2026-11-18)
+
+Static only. Addresses are 1.8.0 `main` offsets unless marked. **V** = read in the binary, **I** = inferred.
+
+### 10.1 Symptom
+Matchmade `Normal24` race, PC + Deck, Pia traffic healthy throughout. Both karts circled for 1-2 minutes, the PC's
+lap never advanced (`DPIS/1 {lap: 00}`), then the PC alone posted `0x660ac5da` (reason 0xc, kind 0x25): caller
+`0x297d91c`, frames `0x29811ec`, `0x23acc7c`, `0x5bba94`, `0x325b1c`, `0x324280`.
+
+### 10.2 What it is **V**
+The kart controller's anti-stall watchdog, the same one as 1.0.0 (`RE-MAP.md` "Race watchdog", `FUN_0035a9a0` /
+`FUN_020d43dc`; ids `0x660ac5da`, `0x5382e895`, `0x9b928162`). It is not new, not a P2P / referee / Appconfig check.
+- `0x5bba94` is the return of `0x584ac0(ctrl+0x38, 9)` in the "racing" state update `0x5bb220` (1.0.0 `0x35a9a0`).
+- `0x23acc7c` is in the state-9 enter `0x23acc60` (1.0.0 `FUN_020d4ab0`): `0x2981170(ctrl+0x1e4)` posts the latched id.
+- `0x5bb220` inlines the body when the state delegate equals `0x5c1680` (`adr x8, 0x5c1680; cmp x1, x8` at
+  `0x5bb264`); `0x5c1680` holds the identical copy (ids at `0x5c1cc0/0x5c1d4c/0x5c1dac`). This also confirms the
+  entry A pairing `0x20d43dc -> 0x5c1680` of GAME-1.8.0-ADDRESSES.md section 4.
+
+Controller fields in 1.8.0: `+0x1e4` latched id (reset to `0x660ac5da` by `0x23aca80`), `+0x1e8` strike counter,
+`+0x1ec/+0x1f0` last XY, `+0x1f4` no-move frames, `+0x1f8` progress target, `+0x1fc` slow frames, `+0x200` "fell
+behind" flag, `+0x204` grace frames, `+0x208` tracked best, `+0x20c` move count, `+0x210` rescued flag, `+0x214`
+rescue-window frames, `+0x38` state machine (state 9 = post the error).
+
+### 10.3 Condition **V**
+Per frame at 60 fps, `p = LapChecker[+0x28] * scale`, `best = LapChecker[+0x2c] * scale` (LapChecker = `ctrl+0x30`,
+`scale = 0x298da00()` = course path `+0x68`, a course constant). A frame is a strike when any of:
+1. XY moved less than the threshold for more than 0xe10 frames (60 s; 30 s in 1.0.0) -> `0x9b928162`;
+2. no controller input: `kart+0x5b8 >= 0x709` frames (30 s) and `kartObj+0x191` bit 7 clear -> `0x9b928162`;
+3. `p` has not passed the target for more than 0xb4 frames (3 s) -> `0x5382e895`; on success target = `p + 75`,
+   and the target is capped at `p + 100`;
+4. `LapChecker+0x14` bit 0 (wrong way) -> `0x660ac5da`;
+5. `best - p > 5.0` -> `0x660ac5da`. New in 1.8.0: once `p + 100 < best` the tracked best is clamped to `p + 100`
+   until `p` passes it again, and that recovery gives 0x3c frames (1 s) without strikes.
+The id is latched only while the strike counter is 0. A strike adds 1 (cap 0x2d0), a clean frame subtracts 2.
+At 0x2d0 (**12 s of continuous violation**): a latched `0x5382e895` is refined to `0x660ac5da` if `best - p > 5`,
+or to `0x9b928162` if no-move and no-input are both >= 0x259 frames. Then:
+- rescued flag clear: `0x23ad8e0` = local event `0xa66067f2(player)`, id back to `0x660ac5da`, counter 0, flag set
+  for 0xe0f frames (60 s);
+- rescued flag set (second time inside those 60 s): state 9, the error is posted.
+So the minimum is 24 s of not gaining course progress; "progress" is LapChecker distance along the course, not raw
+movement. A kart circling in place moves (rule 1 is quiet) but trips rules 3 and 5, and the latched or refined id is
+`0x660ac5da`, exactly the event. Lap staying at 0 in DPIS is the same fact seen from the server.
+
+Every threshold is an immediate in the code (0xe10, 0x709, 0xb4, 75.0, 100.0, 5.0, 0x2d0, 0xe0f, 0x3c). Nothing is
+read from Appconfig, Gamesync or the session; an empty `FindApplicationConfig` reply cannot change it.
+
+Scope: gates before the rules are `ctrl+0x222` or "own station in state 2", `0xd956e0() == 0`, the kart's
+player-table entry (0xd8 bytes) `+0xc4 >= 0`, `+0x50 >= 0`, `+0xd0 & 1`, `+0x54 >= 0`, kart state not 7..11,
+`ctrl+0x21f == 0`, `kartObj+0x191 & 8 == 0`, kart flag `+0x110` bit 5 clear. Local kart only is **I** (rule 2 reads
+the kart's own input idle counter, the error is posted on the local error service, and only one client failed).
+
+### 10.4 Verdict
+Legitimate game behaviour: an AFK / anti-stall kick that needs no server and exists identically in 1.0.0 (same
+constants `0x2d0`, `5.0`, same ids, `0x35b0a0..0x35b18c`). Not caused by the lobby or the probe. Decisive evidence:
+the frame chain lands on the state-9 transition of the racing update, the id is the one rule 5 latches, the rules
+read only the kart position and its LapChecker, and the server saw the lap never advance.
+
+Why the Deck was not kicked is not provable statically: its own watchdog needs 24 s of continuous violation inside
+one 60 s rescue window, so it either made some progress or was a few seconds from firing. If the karts circled
+without the user steering them that way, that is a separate input question, not this check.
+
+### 10.5 Fix
+None for the server or the probe: drive both karts forward along the course. For unattended two-client tests only:
+- `MKWMP_SKIP_ERROR=660ac5da` drops the dialog, but the controller has already entered state 9 (untested after that);
+- a cleaner diagnostic guard would zero `ctrl+0x1e8` on entry to `0x5bb220` / `0x5c1680` (the counter then never
+  reaches 0x2d0). `MKWMP_NO_IDLE_KICK` is still refused on 1.8.0; the offsets above are what it needs. Not implemented.
