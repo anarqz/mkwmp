@@ -78,6 +78,13 @@ pub fn write_lobby_ca(game_dir: &Path, pem: Option<&str>) -> std::io::Result<()>
     }
 }
 
+/// Environment for a game this launcher starts (it overrides mkw.ini for this run only).
+/// `MKW_LAN=0`: mkw-recomp's own LAN play (`lan = 1` in mkw.ini, "patches: lan on" in mkw.log, set by
+/// community "LAN packs") patches the game's network code. Under MKWMP it corrupts the NPLN gRPC
+/// dispatcher (game 1.8.0 + recomp 0.1.13: crash after sign-in in 4 runs of 4 with lan = 1, 4 sign-ins
+/// in 4 with MKW_LAN=0). MKWMP replaces online play anyway; LAN play stays for runs without the launcher.
+pub const GAME_ENV: &[(&str, &str)] = &[("MKW_LAN", "0")];
+
 /// Start mkw.exe in the game directory.
 /// Start the game: `launch_command` when set (e.g. through Proton on the Steam
 /// Deck, where the launcher itself is the Steam shortcut), else `mkw.exe --play`.
@@ -85,7 +92,7 @@ pub fn write_lobby_ca(game_dir: &Path, pem: Option<&str>) -> std::io::Result<()>
 pub fn spawn_game(game_dir: &Path, launch_command: &str) -> std::io::Result<Child> {
     let cmd = launch_command.trim();
     if cmd.is_empty() {
-        return Command::new(game_dir.join("mkw.exe")).arg("--play").current_dir(game_dir).spawn();
+        return Command::new(game_dir.join("mkw.exe")).arg("--play").envs(GAME_ENV.iter().copied()).current_dir(game_dir).spawn();
     }
     #[cfg(unix)]
     let mut c = {
@@ -100,7 +107,7 @@ pub fn spawn_game(game_dir: &Path, launch_command: &str) -> std::io::Result<Chil
         c.arg("/C").arg(cmd).creation_flags(0x0800_0000); // CREATE_NO_WINDOW: no console flash
         c
     };
-    c.current_dir(game_dir).spawn()
+    c.envs(GAME_ENV.iter().copied()).current_dir(game_dir).spawn()
 }
 
 #[cfg(test)]
