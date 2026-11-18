@@ -749,7 +749,7 @@ void RoleThread(void *arg) {
     try {
         if (w->start_delay_ms && WaitIdle(*w, 1, &s.stop, w->start_delay_ms) == 0) {
             // stopped before the retry
-        } else if (!WorkerReady(context)) {
+        } else if (!g_fake.load() && !WorkerReady(context)) { // fake devices (tests) need no audio system
             Log("voice: the %s worker has no %s", kRoleNames[w->role], kWorkerNeeds);
         } else {
             int slow = 0;
