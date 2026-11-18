@@ -72,6 +72,24 @@ pub fn ice_server_set(host: &str, port: u16, now: u64) -> Vec<u8> {
         .into_bytes()
 }
 
+/// `MKWMP_LATENCY_SERVER="s1|s2|s3|n4|n5"`: answer ListLatencyMeasurementServers with one
+/// server whose five fields (3 strings, 2 int32, meaning not yet known; matchmaking.proto) are
+/// these, for live tests. Unset (or malformed): the empty list 1.0.0 is known to accept.
+pub const LATENCY_SERVER_ENV: &str = "MKWMP_LATENCY_SERVER";
+
+pub fn latency_servers(spec: Option<&str>) -> Vec<u8> {
+    let Some(spec) = spec else { return Vec::new() };
+    let p: Vec<&str> = spec.split('|').collect();
+    let (Ok(n4), Ok(n5)) = (p.get(3).unwrap_or(&"").parse::<i32>(), p.get(4).unwrap_or(&"").parse::<i32>()) else {
+        return Vec::new();
+    };
+    if p.len() != 5 {
+        return Vec::new();
+    }
+    let server = Msg::new().bytes(1, p[0]).bytes(2, p[1]).bytes(3, p[2]).varint(4, n4 as i64 as u64).varint(5, n5 as i64 as u64);
+    Msg::new().msg(1, &server).into_bytes()
+}
+
 /// Game versions the lobby keeps apart: Pia's header version byte differs (0x0F vs 0x10)
 /// and each drops the other's packets, so they can never share a mesh
 /// (resources/docs/GAME-1.8.0-PROTOCOL.md 3, 5).
@@ -459,6 +477,18 @@ mod tests {
         let m = Msg::new().bytes(1, format!("{TICKET_PREFIX}{id}")).into_bytes();
         assert_eq!(parse_ticket_name(&m), Some(id));
         assert_eq!(parse_ticket_name(&Msg::new().bytes(1, format!("x/{id}")).0), None);
+    }
+
+    #[test]
+    fn latency_server_env_builds_one_entry() {
+        assert!(latency_servers(None).is_empty());
+        assert!(latency_servers(Some("a|b|c|x|1")).is_empty(), "malformed: empty list");
+        assert!(latency_servers(Some("a|b|c|1")).is_empty());
+        let r = latency_servers(Some("lp1|192.168.68.53|jp|8905|-1"));
+        let s = wire::bytes_field(&r, 1).unwrap().unwrap();
+        assert_eq!(wire::str_field(s, 2).unwrap().as_deref(), Some("192.168.68.53"));
+        assert_eq!(wire::varint_field(s, 4).unwrap(), Some(8905));
+        assert_eq!(wire::varint_field(s, 5).unwrap(), Some(u64::MAX), "int32 -1 is a 10-byte varint");
     }
 
     #[test]

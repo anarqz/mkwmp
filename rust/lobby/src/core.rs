@@ -29,6 +29,7 @@ pub const MM_CREATE: &str = "/nn.npln.matchmaking.v1.Matchmaker/CreateMatchmakin
 pub const MM_TRACK: &str = "/nn.npln.matchmaking.v1.Matchmaker/TrackMatchmakingTicket";
 pub const MM_CANCEL: &str = "/nn.npln.matchmaking.v1.Matchmaker/CancelMatchmakingTicket";
 pub const ICE_SERVER_SET: &str = "/nn.npln.matchmaking.v1.GameSessionService/AllocateIceServerSet";
+pub const LATENCY_SERVERS: &str = "/nn.npln.matchmaking.v1.GameSessionService/ListLatencyMeasurementServers";
 pub const BULK_GET: &str = "/nn.npln.ugcstore.v1.Ugcstore/BulkGetDocuments";
 pub const PRESENCE_KEEPALIVE: &str = "/nn.npln.friends.v1.PresenceService/KeepAlive";
 pub const SUBSCRIBE_PRESENCES: &str = "/nn.npln.friends.v1.PresenceService/SubscribePresences";
@@ -559,6 +560,7 @@ impl State {
                 self.cancel_ticket(body, now, sends);
                 Ok(Vec::new())
             }
+            LATENCY_SERVERS => Ok(msgs::latency_servers(std::env::var(msgs::LATENCY_SERVER_ENV).ok().as_deref())),
             ICE_SERVER_SET => Ok(msgs::ice_server_set(&self.cfg.public_host, self.cfg.turn_port, now as u64)),
             ROOM_CREATE => self.room_create(key, body, now),
             ROOM_CANCEL => {
