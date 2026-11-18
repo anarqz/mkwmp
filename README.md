@@ -204,10 +204,6 @@ Two tests start the real `mkwmp` binary. One plays two clients from sign-in to a
 
 Open an [issue](https://github.com/anarqz/mkwmp/issues/new/choose) and fill in the form. The most useful thing you can add is the logs: in the launcher, open **SETTINGS** and press **SAVE LOGS FOR A BUG REPORT** (or run `mkwmp-launcher --save-logs`), then drag the zip into the issue. It holds the launcher log, the game patch and mkw-recomp logs, with your PIN and tickets left out.
 
-## Support
-
-MKWMP is made by players, for players. If you'd like to help keep the official server running: [Ko-fi](https://ko-fi.com/anarqz).
-
 ## License
 
 mkwmp is free software under the GNU General Public License, version 3 or later (`LICENSE`). Third-party components and their licenses are listed in `NOTICE.md`.

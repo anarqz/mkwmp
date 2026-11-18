@@ -36,7 +36,6 @@ const SKY_TEXT: Color32 = Color32::from_rgb(0xa6, 0xe3, 0xff);
 const PINK: Color32 = Color32::from_rgb(0xff, 0x5e, 0x8a);
 const PINK_D: Color32 = Color32::from_rgb(0xa8, 0x1f, 0x4a);
 pub const REPO_URL: &str = "https://github.com/anarqz/mkwmp";
-pub const DONATE_URL: &str = "https://ko-fi.com/anarqz";
 const GOOD: Color32 = Color32::from_rgb(0x7d, 0xff, 0x7d);
 const BAD: Color32 = Color32::from_rgb(0xff, 0x8a, 0x8a);
 
@@ -874,13 +873,12 @@ impl App {
         }
     }
 
-    /// GITHUB · PLAY · DONATE in one row.
+    /// GITHUB · PLAY in one row.
     fn play_row(&mut self, ui: &mut egui::Ui, busy: bool, stars: Option<u64>) {
         let (row, _) = ui.allocate_exact_size(vec2(COLUMN, 72.0), Sense::hover());
         let play = Rect::from_center_size(row.center(), vec2(420.0, 68.0));
         let side = vec2(200.0, 40.0);
         let gh = Rect::from_center_size(pos2((row.left() + play.left()) / 2.0, row.center().y), side);
-        let kofi = Rect::from_center_size(pos2((play.right() + row.right()) / 2.0, row.center().y), side);
 
         let game = &self.draft.game;
         let problem = self
@@ -918,9 +916,6 @@ impl App {
         if icon_button(ui, gh, &gh_text, &STAR, INK, Color32::from_rgb(0x3a, 0x2f, 0x66), YELLOW).clicked() {
             let _ = open::that(REPO_URL);
         }
-        if icon_button(ui, kofi, "DONATE", &HEART, PINK, PINK_D, Color32::WHITE).clicked() {
-            let _ = open::that(DONATE_URL);
-        }
     }
 }
 
@@ -950,7 +945,6 @@ fn gear_button(ui: &mut egui::Ui, rect: Rect) -> Response {
 }
 
 const STAR: [&str; 7] = ["...#...", "...#...", "#######", ".#####.", "..###..", ".##.##.", ".#...#."];
-const HEART: [&str; 6] = [".##.##.", "#######", "#######", ".#####.", "..###..", "...#..."];
 
 /// A tiny bitmap icon, `cell` points per pixel.
 fn paint_icon(p: &egui::Painter, at: egui::Pos2, rows: &[&str], cell: f32, color: Color32) {
@@ -987,7 +981,7 @@ fn icon_button(ui: &mut egui::Ui, rect: Rect, text: &str, icon: &[&str], fill: C
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
-    resp.on_hover_text(if icon.len() == 7 { REPO_URL } else { DONATE_URL })
+    resp.on_hover_text(REPO_URL)
 }
 
 /// A cream panel with a thick ink border, hard drop shadow and a coin heading.
