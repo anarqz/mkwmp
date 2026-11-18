@@ -98,6 +98,10 @@ pub struct Core {
     cfg_write: std::sync::Mutex<()>,
     /// The hashes this launcher's game patch must have, once known.
     expected: std::sync::Mutex<Option<probe::Expected>>,
+    /// The game's local API (`127.0.0.1:<local_port>`) is listening in this process. While
+    /// it isn't (another launcher holds the port), PLAY is refused: the game would reach
+    /// the other launcher.
+    pub local_api: std::sync::atomic::AtomicBool,
 }
 
 impl Core {
@@ -122,6 +126,7 @@ impl Core {
             friends_wake: Notify::new(),
             cfg_write: std::sync::Mutex::new(()),
             expected: std::sync::Mutex::new(None),
+            local_api: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -360,9 +365,18 @@ impl Core {
         self.stop.notify_one();
     }
 
+    /// Why PLAY can't start because of the local API; None when it is up.
+    pub fn local_api_problem(&self) -> Option<String> {
+        (!self.local_api.load(std::sync::atomic::Ordering::Relaxed))
+            .then(|| format!("Another MKWMP launcher is running (port {} is in use): close it", self.ui().cfg.local_port))
+    }
+
     async fn session(self: &Arc<Self>) -> Result<(), String> {
         let cfg = self.ui().cfg;
         if let Some(p) = cfg.problem() {
+            return Err(p);
+        }
+        if let Some(p) = self.local_api_problem() {
             return Err(p);
         }
         // Before any patch write or network call: the patch's hooks only fit some game versions.

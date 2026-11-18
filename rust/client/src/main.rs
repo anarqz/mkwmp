@@ -119,21 +119,39 @@ fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("runtime");
     let core = Core::new(path, cfg.clone());
 
-    // The local API the game calls for its seat.
+    // The local API the game calls for its seat. A launcher that just replaced itself
+    // (update) or is closing may still hold the port: retry for a while, then keep
+    // retrying in the background with PLAY refused until it is ours.
     let addr = format!("127.0.0.1:{}", cfg.local_port);
-    match rt.block_on(tokio::net::TcpListener::bind(&addr)) {
-        Ok(listener) => {
-            let app = local::router(core.clone());
-            rt.spawn(async move {
-                let _ = axum::serve(listener, app).await;
-            });
-        }
+    let first = rt.block_on(bind_local(&addr, Duration::from_secs(3)));
+    let serve = |listener: tokio::net::TcpListener| {
+        core.local_api.store(true, std::sync::atomic::Ordering::Relaxed);
+        let app = local::router(core.clone());
+        rt.spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+    };
+    match first {
+        Ok(listener) => serve(listener),
         Err(e) => {
             let msg = format!("cannot open {addr} ({e}); is another launcher running?");
             if a.headless {
                 fatal(&msg);
             }
-            log::note(msg);
+            log::note(format!("{msg} PLAY waits until it is free"));
+            let core = core.clone();
+            rt.spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    if let Ok(listener) = tokio::net::TcpListener::bind(&addr).await {
+                        log::note(format!("{addr} is free now: the game's local API is up"));
+                        core.local_api.store(true, std::sync::atomic::Ordering::Relaxed);
+                        let app = local::router(core.clone());
+                        let _ = axum::serve(listener, app).await;
+                        return;
+                    }
+                }
+            });
         }
     }
     rt.spawn(core.clone().status_loop());
@@ -183,6 +201,20 @@ fn main() {
         }
         // Window closed: free the seat before leaving.
         rt.block_on(wait_idle(&core, Duration::from_secs(5)));
+    }
+}
+
+/// Bind `addr`, retrying while it is in use for up to `patience`.
+async fn bind_local(addr: &str, patience: Duration) -> std::io::Result<tokio::net::TcpListener> {
+    let until = tokio::time::Instant::now() + patience;
+    loop {
+        match tokio::net::TcpListener::bind(addr).await {
+            Ok(l) => return Ok(l),
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && tokio::time::Instant::now() < until => {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+            Err(e) => return Err(e),
+        }
     }
 }
 

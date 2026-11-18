@@ -888,6 +888,7 @@ impl App {
             .problem()
             .or_else(|| crate::recomp::identify(game).problem())
             .or_else(|| crate::recomp::game_problem(game))
+            .or_else(|| self.core.local_api_problem())
             .or_else(|| {
                 let r = self.patch_report();
                 (!r.ok()).then(|| r.summary(crate::update::VERSION))

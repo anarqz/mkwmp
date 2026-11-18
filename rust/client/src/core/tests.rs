@@ -145,7 +145,9 @@ fn setup(server: &str) -> (Arc<Core>, PathBuf) {
     };
     let path = dir.join("client.toml");
     cfg.save(path.to_str().unwrap()).unwrap();
-    (Core::new(path.to_str().unwrap().into(), cfg), game)
+    let core = Core::new(path.to_str().unwrap().into(), cfg);
+    core.local_api.store(true, std::sync::atomic::Ordering::Relaxed); // as if main bound the port
+    (core, game)
 }
 
 async fn until<F: Fn() -> bool>(what: &str, f: F) {
@@ -249,6 +251,18 @@ async fn play_refused_does_not_start_the_game() {
         assert!(!game.join("started").exists());
         assert_eq!(ticket(&game), None, "no stale ticket either");
     }
+}
+
+#[tokio::test]
+async fn play_waits_for_the_local_api_port() {
+    let (core, game) = setup(&serve(fake(Seat::Seated, (204, ""))).await);
+    core.local_api.store(false, std::sync::atomic::Ordering::Relaxed); // another launcher holds it
+    core.play();
+    match settle_session(&core).await {
+        SessionView::Failed(m) => assert!(m.contains("Another MKWMP launcher is running"), "{m}"),
+        other => panic!("{other:?}"),
+    }
+    assert!(!game.join("started").exists());
 }
 
 #[tokio::test]
