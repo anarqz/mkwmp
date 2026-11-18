@@ -2,8 +2,8 @@
 //
 // Everything outside the backend calls the runtime through g_rt and nothing else. Today one backend fills it: coff.c,
 // from mkw.exe's COFF symbol table, its .ovr section, its g_host registry and the rt_dispatch import of mkwgame.dll
-// (Windows, loaded as the winmm.dll proxy). The table is shaped like upstream's planned MkwPluginApi, so a plugin
-// backend fills the same entries from that API and the rest of the probe does not change.
+// (Windows, loaded as the winmm.dll proxy). The other is backend_plugin.c, from mkw-recomp's native plugin API
+// (mkw_plugin.h's MkwPluginApi, Windows and Linux). The rest of the probe does not know which one filled it.
 //
 // Exception: keypad.c's detours and ImGui calls resolve their own COFF symbols (coff_symbol). The keypad moves into
 // the recomp itself and a plugin gets text-entry / overlay hooks instead, so that file stays COFF-only.
@@ -36,6 +36,9 @@ typedef struct RtApi {
     // see every indirect guest call: c->pc is the target, x30 the caller. *original gets the runtime's dispatcher,
     // which ours must call. 1 installed, 0 not possible (logged by the caller)
     int (*dispatch_hook)(GuestFn ours, GuestFn *original);
+    // c is a guest thread's CPU (it may give its core up: core_away). NULL: the COFF test, the runtime's Cpu.thread
+    // (beyond the guaranteed prefix). The plugin API calls every host function on a guest thread.
+    int (*guest_thread)(Cpu *c);
 } RtApi;
 
 extern RtApi g_rt;

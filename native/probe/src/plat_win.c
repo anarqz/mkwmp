@@ -40,7 +40,17 @@ static int to_wide(const char *s, wchar_t *out, int cap) {
     return MultiByteToWideChar(CP_UTF8, 0, s, -1, out, cap) > 0;
 }
 
+static char g_home[MAX_PATH * 3];   // plat_set_home's folder (UTF-8), with a trailing separator; "" = mkw.exe's
+
+void plat_set_home(const char *dir) {
+    size_t n = dir ? strlen(dir) : 0;
+    if (!n || n + 2 > sizeof g_home) { g_home[0] = 0; return; }
+    memcpy(g_home, dir, n + 1);
+    if (g_home[n - 1] != '\\' && g_home[n - 1] != '/') g_home[n] = '\\', g_home[n + 1] = 0;
+}
+
 int plat_home_path(char *out, size_t cap, const char *name) {
+    if (g_home[0]) return snprintf(out, cap, "%s%s", g_home, name) < (int)cap;
     wchar_t path[MAX_PATH];
     DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
     if (!n || n >= MAX_PATH) return 0;

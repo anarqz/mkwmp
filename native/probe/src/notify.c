@@ -12,6 +12,7 @@ static int g_ready;
 static Notification g_ring[NOTIFY_CAP];
 static int g_head, g_count;
 static uint32_t g_next_id;
+static void (*g_sink)(NotifyLevel, const char *);
 
 static const char *level_name(NotifyLevel l) {
     switch (l) {
@@ -46,9 +47,15 @@ void notify_push(NotifyLevel level, const char *text) {
     n->id = id;
     strncpy(n->text, text ? text : "", sizeof n->text - 1);
     n->text[sizeof n->text - 1] = 0;
+    char shown[sizeof n->text];
+    memcpy(shown, n->text, sizeof shown);
     plat_unlock(&g_cs);
-    mkwmp_log("notify[%s] %s", level_name(level), n->text);
+    mkwmp_log("notify[%s] %s", level_name(level), shown);
+    void (*sink)(NotifyLevel, const char *) = plat_load(&g_sink);
+    if (sink) sink(level, shown);
 }
+
+void notify_set_sink(void (*fn)(NotifyLevel level, const char *text)) { plat_store(&g_sink, fn); }
 
 int notify_drain(Notification *out, int max) {
     ensure_init();

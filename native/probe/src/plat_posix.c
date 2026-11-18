@@ -86,7 +86,17 @@ unsigned long plat_thread_id(void) { return (unsigned long)gettid(); }
 unsigned long plat_last_error(void) { return (unsigned long)errno; }
 
 // ---- files
+static char g_home[PATH_MAX];   // plat_set_home's folder, with a trailing '/'; "" = the executable's
+
+void plat_set_home(const char *dir) {
+    size_t n = dir ? strlen(dir) : 0;
+    if (!n || n + 2 > sizeof g_home) { g_home[0] = 0; return; }
+    memcpy(g_home, dir, n + 1);
+    if (g_home[n - 1] != '/') g_home[n] = '/', g_home[n + 1] = 0;
+}
+
 int plat_home_path(char *out, size_t cap, const char *name) {
+    if (g_home[0]) return snprintf(out, cap, "%s%s", g_home, name) < (int)cap;
     char path[PATH_MAX];
     ssize_t n = readlink("/proc/self/exe", path, sizeof path - 1);
     if (n <= 0) return 0;

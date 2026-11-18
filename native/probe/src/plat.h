@@ -103,9 +103,13 @@ int plat_event_wait(PlatEvent *e, uint32_t ms); // 1 signalled, 0 timed out; PLA
 unsigned long plat_thread_id(void);   // for logs
 
 // ---- files. Paths are UTF-8 (wide on Windows inside plat_win.c, so any folder name works).
-// <the folder of the game executable>/name: where mkwmp.toml, mkwmp.log and the voice library live today.
-// (A plugin build gets its own folder from mkw-recomp instead: PLUGIN-API-READINESS.md, gap 2.) 1 on success.
+// <home>/name: where mkwmp.toml, mkwmp.env, mkwmp.log and the voice library live. Home is the folder of the game
+// executable (the winmm.dll proxy), unless plat_set_home moved it (the plugin build: the plugin's own folder,
+// PLUGIN-API-READINESS.md gap 2). 1 on success.
 int plat_home_path(char *out, size_t cap, const char *name);
+// Home is dir (UTF-8, with or without a trailing separator) from now on; NULL or "" goes back to the game's folder.
+// Call before log_init, while no other probe thread runs.
+void plat_set_home(const char *dir);
 long plat_read_file(const char *path, void *buf, size_t cap);   // bytes read (at most cap); -1 if it cannot be opened
 typedef struct PlatFile PlatFile;
 // Create or truncate a log file, shared for reading. NULL on failure; *in_use = 1 when that is because another

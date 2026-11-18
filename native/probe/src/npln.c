@@ -744,7 +744,8 @@ static void ov_sock_poll(Cpu *c) {
     int away = 0;
     static int no_core_away = -1;
     if (no_core_away < 0) { const char *v = getenv("MKWMP_NO_CORE_AWAY"); no_core_away = v && !strcmp(v, "1"); }
-    if (ms && !ready && c->thread && g_rt.core_away && g_rt.core_back && !no_core_away) away = g_rt.core_away();
+    int guest = g_rt.guest_thread ? g_rt.guest_thread(c) : c->thread != NULL;
+    if (ms && !ready && guest && g_rt.core_away && g_rt.core_back && !no_core_away) away = g_rt.core_away();
     int result = 0;
     if (valid) {
         result = plat_poll(h, valid, ready ? 0 : (ms < 0 ? -1 : ms));
