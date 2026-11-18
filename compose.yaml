@@ -30,6 +30,7 @@ services:
       MKWMP_CAPACITY: ${MKWMP_CAPACITY:-50}
       MKWMP_SEAT_BIND: ${MKWMP_SEAT_BIND:-0.0.0.0:7000}
       MKWMP_TURN_PORT: ${MKWMP_TURN_PORT:-3478}
+      MKWMP_VOICE_PORT: ${MKWMP_VOICE_PORT:-8907}
 
   # Optional HTTPS for the seat API: `docker compose --profile https up -d`
   # with MKWMP_DOMAIN set (its DNS pointing here, ports 80 and 443 open).

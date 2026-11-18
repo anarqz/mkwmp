@@ -1,4 +1,4 @@
-//! `mkwmp host`: a whole server in one command, for a PC or a VM.
+﻿//! `mkwmp host`: a whole server in one command, for a PC or a VM.
 //!
 //! The first run creates everything in a data folder: the ticket signing
 //! key, the lobby's tokens, its TLS certificate (self-signed, for the host
@@ -15,13 +15,14 @@ type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
 pub const USAGE: &str = "\
 usage: mkwmp host [--public-ip IPV4] [--name NAME] [--capacity N] [--turn-port PORT]
-                  [--seat-bind ADDR:PORT] [--data DIR] [--init-only]
+                  [--voice-port PORT] [--seat-bind ADDR:PORT] [--data DIR] [--init-only]
 
   --public-ip   the IPv4 address players reach this machine at (asked on the
                 first run when omitted); env MKWMP_PUBLIC_IP
   --name        server name shown in the launcher (MKWMP_NAME, default mkwmp)
   --capacity    players seated at once; the rest queue (MKWMP_CAPACITY, 50)
   --turn-port   UDP port of the TURN relay (MKWMP_TURN_PORT, 3478)
+  --voice-port  UDP port of the voice relay, 0 = voice chat off (MKWMP_VOICE_PORT, 8907)
   --seat-bind   where the seat API listens (MKWMP_SEAT_BIND, 0.0.0.0:7000)
   --data        data folder (MKWMP_DATA; default: mkwmp-data next to this program)
   --init-only   create the data folder and config, then exit
@@ -34,12 +35,20 @@ struct Host {
     name: String,
     capacity: u32,
     turn_port: u16,
+    voice_port: u16,
     seat_bind: String,
 }
 
 impl Default for Host {
     fn default() -> Self {
-        Self { public_ip: None, name: "mkwmp".into(), capacity: 50, turn_port: 3478, seat_bind: "0.0.0.0:7000".into() }
+        Self {
+            public_ip: None,
+            name: "mkwmp".into(),
+            capacity: 50,
+            turn_port: 3478,
+            voice_port: 8907,
+            seat_bind: "0.0.0.0:7000".into(),
+        }
     }
 }
 
@@ -55,6 +64,7 @@ impl Host {
                 "name" => h.name = v.into(),
                 "capacity" => h.capacity = v.parse().map_err(|_| format!("{}: bad capacity", path.display()))?,
                 "turn_port" => h.turn_port = v.parse().map_err(|_| format!("{}: bad turn_port", path.display()))?,
+                "voice_port" => h.voice_port = v.parse().map_err(|_| format!("{}: bad voice_port", path.display()))?,
                 "seat_bind" => h.seat_bind = v.into(),
                 _ => {}
             }
@@ -66,8 +76,8 @@ impl Host {
         let ip = self.public_ip.map(|i| i.to_string()).unwrap_or_default();
         let text = format!(
             "# mkwmp host settings (`mkwmp host --help`). server.toml is written from these on every start.\n\
-             public_ip = \"{ip}\"\nname = \"{}\"\ncapacity = {}\nturn_port = {}\nseat_bind = \"{}\"\n",
-            self.name, self.capacity, self.turn_port, self.seat_bind
+             public_ip = \"{ip}\"\nname = \"{}\"\ncapacity = {}\nturn_port = {}\nvoice_port = {}\nseat_bind = \"{}\"\n",
+            self.name, self.capacity, self.turn_port, self.voice_port, self.seat_bind
         );
         std::fs::write(path, text)?;
         Ok(())
@@ -100,7 +110,7 @@ struct Opts {
 fn parse(args: &[String]) -> Res<Opts> {
     let env = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty());
     let mut flags: Vec<(String, String)> = Vec::new();
-    for k in ["PUBLIC_IP", "NAME", "CAPACITY", "TURN_PORT", "SEAT_BIND"] {
+    for k in ["PUBLIC_IP", "NAME", "CAPACITY", "TURN_PORT", "VOICE_PORT", "SEAT_BIND"] {
         if let Some(v) = env(&format!("MKWMP_{k}")) {
             flags.push((k.to_lowercase().replace('_', "-"), v));
         }
@@ -111,7 +121,7 @@ fn parse(args: &[String]) -> Res<Opts> {
     while let Some(a) = it.next() {
         let mut value = || it.next().cloned().ok_or_else(|| format!("{a} needs a value\n\n{USAGE}"));
         match a.as_str() {
-            "--public-ip" | "--name" | "--capacity" | "--turn-port" | "--seat-bind" => {
+            "--public-ip" | "--name" | "--capacity" | "--turn-port" | "--voice-port" | "--seat-bind" => {
                 flags.push((a[2..].to_string(), value()?))
             }
             "--data" => data = Some(PathBuf::from(value()?)),
@@ -135,6 +145,7 @@ fn parse(args: &[String]) -> Res<Opts> {
             "name" => host.name = v.trim().to_string(),
             "capacity" => host.capacity = v.trim().parse().map_err(|_| format!("--capacity: {v:?} is not a number"))?,
             "turn-port" => host.turn_port = v.trim().parse().map_err(|_| format!("--turn-port: {v:?} is not a port"))?,
+            "voice-port" => host.voice_port = v.trim().parse().map_err(|_| format!("--voice-port: {v:?} is not a port"))?,
             "seat-bind" => host.seat_bind = v.trim().to_string(),
             _ => unreachable!(),
         }
@@ -284,7 +295,7 @@ public_keys = ["{public_key}"]
 host = "0.0.0.0"
 public_host = "{ip}"
 turn_port = {turn_port}
-voice_port = 8907
+voice_port = {voice_port}
 relay_ports = "49152:49407"
 require_ticket = true
 roster_url = "http://{roster}"
@@ -299,8 +310,17 @@ key = "keys/lobby-key.pem"
         capacity = h.capacity,
         seat_bind = h.seat_bind,
         turn_port = h.turn_port,
+        voice_port = h.voice_port,
         // The lobby asks the seat server over loopback.
         roster = format!("127.0.0.1:{}", h.seat_bind.rsplit(':').next().unwrap_or("7000")),
+    )
+}
+
+fn ports_line(h: &Host, port: &str) -> String {
+    let voice = if h.voice_port == 0 { String::new() } else { format!(", {}", h.voice_port) };
+    format!(
+        "open (and on a home router, forward to this machine): TCP {port}, 8905, 8906; UDP {}{voice}, 10025, 49152-49407",
+        h.turn_port
     )
 }
 
@@ -325,10 +345,7 @@ pub async fn run(args: &[String]) -> Res<()> {
     let port = h.seat_bind.rsplit(':').next().unwrap_or("7000");
     println!("data folder: {}", opts.data.display());
     println!("players set the launcher's SERVER to: http://{ip}:{port}");
-    println!(
-        "open (and on a home router, forward to this machine): TCP {port}, 8905, 8906; UDP {}, 8907, 10025, 49152-49407",
-        h.turn_port
-    );
+    println!("{}", ports_line(h, port));
     if opts.init_only {
         return Ok(());
     }
@@ -349,11 +366,33 @@ mod tests {
     fn host_settings_round_trip() {
         let dir = std::env::temp_dir().join(format!("mkwmp-host-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let h = Host { public_ip: Some("203.0.113.7".parse().unwrap()), name: "LAN party".into(), capacity: 8, turn_port: 3479, seat_bind: "127.0.0.1:7100".into() };
+        assert_eq!(Host::default().voice_port, 8907);
+        let h = Host {
+            public_ip: Some("203.0.113.7".parse().unwrap()),
+            name: "LAN party".into(),
+            capacity: 8,
+            turn_port: 3479,
+            voice_port: 0,
+            seat_bind: "127.0.0.1:7100".into(),
+        };
         h.save(&dir.join("host.toml")).unwrap();
+        assert!(std::fs::read_to_string(dir.join("host.toml")).unwrap().contains("voice_port = 0"));
         assert_eq!(Host::load(&dir.join("host.toml")).unwrap(), h);
         let toml = server_toml(&h, "203.0.113.7".parse().unwrap(), "k1:abc");
         assert!(toml.contains("roster_url = \"http://127.0.0.1:7100\""));
+        assert!(toml.contains("voice_port = 0"));
+        assert!(!ports_line(&h, "7100").contains("8907"));
+        let h_voice = Host { voice_port: 8907, ..h.clone() };
+        assert!(ports_line(&h_voice, "7100").contains("UDP 3479, 8907, 10025"));
+        let parsed = parse(&[
+            "--data".into(),
+            dir.to_str().unwrap().into(),
+            "--voice-port".into(),
+            "8908".into(),
+            "--init-only".into(),
+        ])
+        .unwrap();
+        assert_eq!(parsed.host.voice_port, 8908);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -374,6 +413,7 @@ mod tests {
         let cfg_path = prepare(&mut o).unwrap();
         let cfg = config::ServerConfig::load(&cfg_path).unwrap();
         assert_eq!(cfg.seats.lobby_endpoint, "198.51.100.4:8905");
+        assert_eq!(cfg.lobby.voice_port, 8907);
         assert!(cfg.lobby.require_ticket);
         let cert = std::fs::read(dir.join("keys/lobby-cert.pem")).unwrap();
         prepare(&mut o).unwrap();
