@@ -170,6 +170,8 @@ static int setting_is(const char *key, const char *value) {
     return s_get(key, v, sizeof v) && !strcmp(v, value);
 }
 static int v2_get(const char *key, char *out, size_t cap) { return s_get(key, out, cap); }
+static void (*g_exit_cb)(void *);
+static int v2_on_exit(void (*cb)(void *), void *user) { (void)user; g_exit_cb = cb; return 1; }
 static int v2_set(const char *key, const char *value) { return s_set(key, value); }
 
 static int has(char **list, int n, const char *name) {
@@ -350,6 +352,7 @@ int main(int argc, char **argv) {
             v2.profile_name = "Luz";
             v2.setting_get = v2_get;
             v2.setting_set = v2_set;
+            v2.on_exit = v2_on_exit;
             unsetenv("MKWMP_ENABLE");   // engaged by the settings alone
             const char *m = NULL;
             if (init(&v2, MKW_PLUGIN_API_VERSION, &m)) _exit(10);
@@ -362,6 +365,8 @@ int main(int argc, char **argv) {
             fclose(lf);
             if (!strstr(t2, "the plugin signs in to") || !strstr(t2, "as Luz itself")) { fputs(t2, stderr); _exit(12); }
             if (!strstr(t2, "overrides registered")) _exit(13);
+            if (!g_exit_cb) _exit(14);   // the seat is given back at the game's end
+            g_exit_cb(NULL);             // nothing seated yet: a no-op that must not hang
             _exit(0);
         }
         int st = 0;

@@ -12,13 +12,18 @@ typedef struct {
     char name[17];      // the registered name the player plays as
     char pin[7];
     int voice;          // voice chat on
+    // The mod's settings (MkwPluginApi.setting_get / setting_set): the players muted in game are kept there, across
+    // games (keys mutes.1..mutes.3, account ids). NULL: kept for this game only.
+    int (*setting_get)(const char *key, char *out, size_t cap);
+    int (*setting_set)(const char *key, const char *value);
 } SeatdConfig;
 
 // Starts answering with this account. The lobby CA the server publishes is written to <home>/mkwmp-lobby-ca.pem.
 void seatd_start(const SeatdConfig *cfg);
 // launcher.c's direct handler: the same contract as its HTTP answers (status, body in buf).
 int seatd_request(const char *method, const char *path, const char *json, char *buf, size_t cap, const char **body);
-// The game ends: free the seat and end the presence at once (best effort, short timeouts).
+// The game ends (MkwPluginApi.on_exit): free the seat and end the presence at once, so friends see the player leave
+// and the seat goes to the next in line now, not after the server's 60 s timeout. Short timeouts; best effort.
 void seatd_stop(void);
 
 #endif

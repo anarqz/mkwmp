@@ -8,7 +8,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { TIMEOUT_MS = 10000 };
+static volatile int g_timeout_ms = 10000;
+
+void seatapi_set_timeout_ms(int ms) { g_timeout_ms = ms > 0 ? ms : 10000; }
 
 int seatapi_name_ok(const char *name) {
     size_t n = name ? strlen(name) : 0;
@@ -113,7 +115,7 @@ static SeatApiResult call(const char *method, const char *base, const char *path
                           const char *json, char *out, size_t cap) {
     char url[600];
     snprintf(url, sizeof url, "%s%s", base, path);
-    PlatHttpResult h = plat_http(method, url, bearer, json, out, cap, TIMEOUT_MS);
+    PlatHttpResult h = plat_http(method, url, bearer, json, out, cap, g_timeout_ms);
     SeatApiResult r = {0};
     r.status = h.status;
     r.retry_after = h.retry_after;

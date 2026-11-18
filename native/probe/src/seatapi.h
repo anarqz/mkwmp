@@ -21,6 +21,9 @@ typedef struct {
     char message[200];
 } SeatApiResult;
 
+// Every call's timeout from now on (default 10 s); the game's exit uses a short one for its goodbyes.
+void seatapi_set_timeout_ms(int ms);
+
 // A player's name by the server's rules: 3-16 of [A-Za-z0-9_-]. 1 when valid.
 int seatapi_name_ok(const char *name);
 int seatapi_pin_ok(const char *pin);    // six digits

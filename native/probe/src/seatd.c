@@ -21,6 +21,39 @@ static char g_sid[80], g_skey[160];          // the seat session
 static char g_presence[160];                 // the friends routes' token
 static struct { unsigned long long account; char name[40]; } g_mutes[MUTES_MAX];
 static int g_nmutes;
+enum { MUTE_KEYS = 3, PER_KEY = 22 };   // 64 ids of up to 20 digits, comma-separated, in settings of <= 1024 bytes
+_Static_assert(MUTE_KEYS * PER_KEY >= MUTES_MAX, "every mute fits the settings");
+
+// The mutes from the settings (lock held). Names are not kept: the game shows its own.
+static void mutes_load(void) {
+    g_nmutes = 0;
+    if (!C.setting_get) return;
+    for (int k = 1; k <= MUTE_KEYS; k++) {
+        char key[16], list[1100];
+        snprintf(key, sizeof key, "mutes.%d", k);
+        if (!C.setting_get(key, list, sizeof list)) continue;
+        for (char *t = list, *next; t && *t && g_nmutes < MUTES_MAX; t = next) {
+            next = strchr(t, ',');
+            if (next) *next++ = 0;
+            unsigned long long id = strtoull(t, NULL, 10);
+            if (!id) continue;
+            g_mutes[g_nmutes].account = id;
+            g_mutes[g_nmutes++].name[0] = 0;
+        }
+    }
+}
+
+static void mutes_save(void) {   // lock held
+    if (!C.setting_set) return;
+    for (int k = 0; k < MUTE_KEYS; k++) {
+        char key[16], list[PER_KEY * 21 + 1] = "";
+        size_t n = 0;
+        for (int i = k * PER_KEY; i < g_nmutes && i < (k + 1) * PER_KEY; i++)
+            n += (size_t)snprintf(list + n, sizeof list - n, "%s%llu", n ? "," : "", g_mutes[i].account);
+        snprintf(key, sizeof key, "mutes.%d", k + 1);
+        C.setting_set(key, n ? list : NULL);
+    }
+}
 
 // A server message inside our JSON: no quotes, backslashes or control characters.
 static const char *clean(const char *m) {
@@ -46,8 +79,10 @@ void seatd_start(const SeatdConfig *cfg) {
     plat_lock(&g_lock);
     C = *cfg;
     g_started = 1;
+    mutes_load();
     plat_unlock(&g_lock);
-    mkwmp_log("seat: no launcher; the plugin signs in to %s as %s itself", C.server, C.name);
+    mkwmp_log("seat: no launcher; the plugin signs in to %s as %s itself (%d muted player(s) kept)", C.server, C.name,
+              g_nmutes);
 }
 
 // The lobby, its CA and the voice port, once per game (lock held).
@@ -184,7 +219,10 @@ static int voice_mute(const char *json, char *buf, size_t cap, const char **body
         g_nmutes++;
     } else if (!muted && at >= 0) {
         g_mutes[at] = g_mutes[--g_nmutes];
+    } else {
+        return reply(buf, cap, body, 204, "");   // no change
     }
+    mutes_save();
     return reply(buf, cap, body, 204, "");
 }
 
@@ -207,8 +245,15 @@ int seatd_request(const char *method, const char *path, const char *json, char *
 
 void seatd_stop(void) {
     plat_lock(&g_lock);
-    if (g_sid[0]) seatapi_leave(C.server, g_sid, g_skey);
-    if (g_presence[0]) seatapi_presence_end(C.server, g_presence);
+    if (g_sid[0] || g_presence[0]) {
+        seatapi_set_timeout_ms(1500);   // the process ends right after: a slow server must not hold it
+        if (g_sid[0]) {
+            SeatApiResult r = seatapi_leave(C.server, g_sid, g_skey);
+            mkwmp_log("seat: given back (%d)", r.status);
+        }
+        if (g_presence[0]) seatapi_presence_end(C.server, g_presence);
+        seatapi_set_timeout_ms(0);
+    }
     g_sid[0] = g_presence[0] = 0;
     plat_unlock(&g_lock);
 }

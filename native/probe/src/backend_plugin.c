@@ -112,6 +112,11 @@ static int has_settings(const MkwPluginApi *api) {
            api->profile_name;
 }
 
+static void game_exiting(void *user) {
+    (void)user;
+    seatd_stop();
+}
+
 // With the player's consent and a signed-up name, the plugin signs in itself (seatd.c) unless a launcher is configured.
 static void use_settings(const MkwPluginApi *api) {
     if (!has_settings(api)) {
@@ -142,8 +147,15 @@ static void use_settings(const MkwPluginApi *api) {
     snprintf(c.name, sizeof c.name, "%s", name);
     snprintf(c.pin, sizeof c.pin, "%s", pin);
     c.voice = voice_on;
+    c.setting_get = api->setting_get;
+    c.setting_set = api->setting_set;
     seatd_start(&c);
     launcher_set_direct(seatd_request);
+    // the seat given back when the game ends (else the server frees it after 60 s)
+    if (api->size >= offsetof(MkwPluginApi, on_exit) + sizeof api->on_exit && api->on_exit)
+        api->on_exit(game_exiting, NULL);
+    else
+        mkwmp_log("plugin: runtime without on_exit: the seat is freed by the server's timeout");
 }
 
 // ---- entry

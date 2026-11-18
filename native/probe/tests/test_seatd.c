@@ -11,9 +11,26 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static char buf[16384];
+static char g_store[8][2][1100];   // the mod's settings: keys and values
+static int s_get(const char *key, char *out, size_t cap) {
+    for (int i = 0; i < 8; i++)
+        if (!strcmp(g_store[i][0], key)) { snprintf(out, cap, "%s", g_store[i][1]); return 1; }
+    return 0;
+}
+static int s_set(const char *key, const char *value) {
+    for (int i = 0; i < 8; i++)
+        if (!strcmp(g_store[i][0], key) || (!g_store[i][0][0] && value)) {
+            if (!value) { g_store[i][0][0] = 0; return 1; }
+            snprintf(g_store[i][0], sizeof g_store[i][0], "%s", key);
+            snprintf(g_store[i][1], sizeof g_store[i][1], "%s", value);
+            return 1;
+        }
+    return !value;
+}
 
 static int req(const char *method, const char *path, const char *json, const char **body) {
     return seatd_request(method, path, json, buf, sizeof buf, body);
@@ -30,6 +47,8 @@ int main(int argc, char **argv) {
     snprintf(c.name, sizeof c.name, "Rafa");
     snprintf(c.pin, sizeof c.pin, "999999");
     c.voice = 1;
+    c.setting_get = s_get;
+    c.setting_set = s_set;
     assert(req("POST", "/local/v1/seat", NULL, &body) == 0);   // not started: no answer, as no launcher
     mkwmp_config_use_direct("Rafa");
     seatd_start(&c);
@@ -57,8 +76,15 @@ int main(int argc, char **argv) {
     seat_parse(req("POST", "/local/v1/seat", NULL, &body), body, &r);   // the heartbeat: the same session
     assert(r.state == SEAT_SEATED && !strcmp(r.ticket, ticket));
 
-    // the server forgot the session (restart, timeout): joined again
+    // the game's exit gives the seat back: one seat fewer taken on the server
+    SeatApiStatus st;
+    assert(seatapi_status(argv[1], &st).status == 200);
+    int taken = st.seated;
+    free(st.lobby_ca);
     seatd_stop();
+    assert(seatapi_status(argv[1], &st).status == 200 && st.seated == taken - 1);
+    free(st.lobby_ca);
+    printf("the exit gives the seat back (%d -> %d taken)\n", taken, taken - 1);
     seat_parse(req("POST", "/local/v1/seat", NULL, &body), body, &r);
     assert(r.state == SEAT_SEATED && strcmp(r.ticket, ticket));
     printf("heartbeat keeps the session; a lost one is joined again\n");
@@ -67,8 +93,30 @@ int main(int argc, char **argv) {
     assert(req("GET", "/local/v1/voice", NULL, &body) == 200 && strstr(body, "\"enabled\":true"));
     assert(req("POST", "/local/v1/voice/mute", "{\"account\":\"42\",\"name\":\"Luz\",\"muted\":true}", &body) == 204);
     assert(req("GET", "/local/v1/voice", NULL, &body) == 200 && strstr(body, "\"account\":\"42\""));
+    char kept[64];
+    assert(s_get("mutes.1", kept, sizeof kept) && !strcmp(kept, "42"));   // in the mod's settings
+    seatd_stop();
+    seatd_start(&c);   // the next game: the mute is still there
+    assert(req("GET", "/local/v1/voice", NULL, &body) == 200 && strstr(body, "\"account\":\"42\""));
     assert(req("POST", "/local/v1/voice/mute", "{\"account\":\"42\",\"name\":\"Luz\",\"muted\":false}", &body) == 204);
     assert(req("GET", "/local/v1/voice", NULL, &body) == 200 && !strstr(body, "\"account\":\"42\""));
+    assert(!s_get("mutes.1", kept, sizeof kept));
+    // 64 mutes: all kept across games, over the three settings
+    for (int i = 1; i <= 64; i++) {
+        char j[96];
+        snprintf(j, sizeof j, "{\"account\":\"%d\",\"name\":\"p%d\",\"muted\":true}", 100000 + i, i);
+        assert(req("POST", "/local/v1/voice/mute", j, &body) == 204);
+    }
+    seatd_stop();
+    seatd_start(&c);
+    assert(req("GET", "/local/v1/voice", NULL, &body) == 200 && strstr(body, "\"account\":\"100001\"") &&
+           strstr(body, "\"account\":\"100064\""));
+    for (int i = 1; i <= 64; i++) {
+        char j[96];
+        snprintf(j, sizeof j, "{\"account\":\"%d\",\"name\":\"p%d\",\"muted\":false}", 100000 + i, i);
+        assert(req("POST", "/local/v1/voice/mute", j, &body) == 204);
+    }
+    printf("mutes kept in the mod's settings across games (64)\n");
     assert(req("GET", "/local/v1/room", NULL, &body) == 404);
     printf("friends, voice settings and mutes, no room\n");
 

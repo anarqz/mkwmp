@@ -166,10 +166,12 @@ plugin: it then uses `mkwmp.toml` and the launcher only.
   naming a launcher, the config becomes direct (`mkwmp_config_use_direct`), and `launcher.c` hands `/local/v1/...`
   to `seatd.c`, which calls the seat server (`seatapi.c`) and answers as the launcher does. So `seat.c`, `friends.c`
   and `voice.c` are unchanged.
-  - The seat: join, heartbeat, and join again when the session is lost.
+  - The seat: join, heartbeat, and join again when the session is lost. It is given back when the game ends
+    normally (the fork's API 2 `on_exit`: window closed, Quit, the game's exit; 1.5 s timeouts); a crash leaves it
+    to the server's 60 s timeout.
   - The lobby CA is saved in the mod folder and the voice port comes from `/seat/v1/status`.
   - Friends come from a presence.
-  - Voice mutes are kept for the session.
+  - Voice mutes are kept in the mod's settings across games (`mutes.1`..`mutes.3`, up to 64 account ids).
 
   Not completed: online play stays off, with a notice at game load pointing to the page.
 - HTTP: `plat_http.h`: WinHTTP on Windows, libcurl loaded at run time on Linux.
@@ -181,7 +183,5 @@ plugin: it then uses `mkwmp.toml` and the launcher only.
     and mutes.
 
 Not yet:
-- releasing the seat when the game exits (the server frees it after 60 s);
-- mutes kept between games;
 - a confirmation before Remove;
 - in-game notices for friends coming online.

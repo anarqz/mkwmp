@@ -117,6 +117,11 @@ typedef struct MkwPluginApi {
     // removes the key) and writes the file at once; 1 done. Keys: letters, digits, '.', '_', '-'; values one line.
     int (*setting_get)(const char *key, char *out, size_t cap);
     int (*setting_set)(const char *key, const char *value);
+    // cb(user) when the game ends normally (the window closed, Quit in the menu, the game's own exit), before the
+    // process does, on the thread that ends it; callbacks run once, in registration order. Keep it short (a few
+    // network goodbyes with a timeout of a second or two): the process ends right after. A crash or a killed process
+    // runs none. Only from mkw_plugin_init; 1 done, 0 refused.
+    int (*on_exit)(void (*cb)(void *user), void *user);
 } MkwPluginApi;
 
 // Exported by the plugin. api_version is the runtime's (api->version); size tells which fields exist. Return 0 to stay
