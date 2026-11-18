@@ -342,12 +342,12 @@ class Probe:
 
         npln = strip_comments(rd("npln.c"))
         self.regs = re.findall(r'\{\s*"([^"]+)"\s*,', c_block(npln, r"kRegs\s*\[\s*\]\s*="))
-        self.extra_regs = re.findall(r'hostfn_add_override\(\s*"([^"]+)"', npln)
+        self.extra_regs = re.findall(r'(?:hostfn_add_override|g_rt\.override)\(\s*"([^"]+)"', npln)
         # names the probe leaves to the runtime and whose stock handler it relies on (static const char kStock...[])
         self.stock_needed = re.findall(r'\bkStock\w+\[\]\s*=\s*"([^"]+)"', npln)
         m = re.search(r"RUNTIME_OVERRIDE_MAX\s*=\s*(\d+)", npln)
         self.override_max = int(m.group(1)) if m else 64
-        m = re.search(r"HOST_CAP\s*=\s*(\d+)", strip_comments(rd("guesthook.c")))
+        m = re.search(r"HOST_CAP\s*=\s*(\d+)", coff)
         self.host_cap = int(m.group(1)) if m else 8192
         m = re.search(r"//\s*Offsets:.*thread at (\d+)", rd("recomp.h"))
         self.thread_off = int(m.group(1)) if m else 312

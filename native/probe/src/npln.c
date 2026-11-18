@@ -9,7 +9,7 @@
 // TLS, decodes the HTTP/2 + protobuf requests and supplies experimental responses.
 //
 // Env: MKWMP_PORT (default 8900), MKWMP_HOST (default 127.0.0.1).
-#include "recomp.h"
+#include "rtapi.h"
 #include "log.h"
 #include "config.h"
 #include "lobby_ca.h"
@@ -38,13 +38,13 @@ static void mlog(const char *fmt, ...) {
     va_end(ap);
     if (n < 0) return;
     mkwmp_log("%s", buf);
-    if (g_rt.rt_log) g_rt.rt_log("mkwmp: %s", buf);
+    if (g_rt.log) g_rt.log("mkwmp: %s", buf);
 }
 static void rlog(const char *s) { mlog("%s", s); }
 // MKWMP_TRACE_EDGES=1: the probe's debugging detail (every call, hex dumps, every packet). Off for players.
 static int g_trace_edges;
 static void dump_args(const char *name, Cpu *c, int n) {
-    if (!g_rt.rt_log || !g_trace_edges) return;
+    if (!g_rt.log || !g_trace_edges) return;
     uint64_t a[6] = {0};
     for (int i = 0; i < n && i < 6; i++) a[i] = arg_x(c, i);
     mlog("CALL %s x0=%#llx x1=%#llx x2=%#llx x3=%#llx x4=%#llx", name,
@@ -52,10 +52,10 @@ static void dump_args(const char *name, Cpu *c, int n) {
                 (unsigned long long)a[3], (unsigned long long)a[4]);
 }
 static void dump_cstr(const char *label, const void *p) {
-    if (g_rt.rt_log) mlog("%s = %s", label, p ? (const char *)p : "(null)");
+    if (g_rt.log) mlog("%s = %s", label, p ? (const char *)p : "(null)");
 }
 static void rhex(const char *tag, const void *buf, size_t len) {
-    if (!g_rt.rt_log || !g_trace_edges) return;
+    if (!g_rt.log || !g_trace_edges) return;
     static const char H[] = "0123456789abcdef";
     const unsigned char *b = buf;
     char hb[1537];
@@ -82,16 +82,16 @@ static void net_init(void);
 // call. A miss (0) is retried.
 static uint64_t sym_once(volatile LONG64 *slot, const char *name) {
     uint64_t v = (uint64_t)*slot;
-    if (!v && g_rt.ldr_symbol) InterlockedExchange64(slot, (LONG64)(v = g_rt.ldr_symbol(name)));
+    if (!v && g_rt.guest_symbol) InterlockedExchange64(slot, (LONG64)(v = g_rt.guest_symbol(name)));
     return v;
 }
 #define SYM(name) ({ static volatile LONG64 slot_; sym_once(&slot_, name); })
 
 // The SDK's own clock_gettime, called directly (the import override below is not in its way). 1 = a usable timestamp.
 static int sdk_clock_gettime(Cpu *c, int id, int64_t *out) {
-    if (!g_rt.ldr_symbol || !g_rt.rt_call) return 0;
+    if (!g_rt.guest_symbol || !g_rt.call) return 0;
     uint64_t original = SYM("clock_gettime");
-    return original && !g_rt.rt_call(c, original, 2, (uint64_t)(unsigned)id, (uint64_t)(uintptr_t)out) &&
+    return original && !g_rt.call(c, original, 2, (uint64_t)(unsigned)id, (uint64_t)(uintptr_t)out) &&
            out[1] >= 0 && out[1] < 1000000000;
 }
 
@@ -138,10 +138,10 @@ static int sdk_monotonic_repair(void) {
 
 // The SDK's default monotonic clock, computed here: the epoch its timed waits use once repaired.
 static int tick_monotonic(Cpu *c, int64_t *out) {
-    if (!g_rt.ldr_symbol || !g_rt.rt_call) return 0;
+    if (!g_rt.guest_symbol || !g_rt.call) return 0;
     uint64_t tick = SYM("_ZN2nn2os13GetSystemTickEv"), span = SYM("_ZN2nn2os17ConvertToTimeSpanENS0_4TickE");
     if (!tick || !span) return 0;
-    int64_t ns = (int64_t)g_rt.rt_call(c, span, 1, g_rt.rt_call(c, tick, 0));
+    int64_t ns = (int64_t)g_rt.call(c, span, 1, g_rt.call(c, tick, 0));
     if (ns < 0) return 0;
     out[0] = ns / 1000000000;
     out[1] = ns % 1000000000;
@@ -217,7 +217,7 @@ static void ov_cond_timedwait(Cpu *c) {
     uint64_t gate = grpc_timedwait_gate();
     if (!gate || c->x[30] != gate || !clockwait || !deadline ||
         deadline[1] < 0 || deadline[1] >= 1000000000) {
-        ret_x(c, original ? g_rt.rt_call(c, original, 3, cond, mutex,
+        ret_x(c, original ? g_rt.call(c, original, 3, cond, mutex,
                                         (uint64_t)(uintptr_t)deadline) : G_EINVAL);
         return;
     }
@@ -236,7 +236,7 @@ static void ov_cond_timedwait(Cpu *c) {
     deadline_on_clock(deadline, now, mono, absolute);
     static volatile LONG announced;
     if (InterlockedCompareExchange(&announced, 1, 0) == 0) rlog("gRPC timed waits use SDK monotonic clock");
-    ret_x(c, g_rt.rt_call(c, clockwait, 4, cond, mutex, (uint64_t)1,
+    ret_x(c, g_rt.call(c, clockwait, 4, cond, mutex, (uint64_t)1,
                           (uint64_t)(uintptr_t)absolute));
 }
 
@@ -268,7 +268,7 @@ static void ov_friend_list(Cpu *c) {
 static void ov_show_error_variant(Cpu *c) {
     // SDK error applets need a console service that the shipped host lacks.
     const uint32_t *variant = arg_p(c, 0);
-    if (!variant || !g_rt.rt_log) return;
+    if (!variant || !g_rt.log) return;
     if (variant[0] == 1) {
         uint32_t result = variant[1];
         mlog("game error result=%#x (%04u-%04u) caller=%#llx",
@@ -392,9 +392,9 @@ static void ov_nsa_async_event(Cpu *c) {
     uint64_t create = SYM("_ZN2nn2os17CreateSystemEventEPNS0_15SystemEventTypeENS0_14EventClearModeEb");
     uint64_t signal = SYM("_ZN2nn2os17SignalSystemEventEPNS0_15SystemEventTypeE");
     if (!event || !create || !signal) { ret_x(c, (uint64_t)-1); return; }
-    uint64_t result = g_rt.rt_call(c, create, 3, event, (uint64_t)0, (uint64_t)1);
+    uint64_t result = g_rt.call(c, create, 3, event, (uint64_t)0, (uint64_t)1);
     if (!result) {
-        g_rt.rt_call(c, signal, 1, event);
+        g_rt.call(c, signal, 1, event);
         rlog("account token async event -> completed");
     }
     ret_x(c, result);
@@ -406,8 +406,8 @@ static void ov_clock_init(Cpu *c) {
     uint64_t create = SYM("_ZN2nn2os17CreateSystemEventEPNS0_15SystemEventTypeENS0_14EventClearModeEb");
     uint64_t signal = SYM("_ZN2nn2os17SignalSystemEventEPNS0_15SystemEventTypeE");
     if (!task || !create || !signal) { ret_x(c, (uint64_t)-1); return; }
-    uint64_t result = g_rt.rt_call(c, create, 3, task, (uint64_t)0, (uint64_t)1);
-    if (!result) g_rt.rt_call(c, signal, 1, task);
+    uint64_t result = g_rt.call(c, create, 3, task, (uint64_t)0, (uint64_t)1);
+    if (!result) g_rt.call(c, signal, 1, task);
     rlog("network clock task -> local completed event");
     ret_x(c, result);
 }
@@ -415,7 +415,7 @@ static void ov_clock_event(Cpu *c) { /* event is at offset zero; x0 already poin
 static void ov_clock_destroy(Cpu *c) {
     uint64_t task = arg_x(c, 0);
     uint64_t destroy = SYM("_ZN2nn2os18DestroySystemEventEPNS0_15SystemEventTypeE");
-    if (destroy && task && *(uint8_t *)(uintptr_t)(task + 0x28)) g_rt.rt_call(c, destroy, 1, task);
+    if (destroy && task && *(uint8_t *)(uintptr_t)(task + 0x28)) g_rt.call(c, destroy, 1, task);
 }
 static void ov_nsd_env_id(Cpu *c) {
     char *out = arg_p(c, 0);
@@ -447,7 +447,7 @@ static void ov_fs_entry_type(Cpu *c) {
         ret_x(c, 0);
         return;
     }
-    if (g_dele.fs_entry_type) g_dele.fs_entry_type(c); else ret_x(c, 0);
+    if (g_rt.fs_entry_type) g_rt.fs_entry_type(c); else ret_x(c, 0);
 }
 static void ov_fs_open_file(Cpu *c) {
     const char *path = arg_p(c, 1);
@@ -459,7 +459,7 @@ static void ov_fs_open_file(Cpu *c) {
         ret_x(c, 0);
         return;
     }
-    if (g_dele.fs_open_file) g_dele.fs_open_file(c); else ret_x(c, 0);
+    if (g_rt.fs_open_file) g_rt.fs_open_file(c); else ret_x(c, 0);
 }
 // GetFileSize(long* out, FileHandle h): h is the u64 in x1.
 static void ov_fs_file_size(Cpu *c) {
@@ -469,7 +469,7 @@ static void ov_fs_file_size(Cpu *c) {
         ret_x(c, 0);
         return;
     }
-    if (g_dele.fs_file_size) g_dele.fs_file_size(c); else ret_x(c, 0);
+    if (g_rt.fs_file_size) g_rt.fs_file_size(c); else ret_x(c, 0);
 }
 // ReadFile(size_t* outRead, FileHandle h, long offset, void* buf, size_t size)
 static void ov_fs_read_file(Cpu *c) {
@@ -485,12 +485,12 @@ static void ov_fs_read_file(Cpu *c) {
         ret_x(c, 0);
         return;
     }
-    if (g_dele.fs_read_file) g_dele.fs_read_file(c); else ret_x(c, 0);
+    if (g_rt.fs_read_file) g_rt.fs_read_file(c); else ret_x(c, 0);
 }
 // CloseFile(FileHandle h): h in x0.
 static void ov_fs_close_file(Cpu *c) {
     if (arg_x(c, 0) == NPLN_FH) { ret_x(c, 0); return; }
-    if (g_dele.fs_close_file) g_dele.fs_close_file(c); else ret_x(c, 0);
+    if (g_rt.fs_close_file) g_rt.fs_close_file(c); else ret_x(c, 0);
 }
 
 // ===========================================================================
@@ -755,7 +755,7 @@ static void ov_sock_poll(Cpu *c) {
     int away = 0;
     static int no_core_away = -1;
     if (no_core_away < 0) { const char *v = getenv("MKWMP_NO_CORE_AWAY"); no_core_away = v && !strcmp(v, "1"); }
-    if (ms && !ready && c->thread && g_dele.core_away && g_dele.core_back && !no_core_away) away = g_dele.core_away();
+    if (ms && !ready && c->thread && g_rt.core_away && g_rt.core_back && !no_core_away) away = g_rt.core_away();
     int result = 0;
     if (valid) {
         result = WSAPoll(h, (ULONG)valid, ready ? 0 : (ms < 0 ? -1 : ms));
@@ -763,7 +763,7 @@ static void ov_sock_poll(Cpu *c) {
         Sleep(ms < 0 ? INFINITE : (DWORD)ms);
     }
     int socket_error = result == SOCKET_ERROR ? WSAGetLastError() : 0;
-    if (g_dele.core_back && away) g_dele.core_back(&away);
+    if (g_rt.core_back && away) g_rt.core_back(&away);
     if (result == SOCKET_ERROR) {
         g_errno = socket_error == WSAEINTR ? G_EINTR : G_EINVAL;
         ret_x(c, (uint64_t)-1); return;
@@ -1158,7 +1158,7 @@ static void trace_watch(const Cpu *c) {
             const uint8_t *slot =
                 (const uint8_t *)(uintptr_t)(slots + (uint64_t)(cur < count ? cur : 0) * A.mgr_slot_size);
             if (slots && guest_readable(slot, 4)) memcpy(&handles, slot, 4);
-            g_rt.rt_log("mkwmp: watch #%ld %s caller=main+%#llx mgr=%p slots=%#llx count=%u cur=%u handles=%u",
+            g_rt.log("mkwmp: watch #%ld %s caller=main+%#llx mgr=%p slots=%#llx count=%u cur=%u handles=%u",
                         (long)n, kWatchName[w], (unsigned long long)(c->x[30] - GUEST_MAIN(0)),
                         (const void *)mgr, (unsigned long long)slots, count, cur, handles);
             mkwmp_log("watch #%ld %s caller=main+%#llx count=%u cur=%u handles=%u", (long)n, kWatchName[w],
@@ -1180,7 +1180,7 @@ static void trace_watch(const Cpu *c) {
                       (unsigned long long)(lr[2] - GUEST_MAIN(0)), (unsigned long long)(lr[3] - GUEST_MAIN(0)),
                       (unsigned long long)(lr[4] - GUEST_MAIN(0)), (unsigned long long)(lr[5] - GUEST_MAIN(0)),
                       (unsigned long long)w[0], (unsigned long long)w[1], (unsigned long long)w[2]);
-            g_rt.rt_log("mkwmp: comm_error caller=main+%#llx frames=%#llx %#llx %#llx %#llx",
+            g_rt.log("mkwmp: comm_error caller=main+%#llx frames=%#llx %#llx %#llx %#llx",
                         (unsigned long long)(c->x[30] - GUEST_MAIN(0)), (unsigned long long)(lr[0] - GUEST_MAIN(0)),
                         (unsigned long long)(lr[1] - GUEST_MAIN(0)), (unsigned long long)(lr[2] - GUEST_MAIN(0)),
                         (unsigned long long)(lr[3] - GUEST_MAIN(0)));
@@ -1354,7 +1354,7 @@ static void profile_dispatch(Cpu *c) {
     if (room_trace && (at(c->pc, A.room_sync) || at(c->pc, A.room_main) || at(c->pc, A.room_vote) ||
                        at(c->pc, A.room_event)))
         trace_room_start(c->pc, (const uint8_t *)(uintptr_t)c->x[0], (const uint8_t *)(uintptr_t)c->x[1]);
-    if (g_trace_edges && g_rt.rt_log) {
+    if (g_trace_edges && g_rt.log) {
         trace_watch(c);
         if (at(c->pc, g_sdk_memmove) && in_trace_range(c->x[30]))
             trace_sdk_message(c);
@@ -1368,7 +1368,7 @@ static void profile_dispatch(Cpu *c) {
     uint64_t caller = c->x[30];
     // (Every read through a matched register below is checked with guest_readable first: a row whose address is
     // only "high" confidence must not fault the game.)
-    if (at(target, A.ctl_event_sink) && c->x[1] && g_rt.rt_log &&
+    if (at(target, A.ctl_event_sink) && c->x[1] && g_rt.log &&
         guest_readable((const void *)(uintptr_t)c->x[1], 7 * sizeof(uint32_t))) {
         uint32_t event[7];
         memcpy(event, (const void *)(uintptr_t)c->x[1], sizeof event);
@@ -1465,13 +1465,13 @@ static void profile_dispatch(Cpu *c) {
         return;
     }
     original_dispatch(c);
-    if (trace_operation && g_rt.rt_log)
+    if (trace_operation && g_rt.log)
         mlog("Match controller %s op=%llu target=%#llx ret=%#llx next_phase=%u desired=%u/%u flags=%#x",
                     next_phase ? "complete" : "prepare", (unsigned long long)operation,
                     (unsigned long long)target, (unsigned long long)c->x[0],
                     next_phase && guest_readable(next_phase, 4) ? *next_phase : 0, desired_mode, desired_phase,
                     game_flags);
-    if (seq && g_rt.rt_log) {
+    if (seq && g_rt.log) {
         uint32_t after[2];
         memcpy(after, seq + A.seq_phase, sizeof after);
         if (memcmp(seq_before, after, sizeof after))
@@ -1479,10 +1479,10 @@ static void profile_dispatch(Cpu *c) {
                         target == A.seq_wait ? "wait" : "start",
                         seq_before[0], seq_before[1], after[0], after[1]);
     }
-    if (result && g_rt.rt_log && guest_readable(result, 4))
+    if (result && g_rt.log && guest_readable(result, 4))
         mlog("BulkGetDocuments completion=%u (target=%#llx)",
                     *result, (unsigned long long)target);
-    if (job && g_rt.rt_log) {
+    if (job && g_rt.log) {
         uint64_t after, label;
         uint32_t error;
         memcpy(&after, job + A.join_step, sizeof after);
@@ -1497,8 +1497,9 @@ static void profile_dispatch(Cpu *c) {
 
 static void install_profile_dispatch_trace(void) {
     static volatile LONG attempted;
-    uint8_t *base = (void *)GetModuleHandleW(L"mkwgame.dll");
-    if (!base || InterlockedCompareExchange(&attempted, 1, 0)) return;
+    if (!g_rt.dispatch_hook || !g_rt.game_code_loaded || !g_rt.game_code_loaded() ||
+        InterlockedCompareExchange(&attempted, 1, 0))
+        return;
     // profile_dispatch matches guest pcs of one game build and reads/writes through their registers (error skips,
     // idle-kick guard, traces): on a build without a table row it would act on unrelated code, so it is not
     // installed at all.
@@ -1524,37 +1525,12 @@ static void install_profile_dispatch_trace(void) {
     if (kick && kick[0] == '1' && !a.kart_idle_kick)
         mlog("game build %s: MKWMP_NO_IDLE_KICK refused (the kart state field is not confirmed for this build)",
              game_build_name(build));
-    g_sdk_memmove = g_rt.ldr_symbol ? g_rt.ldr_symbol("memmove") : 0;
+    g_sdk_memmove = g_rt.guest_symbol ? g_rt.guest_symbol("memmove") : 0;
     A = a;   // before the hook goes in: profile_dispatch only ever sees the whole row
     mlog("game build %s: version-specific hooks on (error service %s, idle-kick guard %s)", game_build_name(build),
          a.errsvc_post ? "verified" : "off", a.kart_idle_kick ? "available" : "unavailable");
-    IMAGE_DOS_HEADER *dos = (void *)base;
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return;
-    IMAGE_NT_HEADERS64 *nt = (void *)(base + dos->e_lfanew);
-    if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return;
-    IMAGE_DATA_DIRECTORY dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-    if (!dir.VirtualAddress) return;
-    IMAGE_IMPORT_DESCRIPTOR *imports = (void *)(base + dir.VirtualAddress);
-    for (size_t i = 0; i < dir.Size / sizeof(*imports) && imports[i].Name; i++) {
-        IMAGE_IMPORT_DESCRIPTOR *imp = &imports[i];
-        if (_stricmp((char *)base + imp->Name, "mkw.exe") || !imp->OriginalFirstThunk) continue;
-        IMAGE_THUNK_DATA64 *names = (void *)(base + imp->OriginalFirstThunk);
-        IMAGE_THUNK_DATA64 *iat = (void *)(base + imp->FirstThunk);
-        for (size_t j = 0; names[j].u1.AddressOfData; j++) {
-            uint64_t rva = names[j].u1.AddressOfData;
-            if (IMAGE_SNAP_BY_ORDINAL64(rva)) continue;
-            IMAGE_IMPORT_BY_NAME *name = (void *)(base + rva);
-            if (strcmp((char *)name->Name, "rt_dispatch")) continue;
-            DWORD protection;
-            if (!VirtualProtect(&iat[j], sizeof iat[j], PAGE_READWRITE, &protection)) return;
-            original_dispatch = (GuestFn)(uintptr_t)iat[j].u1.Function;
-            InterlockedExchangePointer((void *volatile *)&iat[j].u1.Function, (void *)profile_dispatch);
-            VirtualProtect(&iat[j], sizeof iat[j], protection, &protection);
-            rlog("BulkGetDocuments and Pia join tracing installed");
-            return;
-        }
-    }
-    rlog("BulkGetDocuments completion tracing: rt_dispatch import not found");
+    if (g_rt.dispatch_hook(profile_dispatch, &original_dispatch)) rlog("BulkGetDocuments and Pia join tracing installed");
+    else rlog("BulkGetDocuments completion tracing: rt_dispatch import not found");
 }
 
 static void ov_ssl_initialize(Cpu *c) {
@@ -1604,32 +1580,8 @@ static void ov_ssl_certificates(Cpu *c) {
 // MKWMP_EAGER=1: active from start (old behaviour, for debugging).
 static volatile LONG g_active;
 
-static GuestFn stock_handler(const char *name) {
-    static const char **names;
-    static GuestFn *fns;
-    static int count = -1;
-    if (count < 0) {
-        count = 0;
-        unsigned char *img = (unsigned char *)GetModuleHandleW(NULL);
-        IMAGE_NT_HEADERS64 *nt = (IMAGE_NT_HEADERS64 *)(img + ((IMAGE_DOS_HEADER *)img)->e_lfanew);
-        IMAGE_SECTION_HEADER *sec = IMAGE_FIRST_SECTION(nt);
-        for (int i = 0; i < nt->FileHeader.NumberOfSections; i++, sec++) {
-            if (memcmp(sec->Name, ".ovr", 5)) continue;
-            uint64_t *p = (uint64_t *)(img + sec->VirtualAddress);
-            int n = (int)(sec->Misc.VirtualSize / 16);
-            names = calloc((size_t)n, sizeof *names);
-            fns = calloc((size_t)n, sizeof *fns);
-            for (int k = 0; k < n && names && fns; k++) {
-                if (!p[2 * k] || !p[2 * k + 1]) continue;
-                names[count] = (const char *)(uintptr_t)p[2 * k];
-                fns[count++] = (GuestFn)(uintptr_t)p[2 * k + 1];
-            }
-        }
-        mlog("dormant mode: %d stock handlers in .ovr", count);
-    }
-    for (int k = 0; k < count; k++) if (!strcmp(names[k], name)) return fns[k];
-    return NULL;
-}
+// The runtime's own handler of an SDK name (NULL with none, or a backend without stock handlers).
+static GuestFn stock_handler(const char *name) { return g_rt.stock ? g_rt.stock(name) : NULL; }
 
 // Online Play was opened: get a seat (if a launcher is configured) and go active.
 static void try_activate(void) {
@@ -1875,11 +1827,11 @@ int npln_register(void) {
     const char *skip = getenv("MKWMP_SKIP_REFEREE_TIMEOUT");
     g_skip_referee_timeout = skip ? atoi(skip) : 0;
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
-    if (!g_rt.hostfn_add_override || !g_rt.ldr_count) { log_line("npln_register: runtime not resolved"); return -1; }
-    if (!g_dele.core_away || !g_dele.core_back) {
+    if (!g_rt.override || !g_rt.guest_modules) { log_line("npln_register: runtime not resolved"); return -1; }
+    if (!g_rt.core_away || !g_rt.core_back) {
         log_line("npln_register: kern_core_away/back missing; capture disabled"); return -1;
     }
-    if (g_rt.ldr_count() != 0) { log_line("npln_register: TOO LATE"); return -1; }
+    if (g_rt.guest_modules() != 0) { log_line("npln_register: TOO LATE"); return -1; }
     int n = N_REGS;
     const char *eager = getenv("MKWMP_EAGER");
     if (eager && !strcmp(eager, "1")) { g_active = 1; g_eager = 1; log_line("MKWMP_EAGER=1: active from start"); }
@@ -1890,7 +1842,7 @@ int npln_register(void) {
             // A runtime without that stock handler (none of the supported ones): the slot goes back to FreeAddrInfo,
             // as a no-op, and game 1.8.0's Pia keeps the SDK's GetCurrentIpConfigInfo(InAddr *).
             mlog("npln: no stock FreeAddrInfo(AddrInfo *) in this runtime: overriding it instead of %s", kIpConfigInAddr);
-            g_rt.hostfn_add_override(kStockFreeAddrInfo, ov_nothing);
+            g_rt.override(kStockFreeAddrInfo, ov_nothing);
             continue;
         }
         g_ours[i] = kRegs[i].fn;
@@ -1904,13 +1856,13 @@ int npln_register(void) {
         if (!strncmp(kRegs[i].name, "_ZN2nn2fs", 9) || !strncmp(kRegs[i].name, "_ZN2nn7account", 14) || strstr(kRegs[i].name, "CancelNetworkRequest"))
             g_stock[i] = NULL;
         gated += g_stock[i] != NULL;
-        g_rt.hostfn_add_override(kRegs[i].name, g_stock[i] ? kGates[i] : kRegs[i].fn);
+        g_rt.override(kRegs[i].name, g_stock[i] ? kGates[i] : kRegs[i].fn);
     }
     mlog("npln: %d overrides gated (dormant until Online)%s", gated, g_active ? ", but MKWMP_EAGER" : "");
     // Runtime 0.1.10 aborts the SDK's GetThreadCoreMask (result 0xe801) on the online start-up path
     // (main+0x14c5bc0).
-    g_rt.hostfn_add_override("nnosGetThreadCoreMask", ov_get_thread_core_mask);
-    g_rt.hostfn_add_override("nnosSetThreadCoreMask", ov_set_thread_core_mask);
+    g_rt.override("nnosGetThreadCoreMask", ov_get_thread_core_mask);
+    g_rt.override("nnosSetThreadCoreMask", ov_set_thread_core_mask);
     log_line("core-mask overrides registered");
     log_kv("npln_register: overrides", (uint64_t)n);
     return n;

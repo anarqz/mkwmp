@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 
-Runtime g_rt;
+RtApi g_rt;
 
 static int failures;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)

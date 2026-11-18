@@ -1,11 +1,11 @@
 // Hooking guest virtual calls without override slots (resources/docs/VOICE-RE.md §5). Every indirect guest call goes
-// through the recomp's rt_dispatch, which falls back to its host registry `g_host` for addresses outside the guest
-// modules. We add {fake address, our fn} there and point a guest vtable slot at the fake address; our fn receives the
-// guest Cpu and calls the original with rt_call(c, original, 0) (registers untouched).
+// through the recomp's rt_dispatch, which falls back to a host registry for addresses outside the guest modules
+// (g_host; coff.c). We register {fake address, our fn} there (g_rt.host_fn_at) and point a guest vtable slot at the
+// fake address; our fn receives the guest Cpu and calls the original with g_rt.call(c, original, 0).
 #ifndef MKWMP_GUESTHOOK_H
 #define MKWMP_GUESTHOOK_H
 
-#include "recomp.h"
+#include "rtapi.h"
 
 #include <stdint.h>
 
@@ -20,7 +20,7 @@ enum { GAME_OTHER = -1, GAME_UNKNOWN = 0, GAME_100 = 100, GAME_180 = 180 };   //
 int game_build(void);
 const char *game_build_name(int build);
 
-// Resolve g_host from mkw.exe's COFF table. Returns 1 if hooks can be installed.
+// Returns 1 if hooks can be installed (the runtime routes indirect calls to host functions: g_rt.host_fn_at).
 int guesthook_init(void);
 // Point slot `slot` of the guest vtable at guest address `vtable` to `fn`. *original receives the slot's old target.
 // Returns 1 on success. Idempotent per (vtable, slot).

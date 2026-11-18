@@ -163,7 +163,7 @@ static void apply(Cpu *c, uint64_t page) {
 
 static void hook_open(Cpu *c) {
     uint64_t page = c->x[0];
-    g_rt.rt_call(c, g_orig_open, 0);   // the game fills the plates
+    g_rt.call(c, g_orig_open, 0);   // the game fills the plates
     uint64_t ret = c->x[0];
     memset(g.shown_valid, 0, sizeof g.shown_valid);   // the game rewrote every plate
     g.cursor = -1;
@@ -177,7 +177,7 @@ static void hook_frame(Cpu *c) {
     uint64_t page = c->x[0];
     uint64_t saved[8];
     memcpy(saved, c->x, sizeof saved);
-    g_rt.rt_call(c, g_orig_frame, 0);
+    g_rt.call(c, g_orig_frame, 0);
     uint64_t ret = c->x[0];
     ULONGLONG now = GetTickCount64();
     if (now - g.last_frame > 1000) memset(g.shown_valid, 0, sizeof g.shown_valid);   // reopened, or refilled

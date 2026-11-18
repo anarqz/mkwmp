@@ -4,7 +4,7 @@
 #include "friends.h"
 #include "launcher.h"
 #include "log.h"
-#include "recomp.h"
+#include "rtapi.h"
 #include "seat.h"
 #include "voice_ui.h"
 #include "../../voice/src/mkwmp_voice.h"

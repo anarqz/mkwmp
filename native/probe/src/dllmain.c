@@ -10,7 +10,7 @@
 #include "coff.h"
 #include "keypad.h"
 #include "log.h"
-#include "recomp.h"
+#include "rtapi.h"
 
 #include <windows.h>
 #include <stdint.h>
@@ -152,7 +152,7 @@ static void probe_init(void) {
         CloseHandle(CreateThread(NULL, 0, pad_diag, NULL, 0, NULL));
     if (coff_resolve_runtime()) {
         log_line("runtime resolved from COFF symbols");
-        log_kv("hostfn_add_override", (uint64_t)(uintptr_t)g_rt.hostfn_add_override);
+        log_kv("hostfn_add_override", (uint64_t)(uintptr_t)g_rt.override);
         int n = npln_register();
         if (n >= 0) log_kv("overrides registered", (uint64_t)n);
         keypad_install();   // x64 detours of runtime functions: needs no override slot
