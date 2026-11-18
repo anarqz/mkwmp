@@ -6,6 +6,7 @@
 #include "uuid5.h"
 
 #include <windows.h>
+#include "plat.h"
 #include <string.h>
 
 _Static_assert(sizeof(GFriend) == 0x200, "nn::friends::Friend size");
@@ -192,17 +193,17 @@ int friends_page(const FriendRoster *roster, const uint64_t owner[2], int offset
 // ---- cached roster, refreshed in the background ------------------------------------
 enum { REFRESH_MS = 15000 };
 
-static SRWLOCK g_lock = SRWLOCK_INIT;
+static PlatLock g_lock = PLAT_LOCK_INIT;
 static FriendRoster g_latest;    // last good launcher answer
 static FriendRoster g_serving;   // the snapshot the game is paging through
-static HANDLE g_wake;            // auto-reset: the game went online
-static HANDLE g_answered;        // manual-reset: the refresher is up to date since friends_online
+static PlatEvent *g_wake;          // auto-reset: the game went online
+static PlatEvent *g_answered;      // manual-reset: the refresher is up to date since friends_online
 
 int friends_list(const uint64_t owner[2], int offset, int count, GFriend *out) {
-    AcquireSRWLockExclusive(&g_lock);
+    plat_lock(&g_lock);
     if (offset <= 0) g_serving = g_latest;
     int n = friends_page(&g_serving, owner, offset, count, out);
-    ReleaseSRWLockExclusive(&g_lock);
+    plat_unlock(&g_lock);
     return n;
 }
 
@@ -220,56 +221,54 @@ static int refresh(void) {
         return 0;
     }
     last_status = 200;
-    AcquireSRWLockExclusive(&g_lock);
+    plat_lock(&g_lock);
     g_latest = roster;
-    ReleaseSRWLockExclusive(&g_lock);
+    plat_unlock(&g_lock);
     if (roster.count != last_count) mkwmp_log("friends: %d in the launcher roster", roster.count);
     last_count = roster.count;
     return 1;
 }
 
-static DWORD WINAPI refresher(LPVOID unused) {
+static void refresher(void *unused) {
     (void)unused;
-    ULONGLONG last = 0;
+    uint64_t last = 0;
     int fetched = 0, good = 0;
     for (;;) {
-        DWORD wait = REFRESH_MS;
+        uint32_t wait = REFRESH_MS;
         if (!seat_keepalive_paused()) {   // paused = the player left online
-            ULONGLONG now = GetTickCount64();
+            uint64_t now = plat_ms();
             if (!fetched || !good || now - last >= REFRESH_MS) {
                 good |= refresh();
-                last = GetTickCount64();
+                last = plat_ms();
                 fetched = 1;
                 // No roster yet (launcher still loading: 503): the game reads its friend list once,
                 // ~2.5 s after the sign-in, so ask again in a second, not in 15 s.
                 if (!good) wait = 1000;
             } else {
-                wait = (DWORD)(REFRESH_MS - (now - last));   // going online again within 15 s
+                wait = (uint32_t)(REFRESH_MS - (now - last));   // going online again within 15 s
             }
         }
-        SetEvent(g_answered);
-        WaitForSingleObject(g_wake, wait);
+        plat_event_set(g_answered);
+        plat_event_wait(g_wake, wait);
     }
-    return 0;
 }
 
 void friends_online(int wait_ms) {
-    static SRWLOCK start_lock = SRWLOCK_INIT;
+    static PlatLock start_lock = PLAT_LOCK_INIT;
     if (!mkwmp_config()->launcher_port) return;
     static int started;
-    AcquireSRWLockExclusive(&start_lock);
+    plat_lock(&start_lock);
     if (!started) {
         // The thread fetches at once; the events exist before it runs.
-        g_wake = CreateEventW(NULL, FALSE, FALSE, NULL);
-        g_answered = CreateEventW(NULL, TRUE, FALSE, NULL);
-        HANDLE thread = g_wake && g_answered ? CreateThread(NULL, 0, refresher, NULL, 0, NULL) : NULL;
-        if (thread) { CloseHandle(thread); started = 1; }
+        g_wake = plat_event_new(0);
+        g_answered = plat_event_new(1);
+        if (g_wake && g_answered && plat_thread_start(refresher, NULL)) started = 1;
         else mkwmp_log("friends: could not start the refresh thread");
     } else {
-        ResetEvent(g_answered);
-        SetEvent(g_wake);
+        plat_event_reset(g_answered);
+        plat_event_set(g_wake);
     }
     int wait = started && wait_ms > 0;
-    ReleaseSRWLockExclusive(&start_lock);
-    if (wait) WaitForSingleObject(g_answered, (DWORD)wait_ms);
+    plat_unlock(&start_lock);
+    if (wait) plat_event_wait(g_answered, (uint32_t)wait_ms);
 }

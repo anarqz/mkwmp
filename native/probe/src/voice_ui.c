@@ -16,6 +16,7 @@
 #include "voice.h"
 
 #include <windows.h>
+#include "plat.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -179,7 +180,7 @@ static void hook_frame(Cpu *c) {
     memcpy(saved, c->x, sizeof saved);
     g_rt.call(c, g_orig_frame, 0);
     uint64_t ret = c->x[0];
-    ULONGLONG now = GetTickCount64();
+    ULONGLONG now = plat_ms();
     if (now - g.last_frame > 1000) memset(g.shown_valid, 0, sizeof g.shown_valid);   // reopened, or refilled
     g.last_frame = now;
     // the game refills the plates when its list changes (info+0xe12): our cache must not hide the new text

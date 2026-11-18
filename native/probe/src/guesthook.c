@@ -3,6 +3,7 @@
 #include "log.h"
 
 #include <windows.h>
+#include "plat.h"
 #include <string.h>
 
 static uint64_t g_next_fake = 0x00000FF000000000ull;   // far outside every guest module and the flat table
@@ -22,7 +23,7 @@ int game_build(void) {
         {GAME_180, 0x02bb3060u, 0x346ba64u,
          {0xd0, 0x0e, 0x4f, 0x39, 0x9e, 0x41, 0x1d, 0x06, 0x13, 0xaa, 0x8d, 0x26, 0xb1, 0xc0, 0x2f, 0xef}},
     };
-    static volatile LONG cached;
+    static volatile int32_t cached;
     if (cached) return cached;
     uint64_t main = GUEST_MAIN(0);
     if (!mapped(main + 4, 4)) return GAME_UNKNOWN;   // not loaded yet: ask again later
@@ -35,7 +36,7 @@ int game_build(void) {
         break;
     }
     if (build == GAME_UNKNOWN) build = GAME_OTHER;   // mapped but not a build we know: final
-    InterlockedExchange(&cached, build);
+    plat_xchg(&cached, build);
     mkwmp_log("game build: %s (main+4 = %#x)", game_build_name(build), mod0);
     return build;
 }
@@ -45,9 +46,9 @@ const char *game_build_name(int build) {
 }
 
 int guesthook_init(void) {
-    static volatile LONG said;
+    static volatile int32_t said;
     if (g_rt.host_fn_at) return 1;
-    if (!InterlockedExchange(&said, 1))
+    if (!plat_xchg(&said, 1))
         mkwmp_log("guesthook: the runtime cannot route indirect calls to us (no g_host); in-game voice UI off");
     return 0;
 }

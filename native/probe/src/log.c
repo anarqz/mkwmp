@@ -1,12 +1,13 @@
 #include "log.h"
 
 #include <windows.h>
+#include "plat.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
 static HANDLE g_fh = INVALID_HANDLE_VALUE;
-static CRITICAL_SECTION g_cs;
+static PlatLock g_cs = PLAT_LOCK_INIT;
 static int g_ready;
 static uint64_t g_start_ms;
 
@@ -18,8 +19,7 @@ static void write_raw(const char *s, size_t n) {
 
 void log_init(void) {
     if (g_ready) return;
-    InitializeCriticalSection(&g_cs);
-    g_start_ms = GetTickCount64();
+    g_start_ms = plat_ms();
     wchar_t path[MAX_PATH];
     DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
     if (n && n < MAX_PATH) {
@@ -50,12 +50,12 @@ static void emit(const char *line, size_t len) {
     if (!g_ready) return;
     char stamp[24];
     int sn = snprintf(stamp, sizeof stamp, "[%8llums] ",
-                      (unsigned long long)(GetTickCount64() - g_start_ms));
-    EnterCriticalSection(&g_cs);
+                      (unsigned long long)(plat_ms() - g_start_ms));
+    plat_lock(&g_cs);
     write_raw(stamp, sn < 0 ? 0 : (size_t)sn);
     write_raw(line, len);
     write_raw("\r\n", 2);
-    LeaveCriticalSection(&g_cs);
+    plat_unlock(&g_cs);
 }
 
 void mkwmp_log(const char *fmt, ...) {

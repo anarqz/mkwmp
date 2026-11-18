@@ -4,7 +4,7 @@
 //   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"; $s = "native\probe\src"
 //   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_friends.exe `
 //       native\probe\tests\test_friends.c $s\friends.c $s\uuid5.c $s\launcher.c $s\seat.c $s\config.c $s\notify.c `
-//       $s\lobby_ca.c $s\log.c -lws2_32
+//       $s\lobby_ca.c $s\log.c $s\plat_win.c -lws2_32
 //   scratch\test_friends.exe
 #undef NDEBUG
 #include <assert.h>

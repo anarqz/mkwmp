@@ -4,7 +4,7 @@
 //   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"; $s = "native\probe\src"
 //   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_voice.exe `
 //       native\probe\tests\test_voice.c $s\voice.c $s\voice_ui.c $s\guesthook.c $s\gameaddrs.c $s\coff.c $s\log.c `
-//       $s\config.c $s\launcher.c $s\seat.c $s\friends.c $s\uuid5.c $s\notify.c -lws2_32
+//       $s\config.c $s\launcher.c $s\seat.c $s\friends.c $s\uuid5.c $s\notify.c $s\plat_win.c -lws2_32
 //   scratch\test_voice.exe
 #include "../src/voice.h"
 

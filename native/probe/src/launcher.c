@@ -3,6 +3,7 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include "plat.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -53,11 +54,11 @@ int launcher_request_json(const char *method, const char *path, const char *json
                           const char **body) {
     // One request at a time: the seat keepalive and the friends refresh run on their own
     // threads, and a retry re-reads the shared config.
-    static SRWLOCK lock = SRWLOCK_INIT;
+    static PlatLock lock = PLAT_LOCK_INIT;
     if (cap == 0) return 0;
     buf[0] = 0;
     *body = buf;
-    AcquireSRWLockExclusive(&lock);
+    plat_lock(&lock);
     const MkwmpConfig *cfg = mkwmp_config();
     int status = -1;
     if (cfg->launcher_port) {
@@ -68,6 +69,6 @@ int launcher_request_json(const char *method, const char *path, const char *json
             status = cfg->launcher_port ? request_once(cfg, method, path, json, buf, cap, body) : 0;
         }
     }
-    ReleaseSRWLockExclusive(&lock);
+    plat_unlock(&lock);
     return status;
 }

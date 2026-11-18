@@ -10,6 +10,7 @@
 #include "../../voice/src/mkwmp_voice.h"
 
 #include <windows.h>
+#include "plat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -109,7 +110,7 @@ static struct {
     int (*status)(void);
 } g_dll;
 
-static SRWLOCK g_lock = SRWLOCK_INIT;
+static PlatLock g_lock = PLAT_LOCK_INIT;
 static int g_online;
 static char g_host[128];
 static VoiceSettings g_settings;   // the launcher's last answer (mutes = the launcher's list)
@@ -118,7 +119,7 @@ static int g_mute_count;
 // in-game mute changes not yet told to the launcher
 static struct { uint64_t account; int muted; char name[FRIEND_NAME_SIZE]; } g_pending[16];
 static int g_pending_count;
-static HANDLE g_thread;
+static int g_thread;   // the voice thread was started
 
 static void dll_log(const char *line) { mkwmp_log("%s", line); }
 
@@ -179,13 +180,13 @@ static void post_pending(void) {
         uint64_t account;
         int muted;
         char name[FRIEND_NAME_SIZE];
-        AcquireSRWLockExclusive(&g_lock);
-        if (!g_pending_count) { ReleaseSRWLockExclusive(&g_lock); return; }
+        plat_lock(&g_lock);
+        if (!g_pending_count) { plat_unlock(&g_lock); return; }
         account = g_pending[0].account;
         muted = g_pending[0].muted;
         memcpy(name, g_pending[0].name, sizeof name);
         memmove(g_pending, g_pending + 1, (size_t)(--g_pending_count) * sizeof g_pending[0]);
-        ReleaseSRWLockExclusive(&g_lock);
+        plat_unlock(&g_lock);
         char json[256], esc[2 * FRIEND_NAME_SIZE] = {0};
         for (size_t i = 0, k = 0; name[i] && k + 2 < sizeof esc; i++) {
             if (name[i] == '"' || name[i] == '\\') esc[k++] = '\\';
@@ -230,31 +231,30 @@ static void room_id_poll(void) {
     mkwmp_log("room id from the launcher: %s (runtime sees \"%s\")", id[0] ? id : "(none)", seen ? seen : "");
 }
 
-static DWORD WINAPI room_thread(LPVOID unused) {
+static void room_thread(void *unused) {
     (void)unused;
     for (;;) {
-        AcquireSRWLockShared(&g_lock);
+        plat_lock_shared(&g_lock);
         int online = g_online;
-        ReleaseSRWLockShared(&g_lock);
+        plat_unlock_shared(&g_lock);
         if (online) room_id_poll();
-        Sleep(1000);
+        plat_sleep_ms(1000);
     }
-    return 0;
 }
 
-static DWORD WINAPI voice_thread(LPVOID unused) {
+static void voice_thread(void *unused) {
     (void)unused;
     char last_ticket[sizeof ((SeatReply *)0)->ticket] = {0};
     char last_devices[8192] = {0};
-    ULONGLONG devices_at = 0;
+    uint64_t devices_at = 0;
     int last_enabled = -1;
     static char buf[16384];
     for (;;) {
-        AcquireSRWLockShared(&g_lock);
+        plat_lock_shared(&g_lock);
         int online = g_online;
         char host[128];
         memcpy(host, g_host, sizeof host);
-        ReleaseSRWLockShared(&g_lock);
+        plat_unlock_shared(&g_lock);
         const MkwmpConfig *cfg = mkwmp_config();
 
         // the launcher's settings (and its mute list)
@@ -263,7 +263,7 @@ static DWORD WINAPI voice_thread(LPVOID unused) {
         VoiceSettings s;
         if (!voice_parse_settings(st, body, &s) && st != 404 && st != 0 && st != -1) mkwmp_log("voice: settings HTTP %d", st);
         // an older launcher (404) or none: the defaults (voice on, default devices)
-        AcquireSRWLockExclusive(&g_lock);
+        plat_lock(&g_lock);
         if (st == 200) {
             // the launcher's list is the truth, plus in-game changes it has not been told yet
             g_mute_count = 0;
@@ -276,7 +276,7 @@ static DWORD WINAPI voice_thread(LPVOID unused) {
         }
         g_settings = s;
         push_mutes();
-        ReleaseSRWLockExclusive(&g_lock);
+        plat_unlock(&g_lock);
         if (s.enabled != last_enabled) {
             mkwmp_log("voice: chat %s by the launcher's settings", s.enabled ? "on" : "off");
             last_enabled = s.enabled;
@@ -299,7 +299,7 @@ static DWORD WINAPI voice_thread(LPVOID unused) {
         }
 
         // the devices this process sees, for the launcher's settings pane: at start and every 30 s when they change
-        ULONGLONG now = GetTickCount64();
+        uint64_t now = plat_ms();
         if (now - devices_at > 30000 || !devices_at) {
             devices_at = now;
             static char devices[8192];
@@ -309,39 +309,38 @@ static DWORD WINAPI voice_thread(LPVOID unused) {
                 mkwmp_log("voice: devices sent to the launcher (HTTP %d)", ps);
             }
         }
-        Sleep(2000);
+        plat_sleep_ms(2000);
     }
-    return 0;
 }
 
 void voice_online(const char *lobby_host) {
     const MkwmpConfig *cfg = mkwmp_config();
-    AcquireSRWLockExclusive(&g_lock);
+    plat_lock(&g_lock);
     g_online = 1;   // also drives the Room ID poll, which does not need voice
-    static HANDLE room;
-    if (!room) room = CreateThread(NULL, 0, room_thread, NULL, 0, NULL);
-    if (cfg->voice_port <= 0) { ReleaseSRWLockExclusive(&g_lock); return; }
+    static int room;
+    if (!room) room = plat_thread_start(room_thread, NULL);
+    if (cfg->voice_port <= 0) { plat_unlock(&g_lock); return; }
     int ok = load_dll();
     if (ok) {
         snprintf(g_host, sizeof g_host, "%s", lobby_host && *lobby_host ? lobby_host : cfg->host);
-        if (!g_thread) g_thread = CreateThread(NULL, 0, voice_thread, NULL, 0, NULL);
+        if (!g_thread) g_thread = plat_thread_start(voice_thread, NULL);
         voice_ui_install();
         mkwmp_log("voice: online (relay %s:%d)", g_host, cfg->voice_port);
     }
-    ReleaseSRWLockExclusive(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 void voice_offline(void) {
-    AcquireSRWLockExclusive(&g_lock);
+    plat_lock(&g_lock);
     if (g_online) mkwmp_log("voice: offline");
     g_online = 0;
-    ReleaseSRWLockExclusive(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 int voice_is_muted(uint64_t account) {
-    AcquireSRWLockShared(&g_lock);
+    plat_lock_shared(&g_lock);
     int m = find_mute(account) >= 0;
-    ReleaseSRWLockShared(&g_lock);
+    plat_unlock_shared(&g_lock);
     return m;
 }
 
@@ -360,7 +359,7 @@ int voice_active(void) {
 
 void voice_set_muted(uint64_t account, const char *name, int muted) {
     if (!account) return;
-    AcquireSRWLockExclusive(&g_lock);
+    plat_lock(&g_lock);
     int at = find_mute(account);
     if (muted && at < 0 && g_mute_count < VOICE_MAX_MUTES) g_mutes[g_mute_count++] = account;
     if (!muted && at >= 0) g_mutes[at] = g_mutes[--g_mute_count];
@@ -373,6 +372,6 @@ void voice_set_muted(uint64_t account, const char *name, int muted) {
     snprintf(g_pending[g_pending_count].name, sizeof g_pending[0].name, "%s", name ? name : "");
     g_pending_count++;
     push_mutes();
-    ReleaseSRWLockExclusive(&g_lock);
+    plat_unlock(&g_lock);
     mkwmp_log("voice: %s %llu (%s) from the game's menu", muted ? "muted" : "unmuted", (unsigned long long)account, name ? name : "?");
 }

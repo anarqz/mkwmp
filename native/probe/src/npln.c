@@ -21,6 +21,7 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include "plat.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
@@ -80,12 +81,12 @@ static void net_init(void);
 // Guest symbols never move once the modules are loaded, but ldr_symbol is a linear strcmp scan over every symbol:
 // overrides on hot paths (1.8.0's SDK calls pthread_cond_timedwait and clock_gettime constantly) must not pay it per
 // call. A miss (0) is retried.
-static uint64_t sym_once(volatile LONG64 *slot, const char *name) {
+static uint64_t sym_once(volatile int64_t *slot, const char *name) {
     uint64_t v = (uint64_t)*slot;
-    if (!v && g_rt.guest_symbol) InterlockedExchange64(slot, (LONG64)(v = g_rt.guest_symbol(name)));
+    if (!v && g_rt.guest_symbol) plat_xchg(slot, (int64_t)(v = g_rt.guest_symbol(name)));
     return v;
 }
-#define SYM(name) ({ static volatile LONG64 slot_; sym_once(&slot_, name); })
+#define SYM(name) ({ static volatile int64_t slot_; sym_once(&slot_, name); })
 
 // The SDK's own clock_gettime, called directly (the import override below is not in its way). 1 = a usable timestamp.
 static int sdk_clock_gettime(Cpu *c, int id, int64_t *out) {
@@ -112,17 +113,17 @@ static int sdk_monotonic_repair_row(const struct game_addrs *ga) {
     if (!ga || !ga->sdk_mono_source_slot ||
         !game_guard_words("SDK tick clock source", ga->sdk_tick_source, ga->sdk_tick_source_words, 8))
         return 0;
-    volatile LONG64 *slot = (volatile LONG64 *)(uintptr_t)ga->sdk_mono_source_slot;
-    uint64_t was = (uint64_t)InterlockedExchange64(slot, (LONG64)ga->sdk_tick_source);
+    volatile int64_t *slot = (volatile int64_t *)(uintptr_t)ga->sdk_mono_source_slot;
+    uint64_t was = (uint64_t)plat_xchg(slot, (int64_t)ga->sdk_tick_source);
     if (was == ga->sdk_tick_source) return 0;   // already the tick source: whatever fails, it is not the source
-    static volatile LONG said;
-    if (!InterlockedExchange(&said, 1))
+    static volatile int32_t said;
+    if (!plat_xchg(&said, 1))
         mlog("SDK monotonic clock failed (source %#llx): tick source restored, timed waits can block",
              (unsigned long long)was);
     return 1;
 }
 static int sdk_monotonic_repair(void) {
-    static volatile LONG state;   // 0 undecided (main not mapped yet), 1 the build has a verified repair, 2 it has not
+    static volatile int32_t state;   // 0 undecided (main not mapped yet), 1 the build has a verified repair, 2 it has not
     if (state == 2) return 0;
     int build = game_build();
     if (build == GAME_UNKNOWN) return 0;
@@ -130,7 +131,7 @@ static int sdk_monotonic_repair(void) {
     if (state == 1) return sdk_monotonic_repair_row(ga);
     int ok = ga && ga->sdk_mono_source_slot &&
              game_guard_words("SDK tick clock source", ga->sdk_tick_source, ga->sdk_tick_source_words, 8);
-    if (!InterlockedExchange(&state, ok ? 1 : 2) && !ok)
+    if (!plat_xchg(&state, ok ? 1 : 2) && !ok)
         mlog("SDK monotonic clock failed on game build %s: no verified repair, SDK timed waits cannot block",
              game_build_name(build));
     return ok && sdk_monotonic_repair_row(ga);
@@ -163,18 +164,9 @@ static void ov_clock_gettime(Cpu *c) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
     if (id == 0) {
-        FILETIME time;
-        GetSystemTimePreciseAsFileTime(&time);
-        ULARGE_INTEGER ticks;
-        ticks.LowPart = time.dwLowDateTime; ticks.HighPart = time.dwHighDateTime;
-        uint64_t unix_ticks = ticks.QuadPart - 116444736000000000ull;
-        out[0] = (int64_t)(unix_ticks / 10000000ull);
-        out[1] = (int64_t)((unix_ticks % 10000000ull) * 100ull);
+        plat_realtime(out);
     } else if (!(sdk_monotonic_repair() && sdk_clock_gettime(c, 1, out)) && !tick_monotonic(c, out)) {
-        LARGE_INTEGER count, frequency;
-        QueryPerformanceCounter(&count); QueryPerformanceFrequency(&frequency);
-        out[0] = count.QuadPart / frequency.QuadPart;
-        out[1] = (count.QuadPart % frequency.QuadPart) * 1000000000ll / frequency.QuadPart;
+        plat_monotonic(out);
     }
     ret_x(c, 0);
 }
@@ -183,16 +175,16 @@ static void ov_clock_gettime(Cpu *c) {
 // none: an unknown build, or the instruction before it is not the expected BL (then every timed wait keeps the SDK's
 // own clock). Decided once main is mapped: until then (GAME_UNKNOWN) nothing is cached and the next call asks again.
 static uint64_t grpc_timedwait_gate(void) {
-    static volatile LONG state;        // 0 undecided, 1 decided
-    static volatile LONG64 gate;
+    static volatile int32_t state;        // 0 undecided, 1 decided
+    static volatile int64_t gate;
     if (state) return (uint64_t)gate;
     int build = game_build();
     if (build == GAME_UNKNOWN) return 0;
     const struct game_addrs *ga = game_addrs_for(build);
     uint64_t lr = ga && game_guard_words("gRPC timed wait call", ga->grpc_timedwait_lr - 4, &ga->grpc_timedwait_bl, 1)
                       ? ga->grpc_timedwait_lr : 0;
-    InterlockedExchange64(&gate, (LONG64)lr);
-    if (!InterlockedExchange(&state, 1) && !lr)
+    plat_xchg(&gate, (int64_t)lr);
+    if (!plat_xchg(&state, 1) && !lr)
         mkwmp_log("game build %s: gRPC timed waits keep the SDK clock (no verified call site)", game_build_name(build));
     return lr;
 }
@@ -234,8 +226,8 @@ static void ov_cond_timedwait(Cpu *c) {
     }
     int64_t absolute[2];
     deadline_on_clock(deadline, now, mono, absolute);
-    static volatile LONG announced;
-    if (InterlockedCompareExchange(&announced, 1, 0) == 0) rlog("gRPC timed waits use SDK monotonic clock");
+    static volatile int32_t announced;
+    if (plat_cas(&announced, 1, 0) == 0) rlog("gRPC timed waits use SDK monotonic clock");
     ret_x(c, g_rt.call(c, clockwait, 4, cond, mutex, (uint64_t)1,
                           (uint64_t)(uintptr_t)absolute));
 }
@@ -260,8 +252,8 @@ static void ov_friend_list(Cpu *c) {
     int offset = (int)arg_x(c, 3), count = (int)arg_x(c, 4);
     int n = friends_list(arg_p(c, 2), offset, count, arg_p(c, 1));
     if (out_count) *out_count = n;
-    static volatile LONG last = -1;
-    if (offset == 0 && InterlockedExchange(&last, n) != n) mlog("friend list: %d friends from offset 0", n);
+    static volatile int32_t last = -1;
+    if (offset == 0 && plat_xchg(&last, n) != n) mlog("friend list: %d friends from offset 0", n);
     ret_x(c, 0);
 }
 
@@ -366,8 +358,8 @@ static uint64_t nsa_id(void) {
 static void ov_nsa_get_id(Cpu *c) {
     uint64_t *o = arg_p(c, 0);
     if (o) *o = nsa_id();
-    static volatile LONG announced;
-    if (InterlockedCompareExchange(&announced, 1, 0) == 0) mlog("account id %#llx", (unsigned long long)nsa_id());
+    static volatile int32_t announced;
+    if (plat_cas(&announced, 1, 0) == 0) mlog("account id %#llx", (unsigned long long)nsa_id());
     ret_x(c, 0);
 }
 static void ov_nsa_load_token(Cpu *c) {
@@ -504,7 +496,7 @@ static SocketOption g_options[NFD][16];
 static SOCKET g_wake_peer[NFD];
 static uint64_t g_wake_count[NFD];
 static int g_wake_semaphore[NFD];
-static SRWLOCK g_wake_lock = SRWLOCK_INIT;
+static PlatLock g_wake_lock = PLAT_LOCK_INIT;
 static int g_ready;
 static struct sockaddr_in g_server;
 
@@ -606,14 +598,14 @@ static void ov_eventfd_read(Cpu *c) {
     if (!out || fd_get(fd) == INVALID_SOCKET || g_wake_peer[fd] == INVALID_SOCKET) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
-    AcquireSRWLockExclusive(&g_wake_lock);
+    plat_lock(&g_wake_lock);
     uint64_t count = g_wake_count[fd];
     if (count) {
         *out = g_wake_semaphore[fd] ? 1 : count;
         g_wake_count[fd] -= *out;
         if (!g_wake_count[fd]) { char byte; recv(g_sock[fd], &byte, 1, 0); }
     }
-    ReleaseSRWLockExclusive(&g_wake_lock);
+    plat_unlock(&g_wake_lock);
     if (!count) g_errno = G_EAGAIN;
     ret_x(c, count ? 0 : (uint64_t)-1);
 }
@@ -623,12 +615,12 @@ static void ov_eventfd_write(Cpu *c) {
     if (fd_get(fd) == INVALID_SOCKET || g_wake_peer[fd] == INVALID_SOCKET || value == UINT64_MAX) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
-    AcquireSRWLockExclusive(&g_wake_lock);
+    plat_lock(&g_wake_lock);
     uint64_t count = g_wake_count[fd];
     int ok = value < UINT64_MAX - count;
     if (ok && value && !count) ok = send(g_wake_peer[fd], "w", 1, 0) == 1;
     if (ok) g_wake_count[fd] += value;
-    ReleaseSRWLockExclusive(&g_wake_lock);
+    plat_unlock(&g_wake_lock);
     if (!ok) g_errno = G_EAGAIN;
     ret_x(c, ok ? 0 : (uint64_t)-1);
 }
@@ -760,7 +752,7 @@ static void ov_sock_poll(Cpu *c) {
     if (valid) {
         result = WSAPoll(h, (ULONG)valid, ready ? 0 : (ms < 0 ? -1 : ms));
     } else if (!ready && ms) {
-        Sleep(ms < 0 ? INFINITE : (DWORD)ms);
+        plat_sleep_ms(ms < 0 ? INFINITE : (DWORD)ms);
     }
     int socket_error = result == SOCKET_ERROR ? WSAGetLastError() : 0;
     if (g_rt.core_back && away) g_rt.core_back(&away);
@@ -838,7 +830,7 @@ static void ov_sock_freeaddrinfo(Cpu *c) {
 // The game frees a result right after copying the address out; an entry is reused 64 lookups later.
 enum { TYPED_AI_RING = 64 };
 static struct { GAddrInfo ai; uint8_t sa[16]; } g_typed_ai[TYPED_AI_RING];
-static volatile LONG g_typed_ai_next;
+static volatile int32_t g_typed_ai_next;
 
 static void sock_getaddrinfo(Cpu *c, const char *label, int cpp_layout) {
     net_init();
@@ -849,7 +841,7 @@ static void sock_getaddrinfo(Cpu *c, const char *label, int cpp_layout) {
     GAddrInfo *ai;
     uint8_t *sa;   // console sockaddr_in: len,family,port,addr,zero[8]
     if (cpp_layout) {
-        unsigned slot = (unsigned)(InterlockedIncrement(&g_typed_ai_next) - 1) % TYPED_AI_RING;
+        unsigned slot = (unsigned)(plat_inc(&g_typed_ai_next) - 1) % TYPED_AI_RING;
         memset(&g_typed_ai[slot], 0, sizeof g_typed_ai[slot]);
         ai = &g_typed_ai[slot].ai;
         sa = g_typed_ai[slot].sa;
@@ -899,8 +891,8 @@ static void ov_pia_socket(Cpu *c) {
     net_init();
     dump_args("Pia Socket", c, 3);
     if (arg_x(c, 0) == 2 && ((unsigned)arg_x(c, 1) & 0xf) == 3 && arg_x(c, 2) == 1) {
-        static volatile LONG said;
-        if (InterlockedCompareExchange(&said, 1, 0) == 0)
+        static volatile int32_t said;
+        if (plat_cas(&said, 1, 0) == 0)
             mlog("Pia ping socket (raw ICMP) refused: EPROTONOSUPPORT, pings stay off");
         g_errno = G_EPROTONOSUPPORT; ret_x(c, UINT64_MAX); return;
     }
@@ -960,22 +952,22 @@ static void ov_pia_setsockopt(Cpu *c) {
 // to whom), and one summary per minute. Logging every packet (and dumping it) on the game threads cost
 // the Steam Deck much of its frame rate online (2026-11-15). MKWMP_TRACE_EDGES=1 logs every packet.
 static int pia_log_packet(int send, unsigned bytes, uint32_t ip, uint16_t port) {
-    static volatile LONG64 count[2], total[2];
-    static volatile LONG64 window_start;
+    static volatile int64_t count[2], total[2];
+    static volatile int64_t window_start;
     static uint64_t seen[64];
-    static volatile LONG nseen;
-    InterlockedIncrement64(&count[send]);
-    InterlockedAdd64(&total[send], bytes);
+    static volatile int32_t nseen;
+    plat_inc(&count[send]);
+    plat_add(&total[send], bytes);
     if (g_trace_edges) return 1;
     int fresh = 0;
     uint64_t key = (uint64_t)send << 48 | (uint64_t)ip << 16 | port;
-    LONG k = nseen, i = 0;
+    int32_t k = nseen, i = 0;
     while (i < k && i < 64 && seen[i] != key) i++;
-    if (i == k && k < 64 && InterlockedCompareExchange(&nseen, k + 1, k) == k) { seen[k] = key; fresh = 1; }
-    LONG64 now = (LONG64)GetTickCount64(), start = window_start;
-    if (now - start >= 60000 && InterlockedCompareExchange64(&window_start, now, start) == start) {
-        LONG64 sc = InterlockedExchange64(&count[1], 0), sb = InterlockedExchange64(&total[1], 0);
-        LONG64 rc = InterlockedExchange64(&count[0], 0), rb = InterlockedExchange64(&total[0], 0);
+    if (i == k && k < 64 && plat_cas(&nseen, k + 1, k) == k) { seen[k] = key; fresh = 1; }
+    int64_t now = (int64_t)plat_ms(), start = window_start;
+    if (now - start >= 60000 && plat_cas(&window_start, now, start) == start) {
+        int64_t sc = plat_xchg(&count[1], 0), sb = plat_xchg(&total[1], 0);
+        int64_t rc = plat_xchg(&count[0], 0), rb = plat_xchg(&total[0], 0);
         if (start) mlog("Pia UDP last %llds: sent %lld (%lld B), received %lld (%lld B)", (long long)((now - start) / 1000),
                         (long long)sc, (long long)sb, (long long)rc, (long long)rb);
     }
@@ -1009,8 +1001,8 @@ static void ov_pia_sendto(Cpu *c) {
     } else if (guest && arg_x(c, 5) >= 16 && guest[1] == 2 && !is_probe && (guest[2] || guest[3])) {
         memcpy(&sa.sin_port, guest + 2, sizeof sa.sin_port);
         if (!(guest[4] == 127 && guest[5] == 0 && guest[6] == 0 && guest[7] == 1)) {
-            static volatile LONG redirected;
-            if (InterlockedIncrement(&redirected) <= 20)
+            static volatile int32_t redirected;
+            if (plat_inc(&redirected) <= 20)
                 mlog("Pia UDP peer %u.%u.%u.%u:%u redirected to loopback", guest[4], guest[5], guest[6], guest[7],
                      ntohs(sa.sin_port));
         }
@@ -1022,8 +1014,8 @@ static void ov_pia_sendto(Cpu *c) {
         sa.sin_port = htons(10025);
     }
     if (!sa.sin_port) {
-        static volatile LONG rejected;
-        if (InterlockedIncrement(&rejected) <= 20)
+        static volatile int32_t rejected;
+        if (plat_inc(&rejected) <= 20)
             mlog("Pia UDP send rejected: %u bytes, addr family %u port %u ip %u.%u.%u.%u", (unsigned)len,
                  guest && arg_x(c, 5) >= 16 ? guest[1] : 0xff,
                  guest && arg_x(c, 5) >= 16 ? (unsigned)((guest[2] << 8) | guest[3]) : 0,
@@ -1135,7 +1127,7 @@ static const char *const kWatchName[W_COUNT] = {"start_p2p", "p2p_init_seq", "us
                                                 "plugin_16279e4", "plugin_1629020", "comm_error"};
 // Optional field dump at x0 + off (W_US_JOB: A.us_job_dump): count qwords.
 static const uint8_t kWatchDumpCount[W_COUNT] = {0, 0, 12, 0, 0, 0, 0};
-static volatile LONG g_watch_hits[W_COUNT];
+static volatile int32_t g_watch_hits[W_COUNT];
 
 static int guest_readable(const void *p, size_t n) {
     MEMORY_BASIC_INFORMATION mbi;
@@ -1147,7 +1139,7 @@ static int guest_readable(const void *p, size_t n) {
 static void trace_watch(const Cpu *c) {
     for (int w = 0; w < W_COUNT; w++) {
         if (!at(c->pc, watch_addr(w))) continue;
-        LONG n = InterlockedIncrement(&g_watch_hits[w]);
+        int32_t n = plat_inc(&g_watch_hits[w]);
         if (n > 20 && n % 200) return;
         const uint8_t *mgr = (const uint8_t *)(uintptr_t)c->x[0];
         if (w == W_START_P2P && guest_readable(mgr + A.mgr_count, 0x18)) {
@@ -1211,7 +1203,7 @@ static int in_trace_range(uint64_t a) {
 #define EDGE_SLOTS 16384
 static int g_trace_edges;
 static int g_skip_referee_timeout;
-static volatile LONG64 g_edges[EDGE_SLOTS];
+static volatile int64_t g_edges[EDGE_SLOTS];
 
 static void trace_edge(uint64_t caller, uint64_t target, const Cpu *c) {
     if (!in_trace_range(caller)) return;
@@ -1219,12 +1211,12 @@ static void trace_edge(uint64_t caller, uint64_t target, const Cpu *c) {
     if (!key) return;
     uint64_t h = key * 0x9E3779B97F4A7C15ull;
     for (unsigned probe = 0; probe < 64; probe++) {
-        volatile LONG64 *slot = &g_edges[(h + probe) & (EDGE_SLOTS - 1)];
-        LONG64 seen = InterlockedCompareExchange64(slot, (LONG64)key, 0);
-        if (seen == (LONG64)key) return;
+        volatile int64_t *slot = &g_edges[(h + probe) & (EDGE_SLOTS - 1)];
+        int64_t seen = plat_cas(slot, (int64_t)key, 0);
+        if (seen == (int64_t)key) return;
         if (seen == 0) {
             mlog("edge t=%llu caller=main+%#llx target=main+%#llx x0=%#llx x1=%#llx x2=%#llx",
-                        (unsigned long long)GetTickCount64(),
+                        (unsigned long long)plat_ms(),
                         (unsigned long long)(caller - GUEST_MAIN(0)),
                         (unsigned long long)(target - GUEST_MAIN(0)),
                         (unsigned long long)c->x[0], (unsigned long long)c->x[1],
@@ -1253,7 +1245,7 @@ static void trace_sdk_message(const Cpu *c) {
         buf[n] = (msg[n] >= 0x20 && msg[n] < 0x7f) ? msg[n] : '.';
     buf[n] = 0;
     mlog("sdk-msg t=%llu caller=main+%#llx \"%s\"",
-                (unsigned long long)GetTickCount64(),
+                (unsigned long long)plat_ms(),
                 (unsigned long long)(c->x[30] - GUEST_MAIN(0)), buf);
 }
 
@@ -1324,13 +1316,13 @@ static void trace_kart_watchdog(uint8_t *ctrl) {
     if (g_no_idle_kick && A.kart_idle_kick && state == 5 && frames > 2900 && moves < 20) {
         moves = 20;
         memcpy(ctrl + A.kart_moves, &moves, 4);
-        static volatile LONG said;
-        if (InterlockedIncrement(&said) <= 5) mlog("kart watchdog: move count raised (player %d)", player);
+        static volatile int32_t said;
+        if (plat_inc(&said) <= 5) mlog("kart watchdog: move count raised (player %d)", player);
     }
     if (!g_trace_kart) return;
     static uint32_t last_state[24];
     static ULONGLONG last_ms[24];
-    ULONGLONG now = GetTickCount64();
+    ULONGLONG now = plat_ms();
     if (state == last_state[player] && now - last_ms[player] < 1000) return;
     last_state[player] = state;
     last_ms[player] = now;
@@ -1416,7 +1408,7 @@ static void profile_dispatch(Cpu *c) {
         uint32_t id = *(const uint32_t *)(uintptr_t)c->x[1];
         static uint32_t last_id;
         static ULONGLONG last_ms;
-        ULONGLONG now = GetTickCount64();
+        ULONGLONG now = plat_ms();
         if (id != last_id || now - last_ms > 10000) {
             last_id = id;
             last_ms = now;
@@ -1450,16 +1442,16 @@ static void profile_dispatch(Cpu *c) {
     }
     if (error_post && skip_id && c->x[1] && guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
         *(const uint32_t *)(uintptr_t)c->x[1] == skip_id) {
-        static volatile LONG skipped_one;
-        if (InterlockedIncrement(&skipped_one) <= 20)
+        static volatile int32_t skipped_one;
+        if (plat_inc(&skipped_one) <= 20)
             mlog("communication error %#x dropped (MKWMP_SKIP_ERROR)", skip_id);
         return;
     }
     if (error_post && g_skip_referee_timeout && c->x[1] &&
         guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
         (g_skip_referee_timeout == 2 || *(const uint32_t *)(uintptr_t)c->x[1] == A.err_referee_timeout)) {
-        static volatile LONG skipped;
-        if (InterlockedIncrement(&skipped) <= 50)
+        static volatile int32_t skipped;
+        if (plat_inc(&skipped) <= 50)
             mkwmp_log("communication error %#x suppressed (caller main+%#llx)",
                       *(const uint32_t *)(uintptr_t)c->x[1], (unsigned long long)(caller - GUEST_MAIN(0)));
         return;
@@ -1496,9 +1488,9 @@ static void profile_dispatch(Cpu *c) {
 }
 
 static void install_profile_dispatch_trace(void) {
-    static volatile LONG attempted;
+    static volatile int32_t attempted;
     if (!g_rt.dispatch_hook || !g_rt.game_code_loaded || !g_rt.game_code_loaded() ||
-        InterlockedCompareExchange(&attempted, 1, 0))
+        plat_cas(&attempted, 1, 0))
         return;
     // profile_dispatch matches guest pcs of one game build and reads/writes through their registers (error skips,
     // idle-kick guard, traces): on a build without a table row it would act on unrelated code, so it is not
@@ -1508,7 +1500,7 @@ static void install_profile_dispatch_trace(void) {
     if (!row) {
         mlog("game build %s: version-specific hooks off (BulkGetDocuments/Pia tracing, communication-error skips)",
              game_build_name(build));
-        if (build == GAME_UNKNOWN) InterlockedExchange(&attempted, 0);   // main is not mapped yet: ask again
+        if (build == GAME_UNKNOWN) plat_xchg(&attempted, 0);   // main is not mapped yet: ask again
         return;
     }
     struct game_addrs a = *row;
@@ -1578,22 +1570,22 @@ static void ov_ssl_certificates(Cpu *c) {
 // only when seated turns ACTIVE (our overrides from then on). Overrides with no stock handler
 // (raw sockets, ssl, ...) are only reached once the game is online.
 // MKWMP_EAGER=1: active from start (old behaviour, for debugging).
-static volatile LONG g_active;
+static volatile int32_t g_active;
 
 // The runtime's own handler of an SDK name (NULL with none, or a backend without stock handlers).
 static GuestFn stock_handler(const char *name) { return g_rt.stock ? g_rt.stock(name) : NULL; }
 
 // Online Play was opened: get a seat (if a launcher is configured) and go active.
 static void try_activate(void) {
-    static SRWLOCK lock = SRWLOCK_INIT;
-    AcquireSRWLockExclusive(&lock);
+    static PlatLock lock = PLAT_LOCK_INIT;
+    plat_lock(&lock);
     if (!g_active) {
         const MkwmpConfig *cfg = mkwmp_config();
         SeatReply r;
         if (!cfg->launcher_port) {
             mlog("online requested: no launcher in mkwmp.toml, going active without a seat");
             voice_online(cfg->host);
-            InterlockedExchange(&g_active, 1);
+            plat_xchg(&g_active, 1);
         } else if (seat_acquire(&r, 10 * 60 * 1000) == SEAT_SEATED) {
             char *colon = strrchr(r.lobby, ':');
             if (r.lobby[0] && colon) {
@@ -1605,22 +1597,22 @@ static void try_activate(void) {
             friends_online(FRIENDS_WAIT_MS);
             mlog("online requested: seated, going active");
             voice_online(g_lobby_host);
-            InterlockedExchange(&g_active, 1);
+            plat_xchg(&g_active, 1);
         } else {
             mlog("online requested: no seat, staying offline (stock no-network)");
         }
     }
-    ReleaseSRWLockExclusive(&lock);
+    plat_unlock(&lock);
 }
 
 // MKWMP_EAGER=1 is active from boot, so try_activate never runs: the first account-token load (the sign-in) takes
 // the seat instead, so the lobby gets a real seat ticket and voice starts. Retried on the next sign-in if refused.
 static int g_eager;
 static void eager_seat(void) {
-    static volatile LONG seated;
-    static SRWLOCK lock = SRWLOCK_INIT;
+    static volatile int32_t seated;
+    static PlatLock lock = PLAT_LOCK_INIT;
     if (!g_eager || seated) return;
-    AcquireSRWLockExclusive(&lock);
+    plat_lock(&lock);
     if (!seated) {
         const MkwmpConfig *cfg = mkwmp_config();
         SeatReply r;
@@ -1643,7 +1635,7 @@ static void eager_seat(void) {
             mlog("eager sign-in: no seat (the lobby will refuse the sign-in)");
         }
     }
-    ReleaseSRWLockExclusive(&lock);
+    plat_unlock(&lock);
 }
 
 // nn::nifm::GetCurrentIpConfigInfo(nn::socket::InAddr * x5), game 1.8.0 (Pia 7.3's transport start). The runtime has
@@ -1677,24 +1669,24 @@ static int stock_only_caller(uint64_t lr) {
 static void gate_call(int i, Cpu *c) {
     // The first gated call (about 3 s into the boot, long before any hook): say in mkwmp.log which game build runs
     // and whether its table row fits it.
-    static volatile LONG checked;
-    if (!checked && game_build() != GAME_UNKNOWN && !InterlockedExchange(&checked, 1)) game_addrs_selfcheck();
+    static volatile int32_t checked;
+    if (!checked && game_build() != GAME_UNKNOWN && !plat_xchg(&checked, 1)) game_addrs_selfcheck();
     if (g_stock[i] && stock_only_caller(c->x[30])) { g_stock[i](c); return; }
     if (!g_active && g_stock[i]) {
-        static volatile LONG seen[NREG];
-        if (!InterlockedExchange(&seen[i], 1) || g_trigger[i])
+        static volatile int32_t seen[NREG];
+        if (!plat_xchg(&seen[i], 1) || g_trigger[i])
             mlog("dormant call: %s caller=main+%#llx", g_gate_name[i],
                  (unsigned long long)(c->x[30] - GUEST_MAIN(0)));
         // The game makes one automatic sign-in at boot (nifm request ~5 s in, before the title
         // screen) and one per Online Play click, from the same caller (main+0x2247a7c). Decline
         // the boot one (stock "no network": the menu stays offline, no seat taken); every later
         // request is the player opening Online Play.
-        static volatile LONG requests;
+        static volatile int32_t requests;
         if (g_trigger[i]) {
             // An unknown build keeps the 1.0.0 behaviour (decline the first request).
             const struct game_addrs *ga = game_addrs();
             int boot = !ga || ga->boot_signin;
-            if (boot && InterlockedIncrement(&requests) == 1) mlog("boot sign-in declined (stays offline until Online Play)");
+            if (boot && plat_inc(&requests) == 1) mlog("boot sign-in declined (stays offline until Online Play)");
             else try_activate();
         }
         if (!g_active) { g_stock[i](c); return; }

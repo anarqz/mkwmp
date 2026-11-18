@@ -4,6 +4,7 @@
 #include "notify.h"
 
 #include <windows.h>
+#include "plat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,22 +60,22 @@ void seat_parse(int http_status, const char *body, SeatReply *out) {
 }
 
 static int seat_post_once(SeatReply *out);
-static SRWLOCK g_ticket_lock = SRWLOCK_INIT;
+static PlatLock g_ticket_lock = PLAT_LOCK_INIT;
 static char g_ticket[520];
 
 int seat_ticket(char *dst, size_t n) {
-    AcquireSRWLockShared(&g_ticket_lock);
+    plat_lock_shared(&g_ticket_lock);
     snprintf(dst, n, "%s", g_ticket);
-    ReleaseSRWLockShared(&g_ticket_lock);
+    plat_unlock_shared(&g_ticket_lock);
     return dst[0] != 0;
 }
 
 int seat_post(SeatReply *out) {
     int rc = seat_post_once(out);
     if (rc == 0 && out->state == SEAT_SEATED) {
-        AcquireSRWLockExclusive(&g_ticket_lock);
+        plat_lock(&g_ticket_lock);
         snprintf(g_ticket, sizeof g_ticket, "%s", out->ticket);   // renewed tickets replace the old
-        ReleaseSRWLockExclusive(&g_ticket_lock);
+        plat_unlock(&g_ticket_lock);
     }
     return rc;
 }
@@ -116,34 +117,32 @@ SeatState seat_acquire(SeatReply *out, int max_wait_ms) {
             last_pos = out->position;
         }
         if (waited >= max_wait_ms) return out->state;
-        Sleep(2000);
+        plat_sleep_ms(2000);
         waited += 2000;
     }
 }
 
-static volatile LONG g_ka_started, g_ka_paused;
+static volatile int32_t g_ka_started, g_ka_paused;
 
 int seat_keepalive_pause(void) {
-    return g_ka_started && !InterlockedExchange(&g_ka_paused, 1);
+    return g_ka_started && !plat_xchg(&g_ka_paused, 1);
 }
-void seat_keepalive_resume(void) { InterlockedExchange(&g_ka_paused, 0); }
+void seat_keepalive_resume(void) { plat_xchg(&g_ka_paused, 0); }
 int seat_keepalive_paused(void) { return g_ka_started && g_ka_paused; }
 
-static DWORD WINAPI keepalive(LPVOID unused) {
+static void keepalive(void *unused) {
     (void)unused;
     for (;;) {
-        Sleep(15000);
+        plat_sleep_ms(15000);
         if (g_ka_paused) continue;
         SeatReply r;
         if (seat_post(&r) == 0 && r.state != SEAT_SEATED)
             mkwmp_log("seat keepalive: state %d (position %d)", (int)r.state, r.position);
     }
-    return 0;
 }
 
 void seat_keepalive_start(void) {
-    InterlockedExchange(&g_ka_paused, 0);
-    if (InterlockedExchange(&g_ka_started, 1)) return;
-    HANDLE h = CreateThread(NULL, 0, keepalive, NULL, 0, NULL);
-    if (h) CloseHandle(h);
+    plat_xchg(&g_ka_paused, 0);
+    if (plat_xchg(&g_ka_started, 1)) return;
+    plat_thread_start(keepalive, NULL);
 }
