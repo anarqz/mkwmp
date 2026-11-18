@@ -9,7 +9,6 @@
 #include "voice_ui.h"
 #include "../../voice/src/mkwmp_voice.h"
 
-#include <windows.h>
 #include "plat.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -98,7 +97,7 @@ int voice_parse_settings(int http_status, const char *body, VoiceSettings *out) 
 // ---- runtime ------------------------------------------------------------------------------------
 
 static struct {
-    HMODULE dll;
+    void *dll;
     void (*init)(mkwmp_voice_log_fn);
     void (*connect)(const char *, int, const char *);
     void (*disconnect)(void);
@@ -125,22 +124,17 @@ static void dll_log(const char *line) { mkwmp_log("%s", line); }
 
 static int load_dll(void) {
     if (g_dll.dll) return 1;
-    wchar_t path[MAX_PATH];
-    DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
-    if (!n || n >= MAX_PATH) return 0;
-    for (DWORD i = n; i > 0; i--) {
-        if (path[i - 1] == L'\\' || path[i - 1] == L'/') { path[i] = 0; break; }
-    }
-    wcsncat(path, L"mkwmp-voice.dll", MAX_PATH - wcslen(path) - 1);
-    HMODULE m = LoadLibraryW(path);
-    if (!m) { mkwmp_log("voice: mkwmp-voice.dll not found (error %lu): voice chat off", GetLastError()); return 0; }
-    mkwmp_voice_abi_fn abi = (mkwmp_voice_abi_fn)(void *)GetProcAddress(m, "mkwmp_voice_abi");
+    char path[1024];
+    if (!plat_home_path(path, sizeof path, "mkwmp-voice.dll")) return 0;
+    void *m = plat_dl_open(path);
+    if (!m) { mkwmp_log("voice: mkwmp-voice.dll not found (error %lu): voice chat off", plat_last_error()); return 0; }
+    mkwmp_voice_abi_fn abi = (mkwmp_voice_abi_fn)plat_dl_sym(m, "mkwmp_voice_abi");
     if (!abi || abi() != MKWMP_VOICE_ABI) {
         mkwmp_log("voice: mkwmp-voice.dll ABI %d, want %d: voice chat off", abi ? abi() : -1, MKWMP_VOICE_ABI);
-        FreeLibrary(m);
+        plat_dl_close(m);
         return 0;
     }
-#define SYM(f, name) *(FARPROC *)&g_dll.f = GetProcAddress(m, name)
+#define SYM(f, name) *(void **)&g_dll.f = plat_dl_sym(m, name)
     SYM(init, "mkwmp_voice_init");
     SYM(connect, "mkwmp_voice_connect");
     SYM(disconnect, "mkwmp_voice_disconnect");
@@ -154,7 +148,7 @@ static int load_dll(void) {
     if (!g_dll.init || !g_dll.connect || !g_dll.disconnect || !g_dll.settings || !g_dll.set_mutes || !g_dll.set_account ||
         !g_dll.devices_json || !g_dll.peers || !g_dll.status) {
         mkwmp_log("voice: mkwmp-voice.dll lacks an export: voice chat off");
-        FreeLibrary(m);
+        plat_dl_close(m);
         memset(&g_dll, 0, sizeof g_dll);
         return 0;
     }
@@ -223,10 +217,7 @@ static void room_id_poll(void) {
     }
     if (!strcmp(id, last)) return;
     memcpy(last, id, sizeof last);
-    SetEnvironmentVariableA("MKW_SWKBD_ANSWER", id[0] ? id : NULL);
-    char kv[48];
-    snprintf(kv, sizeof kv, "MKW_SWKBD_ANSWER=%s", id);
-    _putenv(kv);
+    plat_setenv("MKW_SWKBD_ANSWER", id[0] ? id : NULL);
     const char *seen = g_rt.cfg_get ? g_rt.cfg_get("MKW_SWKBD_ANSWER") : NULL;
     mkwmp_log("room id from the launcher: %s (runtime sees \"%s\")", id[0] ? id : "(none)", seen ? seen : "");
 }

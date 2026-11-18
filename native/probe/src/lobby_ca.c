@@ -1,6 +1,6 @@
 #include "lobby_ca.h"
 
-#include <windows.h>
+#include "plat.h"
 #include <string.h>
 
 #include "capture_cert.h"
@@ -56,23 +56,14 @@ const unsigned char *lobby_ca(size_t *len) {
     static int loaded;
     if (!loaded) {
         loaded = 1;
-        wchar_t path[MAX_PATH];
-        DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
+        char path[1024];
         const char *name = mkwmp_config()->lobby_ca;
-        if (n && n < MAX_PATH && name[0] && !strchr(name, '\\') && !strchr(name, '/') && !strstr(name, "..")) {
-            for (DWORD i = n; i > 0; i--) {
-                if (path[i - 1] == L'\\' || path[i - 1] == L'/') { path[i] = 0; break; }
-            }
-            size_t at = wcslen(path);
-            for (size_t i = 0; name[i] && at + 1 < MAX_PATH; i++) path[at++] = (wchar_t)(unsigned char)name[i];
-            path[at] = 0;
-            HANDLE fh = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-            if (fh != INVALID_HANDLE_VALUE) {
-                static unsigned char text[16384];
-                DWORD got = 0;
-                ReadFile(fh, text, sizeof text, &got, NULL);
-                CloseHandle(fh);
-                der_len = lobby_ca_decode(text, got, der, sizeof der);
+        if (name[0] && !strchr(name, '\\') && !strchr(name, '/') && !strstr(name, "..") &&
+            plat_home_path(path, sizeof path, name)) {
+            static unsigned char text[16384];
+            long got = plat_read_file(path, text, sizeof text);
+            if (got >= 0) {
+                der_len = lobby_ca_decode(text, (size_t)got, der, sizeof der);
                 log_line(der_len ? "lobby CA: using the server's certificate from the game folder"
                                  : "lobby CA: file present but not a certificate; using the built-in one");
             }

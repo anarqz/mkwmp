@@ -5,7 +5,7 @@
 #include "seat.h"
 #include "uuid5.h"
 
-#include <windows.h>
+
 #include "plat.h"
 #include <string.h>
 

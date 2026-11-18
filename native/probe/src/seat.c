@@ -3,7 +3,7 @@
 #include "log.h"
 #include "notify.h"
 
-#include <windows.h>
+
 #include "plat.h"
 #include <stdio.h>
 #include <stdlib.h>

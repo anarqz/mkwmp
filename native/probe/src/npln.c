@@ -1129,12 +1129,7 @@ static const char *const kWatchName[W_COUNT] = {"start_p2p", "p2p_init_seq", "us
 static const uint8_t kWatchDumpCount[W_COUNT] = {0, 0, 12, 0, 0, 0, 0};
 static volatile int32_t g_watch_hits[W_COUNT];
 
-static int guest_readable(const void *p, size_t n) {
-    MEMORY_BASIC_INFORMATION mbi;
-    if ((uintptr_t)p < 0x10000 || !VirtualQuery(p, &mbi, sizeof mbi)) return 0;
-    if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) return 0;
-    return (const char *)p + n <= (const char *)mbi.BaseAddress + mbi.RegionSize;
-}
+static int guest_readable(const void *p, size_t n) { return plat_mem_readable(p) >= n; }
 
 static void trace_watch(const Cpu *c) {
     for (int w = 0; w < W_COUNT; w++) {
@@ -1234,11 +1229,8 @@ static uint64_t g_sdk_memmove;
 static void trace_sdk_message(const Cpu *c) {
     const char *msg = (const char *)(uintptr_t)c->x[1];
     if ((uintptr_t)msg < 0x10000) return;
-    MEMORY_BASIC_INFORMATION mbi;
-    if (!VirtualQuery(msg, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT ||
-        (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
-        return;
-    size_t avail = (size_t)((const char *)mbi.BaseAddress + mbi.RegionSize - msg);
+    size_t avail = plat_mem_readable(msg);
+    if (!avail) return;
     char buf[400];
     size_t n = 0;
     for (; n < sizeof buf - 1 && n < avail && msg[n]; n++)

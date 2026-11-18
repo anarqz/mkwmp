@@ -1,7 +1,7 @@
 #include "notify.h"
 #include "log.h"
 
-#include <windows.h>
+
 #include "plat.h"
 #include <string.h>
 

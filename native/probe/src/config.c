@@ -1,6 +1,6 @@
 #include "config.h"
 
-#include <windows.h>
+#include "plat.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -95,21 +95,11 @@ const MkwmpConfig *mkwmp_config(void) {
     loaded = 1;
     defaults(&cfg);
 
-    wchar_t path[MAX_PATH];
-    DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
-    if (!n || n >= MAX_PATH) return &cfg;
-    for (DWORD i = n; i > 0; i--) {
-        if (path[i - 1] == L'\\' || path[i - 1] == L'/') { path[i] = 0; break; }
-    }
-    wcsncat(path, L"mkwmp.toml", MAX_PATH - wcslen(path) - 1);
-
-    HANDLE fh = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
-                            FILE_ATTRIBUTE_NORMAL, NULL);
-    if (fh == INVALID_HANDLE_VALUE) return &cfg;   // absent -> present=0, stock launch
+    char path[1024];
+    if (!plat_home_path(path, sizeof path, "mkwmp.toml")) return &cfg;
     char buf[4096];
-    DWORD got = 0;
-    ReadFile(fh, buf, sizeof buf - 1, &got, NULL);
-    CloseHandle(fh);
+    long got = plat_read_file(path, buf, sizeof buf - 1);
+    if (got < 0) return &cfg;   // absent -> present=0, stock launch
     buf[got] = 0;
     mkwmp_config_parse(buf, &cfg);
     return &cfg;

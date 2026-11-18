@@ -2,19 +2,12 @@
 
 #include "log.h"
 
-#include <windows.h>
 #include "plat.h"
 #include <string.h>
 
 static uint64_t g_next_fake = 0x00000FF000000000ull;   // far outside every guest module and the flat table
 
-static int mapped(uint64_t addr, size_t n) {
-    MEMORY_BASIC_INFORMATION mi;
-    if (!VirtualQuery((const void *)(uintptr_t)addr, &mi, sizeof mi) || mi.State != MEM_COMMIT ||
-        (mi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
-        return 0;
-    return addr + n <= (uint64_t)(uintptr_t)mi.BaseAddress + mi.RegionSize;
-}
+static int mapped(uint64_t addr, size_t n) { return plat_mem_readable((const void *)(uintptr_t)addr) >= n; }
 
 int game_build(void) {
     static const struct { int build; uint32_t mod0; uint32_t note; uint8_t id[16]; } kBuilds[] = {
@@ -56,8 +49,7 @@ int guesthook_init(void) {
 int guesthook_vtable(uint64_t vtable, int slot, GuestFn fn, uint64_t *original) {
     if (!guesthook_init()) return 0;
     uint64_t *at = (uint64_t *)(uintptr_t)(vtable + 8ull * (uint64_t)slot);
-    MEMORY_BASIC_INFORMATION mi;
-    if (!VirtualQuery(at, &mi, sizeof mi) || mi.State != MEM_COMMIT) {
+    if (plat_mem_readable(at) < 8) {
         mkwmp_log("guesthook: vtable %#llx slot %d not mapped", (unsigned long long)vtable, slot);
         return 0;
     }
@@ -68,15 +60,12 @@ int guesthook_vtable(uint64_t vtable, int slot, GuestFn fn, uint64_t *original) 
     uint64_t fake = g_next_fake;
     g_next_fake += 16;
     if (!g_rt.host_fn_at(fake, fn)) { mkwmp_log("guesthook: host registry full"); return 0; }
-    DWORD prot;
-    if (!VirtualProtect(at, 8, PAGE_READWRITE, &prot)) {
-        mkwmp_log("guesthook: VirtualProtect %#llx failed (%lu)", (unsigned long long)(uintptr_t)at, GetLastError());
+    *original = old;   // before the slot changes: ours may run at once
+    if (!plat_mem_write_u64(at, fake)) {
+        mkwmp_log("guesthook: cannot write vtable slot %#llx (error %lu)", (unsigned long long)(uintptr_t)at,
+                  plat_last_error());
         return 0;
     }
-    *original = old;
-    __atomic_store_n(at, fake, __ATOMIC_RELEASE);
-    VirtualProtect(at, 8, prot, &prot);
-    FlushInstructionCache(GetCurrentProcess(), at, 8);
     mkwmp_log("guesthook: vtable %#llx slot %d: %#llx -> ours", (unsigned long long)vtable, slot, (unsigned long long)old);
     return 1;
 }

@@ -5,7 +5,7 @@
 //   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"
 //   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_gameaddrs.exe `
 //       native\probe\tests\test_gameaddrs.c native\probe\tests\stub_coff.c native\probe\src\gameaddrs.c `
-//       native\probe\src\guesthook.c native\probe\src\log.c
+//       native\probe\src\guesthook.c native\probe\src\log.c native\probe\src\plat_win.c
 //   foreach ($b in "none", "100", "180", "other", "badid") { scratch\test_gameaddrs.exe $b }
 #include "../src/gameaddrs.h"
 #include "../src/guesthook.h"

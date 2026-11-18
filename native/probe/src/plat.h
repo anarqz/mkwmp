@@ -9,6 +9,7 @@
 #ifndef MKWMP_PLAT_H
 #define MKWMP_PLAT_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef _WIN32
@@ -99,5 +100,42 @@ void plat_event_set(PlatEvent *e);
 void plat_event_reset(PlatEvent *e);
 int plat_event_wait(PlatEvent *e, uint32_t ms); // 1 signalled, 0 timed out; PLAT_FOREVER waits without limit
 #define PLAT_FOREVER 0xFFFFFFFFu
+unsigned long plat_thread_id(void);   // for logs
+
+// ---- files. Paths are UTF-8 (wide on Windows inside plat_win.c, so any folder name works).
+// <the folder of the game executable>/name: where mkwmp.toml, mkwmp.log and the voice library live today.
+// (A plugin build gets its own folder from mkw-recomp instead: PLUGIN-API-READINESS.md, gap 2.) 1 on success.
+int plat_home_path(char *out, size_t cap, const char *name);
+long plat_read_file(const char *path, void *buf, size_t cap);   // bytes read (at most cap); -1 if it cannot be opened
+typedef struct PlatFile PlatFile;
+// Create or truncate a log file, shared for reading. NULL on failure; *in_use = 1 when that is because another
+// process has it open for writing (the recomp's start screen holding mkwmp.log).
+PlatFile *plat_log_create(const char *path, int *in_use);
+void plat_file_write(PlatFile *f, const void *p, size_t n);
+unsigned long plat_last_error(void);   // GetLastError / errno of the last failed call, for logs
+
+// ---- environment (Windows: the process environment, not the CRT's getenv copy, as the runtime reads it)
+int plat_getenv(const char *name, char *buf, size_t cap);   // 1 when set; buf (may be NULL) gets the value
+void plat_setenv(const char *name, const char *value);      // NULL unsets (Windows: the CRT's copy too)
+
+// ---- dynamic libraries
+void *plat_dl_open(const char *path);                        // NULL on failure (plat_last_error)
+void *plat_dl_sym(void *lib, const char *name);
+void plat_dl_close(void *lib);
+// A library the process already loaded, by base name: "SDL3" is SDL3.dll on Windows, libSDL3.so.0 elsewhere. NULL
+// when it is not loaded (on Linux also when the program links it statically).
+void *plat_dl_loaded(const char *base);
+
+// ---- memory
+// Readable bytes from p to the end of its mapping (committed, not guard / no-access); 0 when p is not readable.
+size_t plat_mem_readable(const void *p);
+// Store v at *at, which may be in read-only memory (a guest vtable): made writable, stored atomically, protection
+// restored, instruction cache flushed. 1 on success (plat_last_error otherwise).
+int plat_mem_write_u64(uint64_t *at, uint64_t v);
+
+// ---- input, for the in-game voice UI's keyboard shortcuts
+enum { PLAT_KEY_PAGE_UP, PLAT_KEY_PAGE_DOWN, PLAT_KEY_M };
+int plat_game_focused(void);   // the foreground window belongs to this process (0 where that cannot be known)
+int plat_key_down(int key);    // a PLAT_KEY_* is held (0 where the keyboard cannot be read)
 
 #endif

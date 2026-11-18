@@ -3,7 +3,7 @@
 #include "guesthook.h"
 #include "log.h"
 
-#include <windows.h>
+#include "plat.h"
 #include <string.h>
 
 #define M(off) (0x7000000000ull + (uint64_t)(off))   // main-module offset -> guest address
@@ -135,13 +135,7 @@ const struct game_addrs *game_addrs_for(int build) {
 
 const struct game_addrs *game_addrs(void) { return game_addrs_for(game_build()); }
 
-static int readable(uint64_t addr, size_t n) {
-    MEMORY_BASIC_INFORMATION mi;
-    if (addr < 0x10000 || !VirtualQuery((const void *)(uintptr_t)addr, &mi, sizeof mi) || mi.State != MEM_COMMIT ||
-        (mi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
-        return 0;
-    return addr + n <= (uint64_t)(uintptr_t)mi.BaseAddress + mi.RegionSize;
-}
+static int readable(uint64_t addr, size_t n) { return plat_mem_readable((const void *)(uintptr_t)addr) >= n; }
 
 int game_guard_words(const char *what, uint64_t addr, const uint32_t *words, int n) {
     if (!readable(addr, 4u * (size_t)n)) {
