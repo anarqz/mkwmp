@@ -162,6 +162,22 @@ where
     backend.connection_closed(conn);
 }
 
+/// `MKWMP_DUMP_GRPC=<substring>`: log every message, both ways, as hex for paths containing
+/// it ("gamesync", or "/" for all). A debugging aid for live tests; off when unset.
+fn dump_filter() -> Option<&'static str> {
+    static F: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    F.get_or_init(|| std::env::var("MKWMP_DUMP_GRPC").ok().filter(|v| !v.is_empty())).as_deref()
+}
+
+fn dump(conn: ConnId, sid: StreamId, path: &str, dir: &str, m: &[u8]) {
+    if dump_filter().is_some_and(|f| path.contains(f)) {
+        const CAP: usize = 16 * 1024;
+        let hex: String = m.iter().take(CAP).map(|b| format!("{b:02x}")).collect();
+        let more = if m.len() > CAP { "…" } else { "" };
+        line(format!("dump conn {conn} stream {sid} {path} {dir} {} B: {hex}{more}", m.len()));
+    }
+}
+
 fn bearer(h: &HeaderMap) -> Option<&str> {
     let v = h.get(http::header::AUTHORIZATION)?.to_str().ok()?;
     Some(v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer ")).unwrap_or(v))
@@ -208,6 +224,7 @@ async fn stream<B: Backend>(req: Request<RecvStream>, mut respond: SendResponse<
                             for m in msgs {
                                 msgs_in += 1;
                                 bytes_in += m.len();
+                                dump(conn, sid, &path, "in", &m);
                                 backend.message(conn, sid, &m);
                             }
                             if deframer.compressed > 0 {
@@ -237,6 +254,7 @@ async fn stream<B: Backend>(req: Request<RecvStream>, mut respond: SendResponse<
                 Some(Out::Message(m)) => {
                     msgs_out += 1;
                     bytes_out += m.len();
+                    dump(conn, sid, &path, "out", &m);
                     if send.send_data(Bytes::from(grpc::frame(&m)), false).is_err() {
                         summary("send failed", msgs_in, bytes_in, msgs_out, bytes_out);
                         backend.reset(conn, sid);
