@@ -138,4 +138,8 @@ enum { PLAT_KEY_PAGE_UP, PLAT_KEY_PAGE_DOWN, PLAT_KEY_M };
 int plat_game_focused(void);   // the foreground window belongs to this process (0 where that cannot be known)
 int plat_key_down(int key);    // a PLAT_KEY_* is held (0 where the keyboard cannot be read)
 
+// ---- process
+int plat_under_wine(void);          // running under Wine / Proton (always 0 natively on Linux)
+void plat_no_error_dialogs(void);   // no Windows error boxes from this process (SetErrorMode); nothing elsewhere
+
 #endif

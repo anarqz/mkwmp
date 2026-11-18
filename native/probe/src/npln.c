@@ -19,11 +19,10 @@
 #include "guesthook.h"
 #include "voice.h"
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include "plat.h"
+#include "plat_net.h"
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -489,11 +488,11 @@ static void ov_fs_close_file(Cpu *c) {
 // Real-socket bridge to the local gRPC server
 // ===========================================================================
 #define NFD 128
-static SOCKET g_sock[NFD];
+static PlatSock g_sock[NFD];
 static int g_used[NFD];
 typedef struct { int level, option, value, used; } SocketOption;
 static SocketOption g_options[NFD][16];
-static SOCKET g_wake_peer[NFD];
+static PlatSock g_wake_peer[NFD];
 static uint64_t g_wake_count[NFD];
 static int g_wake_semaphore[NFD];
 static PlatLock g_wake_lock = PLAT_LOCK_INIT;
@@ -502,11 +501,10 @@ static struct sockaddr_in g_server;
 
 static void net_init(void) {
     if (g_ready) return;
-    WSADATA wsa;
-    WSAStartup(MAKEWORD(2, 2), &wsa);
+    plat_net_init();
     for (int i = 0; i < NFD; i++) {
-        g_sock[i] = INVALID_SOCKET;
-        g_wake_peer[i] = INVALID_SOCKET;
+        g_sock[i] = PLAT_NO_SOCK;
+        g_wake_peer[i] = PLAT_NO_SOCK;
     }
     // Server from mkwmp.toml; env vars override for testing.
     const MkwmpConfig *cfg = mkwmp_config();
@@ -537,19 +535,19 @@ static void net_init(void) {
     g_lan = g_server.sin_addr.s_addr != htonl(INADDR_LOOPBACK);
     g_local_ip.s_addr = htonl(INADDR_LOOPBACK);
     if (g_lan) {
-        SOCKET probe = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        struct sockaddr_in route = g_server, me; int ml = sizeof me;
-        if (probe != INVALID_SOCKET && !connect(probe, (struct sockaddr *)&route, sizeof route) &&
+        PlatSock probe = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        struct sockaddr_in route = g_server, me; plat_socklen_t ml = sizeof me;
+        if (probe != PLAT_NO_SOCK && !connect(probe, (struct sockaddr *)&route, sizeof route) &&
             !getsockname(probe, (struct sockaddr *)&me, &ml))
             g_local_ip = me.sin_addr;
-        if (probe != INVALID_SOCKET) closesocket(probe);
+        if (probe != PLAT_NO_SOCK) plat_sock_close(probe);
     }
     g_ready = 1;
     mlog("net bridge ready -> %s:%u (%s, local %s)", host && *host ? host : "127.0.0.1",
                 (unsigned)ntohs(g_server.sin_port), g_lan ? "LAN" : "loopback", inet_ntoa(g_local_ip));
 }
 
-static int fd_new(SOCKET s) {
+static int fd_new(PlatSock s) {
     for (int i = 0; i < NFD; i++) if (!g_used[i]) {
         g_used[i] = 1; g_sock[i] = s;
         memset(g_options[i], 0, sizeof g_options[i]);
@@ -557,26 +555,25 @@ static int fd_new(SOCKET s) {
     }
     return -1;
 }
-static SOCKET fd_get(int fd) { return (fd >= 0 && fd < NFD && g_used[fd]) ? g_sock[fd] : INVALID_SOCKET; }
+static PlatSock fd_get(int fd) { return (fd >= 0 && fd < NFD && g_used[fd]) ? g_sock[fd] : PLAT_NO_SOCK; }
 
 // gRPC probes EventFd before selecting its poll backend. Keep a real counter and
-// a coalesced UDP wakeup so the same descriptor participates in WSAPoll.
+// a coalesced UDP wakeup so the same descriptor participates in poll.
 static void ov_eventfd(Cpu *c) {
     net_init();
-    SOCKET rd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    SOCKET wr = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    PlatSock rd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    PlatSock wr = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    int size = sizeof addr;
+    plat_socklen_t size = sizeof addr;
     int fd = -1;
-    if (rd == INVALID_SOCKET || wr == INVALID_SOCKET ||
+    if (rd == PLAT_NO_SOCK || wr == PLAT_NO_SOCK ||
         bind(rd, (struct sockaddr *)&addr, sizeof addr) ||
         getsockname(rd, (struct sockaddr *)&addr, &size) ||
         connect(wr, (struct sockaddr *)&addr, size)) goto fail;
-    u_long nb = 1;
-    ioctlsocket(rd, FIONBIO, &nb);
-    ioctlsocket(wr, FIONBIO, &nb);
+    plat_sock_nonblock(rd);
+    plat_sock_nonblock(wr);
     fd = fd_new(rd);
     if (fd < 0) goto fail;
     g_wake_peer[fd] = wr;
@@ -587,15 +584,15 @@ static void ov_eventfd(Cpu *c) {
     ret_x(c, (uint64_t)fd);
     return;
 fail:
-    if (rd != INVALID_SOCKET) closesocket(rd);
-    if (wr != INVALID_SOCKET) closesocket(wr);
+    if (rd != PLAT_NO_SOCK) plat_sock_close(rd);
+    if (wr != PLAT_NO_SOCK) plat_sock_close(wr);
     g_errno = G_EINVAL;
     ret_x(c, (uint64_t)-1);
 }
 static void ov_eventfd_read(Cpu *c) {
     int fd = (int)arg_x(c, 0);
     uint64_t *out = arg_p(c, 1);
-    if (!out || fd_get(fd) == INVALID_SOCKET || g_wake_peer[fd] == INVALID_SOCKET) {
+    if (!out || fd_get(fd) == PLAT_NO_SOCK || g_wake_peer[fd] == PLAT_NO_SOCK) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
     plat_lock(&g_wake_lock);
@@ -612,7 +609,7 @@ static void ov_eventfd_read(Cpu *c) {
 static void ov_eventfd_write(Cpu *c) {
     int fd = (int)arg_x(c, 0);
     uint64_t value = arg_x(c, 1);
-    if (fd_get(fd) == INVALID_SOCKET || g_wake_peer[fd] == INVALID_SOCKET || value == UINT64_MAX) {
+    if (fd_get(fd) == PLAT_NO_SOCK || g_wake_peer[fd] == PLAT_NO_SOCK || value == UINT64_MAX) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
     plat_lock(&g_wake_lock);
@@ -629,11 +626,11 @@ static void ov_eventfd_write(Cpu *c) {
 static void ov_sock_socket(Cpu *c) {
     net_init();
     dump_args("nnsocketSocket", c, 3);
-    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (s == INVALID_SOCKET) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
-    u_long nb = 1; ioctlsocket(s, FIONBIO, &nb);
+    PlatSock s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (s == PLAT_NO_SOCK) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
+    plat_sock_nonblock(s);
     int fd = fd_new(s);
-    if (fd < 0) { closesocket(s); g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
+    if (fd < 0) { plat_sock_close(s); g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
     ret_x(c, (uint64_t)fd);
 }
 // int nnsocketConnect(int fd, const sockaddr*, u32 len): connect to our loopback server.
@@ -641,8 +638,8 @@ static void ov_sock_socket(Cpu *c) {
 // plaintext Gamesync endpoint we hand out in session assignments, keeps its port.
 static void ov_sock_connect(Cpu *c) {
     int fd = (int)arg_x(c, 0);
-    SOCKET s = fd_get(fd);
-    if (s == INVALID_SOCKET) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
+    PlatSock s = fd_get(fd);
+    if (s == PLAT_NO_SOCK) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
     struct sockaddr_in target = g_server;
     const uint8_t *guest = arg_p(c, 1);
     if (guest && arg_x(c, 2) >= 4 && guest[1] == 2) {
@@ -654,21 +651,21 @@ static void ov_sock_connect(Cpu *c) {
         mlog("nnsocketConnect keeps explicit port %u", (unsigned)ntohs(target.sin_port));
     int r = connect(s, (struct sockaddr *)&target, sizeof target);
     if (r == 0) { rlog("nnsocketConnect -> connected (loopback)"); ret_x(c, 0); return; }
-    int e = WSAGetLastError();
-    if (e == WSAEWOULDBLOCK || e == WSAEINPROGRESS || e == WSAEALREADY) {
+    int e = plat_net_error();
+    if (e == PLAT_NET_WOULDBLOCK || e == PLAT_NET_INPROGRESS || e == PLAT_NET_ALREADY) {
         g_errno = G_EINPROGRESS; rlog("nnsocketConnect -> EINPROGRESS (loopback)");
-    } else if (e == WSAEISCONN) { ret_x(c, 0); return; }
+    } else if (e == PLAT_NET_ISCONN) { ret_x(c, 0); return; }
     else g_errno = G_EINVAL;
     ret_x(c, (uint64_t)-1);
 }
 static void ov_sock_close(Cpu *c) {
     int fd = (int)arg_x(c, 0);
-    SOCKET s = fd_get(fd);
-    if (s != INVALID_SOCKET) {
-        if (g_wake_peer[fd] != INVALID_SOCKET) closesocket(g_wake_peer[fd]);
-        g_wake_peer[fd] = INVALID_SOCKET;
+    PlatSock s = fd_get(fd);
+    if (s != PLAT_NO_SOCK) {
+        if (g_wake_peer[fd] != PLAT_NO_SOCK) plat_sock_close(g_wake_peer[fd]);
+        g_wake_peer[fd] = PLAT_NO_SOCK;
         g_wake_count[fd] = 0;
-        closesocket(s); g_sock[fd] = INVALID_SOCKET; g_used[fd] = 0;
+        plat_sock_close(s); g_sock[fd] = PLAT_NO_SOCK; g_used[fd] = 0;
     }
     ret_x(c, 0);
 }
@@ -676,7 +673,7 @@ static void ov_sock_fcntl(Cpu *c) { ret_x(c, 0); }    // sockets already non-blo
 static void ov_sock_setsockopt(Cpu *c) {
     int fd = (int)arg_x(c, 0), level = (int)arg_x(c, 1), option = (int)arg_x(c, 2);
     const int32_t *value = arg_p(c, 3);
-    if (fd_get(fd) == INVALID_SOCKET || !value || arg_x(c, 4) < 4) {
+    if (fd_get(fd) == PLAT_NO_SOCK || !value || arg_x(c, 4) < 4) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
     for (int i = 0; i < 16; i++) {
@@ -692,7 +689,7 @@ static void ov_sock_setsockopt(Cpu *c) {
 static void ov_sock_getsockopt(Cpu *c) {
     int fd = (int)arg_x(c, 0), level = (int)arg_x(c, 1), option = (int)arg_x(c, 2);
     void *val = arg_p(c, 3); uint32_t *len = arg_p(c, 4);
-    if (fd_get(fd) == INVALID_SOCKET || !val || !len || *len < 4) {
+    if (fd_get(fd) == PLAT_NO_SOCK || !val || !len || *len < 4) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
     int32_t result = 0;
@@ -701,7 +698,7 @@ static void ov_sock_getsockopt(Cpu *c) {
         if (saved->used && saved->level == level && saved->option == option) { result = saved->value; break; }
     }
     if (level == 0xffff && option == 0x1007) {
-        int bytes = sizeof result;
+        plat_socklen_t bytes = sizeof result;
         getsockopt(g_sock[fd], SOL_SOCKET, SO_ERROR, (char *)&result, &bytes);
         if (result) result = G_EINVAL;
     }
@@ -709,28 +706,28 @@ static void ov_sock_getsockopt(Cpu *c) {
     ret_x(c, 0);
 }
 static void ov_sock_shutdown(Cpu *c) {
-    SOCKET s = fd_get((int)arg_x(c, 0));
-    if (s != INVALID_SOCKET) shutdown(s, SD_BOTH);
+    PlatSock s = fd_get((int)arg_x(c, 0));
+    if (s != PLAT_NO_SOCK) plat_sock_shutdown(s);
     ret_x(c, 0);
 }
 static void ov_errno_location(Cpu *c) { ret_x(c, (uintptr_t)&g_errno); }
 
-// nnsocketPoll(pollfd* fds, nfds, timeout): WSAPoll the real sockets. Console pollfd = {s32 fd; s16 events; s16 revents}.
+// nnsocketPoll(pollfd* fds, nfds, timeout): poll the real sockets (WSAPoll on Windows). Console pollfd = {s32 fd; s16 events; s16 revents}.
 enum { G_POLLIN = 1, G_POLLOUT = 4, G_POLLERR = 8, G_POLLHUP = 0x10, G_POLLNVAL = 0x20 };
 static void ov_sock_poll(Cpu *c) {
     uint8_t *g = arg_p(c, 0);
     uint64_t n = arg_x(c, 1);
     int ms = (int)arg_x(c, 2);
     if ((!g && n) || n > NFD) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
-    WSAPOLLFD h[NFD];
+    PlatPollFd h[NFD];
     int map[NFD], valid = 0, ready = 0;
     for (uint64_t i = 0; i < n; i++) {
         int32_t fd; int16_t events;
         memcpy(&fd, g + i * 8, 4);
         memcpy(&events, g + i * 8 + 4, 2);
         int16_t zero = 0; memcpy(g + i * 8 + 6, &zero, 2);
-        SOCKET s = fd_get(fd);
-        if (s == INVALID_SOCKET) {
+        PlatSock s = fd_get(fd);
+        if (s == PLAT_NO_SOCK) {
             if (fd >= 0) {
                 int16_t invalid = G_POLLNVAL;
                 memcpy(g + i * 8 + 6, &invalid, 2);
@@ -739,7 +736,7 @@ static void ov_sock_poll(Cpu *c) {
             continue;
         }
         h[valid].fd = s;
-        h[valid].events = (short)(((events & G_POLLIN) ? POLLRDNORM : 0) | ((events & G_POLLOUT) ? POLLWRNORM : 0));
+        h[valid].events = (short)(((events & G_POLLIN) ? PLAT_POLLIN : 0) | ((events & G_POLLOUT) ? PLAT_POLLOUT : 0));
         h[valid].revents = 0;
         map[valid] = (int)i;
         valid++;
@@ -750,22 +747,22 @@ static void ov_sock_poll(Cpu *c) {
     if (ms && !ready && c->thread && g_rt.core_away && g_rt.core_back && !no_core_away) away = g_rt.core_away();
     int result = 0;
     if (valid) {
-        result = WSAPoll(h, (ULONG)valid, ready ? 0 : (ms < 0 ? -1 : ms));
+        result = plat_poll(h, valid, ready ? 0 : (ms < 0 ? -1 : ms));
     } else if (!ready && ms) {
-        plat_sleep_ms(ms < 0 ? INFINITE : (DWORD)ms);
+        plat_sleep_ms(ms < 0 ? PLAT_FOREVER : (uint32_t)ms);
     }
-    int socket_error = result == SOCKET_ERROR ? WSAGetLastError() : 0;
+    int socket_error = result < 0 ? plat_net_error() : 0;
     if (g_rt.core_back && away) g_rt.core_back(&away);
-    if (result == SOCKET_ERROR) {
-        g_errno = socket_error == WSAEINTR ? G_EINTR : G_EINVAL;
+    if (result < 0) {
+        g_errno = socket_error == PLAT_NET_INTR ? G_EINTR : G_EINVAL;
         ret_x(c, (uint64_t)-1); return;
     }
     if (valid) {
         if (result > 0) {
             for (int k = 0; k < valid; k++) {
                 short re = h[k].revents;
-                int16_t gre = (int16_t)(((re & (POLLRDNORM | POLLHUP)) ? G_POLLIN : 0) |
-                                        ((re & POLLWRNORM) ? G_POLLOUT : 0) |
+                int16_t gre = (int16_t)(((re & (PLAT_POLLIN | POLLHUP)) ? G_POLLIN : 0) |
+                                        ((re & PLAT_POLLOUT) ? G_POLLOUT : 0) |
                                         ((re & POLLERR) ? G_POLLERR : 0) | ((re & POLLHUP) ? G_POLLHUP : 0) |
                                         ((re & POLLNVAL) ? G_POLLNVAL : 0));
                 if (gre) { memcpy(g + (size_t)map[k] * 8 + 6, &gre, 2); ready++; }
@@ -782,26 +779,26 @@ typedef struct {
     void *control; uint32_t controllen; int32_t flags;
 } GMsgHdr;
 static void socket_msg(Cpu *c, int reading) {
-    SOCKET sock = fd_get((int)arg_x(c, 0));
+    PlatSock sock = fd_get((int)arg_x(c, 0));
     GMsgHdr *msg = arg_p(c, 1);
-    if (sock == INVALID_SOCKET || !msg || !msg->iov || msg->iovlen > 1024) {
+    if (sock == PLAT_NO_SOCK || !msg || !msg->iov || msg->iovlen > 1024) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
-    WSABUF buffers[1024];
+    PlatIov buffers[1024];
     for (uint32_t i = 0; i < msg->iovlen; i++) {
         if (msg->iov[i].size > INT_MAX) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
-        buffers[i].buf = msg->iov[i].base;
-        buffers[i].len = (ULONG)msg->iov[i].size;
+        buffers[i].base = msg->iov[i].base;
+        buffers[i].len = (size_t)msg->iov[i].size;
     }
-    DWORD transferred = 0, flags = 0;
-    int result = reading ? WSARecv(sock, buffers, msg->iovlen, &transferred, &flags, NULL, NULL)
-                         : WSASend(sock, buffers, msg->iovlen, &transferred, 0, NULL, NULL);
-    if (result) {
-        g_errno = WSAGetLastError() == WSAEWOULDBLOCK ? G_EAGAIN : G_EINVAL;
+    long result = reading ? plat_sock_recvv(sock, buffers, (int)msg->iovlen)
+                          : plat_sock_sendv(sock, buffers, (int)msg->iovlen);
+    if (result < 0) {
+        g_errno = plat_net_error() == PLAT_NET_WOULDBLOCK ? G_EAGAIN : G_EINVAL;
         ret_x(c, (uint64_t)-1); return;
     }
+    size_t transferred = (size_t)result;
     if (reading) msg->flags = 0;
-    if (transferred && msg->iovlen) rhex(reading ? "<<< RecvMsg" : ">>> SendMsg", buffers[0].buf,
+    if (transferred && msg->iovlen) rhex(reading ? "<<< RecvMsg" : ">>> SendMsg", buffers[0].base,
         transferred < buffers[0].len ? transferred : buffers[0].len);
     ret_x(c, transferred);
 }
@@ -899,19 +896,18 @@ static void ov_pia_socket(Cpu *c) {
     if (arg_x(c, 0) != 2 || ((unsigned)arg_x(c, 1) & 0xf) != 2) {
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
-    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    u_long nonblocking = 1;
-    if (s == INVALID_SOCKET || ioctlsocket(s, FIONBIO, &nonblocking)) {
-        if (s != INVALID_SOCKET) closesocket(s);
+    PlatSock s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == PLAT_NO_SOCK || plat_sock_nonblock(s)) {
+        if (s != PLAT_NO_SOCK) plat_sock_close(s);
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
     int fd = fd_new(s);
-    if (fd < 0) { closesocket(s); g_errno = G_EINVAL; }
+    if (fd < 0) { plat_sock_close(s); g_errno = G_EINVAL; }
     ret_x(c, (uint64_t)(int64_t)fd);
 }
 
 static void ov_pia_bind(Cpu *c) {
-    SOCKET s = fd_get((int)arg_x(c, 0));
+    PlatSock s = fd_get((int)arg_x(c, 0));
     const uint8_t *guest = arg_p(c, 1);
     struct sockaddr_in sa = {0};
     sa.sin_family = AF_INET;
@@ -923,12 +919,12 @@ static void ov_pia_bind(Cpu *c) {
         memcpy(&sa.sin_port, guest + 2, sizeof sa.sin_port);
         requested = ntohs(sa.sin_port);
     }
-    if (s == INVALID_SOCKET) { g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return; }
+    if (s == PLAT_NO_SOCK) { g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return; }
     if (bind(s, (struct sockaddr *)&sa, sizeof sa)) {
         sa.sin_port = 0;
         if (bind(s, (struct sockaddr *)&sa, sizeof sa)) { g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return; }
     }
-    struct sockaddr_in got; int gl = sizeof got;
+    struct sockaddr_in got; plat_socklen_t gl = sizeof got;
     unsigned actual = getsockname(s, (struct sockaddr *)&got, &gl) ? 0 : ntohs(got.sin_port);
     mlog("Pia UDP bound to %s: requested port %u, got %u", g_lan ? "all interfaces" : "loopback", requested, actual);
     ret_x(c, 0);
@@ -937,10 +933,10 @@ static void ov_pia_bind(Cpu *c) {
 static void ov_pia_setsockopt(Cpu *c) {
     int opt = (int)arg_x(c, 2);
     int winopt = opt == 4 ? SO_REUSEADDR : opt == 0x20 ? SO_BROADCAST : 0;
-    SOCKET s = fd_get((int)arg_x(c, 0));
+    PlatSock s = fd_get((int)arg_x(c, 0));
     const void *value = arg_p(c, 3);
     dump_args("Pia SetSockOpt", c, 5);
-    if (arg_x(c, 1) == 0xffff && winopt && s != INVALID_SOCKET && value && arg_x(c, 4) == 4) {
+    if (arg_x(c, 1) == 0xffff && winopt && s != PLAT_NO_SOCK && value && arg_x(c, 4) == 4) {
         if (setsockopt(s, SOL_SOCKET, winopt, value, 4)) {
             g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
         }
@@ -974,10 +970,10 @@ static int pia_log_packet(int send, unsigned bytes, uint32_t ip, uint16_t port) 
     return fresh;
 }
 static void ov_pia_sendto(Cpu *c) {
-    SOCKET s = fd_get((int)arg_x(c, 0));
+    PlatSock s = fd_get((int)arg_x(c, 0));
     const char *buf = arg_p(c, 1);
     uint64_t len = arg_x(c, 2);
-    if (s == INVALID_SOCKET || !buf || len > 65507) {
+    if (s == PLAT_NO_SOCK || !buf || len > 65507) {
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
     const uint8_t *guest = arg_p(c, 4);
@@ -1024,7 +1020,7 @@ static void ov_pia_sendto(Cpu *c) {
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
     if (len != 16 && pia_log_packet(1, (unsigned)len, sa.sin_addr.s_addr, sa.sin_port)) {
-        struct sockaddr_in local; int ll = sizeof local;
+        struct sockaddr_in local; plat_socklen_t ll = sizeof local;
         unsigned lport = getsockname(s, (struct sockaddr *)&local, &ll) ? 0 : ntohs(local.sin_port);
         int has_guest = guest && arg_x(c, 5) >= 16;
         mlog("Pia UDP send %u -> %s:%u (%u bytes; guest fam %u %u.%u.%u.%u:%u)", lport, inet_ntoa(sa.sin_addr),
@@ -1034,28 +1030,28 @@ static void ov_pia_sendto(Cpu *c) {
     }
     if (g_trace_edges) rhex(">>> Pia UDP", buf, (size_t)len);
     int sent =sendto(s, buf, (int)len, 0, (struct sockaddr *)&sa, sizeof sa);
-    if (sent == SOCKET_ERROR) g_errno = WSAGetLastError() == WSAEWOULDBLOCK ? G_EAGAIN : G_EINVAL;
+    if (sent < 0) g_errno = plat_net_error() == PLAT_NET_WOULDBLOCK ? G_EAGAIN : G_EINVAL;
     ret_x(c, (uint64_t)(int64_t)sent);
 }
 
 static void ov_pia_recvfrom(Cpu *c) {
-    SOCKET s = fd_get((int)arg_x(c, 0));
+    PlatSock s = fd_get((int)arg_x(c, 0));
     char *buf = arg_p(c, 1);
     uint64_t cap = arg_x(c, 2);
     uint8_t *out = arg_p(c, 4);
     uint32_t *out_len = arg_p(c, 5);
-    if (s == INVALID_SOCKET || !buf || cap > INT_MAX || (out && (!out_len || *out_len < 16))) {
+    if (s == PLAT_NO_SOCK || !buf || cap > INT_MAX || (out && (!out_len || *out_len < 16))) {
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
     struct sockaddr_in sa;
-    int addrlen = sizeof sa;
+    plat_socklen_t addrlen = sizeof sa;
     int got = recvfrom(s, buf, (int)cap, 0, (struct sockaddr *)&sa, &addrlen);
-    if (got == SOCKET_ERROR) {
-        int err = WSAGetLastError();
-        g_errno = err == WSAEWOULDBLOCK || err == WSAECONNRESET ? G_EAGAIN : G_EINVAL;
+    if (got < 0) {
+        int err = plat_net_error();
+        g_errno = err == PLAT_NET_WOULDBLOCK || err == PLAT_NET_CONNRESET ? G_EAGAIN : G_EINVAL;
     } else if (out) {
         if (got != 16 && pia_log_packet(0, (unsigned)got, sa.sin_addr.s_addr, sa.sin_port)) {
-            struct sockaddr_in local; int ll = sizeof local;
+            struct sockaddr_in local; plat_socklen_t ll = sizeof local;
             unsigned lport = getsockname(s, (struct sockaddr *)&local, &ll) ? 0 : ntohs(local.sin_port);
             mlog("Pia UDP recv %u <- %s:%u (%d bytes)", lport, inet_ntoa(sa.sin_addr), ntohs(sa.sin_port), got);
         }
@@ -1073,16 +1069,16 @@ static void ov_pia_recvfrom(Cpu *c) {
 // calls it, and the runtime's 64 override slots are all taken (see kRegs). Register it if a ping socket is ever
 // opened here; tests/test_bridge.c exercises it meanwhile.
 __attribute__((unused)) static void ov_pia_recv(Cpu *c) {
-    SOCKET s = fd_get((int)arg_x(c, 0));
+    PlatSock s = fd_get((int)arg_x(c, 0));
     char *buf = arg_p(c, 1);
     uint64_t cap = arg_x(c, 2);
-    if (s == INVALID_SOCKET || !buf || cap > INT_MAX) {
+    if (s == PLAT_NO_SOCK || !buf || cap > INT_MAX) {
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
     int got = recv(s, buf, (int)cap, 0);   // the probe's sockets are non-blocking, so MSG_DONTWAIT is implied
-    if (got == SOCKET_ERROR) {
-        int err = WSAGetLastError();
-        g_errno = err == WSAEWOULDBLOCK || err == WSAECONNRESET ? G_EAGAIN : G_EINVAL;
+    if (got < 0) {
+        int err = plat_net_error();
+        g_errno = err == PLAT_NET_WOULDBLOCK || err == PLAT_NET_CONNRESET ? G_EAGAIN : G_EINVAL;
     }
     ret_x(c, (uint64_t)(int64_t)got);
 }
@@ -1313,8 +1309,8 @@ static void trace_kart_watchdog(uint8_t *ctrl) {
     }
     if (!g_trace_kart) return;
     static uint32_t last_state[24];
-    static ULONGLONG last_ms[24];
-    ULONGLONG now = plat_ms();
+    static uint64_t last_ms[24];
+    uint64_t now = plat_ms();
     if (state == last_state[player] && now - last_ms[player] < 1000) return;
     last_state[player] = state;
     last_ms[player] = now;
@@ -1399,8 +1395,8 @@ static void profile_dispatch(Cpu *c) {
     if (error_post && c->x[1] && guest_readable((const void *)(uintptr_t)c->x[1], 4)) {
         uint32_t id = *(const uint32_t *)(uintptr_t)c->x[1];
         static uint32_t last_id;
-        static ULONGLONG last_ms;
-        ULONGLONG now = plat_ms();
+        static uint64_t last_ms;
+        uint64_t now = plat_ms();
         if (id != last_id || now - last_ms > 10000) {
             last_id = id;
             last_ms = now;
@@ -1427,8 +1423,7 @@ static void profile_dispatch(Cpu *c) {
     static uint32_t skip_id = 1;
     if (skip_id == 1) {
         const char *e = getenv("MKWMP_SKIP_ERROR");
-        HMODULE nt = GetModuleHandleA("ntdll.dll");
-        int wine = nt && GetProcAddress(nt, "wine_get_version");
+        int wine = plat_under_wine();
         skip_id = e && *e ? (uint32_t)strtoul(e, NULL, 16) : wine ? A.proton_skip_error : 0;
         if (skip_id) mlog("communication error %#x will be dropped (%s)", skip_id, e && *e ? "MKWMP_SKIP_ERROR" : "Proton default");
     }
@@ -1810,7 +1805,7 @@ int npln_register(void) {
     g_trace_edges = edges && !strcmp(edges, "1");
     const char *skip = getenv("MKWMP_SKIP_REFEREE_TIMEOUT");
     g_skip_referee_timeout = skip ? atoi(skip) : 0;
-    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+    plat_no_error_dialogs();
     if (!g_rt.override || !g_rt.guest_modules) { log_line("npln_register: runtime not resolved"); return -1; }
     if (!g_rt.core_away || !g_rt.core_back) {
         log_line("npln_register: kern_core_away/back missing; capture disabled"); return -1;
