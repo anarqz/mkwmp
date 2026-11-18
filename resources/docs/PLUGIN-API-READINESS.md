@@ -58,10 +58,18 @@ Phase 1 (no upstream dependency, keeps 0.1.10-0.1.14 working):
   `rt_dispatch` import of mkwgame.dll all live there now (they were in npln.c / guesthook.c). Exception: keypad.c
   still resolves its detour targets and ImGui through `coff_symbol`, since the keypad moves upstream. The plugin
   backend later is one new file that fills the same table.
-- `plat.h`: threads, SRWLOCK/events, `GetTickCount64`, `Sleep`, sockets (WSA*), file open, dynamic library loading.
-  16 of the probe's files include `windows.h` today; the Win32 surface used is small (counted: ~30 distinct calls).
+- **Done (branch probe-plat):** `plat.h` (locks, atomics, clocks, threads, events, UTF-8 files beside the game,
+  environment, dynamic libraries, memory queries / vtable writes, focus + keys) and `plat_net.h` (sockets), with
+  `plat_win.c` / `plat_net_win.c` and `plat_posix.c` / `plat_net_posix.c`. Every core source compiles for
+  x86_64-linux-gnu with -Werror and links into a .so with `--no-undefined` against a stub `g_rt`. Windows-only by
+  design: dllmain.c (loader), coff.c (backend), keypad.c / detour.c (keypad, moving upstream).
+- **Done:** the Proton / Wine patches are removed (user decision, 2026-11-18): Deck players under Proton lose the
+  controller fixes and the default 0x9b928162 skip until the native plugin build exists. Retest the end-of-battle
+  kick on a native Deck then (`MKWMP_SKIP_ERROR=9b928162` is the opt-in).
+- Linux gaps the plugin API must fill: guest memory checks (`plat_mem_readable` reads /proc/self/maps, slow), the
+  voice UI's keyboard shortcuts (no global keyboard from a .so), SDL3 if the AppImage links it statically.
 - **Done:** removed the fiber code (fixed upstream since 0.1.10).
-- Build a Linux `.so` of the core with zig against a stub backend in CI, so portability does not rot.
+- To do: build that Linux `.so` in CI (zig, stub backend) so portability does not rot.
 
 Phase 2 (when an API build exists): `backend_plugin.c` + `mkw_plugin_init`; launcher picks loader by recomp version
 (winmm for COFF releases, plugin for API releases) and passes `--mod`; Steam Deck native Linux path without Proton.
