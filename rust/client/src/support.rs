@@ -70,6 +70,8 @@ pub fn save_bundle(dir: &Path, game: &Path) -> Result<(PathBuf, PathBuf), String
         let _ = fs::copy(&p, out.join(p.file_name().unwrap_or_default()));
     }
     let _ = fs::copy(game.join("mkwmp.log"), out.join("mkwmp.log"));
+    // The game process's own probe log when the recomp start screen holds mkwmp.log.
+    let _ = fs::copy(game.join("mkwmp-game.log"), out.join("mkwmp-game.log"));
     // mkw-recomp's own log lives in its data folder (0.1.12 can move it).
     let data = crate::recomp::data_dir(game);
     let _ = fs::copy(data.join("logs").join("mkw.log"), out.join("mkw.log"));

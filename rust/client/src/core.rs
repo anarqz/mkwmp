@@ -141,7 +141,14 @@ impl Core {
         if let Ok(b) = &b {
             *self.expected.lock().unwrap_or_else(|p| p.into_inner()) = Some(b.expected.clone());
         }
-        let r = if cfg.patch || force { b.and_then(|b| install_bundle(&cfg, &b)) } else { Ok(()) };
+        let r = if probe::dev_probe() && !force {
+            note(format!("game patch: {}=1, keeping the game folder's winmm.dll", probe::DEV_PROBE_ENV));
+            Ok(())
+        } else if cfg.patch || force {
+            b.and_then(|b| install_bundle(&cfg, &b))
+        } else {
+            Ok(())
+        };
         // The verdict, for bug reports.
         let report = self.patch_report();
         let rc = crate::recomp::identify(&cfg.game);

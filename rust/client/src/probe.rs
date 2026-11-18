@@ -103,6 +103,16 @@ pub enum PatchState {
     Damaged,
     /// The patch is fine but the real winmm.dll it forwards to is not there.
     HostMissing,
+    /// A local probe build kept by [`DEV_PROBE_ENV`]`=1` (live tests).
+    Dev,
+}
+
+/// `MKWMP_DEV_PROBE=1`: keep the game folder's own probe (a local build):
+/// no patch install on PLAY, and PLAY accepts any mkwmp probe there.
+pub const DEV_PROBE_ENV: &str = "MKWMP_DEV_PROBE";
+
+pub fn dev_probe() -> bool {
+    std::env::var(DEV_PROBE_ENV).is_ok_and(|v| v == "1")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,7 +125,7 @@ pub struct PatchReport {
 impl PatchReport {
     /// PLAY may start the game.
     pub fn ok(&self) -> bool {
-        matches!(self.state, PatchState::Installed | PatchState::Unverified)
+        matches!(self.state, PatchState::Installed | PatchState::Unverified | PatchState::Dev)
     }
 
     pub fn summary(&self, version: &str) -> String {
@@ -126,6 +136,7 @@ impl PatchReport {
             PatchState::Outdated => "Outdated (other version): press INSTALL to update".into(),
             PatchState::Damaged => "Modified or damaged: press INSTALL to repair".into(),
             PatchState::HostMissing => "winmm_host.dll missing: press INSTALL".into(),
+            PatchState::Dev => format!("Dev probe kept ({DEV_PROBE_ENV}=1)"),
         }
     }
 }
@@ -204,6 +215,10 @@ fn pe_exports(b: &[u8]) -> Option<Vec<String>> {
 /// Check the game folder against `expected` (None: compare with nothing,
 /// only that our own files are complete).
 pub fn check(game: &Path, expected: Option<&Expected>) -> PatchReport {
+    check_with(game, expected, dev_probe())
+}
+
+fn check_with(game: &Path, expected: Option<&Expected>, dev_probe: bool) -> PatchReport {
     let mut files = vec![];
     let probe_bytes = std::fs::read(game.join(PROBE)).ok();
     let probe = probe_bytes.as_deref().map(sha256_hex);
@@ -266,7 +281,13 @@ pub fn check(game: &Path, expected: Option<&Expected>) -> PatchReport {
             }
         }
     }
-    let state = if damaged {
+    let dev = dev_probe && host_ok && probe_bytes.as_deref().is_some_and(looks_like_probe);
+    if dev {
+        files.push(format!("note: {DEV_PROBE_ENV}=1 keeps this winmm.dll"));
+    }
+    let state = if dev && (damaged || outdated || expected.is_none()) {
+        PatchState::Dev
+    } else if damaged {
         PatchState::Damaged
     } else if outdated {
         PatchState::Outdated
@@ -552,6 +573,25 @@ mod tests {
         std::fs::write(d.join(PROBE), b"tampered").unwrap();
         assert_eq!(check(&d, Some(&want)).state, PatchState::Damaged);
         assert!(!check(&d, Some(&want)).ok());
+    }
+
+    #[test]
+    fn dev_probe_keeps_a_local_build() {
+        let d = dir("dev");
+        std::fs::write(d.join("mkw.exe"), b"").unwrap();
+        let want = Expected { version: "1.0.0".into(), probe: sha256_hex(b"p1"), voice: None };
+        std::fs::write(d.join(PROBE), b"MZ...mkwmp probe 1.0.0-dev...").unwrap();
+        std::fs::write(d.join(HOST), fake_winmm()).unwrap();
+        assert_eq!(check_with(&d, Some(&want), false).state, PatchState::Outdated, "not this release's probe");
+        let r = check_with(&d, Some(&want), true);
+        assert_eq!(r.state, PatchState::Dev, "{:?}", r.files);
+        assert!(r.ok());
+        // Still only a probe, and still the real winmm.dll behind it.
+        std::fs::write(d.join(PROBE), b"tampered").unwrap();
+        assert_eq!(check_with(&d, Some(&want), true).state, PatchState::Damaged);
+        std::fs::write(d.join(PROBE), b"MZ...mkwmp probe 1.0.0-dev...").unwrap();
+        std::fs::remove_file(d.join(HOST)).unwrap();
+        assert!(!check_with(&d, Some(&want), true).ok(), "no real winmm.dll behind it");
     }
 
     #[test]
