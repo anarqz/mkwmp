@@ -125,6 +125,12 @@ void plat_dl_close(void *lib);
 // A library the process already loaded, by base name: "SDL3" is SDL3.dll on Windows, libSDL3.so.0 elsewhere. NULL
 // when it is not loaded (on Linux also when the program links it statically).
 void *plat_dl_loaded(const char *base);
+// The voice chat library beside the game (native/voice): mkwmp-voice.dll on Windows, libmkwmp-voice.so elsewhere.
+#ifdef _WIN32
+#define PLAT_VOICE_LIB "mkwmp-voice.dll"
+#else
+#define PLAT_VOICE_LIB "libmkwmp-voice.so"
+#endif
 
 // ---- memory
 // Readable bytes from p to the end of its mapping (committed, not guard / no-access); 0 when p is not readable.

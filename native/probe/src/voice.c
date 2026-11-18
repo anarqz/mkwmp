@@ -125,12 +125,12 @@ static void dll_log(const char *line) { mkwmp_log("%s", line); }
 static int load_dll(void) {
     if (g_dll.dll) return 1;
     char path[1024];
-    if (!plat_home_path(path, sizeof path, "mkwmp-voice.dll")) return 0;
+    if (!plat_home_path(path, sizeof path, PLAT_VOICE_LIB)) return 0;
     void *m = plat_dl_open(path);
-    if (!m) { mkwmp_log("voice: mkwmp-voice.dll not found (error %lu): voice chat off", plat_last_error()); return 0; }
+    if (!m) { mkwmp_log("voice: %s not found (error %lu): voice chat off", PLAT_VOICE_LIB, plat_last_error()); return 0; }
     mkwmp_voice_abi_fn abi = (mkwmp_voice_abi_fn)plat_dl_sym(m, "mkwmp_voice_abi");
     if (!abi || abi() != MKWMP_VOICE_ABI) {
-        mkwmp_log("voice: mkwmp-voice.dll ABI %d, want %d: voice chat off", abi ? abi() : -1, MKWMP_VOICE_ABI);
+        mkwmp_log("voice: %s ABI %d, want %d: voice chat off", PLAT_VOICE_LIB, abi ? abi() : -1, MKWMP_VOICE_ABI);
         plat_dl_close(m);
         return 0;
     }
@@ -147,7 +147,7 @@ static int load_dll(void) {
 #undef SYM
     if (!g_dll.init || !g_dll.connect || !g_dll.disconnect || !g_dll.settings || !g_dll.set_mutes || !g_dll.set_account ||
         !g_dll.devices_json || !g_dll.peers || !g_dll.status) {
-        mkwmp_log("voice: mkwmp-voice.dll lacks an export: voice chat off");
+        mkwmp_log("voice: %s lacks an export: voice chat off", PLAT_VOICE_LIB);
         plat_dl_close(m);
         memset(&g_dll, 0, sizeof g_dll);
         return 0;
