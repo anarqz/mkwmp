@@ -34,12 +34,11 @@ struct game_addrs {
     uint64_t sdk_mono_source_slot, sdk_tick_source;
     uint32_t sdk_tick_source_words[8];
     // Error service, vtable slot 6: post a communication error (x1 = info, id = its first u32). Target of
-    // MKWMP_SKIP_ERROR, the Proton default skip and MKWMP_SKIP_REFEREE_TIMEOUT. Guard: slot 6 of the vtable holds it
+    // MKWMP_SKIP_ERROR and MKWMP_SKIP_REFEREE_TIMEOUT. Guard: slot 6 of the vtable holds it
     // and the function starts with these words.
     uint64_t errsvc_post, errsvc_vtable;
     uint32_t errsvc_words[2];
     uint32_t err_referee_timeout;   // id dropped by MKWMP_SKIP_REFEREE_TIMEOUT=1
-    uint32_t proton_skip_error;     // id dropped by default under Wine/Proton; 0: no default for this build
     // voice_ui.c: UIPageOnlinePauseMenu. Guards: the two slots hold fn_pause_open / fn_pause_frame, and
     // fn_plate_text(ctl, char16*) starts with plate_text_words.
     uint64_t vt_online_pause, fn_pause_open, fn_pause_frame, fn_plate_text;

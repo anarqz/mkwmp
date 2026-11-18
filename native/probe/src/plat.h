@@ -5,7 +5,7 @@
 // API later. Small primitives are inline below, per platform; the rest is in plat_win.c / plat_posix.c.
 //
 // Windows-only by design, and not behind this header: the loader (dllmain.c, winmm.def), the COFF backend (coff.c),
-// the keypad's x64 detours (keypad.c, detour.c) and the Proton controller fixes.
+// the keypad's x64 detours (keypad.c, detour.c).
 #ifndef MKWMP_PLAT_H
 #define MKWMP_PLAT_H
 
@@ -139,7 +139,6 @@ int plat_game_focused(void);   // the foreground window belongs to this process 
 int plat_key_down(int key);    // a PLAT_KEY_* is held (0 where the keyboard cannot be read)
 
 // ---- process
-int plat_under_wine(void);          // running under Wine / Proton (always 0 natively on Linux)
 void plat_no_error_dialogs(void);   // no Windows error boxes from this process (SetErrorMode); nothing elsewhere
 
 #endif

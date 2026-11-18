@@ -15,7 +15,6 @@ static const struct game_addrs kRows[] = {
         .grpc_timedwait_lr = M(0x104a8bc), .grpc_timedwait_bl = 0x945f879a,
         .errsvc_post = M(0x222d78c), .errsvc_vtable = M(0x325bc30), .errsvc_words = {0xd503237f, 0xa9bd7bfd},
         .err_referee_timeout = 0x606314c9,
-        .proton_skip_error = 0x9b928162,   // end-of-battle idle kick (user decision for 1.0.0, 2026-11-15)
         .vt_online_pause = M(0x3248970), .fn_pause_open = M(0x21b22ec), .fn_pause_frame = M(0x21b384c),
         .fn_plate_text = M(0x21deb68),     // FUN_021deb68(ctl, char16*): writes the plate's two name panes
         .plate_text_words = {0xd503237f, 0xd10143ff, 0xa9017bfd, 0xf90013f7},
@@ -85,8 +84,7 @@ static const struct game_addrs kRows[] = {
         .errsvc_post = M(0x2564cd0), .errsvc_vtable = M(0x3636ad0), .errsvc_words = {0xd503237f, 0xa9be7bfd},
         .err_referee_timeout = 0x606314c9,
         // The error-post row is proven live (T2, 2026-11-18: 0x884b839c, 0x660ac5da and 0x9b928162 posted with the
-        // right ids), and the Deck got 0x9b928162 at the end of a friend-room battle exactly as on 1.0.0.
-        .proton_skip_error = 0x9b928162,
+        // right ids).
         .vt_online_pause = M(0x3622528), .fn_pause_open = M(0x24ca550), .fn_pause_frame = M(0x24cc010),
         .fn_plate_text = M(0x2505f10),
         .plate_text_words = {0xd503237f, 0xd10143ff, 0xa9017bfd, 0xf90013f7},

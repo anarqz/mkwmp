@@ -199,5 +199,4 @@ int plat_game_focused(void) { return 0; }
 int plat_key_down(int key) { (void)key; return 0; }
 
 // ---- process
-int plat_under_wine(void) { return 0; }
 void plat_no_error_dialogs(void) {}

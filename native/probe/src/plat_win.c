@@ -146,8 +146,4 @@ int plat_key_down(int key) {
 }
 
 // ---- process
-int plat_under_wine(void) {
-    HMODULE nt = GetModuleHandleA("ntdll.dll");
-    return nt && GetProcAddress(nt, "wine_get_version");
-}
 void plat_no_error_dialogs(void) { SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX); }

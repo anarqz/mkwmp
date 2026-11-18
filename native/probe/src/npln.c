@@ -1414,18 +1414,16 @@ static void profile_dispatch(Cpu *c) {
                  (unsigned long long)(lr[3] - GUEST_MAIN(0)), (unsigned long long)(lr[4] - GUEST_MAIN(0)));
         }
     }
-    // MKWMP_SKIP_ERROR=<hex id>: drop that one communication error (diagnostics; e.g. 0x9b928162, the
-    // end-of-battle move-count kick a driving Steam Deck player gets, RACEEND-RE.md).
-    // Default under Wine/Proton (user decision for 1.0.0, 2026-11-15): the Steam Deck gets 0x9b928162 from
-    // the kart watchdog (FUN_020d4ab0 -> FUN_02624bf0) at the end of every battle round while driving; the
-    // PC never does. Dropping it, a 3-round friend battle ran to the end. MKWMP_SKIP_ERROR=0 turns it off.
-    // The default id is the build's (A.proton_skip_error): none on 1.8.0 until its error-post row is proven live.
+    // MKWMP_SKIP_ERROR=<hex id>: drop that one communication error, opt-in. E.g. 0x9b928162, the end-of-battle
+    // move-count kick (kart watchdog FUN_020d4ab0 -> FUN_02624bf0, RACEEND-RE.md) the Steam Deck got under Proton at
+    // the end of every battle round while driving; dropping it, a 3-round friend battle ran to the end. It used to be
+    // the default under Wine/Proton; the Proton support was removed (native Linux comes with mkw-recomp's plugin API),
+    // so a native Deck run must show whether the kick still happens there.
     static uint32_t skip_id = 1;
     if (skip_id == 1) {
         const char *e = getenv("MKWMP_SKIP_ERROR");
-        int wine = plat_under_wine();
-        skip_id = e && *e ? (uint32_t)strtoul(e, NULL, 16) : wine ? A.proton_skip_error : 0;
-        if (skip_id) mlog("communication error %#x will be dropped (%s)", skip_id, e && *e ? "MKWMP_SKIP_ERROR" : "Proton default");
+        skip_id = e && *e ? (uint32_t)strtoul(e, NULL, 16) : 0;
+        if (skip_id) mlog("communication error %#x will be dropped (MKWMP_SKIP_ERROR)", skip_id);
     }
     if (error_post && skip_id && c->x[1] && guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
         *(const uint32_t *)(uintptr_t)c->x[1] == skip_id) {
@@ -1498,7 +1496,6 @@ static void install_profile_dispatch_trace(void) {
         mlog("game build %s: error-service guard mismatch, communication-error log and skips off",
              game_build_name(build));
         a.errsvc_post = 0;
-        a.proton_skip_error = 0;
     }
     const char *kick = getenv("MKWMP_NO_IDLE_KICK");
     if (kick && kick[0] == '1' && !a.kart_idle_kick)
