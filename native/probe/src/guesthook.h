@@ -1,4 +1,4 @@
-// Hooking guest virtual calls without override slots (resources/docs/VOICE-RE.md §5). Every indirect guest call goes
+// Hooking guest virtual calls without override slots (research/docs/VOICE-RE.md §5). Every indirect guest call goes
 // through the recomp's rt_dispatch, which falls back to its host registry `g_host` for addresses outside the guest
 // modules. We add {fake address, our fn} there and point a guest vtable slot at the fake address; our fn receives the
 // guest Cpu and calls the original with rt_call(c, original, 0) (registers untouched).
@@ -13,7 +13,7 @@ enum { GUEST_MAIN_BASE_HI = 0x70 };              // main is loaded at 0x70000000
 #define GUEST_MAIN(off) (0x7000000000ull + (uint64_t)(off))
 
 // Which game build is mapped at 0x7000000000: identified by main's MOD0 offset (main+4) and its GNU build-id note
-// (resources/docs/GAME-1.8.0-ADDRESSES.md §1). Every main+0x... constant of the probe is in the build's row of
+// (research/docs/GAME-1.8.0-ADDRESSES.md §1). Every main+0x... constant of the probe is in the build's row of
 // gameaddrs.h: version-specific hooks take it from game_addrs() and stay off without a row. Cached after the first
 // known answer.
 enum { GAME_OTHER = -1, GAME_UNKNOWN = 0, GAME_100 = 100, GAME_180 = 180 };   // UNKNOWN = main not mapped yet

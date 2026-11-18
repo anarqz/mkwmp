@@ -1,4 +1,4 @@
-// Minimal x64 inline hook for recomp-internal functions of mkw.exe (resources/docs/SWKBD-KEYPAD.md).
+// Minimal x64 inline hook for recomp-internal functions of mkw.exe (research/docs/SWKBD-KEYPAD.md).
 // No length decoder: the caller states the exact prologue bytes it expects (whole, position-independent
 // instructions, verified by disassembly) and nothing is patched unless the live bytes match.
 #ifndef MKWMP_DETOUR_H

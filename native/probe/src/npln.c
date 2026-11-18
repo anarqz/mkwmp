@@ -1176,7 +1176,7 @@ static int is_pia_join_step(uint64_t target) {
 // sequence (AIGlobalSeq*), the online-session manager and the race controller.
 
 // Watchpoints: every indirect call to these targets is logged (first 20,
-// then every 200th), with a state dump where useful. See resources/docs/NETCODE.md.
+// then every 200th), with a state dump where useful. See research/docs/NETCODE.md.
 // The targets are A.watch[] in this order, then A.errsvc_post for W_COMM_ERROR (error service slot 6: post
 // communication error, reason 37, kind 12). The names are the 1.0.0 functions' (logs stay comparable).
 enum { W_START_P2P, W_P2P_INIT_SEQ, W_US_JOB, W_GAME_CB, W_PLUGIN_A, W_PLUGIN_B, W_COMM_ERROR, W_COUNT };
@@ -1308,7 +1308,7 @@ static void trace_sdk_message(const Cpu *c) {
                 (unsigned long long)(c->x[30] - GUEST_MAIN(0)), buf);
 }
 
-// Friend-room race start (resources/docs/SYNCSTATE-RE.md 7): the host's SyncState (FUN_01a82d84) waits for
+// Friend-room race start (research/docs/SYNCSTATE-RE.md 7): the host's SyncState (FUN_01a82d84) waits for
 // every joiner's ready state; log on change what PrivateRoomMain / ReadyVoteSetter / SyncState see, and the
 // host's start event 0x9d424b78, on both machines. MKWMP_TRACE_ROOM=0 turns it off.
 static void trace_room_start(uint64_t target, const uint8_t *node, const uint8_t *arg) {
@@ -1354,7 +1354,7 @@ static void trace_room_start(uint64_t target, const uint8_t *node, const uint8_t
          f110, f114, st[0], st[1], st[2], st[3], play, vote, has, snap[9], snap[10], snap[11]);
 }
 
-// End-of-battle idle kick 0x9b928162 (resources/docs/RACEEND-RE.md): FUN_0035ce38 kicks a player whose
+// End-of-battle idle kick 0x9b928162 (research/docs/RACEEND-RE.md): FUN_0035ce38 kicks a player whose
 // move counter (ctrl+0x1e8, frames with a position change >= 0.1) is under 20 after 3000 frames, at the
 // moment its battle ends. MKWMP_TRACE_KART=1 logs the controller state once per second and on change;
 // MKWMP_NO_IDLE_KICK=1 keeps the counter at 20 (diagnostic guard).
