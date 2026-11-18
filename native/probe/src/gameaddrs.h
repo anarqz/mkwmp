@@ -45,6 +45,10 @@ struct game_addrs {
     // A guest module whose calls to the gated SDK overrides always get the runtime's stock handler (npln.c
     // gate_call): 1.8.0's subsdk0 "movie" shares nn::socket::Close/GetLastError/EventFd* with gRPC. 0: none.
     uint64_t stock_lo, stock_hi;
+    // The game makes one automatic nifm sign-in at boot (1.0.0: ~7 s in, main+0x2247a7c) that the lazy probe
+    // declines; 0 = this build makes none (1.8.0: none in a whole offline session), so the first request is the
+    // player opening Online Play.
+    uint8_t boot_signin;
 
     // ---------------------------------------------------------------- diagnostic (0 address = off)
     uint64_t pia_join_step[GAME_PIA_STEPS];         // JoinRandomSessionJob step functions

@@ -30,6 +30,13 @@ void log_init(void) {
         // CREATE_ALWAYS truncates: each session starts a fresh log.
         g_fh = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
                            FILE_ATTRIBUTE_NORMAL, NULL);
+        // mkw-recomp 0.1.12+: started without --play, mkw.exe is first the start screen, which stays open and holds
+        // mkwmp.log while it starts the game as a second mkw.exe: that one writes mkwmp-game.log instead.
+        if (g_fh == INVALID_HANDLE_VALUE && GetLastError() == ERROR_SHARING_VIOLATION) {
+            path[wcslen(path) - 4] = 0;   // drop ".log"
+            wcsncat(path, L"-game.log", MAX_PATH - wcslen(path) - 1);
+            g_fh = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        }
     }
     g_ready = 1;
     mkwmp_log("=== mkwmp session log ===");

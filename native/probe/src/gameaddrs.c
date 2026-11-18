@@ -22,6 +22,7 @@ static const struct game_addrs kRows[] = {
         .slot_open = 7, .slot_frame = 11, .rows = 24,
         .page_plates = 0x770, .plate_size = 0x150, .entry_name = 0x18, .entry_me = 0x78,
         .page_count = 0x3d80, .page_entries = 0x3d88,
+        .boot_signin = 1,
         // ---- diagnostic
         .pia_join_step = {
             M(0x156015c),   // WaitAutoConnect
@@ -86,6 +87,7 @@ static const struct game_addrs kRows[] = {
         .page_plates = 0x778, .plate_size = 0x170, .entry_name = 0x18, .entry_me = 0x78,
         .page_count = 0x4628, .page_entries = 0x4630,
         .stock_lo = 0x7003800000ull, .stock_hi = 0x7003800000ull + 0xe0000,   // subsdk0 "movie"
+        .boot_signin = 0,   // no boot sign-in in a whole offline session (mkwmp.log 2026-11-18, mkw-recomp 0.1.13)
         // ---- diagnostic (§4; "high" or better only)
         .pia_join_step = {M(0x16a9230), M(0x16a9390), M(0x16a94b0), M(0x16a9cf0), M(0x16aa010), M(0x16aa0f0),
                           M(0x16aa800)},

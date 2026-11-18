@@ -1714,7 +1714,10 @@ static void gate_call(int i, Cpu *c) {
         // request is the player opening Online Play.
         static volatile LONG requests;
         if (g_trigger[i]) {
-            if (InterlockedIncrement(&requests) == 1) mlog("boot sign-in declined (stays offline until Online Play)");
+            // An unknown build keeps the 1.0.0 behaviour (decline the first request).
+            const struct game_addrs *ga = game_addrs();
+            int boot = !ga || ga->boot_signin;
+            if (boot && InterlockedIncrement(&requests) == 1) mlog("boot sign-in declined (stays offline until Online Play)");
             else try_activate();
         }
         if (!g_active) { g_stock[i](c); return; }
