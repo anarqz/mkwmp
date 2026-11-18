@@ -67,9 +67,9 @@ Docker runs the same `mkwmp host`. Use any Linux machine with Docker, for exampl
     docker compose exec server mkwmp admin close-report <id> warned in DM --config /data/server.toml
     docker compose exec server mkwmp admin delete-report <id> --config /data/server.toml
 
-To block an abusive player, `release` their gamertag. Reports are deleted 90 days after they were filed.
+To lock an abusive player out, `reset-pin` their gamertag (their launcher's PIN stops working; don't hand out the new one) and add it to `[registry] reserved_names` (then restart the server), so it never expires and nobody registers it. Don't `release` it: a free gamertag is registered again by the launcher that still has its PIN. They can still register a new gamertag. Reports are deleted 90 days after they were filed.
 
-**Your players' data.** As the host you hold their gamertags, PIN hashes, friends and reports, and your logs can hold their IP addresses. The official server's [privacy policy](https://anarqz.github.io/mkwmp/#privacy) is a starting point for your own: tell your players what you keep and for how long. Unused gamertags are deleted after `[registry] expire_days` (30).
+**Your players' data.** As the host you hold their gamertags, PIN hashes, friends and reports, and your logs can hold their IP addresses. The official server's [privacy policy](https://anarqz.github.io/mkwmp/#privacy) is a starting point for your own: tell your players what you keep and for how long. Unused gamertags are deleted after `[registry] expire_days` (30). Backups you make hold the same data.
 
 **Backup:** everything is in the `mkwmp-data` volume (`registry.db` and `keys/`). For a consistent copy, stop the seat server first:
 

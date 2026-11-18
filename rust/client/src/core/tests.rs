@@ -40,6 +40,8 @@ struct Fake {
     deletes: Arc<Mutex<Vec<String>>>,
     /// Bodies of POST /seat/v1/profiles.
     registers: Arc<Mutex<Vec<Value>>>,
+    /// A server older than restore: ignores `pin`, answers this one.
+    picks_pin: Option<&'static str>,
 }
 
 fn err(status: u16, code: &str) -> Response {
@@ -87,7 +89,7 @@ async fn delete_profile(State(f): State<Fake>, UrlPath(name): UrlPath<String>) -
 
 async fn register(State(f): State<Fake>, Json(b): Json<Value>) -> Response {
     f.registers.lock().unwrap().push(b.clone());
-    let pin = b["pin"].as_str().unwrap_or("654321").to_string();
+    let pin = f.picks_pin.or(b["pin"].as_str()).unwrap_or("654321").to_string();
     (StatusCode::CREATED, Json(json!({"name": b["name"], "pin": pin}))).into_response()
 }
 
@@ -121,7 +123,7 @@ async fn serve(f: Fake) -> String {
 }
 
 fn fake(seat: Seat, delete: (u16, &'static str)) -> Fake {
-    Fake { seat, delete, polls: Arc::default(), joins: Arc::default(), deletes: Arc::default(), registers: Arc::default() }
+    Fake { seat, delete, polls: Arc::default(), joins: Arc::default(), deletes: Arc::default(), registers: Arc::default(), picks_pin: None }
 }
 
 static N: AtomicUsize = AtomicUsize::new(0);
@@ -276,6 +278,17 @@ async fn an_expired_profile_is_registered_again_with_the_saved_pin() {
     until("the game", || game.join("started").exists()).await;
     assert_eq!(*f.registers.lock().unwrap(), vec![json!({"name": "Ana", "pin": "123456"})]);
     assert_eq!(core.ui().cfg.pin, "123456", "the PIN stays");
+}
+
+#[tokio::test]
+async fn a_server_that_picks_its_own_pin_on_restore_gets_that_pin_saved() {
+    let f = Fake { picks_pin: Some("777000"), ..fake(Seat::Expired, (204, "")) };
+    let (core, game) = setup(&serve(f.clone()).await);
+    core.play();
+    until("the game", || game.join("started").exists()).await;
+    assert_eq!(core.ui().cfg.pin, "777000");
+    let saved = std::fs::read_to_string(&core.config_path).unwrap();
+    assert!(saved.contains("777000"), "saved to client.toml");
 }
 
 #[tokio::test]

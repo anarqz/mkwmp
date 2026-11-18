@@ -1434,6 +1434,7 @@ fn pill(ui: &mut egui::Ui, text: &str, color: Color32, dot: Option<Color32>) {
 fn server_pill(ui: &mut egui::Ui, s: &ServerView) {
     let (dot, text) = match s {
         ServerView::Checking => (MUTED, "CHECKING THE SERVER…".to_string()),
+        ServerView::NotAsked => (MUTED, "NOT CONNECTED".to_string()),
         ServerView::Online { seats_total, seated, queued, .. } => (
             GREEN,
             format!(

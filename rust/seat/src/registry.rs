@@ -20,9 +20,10 @@
 //! Voice-chat abuse reports live here too, for the server host to review
 //! (`mkwmp admin reports`). A profile has at most one open report (a partial
 //! unique index). Reports are not tied to the profiles by foreign keys: one
-//! about a player stays when that player goes away, for review, and stores the
-//! reported profile's `created` so a later owner of the same gamertag is told
-//! apart. The reporter deleting their profile deletes the reports they filed.
+//! about a player stays when that player goes away, for review. Both sides are
+//! a name key plus that profile's `created`, so a later owner of the same
+//! gamertag is someone else: they don't see, block or withdraw the old owner's
+//! report. The reporter deleting their profile deletes the reports they filed.
 //! Every report is deleted `REPORT_KEEP_DAYS` after it was filed.
 
 use std::path::{Path, PathBuf};
@@ -146,6 +147,7 @@ const SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS reports (
         id               INTEGER PRIMARY KEY AUTOINCREMENT,  -- never reused
         reporter         TEXT NOT NULL,     -- name key
+        reporter_created INTEGER NOT NULL,  -- with the key: this owner of the name
         reporter_name    TEXT NOT NULL,
         reported         TEXT NOT NULL,     -- name key
         reported_name    TEXT NOT NULL,
@@ -157,7 +159,7 @@ const SCHEMA: &str = "
         closed           INTEGER,
         outcome          TEXT
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS reports_one_open ON reports(reporter) WHERE status = 'open';
+    CREATE UNIQUE INDEX IF NOT EXISTS reports_one_open ON reports(reporter, reporter_created) WHERE status = 'open';
     CREATE INDEX IF NOT EXISTS reports_created ON reports(created);
 ";
 
@@ -369,9 +371,12 @@ impl Registry {
         }
         // Only the row whose PIN was checked (not a re-registration since).
         let db = self.db.lock().unwrap();
-        let n = db.execute("DELETE FROM profiles WHERE key = ?1 AND pin_hash = ?2", params![names::key(name), row.pin_hash])?;
-        if n > 0 {
-            db.execute("DELETE FROM reports WHERE reporter = ?1", [names::key(name)])?;
+        let key = names::key(name);
+        let created: Option<i64> =
+            db.query_row("SELECT created FROM profiles WHERE key = ?1 AND pin_hash = ?2", params![key, row.pin_hash], |r| r.get(0)).optional()?;
+        let n = db.execute("DELETE FROM profiles WHERE key = ?1 AND pin_hash = ?2", params![key, row.pin_hash])?;
+        if let (true, Some(c)) = (n > 0, created) {
+            db.execute("DELETE FROM reports WHERE reporter = ?1 AND reporter_created = ?2", params![key, c])?;
         }
         Ok(())
     }
@@ -393,10 +398,12 @@ impl Registry {
     /// Admin: free a name (and drop the reports it filed, as an owner delete does).
     pub fn release(&self, name: &str) -> Result<(), RegistryError> {
         let db = self.db.lock().unwrap();
-        match db.execute("DELETE FROM profiles WHERE key = ?1", [names::key(name)])? {
+        let key = names::key(name);
+        let created: Option<i64> = db.query_row("SELECT created FROM profiles WHERE key = ?1", [&key], |r| r.get(0)).optional()?;
+        match db.execute("DELETE FROM profiles WHERE key = ?1", [&key])? {
             0 => Err(RegistryError::NotFound),
             _ => {
-                db.execute("DELETE FROM reports WHERE reporter = ?1", [names::key(name)])?;
+                db.execute("DELETE FROM reports WHERE reporter = ?1 AND reporter_created = ?2", params![key, created])?;
                 Ok(())
             }
         }
@@ -615,6 +622,9 @@ impl Registry {
     }
 }
 
+/// Reports filed by the current owner of the name key `?1`.
+const MINE: &str = "reporter = ?1 AND reporter_created = (SELECT created FROM profiles WHERE key = ?1)";
+
 const REPORT_COLS: &str =
     "id, reporter_name, reported_name, reported_created, reason, details, created, status, closed, outcome";
 
@@ -648,6 +658,7 @@ impl Registry {
         let mut db = self.db.lock().unwrap();
         let tx = db.transaction()?;
         let me_name = self.live_name(&tx, &mk, now)?.ok_or(RegistryError::NotFound)?;
+        let me_created: i64 = tx.query_row("SELECT created FROM profiles WHERE key = ?1", [&mk], |r| r.get(0))?;
         let (other_name, other_created): (String, i64) = tx
             .query_row("SELECT name, created, last_seen FROM profiles WHERE key = ?1", [&ok], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
@@ -657,7 +668,11 @@ impl Registry {
             .map(|(n, c, _)| (n, c))
             .ok_or_else(|| report_err("REPORT_UNKNOWN", format!("no player has the gamertag {other}")))?;
         let open: Option<String> = tx
-            .query_row("SELECT reported_name FROM reports WHERE reporter = ?1 AND status = 'open'", [&mk], |r| r.get(0))
+            .query_row(
+                "SELECT reported_name FROM reports WHERE reporter = ?1 AND reporter_created = ?2 AND status = 'open'",
+                params![mk, me_created],
+                |r| r.get(0),
+            )
             .optional()?;
         if let Some(about) = open {
             return Err(report_err(
@@ -666,9 +681,9 @@ impl Registry {
             ));
         }
         tx.execute(
-            "INSERT INTO reports (reporter, reporter_name, reported, reported_name, reported_created, reason, details, created, status)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'open')",
-            params![mk, me_name, ok, other_name, other_created, reason, details, now as i64],
+            "INSERT INTO reports (reporter, reporter_created, reporter_name, reported, reported_name, reported_created, reason, details, created, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'open')",
+            params![mk, me_created, me_name, ok, other_name, other_created, reason, details, now as i64],
         )?;
         let id = tx.last_insert_rowid();
         tx.commit()?;
@@ -686,17 +701,18 @@ impl Registry {
         })
     }
 
-    /// `me`'s open report, if any.
+    /// `me`'s open report, if any (this owner of the name: not one a former
+    /// owner of the gamertag filed).
     pub fn open_report(&self, me: &str) -> Result<Option<Report>, RegistryError> {
         let db = self.db.lock().unwrap();
-        let sql = format!("SELECT {REPORT_COLS} FROM reports WHERE reporter = ?1 AND status = 'open'");
+        let sql = format!("SELECT {REPORT_COLS} FROM reports WHERE {MINE} AND status = 'open'");
         Ok(db.query_row(&sql, [names::key(me)], report_row).optional()?)
     }
 
     /// `me` takes back their open report (it is deleted).
     pub fn withdraw_report(&self, me: &str) -> Result<(), RegistryError> {
         let db = self.db.lock().unwrap();
-        match db.execute("DELETE FROM reports WHERE reporter = ?1 AND status = 'open'", [names::key(me)])? {
+        match db.execute(&format!("DELETE FROM reports WHERE {MINE} AND status = 'open'"), [names::key(me)])? {
             0 => Err(report_err("REPORT_NOT_FOUND", "you have no report waiting for review")),
             _ => Ok(()),
         }
@@ -919,6 +935,29 @@ mod tests {
         assert_eq!(r.reports("all").unwrap().len(), 1);
         assert_eq!(r.sweep_reports(REPORT_KEEP_DAYS * DAY + 1), 0);
         assert_eq!(r.sweep_reports(REPORT_KEEP_DAYS * DAY + 3), 1);
+    }
+
+    /// A gamertag that expired and was registered again is someone else: the
+    /// old owner's open report is not theirs to see, be blocked by or withdraw.
+    #[test]
+    fn a_new_owner_of_a_gamertag_does_not_inherit_its_report() {
+        let r = Registry::open(None, &[], 30).unwrap();
+        r.register("Ana", 0, false).unwrap();
+        let bia = r.register("Bia", 0, false).unwrap();
+        r.file_report("ana", "bia", "hate", "old owner's words", 1).unwrap();
+        let later = 31 * DAY;
+        r.login("bia", &bia, 20 * DAY).unwrap(); // Bia stays live
+        assert_eq!(r.sweep(later), 1, "Ana expired");
+        let pin = r.register("ana", later, false).unwrap();
+        assert_eq!(r.open_report("ana").unwrap(), None);
+        assert!(matches!(r.withdraw_report("ana"), Err(RegistryError::Report("REPORT_NOT_FOUND", _))));
+        r.file_report("ana", "bia", "other", "new owner", later + 1).unwrap();
+        assert_eq!(r.open_report("ana").unwrap().unwrap().details, "new owner");
+        // The new owner deleting their profile leaves the old owner's report for review.
+        r.delete("ana", &pin, later + 2).unwrap();
+        let left = r.reports("all").unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].details, "old owner's words");
     }
 
     fn friends(r: &Registry, who: &str) -> (Vec<String>, Vec<String>, Vec<String>) {

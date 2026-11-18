@@ -264,9 +264,10 @@ impl Api {
     }
 
     /// Register `name` again with the PIN this launcher already has (the
-    /// server deleted the profile after a month unused).
-    pub async fn restore(&self, name: &str, pin: &str) -> Result<(), ApiError> {
-        self.register_with(name, Some(pin)).await.map(|_| ())
+    /// server deleted the profile after a month unused). Returns the PIN the
+    /// server registered: a server older than this ignores `pin` and picks one.
+    pub async fn restore(&self, name: &str, pin: &str) -> Result<String, ApiError> {
+        self.register_with(name, Some(pin)).await
     }
 
     async fn register_with(&self, name: &str, pin: Option<&str>) -> Result<String, ApiError> {

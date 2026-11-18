@@ -144,11 +144,11 @@ docker compose up -d --build</code></pre>
       <dt>Voice chat</dt>
       <dd>Your voice is relayed live to the players in your lobby, only while voice chat is on. The server forwards the audio packets without decoding them and <b>never records or stores</b> them. Your mute list stays in your launcher.</dd>
       <dt>Who sees what</dt>
-      <dd>Your friends see whether you're playing, online or offline. Players in your lobby see your gamertag and hear you. Players can look up whether a gamertag is registered. Only the server's host sees reports.</dd>
+      <dd>Your friends see whether you're playing, online or offline. Players in your lobby see your gamertag and hear you. The game connects the players in a lobby to each other, directly or through the server's relay, so they may also see your IP address, as in any online game. Players can look up whether a gamertag is registered. Only the server's host sees reports.</dd>
       <dt>How long it's kept</dt>
-      <dd>A gamertag unused for <b>30 days</b> is deleted, with its friends and requests. Reports are deleted <b>90 days</b> after they're filed, reviewed or not. Logs are kept 7 days.</dd>
+      <dd>A gamertag unused for <b>30 days</b> is deleted, with its friends and requests. Reports are deleted <b>90 days</b> after they're filed, reviewed or not. Logs are kept 7 days. The copy of the database made when the server is updated (a backup) is deleted after 7 days.</dd>
       <dt>Your choices</dt>
-      <dd><b>SETTINGS → PRIVACY → DELETE MY ACCOUNT</b> (or the X next to your PIN) deletes your gamertag, PIN, friends and the reports you filed, right away. It needs your PIN, so nobody else can do it for you. You can withdraw a report while it waits for review, and untick the 18+ box to stop the launcher contacting the server. Reports other players filed about you are kept until they expire, so the host can review them.</dd>
+      <dd><b>SETTINGS → PRIVACY → DELETE MY ACCOUNT</b> (or the X next to your PIN) deletes your gamertag, PIN, friends and the reports you filed, right away (a backup copy may hold them for up to 7 more days). It needs your PIN, so nobody else can do it for you. You can withdraw a report while it waits for review, and untick the 18+ box to stop the launcher signing in or contacting the server. Reports other players filed about you are kept until they expire, so the host can review them.</dd>
       <dt>Who else is involved</dt>
       <dd>The server is a virtual machine at <b>Vultr</b> in São Paulo, Brazil. The launcher reaches it through <b>Cloudflare</b>, which handles that connection. Game lobbies and voice connect to the machine directly. Updates, this website and bug reports are on <b>GitHub</b>. Each of these companies has its own privacy policy.</dd>
       <dt>Bug reports</dt>

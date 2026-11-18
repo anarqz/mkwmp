@@ -34,6 +34,8 @@ fn reason(e: &ApiError) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerView {
     Checking,
+    /// Not asked: the player hasn't confirmed they're 18+ yet.
+    NotAsked,
     Online { name: String, seats_total: usize, seated: usize, queued: usize },
     Offline(String),
 }
@@ -565,10 +567,21 @@ impl Core {
             }
         }
         let api = self.api();
+        let mut id = id;
         let t = match api.presence(&id.1, &id.2).await {
             Err(ApiError::Refused(m)) if m == crate::api::NOT_REGISTERED => {
                 match api.restore(&cfg.name, &id.2).await {
-                    Ok(()) => note(format!("{} had expired on the server; registered it again with your PIN", cfg.name)),
+                    Ok(pin) if pin == id.2 => {
+                        note(format!("{} had expired on the server; registered it again with your PIN", cfg.name))
+                    }
+                    Ok(pin) => {
+                        // An older server picked its own PIN: keep that one, or nobody has it.
+                        let mut c = self.ui().cfg;
+                        c.pin = pin.clone();
+                        self.set_config(c).map_err(ApiError::Refused)?;
+                        note(format!("{} had expired on the server; registered it again (new PIN)", cfg.name));
+                        id.2 = pin;
+                    }
                     Err(ApiError::Taken) => {
                         return Err(ApiError::Refused(format!(
                             "{} expired on the server and someone else registered it: pick another gamertag",
@@ -782,6 +795,11 @@ impl Core {
     /// The server's public status, every 5 s, for whatever server is set.
     pub async fn status_loop(self: Arc<Self>) {
         loop {
+            if !self.ui().cfg.adult_consent {
+                self.set(|u| u.server = ServerView::NotAsked);
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            }
             let server = self.ui().cfg.server.clone();
             let base = if server.contains("://") { server } else { format!("http://{server}") };
             let view = match Api::new(base.trim_end_matches('/')).status().await {
