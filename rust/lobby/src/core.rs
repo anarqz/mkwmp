@@ -894,6 +894,7 @@ impl State {
                 &t.mode,
                 &Member { user: &t.user, player: &t.player },
                 &member_refs,
+                lobby.capacity,
                 gamesync,
                 now as u64,
             );

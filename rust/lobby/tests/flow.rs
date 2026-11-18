@@ -143,7 +143,10 @@ fn assignment(p: &mut Player) -> Option<(String, Vec<String>)> {
     assert_eq!(wire::varint_field(&msg, 5).unwrap(), Some(3));
     let session = wire::bytes_field(&msg, 7).unwrap().unwrap();
     let name = wire::str_field(session, 1).unwrap().unwrap();
-    let members = wire::repeated_bytes(session, 12).unwrap().iter().map(|m| wire::str_field(m, 2).unwrap().unwrap()).collect();
+    let members: Vec<String> = wire::repeated_bytes(session, 12).unwrap().iter().map(|m| wire::str_field(m, 2).unwrap().unwrap()).collect();
+    // Game 1.8.0's admission check reads the capacity (field 2); 3 = players.
+    assert!(wire::varint_field(session, 2).unwrap().is_some_and(|c| c >= members.len() as u64), "capacity");
+    assert_eq!(wire::varint_field(session, 3).unwrap(), Some(members.len() as u64));
     // our own Player carries our real user resource
     let own = wire::bytes_field(&msg, 4).unwrap().unwrap();
     assert_eq!(wire::str_field(own, 1).unwrap().as_deref(), Some(p.user.as_str()));

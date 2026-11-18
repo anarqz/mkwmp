@@ -118,8 +118,13 @@ pub struct Member<'a> {
 ///   reply main+0x1408a40: 1 ticket, 2 config, 4 Player, 5 state (3 = matched),
 ///                         6 MatchedPlayer*, 7 GameSession
 ///   MatchedPlayer main+0x140c708: 1 Player, 2 userSession, 3 user id
-///   GameSession main+0x140b440: 1 name, 8 Gamesync host, 9 port, 10 Timestamp, 12 Member*
+///   GameSession main+0x140b440: 1 name, 2 capacity, 3 players, 8 Gamesync host, 9 port, 10 Timestamp,
+///                               12 Member*
 ///   Member main+0x1405fec: 1 userSession, 2 user, 4 Timestamp
+/// Game 1.8.0 needs the capacity (field 2): its session admission check (main+0x20fa450) reads it
+/// (session object +0x80, main+0x256d5a0) and, at 0, posts communication error 0x884b839c (main+0x6f6e4c)
+/// as soon as the match starts. 1.0.0 never reads it for a matchmade session.
+#[allow(clippy::too_many_arguments)]
 pub fn assignment(
     tenant: &str,
     lobby: &str,
@@ -127,6 +132,7 @@ pub fn assignment(
     mode: &str,
     recipient: &Member<'_>,
     members: &[Member<'_>],
+    capacity: usize,
     gamesync: (&str, u16),
     now: u64,
 ) -> Vec<u8> {
@@ -136,7 +142,13 @@ pub fn assignment(
         .bytes(2, format!("{tenant}/matchmakingConfigs/{mode}"))
         .bytes(4, player_for(recipient.user, recipient.player))
         .varint(5, 3);
-    let mut session = Msg::new().bytes(1, &name).bytes(8, gamesync.0).varint(9, gamesync.1.into()).msg(10, &wire::seconds(now + 600));
+    let mut session = Msg::new()
+        .bytes(1, &name)
+        .varint(2, capacity as u64)
+        .varint(3, members.len() as u64)
+        .bytes(8, gamesync.0)
+        .varint(9, gamesync.1.into())
+        .msg(10, &wire::seconds(now + 600));
     for m in members {
         let uid = crate::users::tail(m.user);
         let user_session = format!("{name}/userSessions/{uid}");
