@@ -18,6 +18,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // ---- texts, English and Brazilian Portuguese (the plugin translates its own: page->language)
@@ -27,7 +28,7 @@ enum {
     T_FRIENDS, T_NO_FRIENDS, T_ADD, T_ADD_HINT, T_SEND, T_ACCEPT, T_DECLINE, T_CANCEL, T_REMOVE, T_WANTS, T_ASKED,
     T_PLAYING, T_ONLINE, T_OFFLINE, T_BUSY_REG, T_BUSY_PIN, T_BUSY_FRIENDS, T_REG_OK, T_TAKEN, T_RESERVED,
     T_RATE, T_OFFLINE_SRV, T_PIN_WRONG, T_PIN_OK, T_NOT_FOUND, T_FRIEND_SENT, T_FRIEND_DONE, T_FRIEND_UNKNOWN,
-    T_ENABLE, T_COUNT
+    T_ENABLE, T_SERVER_HEAD, T_SEATS, T_SEATS_QUEUE, T_SERVER_DOWN, T_IN_GAME, T_COUNT
 };
 static const char *const EN[T_COUNT] = {
     "Online play (MKWMP)",
@@ -80,6 +81,11 @@ static const char *const EN[T_COUNT] = {
     "Done.",
     "There is no player named %s.",
     "Turn MKWMP on in the Mods list to play online.",
+    "Server",
+    "%d of %d seats taken",
+    "%d of %d seats taken, %d waiting in line",
+    "The server does not answer right now.",
+    "Changes to the account and the server apply at the next start; voice chat has its own tab.",
 };
 static const char *const PT[T_COUNT] = {
     "Jogo online (MKWMP)",
@@ -132,11 +138,16 @@ static const char *const PT[T_COUNT] = {
     "Pronto.",
     "Não existe jogador chamado %s.",
     "Ligue o MKWMP na lista de Mods para jogar online.",
+    "Servidor",
+    "%d de %d vagas ocupadas",
+    "%d de %d vagas ocupadas, %d na fila",
+    "O servidor não está respondendo agora.",
+    "Mudanças na conta e no servidor valem no próximo início; o chat de voz tem sua própria aba.",
 };
 static const char *const *T = EN;
 
 // ---- the worker's state, shared with the page (under g_lock)
-enum { JOB_NONE, JOB_REGISTER, JOB_PIN, JOB_FRIENDS, JOB_ADD, JOB_ACCEPT, JOB_REMOVE };
+enum { JOB_NONE, JOB_REGISTER, JOB_PIN, JOB_FRIENDS, JOB_ADD, JOB_ACCEPT, JOB_REMOVE, JOB_STATUS };
 static PlatLock g_lock = PLAT_LOCK_INIT;
 static struct {
     int job;
@@ -147,7 +158,9 @@ static struct {
     char revealed_pin[SEATAPI_PIN_LEN + 1];   // shown once after signing up, until the page closes
     SeatApiFriends friends;
     int have_friends;
-    uint64_t friends_at, drawn_at;
+    uint64_t friends_at, drawn_at, status_at;
+    int status_ok, seats_total, seated, queued;   // the server's last /status (status_ok -1: no answer)
+    char status_base[256];
     char token[160], token_for[SEATAPI_NAME_MAX + SEATAPI_PIN_LEN + 260];
 } W;
 static int (*g_set)(const char *key, const char *value);   // the page's setting_set (any thread)
@@ -234,8 +247,11 @@ static void worker(void *unused) {
         uint64_t now = plat_ms();
         // the list stays fresh while the page is shown and signed in
         if (!job && pin[0] && now - W.drawn_at < 2000 && now - W.friends_at > 10000) job = JOB_FRIENDS;
+        // the seats, every 15 s while shown (or at once for another server)
+        if (!job && base[0] && now - W.drawn_at < 2000 && (now - W.status_at > 15000 || strcmp(W.status_base, base)))
+            job = JOB_STATUS;
         W.job = JOB_NONE;
-        W.busy = job == JOB_REGISTER ? T_BUSY_REG : job == JOB_PIN ? T_BUSY_PIN : job ? T_BUSY_FRIENDS : 0;
+        W.busy = job == JOB_REGISTER ? T_BUSY_REG : job == JOB_PIN ? T_BUSY_PIN : job == JOB_STATUS ? 0 : job ? T_BUSY_FRIENDS : 0;
         plat_unlock(&g_lock);
         if (!job) continue;
 
@@ -271,6 +287,15 @@ static void worker(void *unused) {
         } else if (job == JOB_FRIENDS) {
             refresh_friends(base, name, pin);
             plat_lock(&g_lock);
+        } else if (job == JOB_STATUS) {
+            SeatApiStatus st;
+            SeatApiResult r = seatapi_status(base, &st);
+            free(st.lobby_ca);
+            plat_lock(&g_lock);
+            W.status_ok = r.status == 200 ? 1 : -1;
+            W.seats_total = st.seats_total, W.seated = st.seated, W.queued = st.queued;
+            W.status_at = plat_ms();
+            snprintf(W.status_base, sizeof W.status_base, "%s", base);
         } else {   // add, accept, remove
             SeatApiResult r = {0};
             if (presence(base, name, pin)) {
@@ -336,6 +361,7 @@ MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p) {
     const char *name = p->profile_name ? p->profile_name : "";
     int name_ok = seatapi_name_ok(name);
     int signed_up = name_ok && seatapi_pin_ok(pin) && !strcmp(pin_name, name);
+    int consented = setting_is(p, "consent18", "1", 0);
     plat_lock(&g_lock);
     if (p->opened) {   // another page opening or another player: nothing of the last one shows
         W.note[0] = W.revealed_pin[0] = 0;
@@ -343,13 +369,15 @@ MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p) {
         W.friends_at = 0;
     }
     W.drawn_at = plat_ms();
-    if (signed_up) {   // the worker's refresh uses the page's current account
-        snprintf(W.base, sizeof W.base, "%s", base);
+    // the worker's refreshes use the page's current server and account; nothing is asked of a server before consent
+    snprintf(W.base, sizeof W.base, "%s", consented ? base : "");
+    if (signed_up) {
         snprintf(W.name, sizeof W.name, "%s", name);
         snprintf(W.pin, sizeof W.pin, "%s", pin);
     } else {
         W.pin[0] = 0;
     }
+    int status_ok = consented ? W.status_ok : 0, seats_total = W.seats_total, seated = W.seated, queued = W.queued;
     int busy = W.busy || W.job;
     int busy_text = W.busy;
     int note_kind = W.note_kind;
@@ -358,10 +386,11 @@ MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p) {
     memcpy(revealed, W.revealed_pin, sizeof revealed);
     plat_unlock(&g_lock);
 
+    p->columns_begin(2);   // the settings on the left, the server and the friends on the right
+    if (p->in_game) p->note(MKW_NOTE_DIM, T[T_IN_GAME]);
     p->text(T[T_INTRO]);
     p->note(MKW_NOTE_WARN, T[T_CONSENT]);
     p->checkbox("consent18", T[T_CONSENT_BOX], 0);
-    int consented = setting_is(p, "consent18", "1", 0);
     if (!consented) p->note(MKW_NOTE_DIM, T[T_CONSENT_FIRST]);
     p->disabled_begin(!consented);
 
@@ -406,6 +435,17 @@ MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p) {
     p->heading(T[T_VOICE_HEAD]);
     p->checkbox("voice", T[T_VOICE], 1);
 
+    p->column_next();
+    p->heading(T[T_SERVER_HEAD]);
+    if (status_ok > 0) {
+        snprintf(line, sizeof line, queued ? T[T_SEATS_QUEUE] : T[T_SEATS], seated, seats_total, queued);
+        p->note(seated >= seats_total && seats_total ? MKW_NOTE_WARN : MKW_NOTE_OK, line);
+    } else if (status_ok < 0) {
+        p->note(MKW_NOTE_ERROR, T[T_SERVER_DOWN]);
+    } else if (consented) {
+        p->busy(base);
+    }
+
     if (signed_up) {
         p->heading(T[T_FRIENDS]);
         static SeatApiFriends f;
@@ -444,7 +484,8 @@ MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p) {
         if (p->button(T[T_SEND])) start_job(JOB_ADD, base, name, pin, add);
         p->disabled_end();
         p->separator();
-        p->note(MKW_NOTE_DIM, T[T_ENABLE]);
+        if (!p->in_game) p->note(MKW_NOTE_DIM, T[T_ENABLE]);
     }
     p->disabled_end();
+    p->columns_end();
 }

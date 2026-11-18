@@ -53,6 +53,8 @@ typedef struct MkwOverlay {
 
 typedef void (*MkwOverlayFn)(const MkwOverlay *o, void *user);
 
+struct MkwPage;   // a mod's page (below): MkwPluginApi.settings_tab draws one
+
 typedef struct MkwPluginApi {
     uint32_t size;      // sizeof(MkwPluginApi) of the runtime: a field is there when its offset is below size
     uint32_t version;   // MKW_PLUGIN_API_VERSION of the runtime
@@ -122,6 +124,11 @@ typedef struct MkwPluginApi {
     // network goodbyes with a timeout of a second or two): the process ends right after. A crash or a killed process
     // runs none. Only from mkw_plugin_init; 1 done, 0 refused.
     int (*on_exit)(void (*cb)(void *user), void *user);
+    // A tab of the plugin's in the in-game menu's settings (F1, the controller's menu button), after General: draw is
+    // called each frame the tab is shown, with the MkwPage below (in_game 1), on the menu's thread, while the game
+    // runs: it must not block (the game's picture waits for it). title: UTF-8, copied. Only from mkw_plugin_init;
+    // 1 done, 0 refused. The same function can serve as the start screen's options page (mkw_mod_page).
+    int (*settings_tab)(const char *title, void (*draw)(const struct MkwPage *page));
 } MkwPluginApi;
 
 // Exported by the plugin. api_version is the runtime's (api->version); size tells which fields exist. Return 0 to stay
@@ -153,7 +160,7 @@ typedef int (*MkwPluginInit)(const MkwPluginApi *api, uint32_t api_version, cons
 // and the language are the start screen's. Text is UTF-8; the plugin translates its own (page->language).
 //
 // Every entry is for the page's thread (the one calling mkw_mod_page), except log, setting_get / setting_set and
-// redraw, which any thread may call.
+// redraw, which any thread may call (in the game, a plugin's own threads use MkwPluginApi's setting_get / setting_set).
 
 enum {   // MkwPage.note kinds
     MKW_NOTE_DIM,     // secondary text
@@ -175,6 +182,7 @@ typedef struct MkwPage {
     const char *profile_name;   // the player the next start plays; the settings below are this player's
     float scale;                // the start screen's UI scale: 1 at 1080 lines
     int opened;                 // 1 in the first frame after the page opened (or the player changed), else 0
+    int in_game;                // 1: a settings tab of the in-game menu (settings_tab); 0: the start screen's page
 
     void (*log)(const char *fmt, ...);   // the start screen's log, prefixed with the mod
     int (*setting_get)(const char *key, char *out, size_t cap);   // as MkwPluginApi's: the same file
@@ -213,6 +221,14 @@ typedef struct MkwPage {
     int (*list_row)(const char *name, const char *detail, const char *const *buttons, int nbuttons);
     void (*list_end)(void);
     void (*list_empty)(const char *text);         // between begin and end: the line shown when there is no row
+
+    // ---- columns: what follows columns_begin(n) goes into the first of n columns of equal width, column_next moves
+    // to the next one, columns_end closes them (a list stays inside its column). Not nested.
+    void (*columns_begin)(int n);
+    void (*column_next)(void);
+    void (*columns_end)(void);
+    // An integer from min to max as a slider, bound to a setting like the widgets above (stored when let go).
+    int (*slider)(const char *key, const char *label, int min, int max, int default_value);
 } MkwPage;
 
 typedef void (*MkwModPage)(const MkwPage *page);   // the export: MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *)

@@ -48,4 +48,8 @@ int seat_keepalive_paused(void);
 // Latest ticket from a seated reply (renewals included). Returns 1 if there is one.
 int seat_ticket(char *dst, size_t n);
 
+// Takes the seat now, on a thread of its own, with the player's notices (connecting, queue position, connected) and
+// the keepalive once seated: the plugin's seat mode "start". Once per process.
+void seat_take_early(void);
+
 #endif

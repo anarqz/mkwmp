@@ -132,6 +132,11 @@ static int p_list_row(const char *name, const char *detail, const char *const *b
     return 0;
 }
 static void p_list_end(void) {}
+static int g_cols;
+static void p_columns_begin(int n) { assert(!g_cols); g_cols = n; }
+static void p_column_next(void) { assert(g_cols); }
+static void p_columns_end(void) { assert(g_cols); g_cols = 0; }
+static int p_slider(const char *k, const char *l, int mn, int mx, int d) { (void)k, (void)l, (void)mn, (void)mx, (void)d; return 0; }
 static void p_list_empty(const char *t) { (void)t; }
 
 static MkwModPage g_page_fn;
@@ -145,13 +150,15 @@ static void frame(void) {
         .heading = p_heading, .text = p_text, .note = p_note, .separator = p_separator, .same_line = p_same_line,
         .disabled_begin = p_disabled_begin, .disabled_end = p_disabled_end, .busy = p_busy, .checkbox = p_checkbox, .input = p_input, .choice = p_choice,
         .button = p_button, .list_begin = p_list_begin, .list_row = p_list_row, .list_end = p_list_end,
-        .list_empty = p_list_empty,
+        .list_empty = p_list_empty, .columns_begin = p_columns_begin, .column_next = p_column_next,
+        .columns_end = p_columns_end, .slider = p_slider,
     };
     g_opened = 0;
     g_texts[0] = 0;
     g_disabled = g_depth = 0;
     g_page_fn(&pg);
     assert(g_depth == 0);   // every section the page opened, it closed
+    assert(!g_cols);        // and its columns
 }
 // Frames until cond holds (the page's worker thread answers), at most 8 s.
 #define FRAMES_UNTIL(cond)                                                                                             \
@@ -171,6 +178,8 @@ static int setting_is(const char *key, const char *value) {
 }
 static int v2_get(const char *key, char *out, size_t cap) { return s_get(key, out, cap); }
 static void (*g_exit_cb)(void *);
+static int g_tabs;
+static int v2_settings_tab(const char *title, void (*draw)(const struct MkwPage *)) { (void)title; assert(draw); g_tabs++; return 1; }
 static int v2_on_exit(void (*cb)(void *), void *user) { (void)user; g_exit_cb = cb; return 1; }
 static int v2_set(const char *key, const char *value) { return s_set(key, value); }
 
@@ -353,6 +362,7 @@ int main(int argc, char **argv) {
             v2.setting_get = v2_get;
             v2.setting_set = v2_set;
             v2.on_exit = v2_on_exit;
+            v2.settings_tab = v2_settings_tab;
             unsetenv("MKWMP_ENABLE");   // engaged by the settings alone
             const char *m = NULL;
             if (init(&v2, MKW_PLUGIN_API_VERSION, &m)) _exit(10);
@@ -366,6 +376,7 @@ int main(int argc, char **argv) {
             if (!strstr(t2, "the plugin signs in to") || !strstr(t2, "as Luz itself")) { fputs(t2, stderr); _exit(12); }
             if (!strstr(t2, "overrides registered")) _exit(13);
             if (!g_exit_cb) _exit(14);   // the seat is given back at the game's end
+            if (g_tabs != 2) _exit(15);  // Voice chat and MKWMP in the in-game settings
             g_exit_cb(NULL);             // nothing seated yet: a no-op that must not hang
             _exit(0);
         }

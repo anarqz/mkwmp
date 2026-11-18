@@ -94,10 +94,12 @@ int main(int argc, char **argv) {
     assert(req("POST", "/local/v1/voice/mute", "{\"account\":\"42\",\"name\":\"Luz\",\"muted\":true}", &body) == 204);
     assert(req("GET", "/local/v1/voice", NULL, &body) == 200 && strstr(body, "\"account\":\"42\""));
     char kept[64];
-    assert(s_get("mutes.1", kept, sizeof kept) && !strcmp(kept, "42"));   // in the mod's settings
+    assert(s_get("mutes.1", kept, sizeof kept) && !strcmp(kept, "42:Luz"));   // id and name
     seatd_stop();
     seatd_start(&c);   // the next game: the mute is still there
-    assert(req("GET", "/local/v1/voice", NULL, &body) == 200 && strstr(body, "\"account\":\"42\""));
+    assert(req("GET", "/local/v1/voice", NULL, &body) == 200 && strstr(body, "\"account\":\"42\",\"name\":\"Luz\""));
+    SeatdMute m[4];
+    assert(seatd_mutes(m, 4) == 1 && m[0].account == 42 && !strcmp(m[0].name, "Luz"));   // the Voice chat tab's list
     assert(req("POST", "/local/v1/voice/mute", "{\"account\":\"42\",\"name\":\"Luz\",\"muted\":false}", &body) == 204);
     assert(req("GET", "/local/v1/voice", NULL, &body) == 200 && !strstr(body, "\"account\":\"42\""));
     assert(!s_get("mutes.1", kept, sizeof kept));
@@ -118,6 +120,19 @@ int main(int argc, char **argv) {
     }
     printf("mutes kept in the mod's settings across games (64)\n");
     assert(req("GET", "/local/v1/room", NULL, &body) == 404);
+    // the devices the engine reports, for the Voice chat tab; the tab's settings reach voice.c at its next poll
+    assert(req("POST", "/local/v1/voice/devices", "{\"inputs\":[{\"id\":\"mic1\",\"name\":\"Mic\"}],\"outputs\":[]}", &body) == 204);
+    char dev[256];
+    assert(seatd_devices_json(dev, sizeof dev) && strstr(dev, "mic1"));
+    s_set("voice_input", "mic1");
+    s_set("voice_in_gain", "40");
+    s_set("voice", "0");
+    assert(req("GET", "/local/v1/voice", NULL, &body) == 200 && strstr(body, "\"enabled\":false") &&
+           strstr(body, "\"input\":\"mic1\"") && strstr(body, "\"inputGain\":40"));
+    s_set("voice", NULL);
+    s_set("voice_input", NULL);
+    s_set("voice_in_gain", NULL);
+    printf("voice settings from the mod's settings, live; the device list kept for the tab\n");
     printf("friends, voice settings and mutes, no room\n");
 
     snprintf(c.name, sizeof c.name, "Nobody");

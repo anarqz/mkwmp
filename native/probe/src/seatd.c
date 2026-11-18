@@ -3,6 +3,7 @@
 
 #include "config.h"
 #include "log.h"
+#include "notify.h"
 #include "plat.h"
 #include "seatapi.h"
 
@@ -11,20 +12,36 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { MUTES_MAX = 64, FRIENDS_TTL_MS = 10000 };
+enum { MUTES_MAX = SEATD_MUTES_MAX };
 
 static PlatLock g_lock = PLAT_LOCK_INIT;   // one request at a time (launcher.c serialises too)
 static SeatdConfig C;
 static int g_started;
 static int g_have_status;
 static char g_sid[80], g_skey[160];          // the seat session
-static char g_presence[160];                 // the friends routes' token
-static struct { unsigned long long account; char name[40]; } g_mutes[MUTES_MAX];
+static SeatdMute g_mutes[MUTES_MAX];
 static int g_nmutes;
-enum { MUTE_KEYS = 3, PER_KEY = 22 };   // 64 ids of up to 20 digits, comma-separated, in settings of <= 1024 bytes
+enum { MUTE_KEYS = 3, PER_KEY = 22 };   // 64 of "id:name" (20 digits, 16 characters) in settings of <= 1024 bytes
 _Static_assert(MUTE_KEYS * PER_KEY >= MUTES_MAX, "every mute fits the settings");
 
-// The mutes from the settings (lock held). Names are not kept: the game shows its own.
+// The friends watcher's (g_flock: the long poll does not hold g_lock)
+static PlatLock g_flock = PLAT_LOCK_INIT;
+static char g_presence[160];                 // the friends routes' token
+static SeatApiFriends g_friends;
+static int g_have_friends;
+static char g_devices[8192];                 // the voice engine's last device list (POST /local/v1/voice/devices)
+
+// ---- texts of the notices (English, Brazilian Portuguese)
+enum { N_ONLINE, N_PLAYING, N_WANTS, N_ACCEPTED, N_MORE, N_FRIENDS_ON, N_ONE_ON, N_COUNT };
+static const char *const N_EN[N_COUNT] = {"%s is online", "%s is playing online", "%s wants to be your friend",
+                                          "%s accepted your friend request", "and %d more", "%d friends online: %s",
+                                          "%s is online"};
+static const char *const N_PT[N_COUNT] = {"%s está online", "%s está jogando online", "%s quer ser seu amigo",
+                                          "%s aceitou seu pedido de amizade", "e mais %d", "%d amigos online: %s",
+                                          "%s está online"};
+static const char *nt(int id) { return C.lang_pt ? N_PT[id] : N_EN[id]; }
+
+// ---- mutes, kept in the mod's settings as "id:name,..." (lock held)
 static void mutes_load(void) {
     g_nmutes = 0;
     if (!C.setting_get) return;
@@ -35,21 +52,24 @@ static void mutes_load(void) {
         for (char *t = list, *next; t && *t && g_nmutes < MUTES_MAX; t = next) {
             next = strchr(t, ',');
             if (next) *next++ = 0;
+            char *colon = strchr(t, ':');
+            if (colon) *colon++ = 0;
             unsigned long long id = strtoull(t, NULL, 10);
             if (!id) continue;
             g_mutes[g_nmutes].account = id;
-            g_mutes[g_nmutes++].name[0] = 0;
+            snprintf(g_mutes[g_nmutes++].name, sizeof g_mutes[0].name, "%s", colon && seatapi_name_ok(colon) ? colon : "");
         }
     }
 }
 
-static void mutes_save(void) {   // lock held
+static void mutes_save(void) {
     if (!C.setting_set) return;
     for (int k = 0; k < MUTE_KEYS; k++) {
-        char key[16], list[PER_KEY * 21 + 1] = "";
+        char key[16], list[PER_KEY * 40 + 1] = "";
         size_t n = 0;
         for (int i = k * PER_KEY; i < g_nmutes && i < (k + 1) * PER_KEY; i++)
-            n += (size_t)snprintf(list + n, sizeof list - n, "%s%llu", n ? "," : "", g_mutes[i].account);
+            n += (size_t)snprintf(list + n, sizeof list - n, "%s%llu%s%s", n ? "," : "", g_mutes[i].account,
+                                  g_mutes[i].name[0] ? ":" : "", g_mutes[i].name);
         snprintf(key, sizeof key, "mutes.%d", k + 1);
         C.setting_set(key, n ? list : NULL);
     }
@@ -75,7 +95,111 @@ static int reply(char *buf, size_t cap, const char **body, int status, const cha
     return status;
 }
 
+// ---- the friends watcher: the server's long poll, a notice per change (as the launcher's tray did)
+static int find(const SeatApiFriend *list, int n, const char *name) {
+    for (int i = 0; i < n; i++)
+        if (!strcmp(list[i].name, name)) return i;
+    return -1;
+}
+
+static void notices(const SeatApiFriends *was, const SeatApiFriends *now) {
+    char text[160];
+    int said = 0, more = 0;
+    for (int i = 0; i < now->nfriends; i++) {
+        const SeatApiFriend *f = &now->friends[i];
+        int at = find(was->friends, was->nfriends, f->name);
+        const char *before = at >= 0 ? was->friends[at].state : "";
+        int id = -1;
+        if (at < 0 && find(was->outgoing, was->noutgoing, f->name) >= 0) id = N_ACCEPTED;
+        else if (!strcmp(f->state, "playing") && strcmp(before, "playing")) id = N_PLAYING;
+        else if (!strcmp(f->state, "online") && (!strcmp(before, "offline") || at < 0)) id = N_ONLINE;
+        if (id < 0) continue;
+        if (said++ < 3) {
+            snprintf(text, sizeof text, nt(id), f->name);
+            notify_push(id == N_ACCEPTED ? NOTIFY_SUCCESS : NOTIFY_INFO, text);
+        } else {
+            more++;
+        }
+    }
+    for (int i = 0; i < now->nincoming; i++) {
+        if (find(was->incoming, was->nincoming, now->incoming[i].name) >= 0) continue;
+        if (said++ < 3) {
+            snprintf(text, sizeof text, nt(N_WANTS), now->incoming[i].name);
+            notify_push(NOTIFY_INFO, text);
+        } else {
+            more++;
+        }
+    }
+    if (more) {
+        snprintf(text, sizeof text, nt(N_MORE), more);
+        notify_push(NOTIFY_INFO, text);
+    }
+}
+
+// The first answer: who is online already, in one notice.
+static void first_notice(const SeatApiFriends *now) {
+    char names[120] = "";
+    int on = 0;
+    size_t n = 0;
+    for (int i = 0; i < now->nfriends; i++) {
+        if (!strcmp(now->friends[i].state, "offline")) continue;
+        if (on++ < 3) n += (size_t)snprintf(names + n, sizeof names - n, "%s%s", n ? ", " : "", now->friends[i].name);
+    }
+    char text[200];
+    if (on == 1) snprintf(text, sizeof text, nt(N_ONE_ON), names);
+    else if (on > 1) snprintf(text, sizeof text, nt(N_FRIENDS_ON), on, names);
+    if (on) notify_push(NOTIFY_INFO, text);
+    for (int i = 0; i < now->nincoming && i < 3; i++) {
+        snprintf(text, sizeof text, nt(N_WANTS), now->incoming[i].name);
+        notify_push(NOTIFY_INFO, text);
+    }
+}
+
+static void watcher(void *unused) {
+    (void)unused;
+    static SeatApiFriends now, was;
+    char cursor[64] = "", next[64], token[160] = "";
+    int have = 0, backoff = 5;
+    for (;;) {
+        if (!token[0]) {
+            SeatApiResult r = seatapi_presence(C.server, C.name, C.pin, token, sizeof token);
+            if (!token[0]) {
+                mkwmp_log("friends: sign-in: %d %s", r.status, r.message);
+                plat_sleep_ms((uint32_t)(r.retry_after > 0 ? r.retry_after : backoff) * 1000);
+                if (backoff < 120) backoff *= 2;
+                continue;
+            }
+            plat_lock(&g_flock);
+            snprintf(g_presence, sizeof g_presence, "%s", token);
+            plat_unlock(&g_flock);
+            cursor[0] = 0;
+            backoff = 5;
+        }
+        SeatApiResult r = seatapi_friends_wait(C.server, token, cursor, next, sizeof next, &now);
+        if (r.status == 401) {   // expired, or another sign-in replaced it: once more
+            token[0] = 0;
+            continue;
+        }
+        if (r.status != 200) {
+            mkwmp_log("friends: %d %s", r.status, r.message);
+            plat_sleep_ms(15000);
+            continue;
+        }
+        if (have) notices(&was, &now);
+        else first_notice(&now);
+        plat_lock(&g_flock);
+        g_friends = now;
+        g_have_friends = 1;
+        plat_unlock(&g_flock);
+        was = now;
+        have = 1;
+        if (!next[0] || !strcmp(next, cursor)) plat_sleep_ms(10000);   // a server without the long poll
+        snprintf(cursor, sizeof cursor, "%s", next);
+    }
+}
+
 void seatd_start(const SeatdConfig *cfg) {
+    static int watching;
     plat_lock(&g_lock);
     C = *cfg;
     g_started = 1;
@@ -83,6 +207,7 @@ void seatd_start(const SeatdConfig *cfg) {
     plat_unlock(&g_lock);
     mkwmp_log("seat: no launcher; the plugin signs in to %s as %s itself (%d muted player(s) kept)", C.server, C.name,
               g_nmutes);
+    if (cfg->watch_friends && !watching) watching = plat_thread_start(watcher, NULL);
 }
 
 // The lobby, its CA and the voice port, once per game (lock held).
@@ -95,7 +220,7 @@ static void fetch_status(void) {
         return;
     }
     g_have_status = 1;
-    mkwmp_config_set_voice_port(C.voice ? s.voice_port : 0);
+    mkwmp_config_set_voice_port(s.voice_port);   // voice on/off is the settings' (voice_get), live
     char path[1024];
     if (plat_home_path(path, sizeof path, "mkwmp-lobby-ca.pem")) {
         if (s.lobby_ca) {
@@ -158,27 +283,23 @@ static int seat(char *buf, size_t cap, const char **body) {
     return reply(buf, cap, body, 503, "{\"state\":\"unavailable\",\"message\":\"%s\"}", clean(r.message));
 }
 
+// The game's friend list: the watcher's last answer, else one fetch of our own.
 static int friends(char *buf, size_t cap, const char **body) {
     static SeatApiFriends f;
-    static uint64_t at;
-    static int have;
-    uint64_t now = plat_ms();
-    if (!have || now - at > FRIENDS_TTL_MS) {
-        SeatApiResult r = {0};
-        for (int attempt = 0; attempt < 2; attempt++) {
-            if (!g_presence[0]) {
-                r = seatapi_presence(C.server, C.name, C.pin, g_presence, sizeof g_presence);
-                if (!g_presence[0]) break;
-            }
-            r = seatapi_friends(C.server, g_presence, &f);
-            if (r.status != 401) break;
-            g_presence[0] = 0;   // expired: sign in again, once
-        }
-        if (r.status != 200) {
-            if (!have) return reply(buf, cap, body, 503, "{\"state\":\"unavailable\",\"message\":\"%s\"}", clean(r.message));
-        } else {
-            have = 1;
-            at = now;
+    plat_lock(&g_flock);
+    int have = g_have_friends;
+    if (have) f = g_friends;
+    plat_unlock(&g_flock);
+    if (!have) {
+        char token[160] = "";
+        SeatApiResult r = seatapi_presence(C.server, C.name, C.pin, token, sizeof token);
+        if (token[0]) r = seatapi_friends(C.server, token, &f);
+        if (r.status != 200) return reply(buf, cap, body, 503, "{\"state\":\"unavailable\",\"message\":\"%s\"}", clean(r.message));
+        if (!C.watch_friends) seatapi_presence_end(C.server, token);
+        else {
+            plat_lock(&g_flock);
+            if (!g_presence[0]) snprintf(g_presence, sizeof g_presence, "%s", token);
+            plat_unlock(&g_flock);
         }
     }
     size_t n = (size_t)snprintf(buf, cap, "{\"friends\":[");
@@ -190,9 +311,29 @@ static int friends(char *buf, size_t cap, const char **body) {
     return 200;
 }
 
+// The voice settings: the mod's (its in-game Voice chat tab and options page), read at each poll so a change applies
+// at once. Device ids go into JSON: quotes and backslashes are not kept.
+static void setting(const char *key, const char *fallback, char *out, size_t cap) {
+    if (!C.setting_get || !C.setting_get(key, out, cap)) snprintf(out, cap, "%s", fallback);
+    for (char *q = out; *q; q++)
+        if (*q == '"' || *q == '\\' || (unsigned char)*q < 0x20) *q = ' ';
+}
+
+static int gain(const char *key) {
+    char v[16];
+    setting(key, "100", v, sizeof v);
+    int g = atoi(v);
+    return g < 1 ? 1 : g > 100 ? 100 : g;
+}
+
 static int voice_get(char *buf, size_t cap, const char **body) {
-    size_t n = (size_t)snprintf(buf, cap, "{\"enabled\":%s,\"input\":\"\",\"output\":\"\",\"inputGain\":100,"
-                                          "\"outputGain\":100,\"mutes\":[", C.voice ? "true" : "false");
+    char on[8], input[512], output[512];
+    setting("voice", C.voice ? "1" : "0", on, sizeof on);
+    setting("voice_input", "", input, sizeof input);
+    setting("voice_output", "", output, sizeof output);
+    size_t n = (size_t)snprintf(buf, cap, "{\"enabled\":%s,\"input\":\"%s\",\"output\":\"%s\",\"inputGain\":%d,"
+                                          "\"outputGain\":%d,\"mutes\":[", strcmp(on, "0") ? "true" : "false", input,
+                                output, gain("voice_in_gain"), gain("voice_out_gain"));
     for (int i = 0; i < g_nmutes && n + 80 < cap; i++)
         n += (size_t)snprintf(buf + n, cap - n, "%s{\"account\":\"%llu\",\"name\":\"%s\"}", i ? "," : "",
                               g_mutes[i].account, g_mutes[i].name);
@@ -201,7 +342,7 @@ static int voice_get(char *buf, size_t cap, const char **body) {
     return 200;
 }
 
-// {"account":"123","name":"x","muted":true}: kept for this game (the launcher keeps them across games)
+// {"account":"123","name":"x","muted":true}, from the pause menu's voice labels: kept across games
 static int voice_mute(const char *json, char *buf, size_t cap, const char **body) {
     char num[32] = "", name[40] = "";
     seatapi_json_str(json, "account", num, sizeof num);
@@ -214,8 +355,7 @@ static int voice_mute(const char *json, char *buf, size_t cap, const char **body
         if (g_mutes[i].account == account) at = i;
     if (muted && at < 0 && g_nmutes < MUTES_MAX) {
         g_mutes[g_nmutes].account = account;
-        for (size_t i = 0, k = 0; name[i] && k + 1 < sizeof g_mutes[0].name; i++)   // shown back in JSON: no quotes
-            if (name[i] != '"' && name[i] != '\\') g_mutes[g_nmutes].name[k++] = name[i];
+        snprintf(g_mutes[g_nmutes].name, sizeof g_mutes[0].name, "%s", seatapi_name_ok(name) ? name : "");
         g_nmutes++;
     } else if (!muted && at >= 0) {
         g_mutes[at] = g_mutes[--g_nmutes];
@@ -223,6 +363,13 @@ static int voice_mute(const char *json, char *buf, size_t cap, const char **body
         return reply(buf, cap, body, 204, "");   // no change
     }
     mutes_save();
+    return reply(buf, cap, body, 204, "");
+}
+
+static int voice_devices(const char *json, char *buf, size_t cap, const char **body) {
+    plat_lock(&g_flock);
+    snprintf(g_devices, sizeof g_devices, "%s", json ? json : "");
+    plat_unlock(&g_flock);
     return reply(buf, cap, body, 204, "");
 }
 
@@ -237,14 +384,41 @@ int seatd_request(const char *method, const char *path, const char *json, char *
     else if (!strcmp(path, "/local/v1/friends")) st = friends(buf, cap, body);
     else if (!strcmp(path, "/local/v1/voice") && !strcmp(method, "GET")) st = voice_get(buf, cap, body);
     else if (!strcmp(path, "/local/v1/voice/mute")) st = voice_mute(json, buf, cap, body);
-    else if (!strcmp(path, "/local/v1/voice/devices")) st = reply(buf, cap, body, 204, "");
+    else if (!strcmp(path, "/local/v1/voice/devices")) st = voice_devices(json, buf, cap, body);
     else st = reply(buf, cap, body, 404, "{}");   // /local/v1/room is gone: the runtime's number pad asks
     plat_unlock(&g_lock);
     return st;
 }
 
+int seatd_devices_json(char *out, size_t cap) {
+    plat_lock(&g_flock);
+    snprintf(out, cap, "%s", g_devices);
+    plat_unlock(&g_flock);
+    return out[0] != 0;
+}
+
+int seatd_mutes(SeatdMute *out, int max) {
+    plat_lock(&g_lock);
+    int n = g_nmutes < max ? g_nmutes : max;
+    memcpy(out, g_mutes, (size_t)n * sizeof *out);
+    plat_unlock(&g_lock);
+    return n;
+}
+
+void seatd_unmute(unsigned long long account) {
+    plat_lock(&g_lock);
+    for (int i = 0; i < g_nmutes; i++)
+        if (g_mutes[i].account == account) {
+            g_mutes[i] = g_mutes[--g_nmutes];
+            mutes_save();
+            break;
+        }
+    plat_unlock(&g_lock);
+}
+
 void seatd_stop(void) {
     plat_lock(&g_lock);
+    plat_lock(&g_flock);
     if (g_sid[0] || g_presence[0]) {
         seatapi_set_timeout_ms(1500);   // the process ends right after: a slow server must not hold it
         if (g_sid[0]) {
@@ -255,5 +429,6 @@ void seatd_stop(void) {
         seatapi_set_timeout_ms(0);
     }
     g_sid[0] = g_presence[0] = 0;
+    plat_unlock(&g_flock);
     plat_unlock(&g_lock);
 }

@@ -111,11 +111,11 @@ int seatapi_json_span(const char *body, const char *key, const char **begin, con
 }
 
 // ---- calls
-static SeatApiResult call(const char *method, const char *base, const char *path, const char *bearer,
-                          const char *json, char *out, size_t cap) {
+static SeatApiResult call_t(const char *method, const char *base, const char *path, const char *bearer,
+                            const char *json, char *out, size_t cap, int timeout_ms) {
     char url[600];
     snprintf(url, sizeof url, "%s%s", base, path);
-    PlatHttpResult h = plat_http(method, url, bearer, json, out, cap, g_timeout_ms);
+    PlatHttpResult h = plat_http(method, url, bearer, json, out, cap, timeout_ms);
     SeatApiResult r = {0};
     r.status = h.status;
     r.retry_after = h.retry_after;
@@ -131,6 +131,11 @@ static SeatApiResult call(const char *method, const char *base, const char *path
             snprintf(r.message, sizeof r.message, "HTTP %d", h.status);
     }
     return r;
+}
+
+static SeatApiResult call(const char *method, const char *base, const char *path, const char *bearer,
+                          const char *json, char *out, size_t cap) {
+    return call_t(method, base, path, bearer, json, out, cap, g_timeout_ms);
 }
 
 SeatApiResult seatapi_register(const char *base, const char *name, char pin[SEATAPI_PIN_LEN + 1]) {
@@ -151,10 +156,18 @@ SeatApiResult seatapi_register(const char *base, const char *name, char pin[SEAT
 }
 
 SeatApiResult seatapi_status(const char *base, SeatApiStatus *s) {
-    static char out[24576];   // lobbyCa is at most 16 KiB of PEM; one caller at a time (seatd's lock)
+    enum { CAP = 24576 };   // lobbyCa is at most 16 KiB of PEM
     memset(s, 0, sizeof *s);
-    SeatApiResult r = call("GET", base, "/seat/v1/status", NULL, NULL, out, sizeof out);
-    if (r.status != 200) return r;
+    char *out = malloc(CAP);
+    if (!out) {
+        SeatApiResult r = {0, 0, "NO_MEMORY", "out of memory"};
+        return r;
+    }
+    SeatApiResult r = call("GET", base, "/seat/v1/status", NULL, NULL, out, CAP);
+    if (r.status != 200) {
+        free(out);
+        return r;
+    }
     long long v;
     seatapi_json_str(out, "lobbyEndpoint", s->lobby, sizeof s->lobby);
     if (seatapi_json_int(out, "voicePort", &v)) s->voice_port = (int)v;
@@ -164,6 +177,7 @@ SeatApiResult seatapi_status(const char *base, SeatApiStatus *s) {
     char *ca = malloc(16384 + 1);
     if (ca && seatapi_json_str(out, "lobbyCa", ca, 16384 + 1) && strstr(ca, "-----BEGIN CERTIFICATE-----")) s->lobby_ca = ca;
     else free(ca);
+    free(out);
     return r;
 }
 
@@ -255,10 +269,31 @@ static int read_list(const char *b, const char *e, const char *state_key, SeatAp
 }
 
 SeatApiResult seatapi_friends(const char *base, const char *token, SeatApiFriends *f) {
-    static char out[32768];   // 100 friends and 100 requests; callers are serialised by theirs (seatd, modpage)
+    return seatapi_friends_wait(base, token, NULL, NULL, 0, f);
+}
+
+SeatApiResult seatapi_friends_wait(const char *base, const char *token, const char *since, char *cursor,
+                                   size_t cursor_cap, SeatApiFriends *f) {
+    char out[32768];   // 100 friends and 100 requests
+    char path[160];
     memset(f, 0, sizeof *f);
-    SeatApiResult r = call("GET", base, "/seat/v1/friends", token, NULL, out, sizeof out);
+    int wait = since && *since;
+    if (wait) snprintf(path, sizeof path, "/seat/v1/friends?since=%s", since);
+    else snprintf(path, sizeof path, "/seat/v1/friends");
+    // the server holds a request with since up to 25 s
+    SeatApiResult r = call_t("GET", base, path, token, NULL, out, sizeof out, wait ? 35000 : g_timeout_ms);
     if (r.status != 200) return r;
+    if (cursor && cursor_cap) {
+        long long c;
+        if (!seatapi_json_str(out, "cursor", cursor, cursor_cap)) {
+            if (seatapi_json_int(out, "cursor", &c)) snprintf(cursor, cursor_cap, "%lld", c);
+            else cursor[0] = 0;
+        }
+        for (char *q = cursor; *q; q++)   // goes into a URL: only what a cursor can hold
+            if (!((*q >= '0' && *q <= '9') || (*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z') || *q == '-' ||
+                  *q == '_' || *q == '.'))
+                *q = '_';
+    }
     const char *b, *e;
     if (seatapi_json_span(out, "friends", &b, &e)) f->nfriends = read_list(b, e, "state", f->friends, SEATAPI_FRIENDS_MAX);
     if (seatapi_json_span(out, "incoming", &b, &e)) f->nincoming = read_list(b, e, NULL, f->incoming, SEATAPI_REQUESTS_MAX);

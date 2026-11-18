@@ -30,8 +30,10 @@
 #include "probe.h"
 #include "rtapi.h"
 #include "seatapi.h"
+#include "seat.h"
 #include "seatd.h"
 #include "voice_ui.h"
+#include "voicetab.h"
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -44,6 +46,7 @@ RtApi g_rt;
 static const MkwPluginApi *g_api;
 static int g_active;                     // probe_register registered overrides (mkwmp.toml or MKWMP_ENABLE)
 static int g_needs_setup;                // enabled, but the options page was never completed: said at game load
+static int g_seat_early;                 // take the seat when the game loads (seat mode "start")
 
 // The SDK names whose stock handlers the fs overrides chain to: npln.c's kRegs entries for ov_fs_open_file ...
 // (the COFF backend takes the same handlers from mkw.exe's ov_open_file ... symbols).
@@ -91,6 +94,7 @@ static void on_game_loaded(void *user) {
     uint64_t main = g_api->module_base ? g_api->module_base("main") : 0;
     mkwmp_log("plugin: game %s loaded (build id %s, main at %#llx)", g_api->game_version ? g_api->game_version : "?",
               g_api->game_id ? g_api->game_id : "?", (unsigned long long)main);
+    if (g_seat_early && g_active) seat_take_early();   // connecting... / in line / connected, in the menus already
     if (g_needs_setup && g_api->notice)
         g_api->notice("MKWMP: open Mods, MKWMP, Options on the start screen to set up online play", 10);
     if (main && main != GUEST_MAIN(0))
@@ -111,6 +115,8 @@ static int has_settings(const MkwPluginApi *api) {
     return api->size >= offsetof(MkwPluginApi, setting_set) + sizeof api->setting_set && api->setting_get &&
            api->profile_name;
 }
+
+MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p);   // modpage.c: also the in-game MKWMP tab
 
 static void game_exiting(void *user) {
     (void)user;
@@ -149,8 +155,18 @@ static void use_settings(const MkwPluginApi *api) {
     c.voice = voice_on;
     c.setting_get = api->setting_get;
     c.setting_set = api->setting_set;
+    c.watch_friends = 1;   // friends' notices in game, as the launcher's tray gave
+    c.lang_pt = api->language && (!strcmp(api->language, "pt-BR") || !strcmp(api->language, "pt"));
     seatd_start(&c);
     launcher_set_direct(seatd_request);
+    char mode[16] = "";
+    api->setting_get("seat_mode", mode, sizeof mode);
+    g_seat_early = strcmp(mode, "online") != 0;   // "start" (default, as the launcher's): the seat when the game loads
+    // the game's own settings get the mod's tabs: voice chat, and the account and friends (the options page)
+    if (api->size >= offsetof(MkwPluginApi, settings_tab) + sizeof api->settings_tab && api->settings_tab) {
+        api->settings_tab(c.lang_pt ? "Chat de voz" : "Voice chat", voicetab_draw);
+        api->settings_tab("MKWMP", mkw_mod_page);
+    }
     // the seat given back when the game ends (else the server frees it after 60 s)
     if (api->size >= offsetof(MkwPluginApi, on_exit) + sizeof api->on_exit && api->on_exit)
         api->on_exit(game_exiting, NULL);

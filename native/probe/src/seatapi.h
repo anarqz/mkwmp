@@ -76,6 +76,10 @@ typedef struct {
     SeatApiFriend friends[SEATAPI_FRIENDS_MAX], incoming[SEATAPI_REQUESTS_MAX], outgoing[SEATAPI_REQUESTS_MAX];
 } SeatApiFriends;
 SeatApiResult seatapi_friends(const char *base, const char *token, SeatApiFriends *out);
+// The long poll: with since (the last answer's cursor) the server answers at the next change or after about 25 s.
+// cursor gets this answer's cursor (for the next call). since NULL or "": answers at once.
+SeatApiResult seatapi_friends_wait(const char *base, const char *token, const char *since, char *cursor,
+                                   size_t cursor_cap, SeatApiFriends *out);
 SeatApiResult seatapi_friend_request(const char *base, const char *token, const char *name);   // POST: ask / accept theirs
 SeatApiResult seatapi_friend_accept(const char *base, const char *token, const char *name);
 SeatApiResult seatapi_friend_remove(const char *base, const char *token, const char *name);  // reject, cancel or end

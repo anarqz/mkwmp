@@ -182,6 +182,30 @@ plugin: it then uses `mkwmp.toml` and the launcher only.
   - `test_seatd.c` covers the in-game local API: refusals, ticket, lobby and CA, heartbeat, rejoin, friends, voice
     and mutes.
 
+In the game, also:
+- The seat is taken when the game loads (setting `seat_mode`: `start`, the default, as the launcher's; `online`: at
+  Online Play), with notices:
+  - "Connecting to MKWMP...";
+  - "All seats are taken: you are #N in line (M seats)";
+  - "Connected to MKWMP: you have a seat";
+  - "MKWMP server not reachable".
+
+  Each is said once per change (`seat.c`).
+- Friends' notices, as the launcher's tray gave them: a thread follows the friends list with the server's long poll
+  (`seatapi_friends_wait`) and says:
+  - who is online at the start;
+  - "X is online" and "X is playing online";
+  - "X wants to be your friend";
+  - "X accepted your friend request".
+
+  In English or Brazilian Portuguese.
+- Two tabs in mkw-recomp's in-game settings (the fork's API 2 `settings_tab`):
+  - **Voice chat** (`voicetab.c`): on/off, the microphone and speakers the engine reports, their volumes, and the
+    muted players with Unmute. Changes apply at voice.c's next poll; the settings are `voice_input`, `voice_output`,
+    `voice_in_gain` and `voice_out_gain`.
+  - **MKWMP**: the options page, in two columns (the settings on the left; the server's seats and the friends on the
+    right).
+- Mutes are kept with their names (`id:name`).
+
 Not yet:
 - a confirmation before Remove;
-- in-game notices for friends coming online.
