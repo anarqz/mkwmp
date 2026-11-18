@@ -1,4 +1,4 @@
-// The probe's only view of the mkw-recomp runtime (resources/docs/PLUGIN-API-READINESS.md).
+// The probe's only view of the mkw-recomp runtime (docs/PLUGIN-API-READINESS.md).
 //
 // Everything outside the backend calls the runtime through g_rt and nothing else. Today one backend fills it: coff.c,
 // from mkw.exe's COFF symbol table, its .ovr section, its g_host registry and the rt_dispatch import of mkwgame.dll

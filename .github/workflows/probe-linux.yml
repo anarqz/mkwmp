@@ -1,5 +1,5 @@
 # Keeps the probe's platform-neutral core portable while mkw-recomp's plugin API does not exist yet
-# (resources/docs/PLUGIN-API-READINESS.md): the core must build as a Linux shared object with no Windows
+# (docs/PLUGIN-API-READINESS.md): the core must build as a Linux shared object with no Windows
 # dependency, and the Windows winmm.dll must still build. Nothing is uploaded or released.
 name: probe-linux
 

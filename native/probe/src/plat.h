@@ -1,4 +1,4 @@
-// The probe's only view of the operating system (resources/docs/PLUGIN-API-READINESS.md, phase 1).
+// The probe's only view of the operating system (docs/PLUGIN-API-READINESS.md, phase 1).
 //
 // The platform-neutral core (npln.c, seat.c, friends.c, voice.c, notify.c, log.c, ...) uses these instead of Win32,
 // so the same sources build as the Windows winmm.dll proxy today and as a native Linux .so for mkw-recomp's plugin
