@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
         CHECK(r180->page_count == 0x4628 && r180->page_entries == 0x4630 && r180->entry_name == 0x18 && r180->entry_me == 0x78);
         CHECK(r180->stock_lo == 0x7003800000ull && r180->stock_hi == 0x70038e0000ull);   // subsdk0 "movie"
         // ... and what stays off there: zero fields
-        CHECK(r180->proton_skip_error == 0);                                  // no Proton default skip yet
+        CHECK(r180->proton_skip_error == 0x9b928162u);                        // Proton default skip, as on 1.0.0
         CHECK(r180->kart_idle_kick == 0 && !r180->kart_entry[0] && !r180->kart_entry[1]);   // MKWMP_NO_IDLE_KICK refused
         CHECK(!r180->room_sync && !r180->room_main && !r180->room_vote && !r180->room_event);   // MKWMP_TRACE_ROOM
         int ranges = 0;
