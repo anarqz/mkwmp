@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Build the probe as a native mkw-recomp plugin (src/mkw_plugin.h, API version 1) with zig cc.
+"""Build the probe as a native mkw-recomp plugin (src/mkw_plugin.h: mkw-recomp's plugin API version 1) with zig cc.
 
-    python build_plugin.py [--zig PATH] [--version X.Y.Z] [--target linux|windows|all] [--test]
+    python build_plugin.py [--zig PATH] [--version X.Y.Z] [--target linux|windows|all] [--test] [--package]
 
 Produces build/plugin/linux/mkwmp.so (x86_64-linux-gnu) and build/plugin/windows/mkwmp.dll (x86_64-windows-gnu, a
 plain DLL, not the winmm.dll proxy): the core sources of build.py (minus the winmm loader, the COFF backend and the
@@ -9,6 +9,16 @@ keypad detours, as build_linux.py), the plat files of the target and src/backend
 mkw_plugin_init (Linux: a version script, linked with --no-undefined). --test also builds tests/test_plugin.c and runs
 it against the Linux .so (on a Linux host): a fake MkwPluginApi, no runtime needed. Runs in CI
 (.github/workflows/probe-linux.yml).
+
+--package lays the mod out as mkw-recomp's Mods page imports it (and as `mkw --play --mod mkwmp` loads it from
+<game>/mods/), with whatever was built, and zips it:
+
+    build/plugin/mod/mkwmp/mod.json
+    build/plugin/mod/mkwmp/plugin/mkwmp.dll, mkwmp.so    (only libraries with mkw_plugin_init go in plugin/: the
+                                                         runtime loads every one there)
+    build/plugin/mod/mkwmp/mkwmp-voice.dll, libmkwmp-voice.so   (when native/voice built them; the probe's home is
+                                                         the mod folder, so it loads them from there)
+    build/plugin/mkwmp-mod.zip
 """
 import argparse
 import pathlib
@@ -79,12 +89,44 @@ def test(zig, so):
     run([str(exe), str(so), str(SRC / "npln.c")])
 
 
+VOICE = HERE.parent / "voice" / "build"
+
+
+def package(version):
+    import json
+    import zipfile
+    root = OUT / "mod"
+    mod = root / "mkwmp"
+    if mod.exists():
+        shutil.rmtree(mod)
+    (mod / "plugin").mkdir(parents=True)
+    libs = [(OUT / "windows" / "mkwmp.dll", mod / "plugin" / "mkwmp.dll"),
+            (OUT / "linux" / "mkwmp.so", mod / "plugin" / "mkwmp.so"),
+            (VOICE / "mkwmp-voice.dll", mod / "mkwmp-voice.dll"),
+            (VOICE / "linux" / "libmkwmp-voice.so", mod / "libmkwmp-voice.so")]
+    for src, dst in libs:
+        if src.exists():
+            shutil.copy2(src, dst)
+            print("package:", dst.relative_to(root), flush=True)
+    if not any((mod / "plugin").iterdir()):
+        sys.exit("build_plugin.py --package: no plugin library was built")
+    meta = {"title": "MKWMP online play", "version": version, "has_plugin": True}
+    (mod / "mod.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    z = OUT / "mkwmp-mod.zip"
+    with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as out:
+        for f in sorted(mod.rglob("*")):
+            if f.is_file():
+                out.write(f, f.relative_to(root).as_posix())
+    print("packaged", z, z.stat().st_size, "bytes", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--zig", default=None, help="zig executable (default: zig on PATH)")
     ap.add_argument("--version", default="dev", help="version string logged by the probe (release tag)")
     ap.add_argument("--target", choices=["linux", "windows", "all"], default="all")
     ap.add_argument("--test", action="store_true", help="also build and run tests/test_plugin.c (Linux .so)")
+    ap.add_argument("--package", action="store_true", help="lay out build/plugin/mod/mkwmp/ and zip it")
     args = ap.parse_args()
     zig = args.zig or shutil.which("zig")
     if not zig:
@@ -96,6 +138,8 @@ def main():
         build_windows(zig, args.version)
     if args.test:
         test(zig, so)
+    if args.package:
+        package(args.version)
 
 
 if __name__ == "__main__":

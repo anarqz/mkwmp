@@ -51,6 +51,10 @@ void plat_set_home(const char *dir) {
 
 int plat_home_path(char *out, size_t cap, const char *name) {
     if (g_home[0]) return snprintf(out, cap, "%s%s", g_home, name) < (int)cap;
+    return plat_exe_path(out, cap, name);
+}
+
+int plat_exe_path(char *out, size_t cap, const char *name) {
     wchar_t path[MAX_PATH];
     DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
     if (!n || n >= MAX_PATH) return 0;

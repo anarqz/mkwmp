@@ -90,15 +90,26 @@ const MkwmpConfig *mkwmp_config_reload(void) {
     return mkwmp_config();
 }
 
+static int g_in_exe_dir;   // mkwmp.toml came from the executable's folder, not home
+
+int mkwmp_config_path(char *out, size_t cap, const char *name) {
+    mkwmp_config();
+    return g_in_exe_dir ? plat_exe_path(out, cap, name) : plat_home_path(out, cap, name);
+}
+
 const MkwmpConfig *mkwmp_config(void) {
     if (loaded) return &cfg;
     loaded = 1;
     defaults(&cfg);
 
     char path[1024];
-    if (!plat_home_path(path, sizeof path, "mkwmp.toml")) return &cfg;
     char buf[4096];
-    long got = plat_read_file(path, buf, sizeof buf - 1);
+    long got = -1;
+    // home first (the plugin: its mod folder), then the game executable's folder, where the MKWMP launcher writes it
+    if (plat_home_path(path, sizeof path, "mkwmp.toml")) got = plat_read_file(path, buf, sizeof buf - 1);
+    g_in_exe_dir = 0;
+    if (got < 0 && plat_exe_path(path, sizeof path, "mkwmp.toml") && (got = plat_read_file(path, buf, sizeof buf - 1)) >= 0)
+        g_in_exe_dir = 1;
     if (got < 0) return &cfg;   // absent -> present=0, stock launch
     buf[got] = 0;
     mkwmp_config_parse(buf, &cfg);

@@ -40,9 +40,10 @@ const char *game_build_name(int build) {
 
 int guesthook_init(void) {
     static volatile int32_t said;
-    if (g_rt.host_fn_at) return 1;
+    if (g_rt.host_fn_at || g_rt.override_address) return 1;
     if (!plat_xchg(&said, 1))
-        mkwmp_log("guesthook: the runtime cannot route indirect calls to us (no g_host); in-game voice UI off");
+        mkwmp_log("guesthook: the runtime cannot route indirect calls to us now (no g_host, or the plugin API's "
+                  "address overrides are closed: the game is running); in-game voice UI off");
     return 0;
 }
 
@@ -55,6 +56,19 @@ int guesthook_vtable(uint64_t vtable, int slot, GuestFn fn, uint64_t *original) 
     }
     uint64_t old = *at;
     if (old >= 0x00000FF000000000ull && old < 0x0000100000000000ull) {   // ours already
+        return 1;
+    }
+    if (!g_rt.host_fn_at) {
+        // the plugin API: the slot stays; the function it holds is overridden for every indirect caller, so fn checks
+        // its object (the hook's caller does) and passes anything else on with guesthook_original
+        if (!old || !g_rt.override_address(old, fn)) {
+            mkwmp_log("guesthook: override of %#llx (vtable %#llx slot %d) refused", (unsigned long long)old,
+                      (unsigned long long)vtable, slot);
+            return 0;
+        }
+        *original = old;
+        mkwmp_log("guesthook: vtable %#llx slot %d: %#llx overridden", (unsigned long long)vtable, slot,
+                  (unsigned long long)old);
         return 1;
     }
     uint64_t fake = g_next_fake;
@@ -78,4 +92,9 @@ uint64_t guest_call(Cpu *c, uint64_t fn, int n, uint64_t a0, uint64_t a1, uint64
     case 3: return g_rt.call(c, fn, 3, a0, a1, a2);
     default: return g_rt.call(c, fn, 4, a0, a1, a2, a3);
     }
+}
+
+uint64_t guesthook_original(Cpu *c, uint64_t original) {
+    if (g_rt.host_fn_at) return g_rt.call(c, original, 0);   // the slot points at us: call its old target
+    return g_rt.call_original(c);   // an address override: calling original would land in us again
 }

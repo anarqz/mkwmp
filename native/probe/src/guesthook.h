@@ -1,7 +1,9 @@
 // Hooking guest virtual calls without override slots (resources/docs/VOICE-RE.md §5). Every indirect guest call goes
 // through the recomp's rt_dispatch, which falls back to a host registry for addresses outside the guest modules
 // (g_host; coff.c). We register {fake address, our fn} there (g_rt.host_fn_at) and point a guest vtable slot at the
-// fake address; our fn receives the guest Cpu and calls the original with g_rt.call(c, original, 0).
+// fake address; our fn receives the guest Cpu and calls the original with guesthook_original. With the plugin API
+// (no g_host) the slot's function itself is overridden (g_rt.override_address), only while the game loads, and the
+// hook sees every indirect call of that function, so it checks its object's vtable.
 #ifndef MKWMP_GUESTHOOK_H
 #define MKWMP_GUESTHOOK_H
 
@@ -25,6 +27,10 @@ int guesthook_init(void);
 // Point slot `slot` of the guest vtable at guest address `vtable` to `fn`. *original receives the slot's old target.
 // Returns 1 on success. Idempotent per (vtable, slot).
 int guesthook_vtable(uint64_t vtable, int slot, GuestFn fn, uint64_t *original);
+// Inside a vtable hook: run the function the slot held, with the registers as they are; returns x0. COFF: a call of
+// original. Plugin API: call_original (an indirect call to original would come back to the hook); c->pc must still
+// be the hooked address, so call it before any other guest call.
+uint64_t guesthook_original(Cpu *c, uint64_t original);
 // Call a guest function: up to 6 integer arguments; returns x0. Registers x0..x7 are replaced by the arguments.
 uint64_t guest_call(Cpu *c, uint64_t fn, int n, uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3);
 

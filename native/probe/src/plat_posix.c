@@ -97,6 +97,10 @@ void plat_set_home(const char *dir) {
 
 int plat_home_path(char *out, size_t cap, const char *name) {
     if (g_home[0]) return snprintf(out, cap, "%s%s", g_home, name) < (int)cap;
+    return plat_exe_path(out, cap, name);
+}
+
+int plat_exe_path(char *out, size_t cap, const char *name) {
     char path[PATH_MAX];
     ssize_t n = readlink("/proc/self/exe", path, sizeof path - 1);
     if (n <= 0) return 0;

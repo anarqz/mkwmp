@@ -107,6 +107,9 @@ unsigned long plat_thread_id(void);   // for logs
 // executable (the winmm.dll proxy), unless plat_set_home moved it (the plugin build: the plugin's own folder,
 // PLUGIN-API-READINESS.md gap 2). 1 on success.
 int plat_home_path(char *out, size_t cap, const char *name);
+// <the game executable's folder>/name, wherever home is (the plugin build looks there for what the MKWMP launcher
+// writes: mkwmp.toml, the lobby CA). 1 on success.
+int plat_exe_path(char *out, size_t cap, const char *name);
 // Home is dir (UTF-8, with or without a trailing separator) from now on; NULL or "" goes back to the game's folder.
 // Call before log_init, while no other probe thread runs.
 void plat_set_home(const char *dir);

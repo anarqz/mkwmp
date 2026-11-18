@@ -11,4 +11,8 @@ void probe_log_start(void);
 // Returns npln_register's result: the override count, 0 inactive, -1 when the runtime does not fit.
 int probe_register(void);
 
+// The plugin build, from on_game_loaded (the only time it may hook by address): npln.c's version-specific hooks of
+// indirect calls (communication-error skips, the idle-kick guard, BulkGet / Pia / matchmake traces), one
+// override_address per target of the game build's row. The COFF build installs them lazily (one dispatch hook).
+void npln_address_hooks(void);
 #endif

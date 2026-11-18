@@ -17,6 +17,7 @@
 #include "friends.h"
 #include "gameaddrs.h"
 #include "guesthook.h"
+#include "probe.h"
 #include "voice.h"
 
 #include "plat_net.h"
@@ -1473,9 +1474,43 @@ static void profile_dispatch(Cpu *c) {
     }
 }
 
+// The plugin API's way (override_address, only while the game loads): profile_dispatch runs as the override of each
+// target it matches, and "the original" is the game's function instead of the runtime's dispatcher. What it matched
+// by caller only (the controller's next-phase / prepare BLRs) and MKWMP_TRACE_EDGES' every-call coverage have no
+// target to hook, so those traces are COFF-only. The opt-in hooks (kart watchdog, room trace) go in only when their
+// switch is on at start: they run every frame.
+static void original_by_address(Cpu *c) { g_rt.call_original(c); }
+
+static void install_by_address(const struct game_addrs *a) {
+    if (!g_rt.call_original) {
+        mlog("version-specific hooks off: the plugin API has no call_original");
+        return;
+    }
+    original_dispatch = original_by_address;
+    uint64_t t[32];
+    int n = 0;
+    const char *e = getenv("MKWMP_TRACE_KART"), *k = getenv("MKWMP_NO_IDLE_KICK"), *r = getenv("MKWMP_TRACE_ROOM");
+    t[n++] = a->errsvc_post;
+    if ((e && e[0] == '1') || (k && k[0] == '1')) t[n++] = a->kart_entry[0], t[n++] = a->kart_entry[1];
+    if (r && r[0] == '1') t[n++] = a->room_sync, t[n++] = a->room_main, t[n++] = a->room_vote, t[n++] = a->room_event;
+    t[n++] = a->bulkget_fn, t[n++] = a->ctl_event_sink, t[n++] = a->seq_wait, t[n++] = a->seq_start;
+    for (int i = 0; i < GAME_PIA_STEPS; i++) t[n++] = a->pia_join_step[i];
+    int ok = 0, tried = 0;
+    for (int i = 0; i < n; i++) {
+        if (!t[i]) continue;
+        int dup = 0;
+        for (int j = 0; j < i; j++) dup |= t[j] == t[i];
+        if (dup) continue;
+        tried++;
+        if (g_rt.override_address(t[i], profile_dispatch)) ok++;
+        else mlog("version-specific hook at main+%#llx refused by the runtime", (unsigned long long)(t[i] - GUEST_MAIN(0)));
+    }
+    mlog("BulkGetDocuments and Pia join tracing installed (%d of %d address overrides)", ok, tried);
+}
+
 static void install_profile_dispatch_trace(void) {
     static volatile int32_t attempted;
-    if (!g_rt.dispatch_hook || !g_rt.game_code_loaded || !g_rt.game_code_loaded() ||
+    if ((!g_rt.dispatch_hook && !g_rt.override_address) || !g_rt.game_code_loaded || !g_rt.game_code_loaded() ||
         plat_cas(&attempted, 1, 0))
         return;
     // profile_dispatch matches guest pcs of one game build and reads/writes through their registers (error skips,
@@ -1506,9 +1541,15 @@ static void install_profile_dispatch_trace(void) {
     A = a;   // before the hook goes in: profile_dispatch only ever sees the whole row
     mlog("game build %s: version-specific hooks on (error service %s, idle-kick guard %s)", game_build_name(build),
          a.errsvc_post ? "verified" : "off", a.kart_idle_kick ? "available" : "unavailable");
+    if (!g_rt.dispatch_hook) {
+        install_by_address(&a);
+        return;
+    }
     if (g_rt.dispatch_hook(profile_dispatch, &original_dispatch)) rlog("BulkGetDocuments and Pia join tracing installed");
     else rlog("BulkGetDocuments completion tracing: rt_dispatch import not found");
 }
+
+void npln_address_hooks(void) { install_profile_dispatch_trace(); }
 
 static void ov_ssl_initialize(Cpu *c) {
     install_profile_dispatch_trace();

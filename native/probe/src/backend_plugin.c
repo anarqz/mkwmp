@@ -1,19 +1,29 @@
-// The plugin backend of rtapi.h: mkw-recomp's native plugin API (mkw_plugin.h, version 1), Windows and Linux.
+// The plugin backend of rtapi.h: mkw-recomp's native plugin API, version 1 (mkw_plugin.h: upstream's header as it
+// is, runtime/plugin/mkw_plugin.h of adriadam10/mkw-recomp), Windows and Linux.
 //
-// The runtime loads mods/mkwmp/plugin/mkwmp.dll / mkwmp.so and calls mkw_plugin_init once, on the main thread, before
-// the game is loaded. We fill g_rt from its table and run the start-up shared with the winmm.dll proxy (probe.c).
-// What the COFF backend dug out of mkw.exe (symbols, the .ovr table, g_host, the rt_dispatch import) is all an API
-// entry here. The keypad (keypad.c, COFF-only) becomes a text-entry hook that answers with the launcher's Room ID.
+// The runtime loads mods/<mod>/plugin/mkwmp.dll (mkwmp.so) when the player has the mod enabled and calls
+// mkw_plugin_init once, on the main thread, before the game code is loaded. We fill g_rt from its table and run the
+// start-up shared with the winmm.dll proxy (probe.c). What the COFF backend dug out of mkw.exe (symbols, the .ovr
+// table, g_host, the rt_dispatch import) is an API entry here, with two differences:
+//   - indirect-call hooks are per address (override_address) and only while the game is being loaded, so the probe's
+//     version-specific hooks (npln_address_hooks, voice_ui_install) go in from on_game_loaded, not lazily online;
+//   - mkw-recomp draws its own number pad for the software keyboard: no keypad, no text hook.
+//
+// Folders: the probe's home (mkwmp.log, mkwmp.env, the voice library) is the mod's folder, mods/<mod>/. mkwmp.toml
+// and the lobby CA are read from there, else from the game's folder, where the MKWMP launcher writes them
+// (config.c).
 //
 // Types: the probe's Cpu (recomp.h) starts with MkwCpu's guaranteed prefix (x0..x31, sp, pc), and both are passed by
-// pointer, so a GuestFn is handed to the runtime as an MkwHostFn as it is. Nothing here reads past that prefix.
+// pointer, so a GuestFn is handed to the runtime as an MkwGuestFn as it is. Nothing here reads past that prefix.
 #include "mkw_plugin.h"
 
+#include "guesthook.h"
 #include "log.h"
 #include "notify.h"
 #include "plat.h"
 #include "probe.h"
 #include "rtapi.h"
+#include "voice_ui.h"
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -24,7 +34,7 @@
 RtApi g_rt;
 
 static const MkwPluginApi *g_api;
-static volatile int32_t g_game_loaded;   // on_game_loaded has run
+static int g_active;                     // probe_register registered overrides (mkwmp.toml or MKWMP_ENABLE)
 
 // The SDK names whose stock handlers the fs overrides chain to: npln.c's kRegs entries for ov_fs_open_file ...
 // (the COFF backend takes the same handlers from mkw.exe's ov_open_file ... symbols).
@@ -34,62 +44,51 @@ static const char kFsReadFile[] = "_ZN2nn2fs8ReadFileEPmNS0_10FileHandleElPvm";
 static const char kFsFileSize[] = "_ZN2nn2fs11GetFileSizeEPlNS0_10FileHandleE";
 static const char kFsCloseFile[] = "_ZN2nn2fs9CloseFileENS0_10FileHandleE";
 
-static MkwHostFn to_host(GuestFn fn) { return (MkwHostFn)(void (*)(void))fn; }
-static GuestFn to_guest(MkwHostFn fn) { return (GuestFn)(void (*)(void))fn; }
+static MkwGuestFn to_api(GuestFn fn) { return (MkwGuestFn)(void (*)(void))fn; }
+static GuestFn to_guest(MkwGuestFn fn) { return (GuestFn)(void (*)(void))fn; }
 
-// ---- g_rt entries that adapt an API entry (return conventions: the API's 0 is success, g_rt's 1)
+// ---- g_rt entries that adapt an API entry (the API's 1 is success, as g_rt's)
 static void pl_override(const char *name, GuestFn fn) {
-    if (g_api->override(name, to_host(fn))) mkwmp_log("plugin: override of %s refused by the runtime", name);
-}
-
-static int pl_guest_modules(void) {
-    if (plat_load(&g_game_loaded)) return 1;
-    return g_api->main_base && g_api->main_base() != 0;   // a runtime without on_game_loaded
+    if (!g_api->override_symbol(name, to_api(fn))) mkwmp_log("plugin: override of %s refused by the runtime", name);
 }
 
 static uint64_t pl_call(Cpu *c, uint64_t fn, int n, ...) {
     uint64_t a[8] = {0};
+    if (n < 0) n = 0;
+    if (n > 8) n = 8;
     va_list ap;
     va_start(ap, n);
-    for (int i = 0; i < n && i < 8; i++) a[i] = va_arg(ap, uint64_t);
+    for (int i = 0; i < n; i++) a[i] = va_arg(ap, uint64_t);
     va_end(ap);
-    return g_api->call((MkwCpu *)(void *)c, fn, n < 8 ? n : 8, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]);
+    return g_api->call((MkwCpu *)(void *)c, fn, n, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]);
 }
 
 static GuestFn pl_stock(const char *name) { return to_guest(g_api->stock(name)); }
 
-static int pl_host_fn_at(uint64_t addr, GuestFn fn) { return g_api->host_at(addr, to_host(fn)) == 0; }
-
-static int pl_dispatch_hook(GuestFn ours, GuestFn *original) {
-    // the runtime writes *original before ours can run, so it gets g_rt's caller's slot itself
-    return g_api->dispatch_hook(to_host(ours), (MkwHostFn *)(void *)original) == 0;
+static int pl_override_address(uint64_t addr, GuestFn fn) {
+    return g_api->override_address(addr, to_api(fn)) != 0;
 }
+
+static uint64_t pl_call_original(Cpu *c) { return g_api->call_original((MkwCpu *)(void *)c); }
 
 static int pl_guest_thread(Cpu *c) {
     (void)c;
-    return 1;   // the API calls every host function on the guest thread that made the call
+    return 1;   // the API calls every override on the guest thread that made the call
 }
 
+// ---- the game is loaded: main is mapped, no guest instruction has run, override_address still answers
 static void on_game_loaded(void *user) {
     (void)user;
-    plat_store(&g_game_loaded, 1);
-    mkwmp_log("plugin: game loaded (build %u, main at %#llx)", (unsigned)g_api->game_version,
-              (unsigned long long)(g_api->main_base ? g_api->main_base() : 0));
-}
-
-// ---- the player's screen
-// nn::swkbd::ShowKeyboard: the Room ID the player typed in the launcher (voice.c's room_id_poll keeps
-// MKW_SWKBD_ANSWER equal to it while online), else the runtime's own text entry.
-static int text_entry(const char *header, const char *guide, char *answer, size_t cap) {
-    char id[64];
-    if (!answer || !cap || !plat_getenv("MKW_SWKBD_ANSWER", id, sizeof id) || !id[0]) {
-        mkwmp_log("plugin: text entry \"%s\" / \"%s\": no Room ID from the launcher, the runtime answers",
-                  header ? header : "", guide ? guide : "");
-        return 0;
+    uint64_t main = g_api->module_base ? g_api->module_base("main") : 0;
+    mkwmp_log("plugin: game %s loaded (build id %s, main at %#llx)", g_api->game_version ? g_api->game_version : "?",
+              g_api->game_id ? g_api->game_id : "?", (unsigned long long)main);
+    if (main && main != GUEST_MAIN(0))
+        mkwmp_log("plugin: main is not at %#llx: every version-specific hook stays off", (unsigned long long)GUEST_MAIN(0));
+    else if (g_active) {
+        npln_address_hooks();   // error skips, idle-kick guard, BulkGet / Pia / matchmake traces (by game build)
+        voice_ui_install();     // the online pause menu's voice labels
     }
-    snprintf(answer, cap, "%s", id);
-    mkwmp_log("plugin: text entry \"%s\" answered with the launcher's Room ID %s", header ? header : "", answer);
-    return 1;
+    g_rt.override_address = NULL;   // closed from here on: a later install attempt sees no means and stays off
 }
 
 static void notice_sink(NotifyLevel level, const char *text) {
@@ -97,38 +96,41 @@ static void notice_sink(NotifyLevel level, const char *text) {
 }
 
 // ---- entry
-static int refuse(const MkwPluginApi *api, const char *reason) {
-    // fail sits in every table that has a size field covering it; a table too short for it gets no message
-    if (api && api->size >= offsetof(MkwPluginApi, fail) + sizeof api->fail && api->fail) api->fail(reason);
-    mkwmp_log("plugin: refused: %s", reason);
+static int refuse(const char **message, const char *reason) {
+    static char kept[256];   // the runtime reads it after we return
+    snprintf(kept, sizeof kept, "%s", reason);
+    if (message) *message = kept;
+    mkwmp_log("plugin: declined: %s", reason);
     return 1;
 }
 
-MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_version) {
+MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_version, const char **message) {
     if (!api) return 1;
-    if (api_version < MKW_PLUGIN_API_VERSION || api->size < sizeof(MkwPluginApi))
-        return refuse(api, "MKWMP needs mkw-recomp plugin API version 1 or newer; update mkw-recomp");
+    // notice and the overlay are the table's last fields: a shorter table is an older runtime
+    if (api_version < 1 || api->size < sizeof(MkwPluginApi))
+        return refuse(message, "MKWMP needs a newer mkw-recomp (plugin API version 1)");
 
-    plat_set_home(api->plugin_dir);   // mkwmp.toml, mkwmp.env, mkwmp.log, the voice library: the plugin's folder
+    plat_set_home(api->mod_dir);   // mkwmp.log, mkwmp.env, the voice library: the mod's folder
     probe_log_start();
-    mkwmp_log("plugin: mkw-recomp %s, plugin API %u (table %u bytes), plugin dir %s",
-              api->runtime_version ? api->runtime_version : "?", (unsigned)api_version, (unsigned)api->size,
-              api->plugin_dir ? api->plugin_dir : "(none: the executable's folder)");
+    mkwmp_log("plugin: mkw-recomp %s, plugin API %u (table %u bytes), game %s, mod %s in %s",
+              api->port_version ? api->port_version : "?", (unsigned)api_version, (unsigned)api->size,
+              api->game_version ? api->game_version : "?", api->mod_name ? api->mod_name : "?",
+              api->mod_dir ? api->mod_dir : "(none)");
 
-    // what npln_register needs (it checks the same entries again, as it does for COFF)
-    const char *missing = !api->override ? "override" : !api->guest_symbol ? "guest_symbol" : !api->log ? "log"
-                        : !api->call ? "call" : !api->cfg_get ? "cfg_get" : !api->core_away ? "core_away"
-                        : !api->core_back ? "core_back" : NULL;
+    const char *missing = !api->override_symbol ? "override_symbol" : !api->guest_symbol ? "guest_symbol"
+                        : !api->log ? "log" : !api->call ? "call" : !api->cfg_get ? "cfg_get"
+                        : !api->core_away ? "core_away" : !api->core_back ? "core_back"
+                        : !api->guest_modules ? "guest_modules" : !api->on_game_loaded ? "on_game_loaded" : NULL;
     if (missing) {
         char reason[128];
         snprintf(reason, sizeof reason, "MKWMP: this mkw-recomp's plugin API has no %s; online play is off", missing);
-        return refuse(api, reason);
+        return refuse(message, reason);
     }
     g_api = api;
 
     // ---- required
     g_rt.override = pl_override;
-    g_rt.guest_modules = pl_guest_modules;   // 0 until on_game_loaded: overrides are only taken during init
+    g_rt.guest_modules = api->guest_modules;   // 0 until the loader binds the game: overrides only during init
     g_rt.guest_symbol = api->guest_symbol;
     g_rt.log = api->log;
     g_rt.call = pl_call;
@@ -144,19 +146,18 @@ MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_vers
         g_rt.fs_file_size = pl_stock(kFsFileSize);
         g_rt.fs_close_file = pl_stock(kFsCloseFile);
     }
-    g_rt.host_fn_at = api->host_at ? pl_host_fn_at : NULL;
-    g_rt.game_code_loaded = pl_guest_modules;   // the game's code is loaded with its modules
-    g_rt.dispatch_hook = api->dispatch_hook ? pl_dispatch_hook : NULL;
+    g_rt.game_code_loaded = api->guest_modules;   // the game's code is loaded with its modules
     g_rt.guest_thread = pl_guest_thread;
+    // host_fn_at and dispatch_hook stay NULL: v1 hooks indirect calls per address
+    g_rt.override_address = api->override_address ? pl_override_address : NULL;
+    g_rt.call_original = api->call_original ? pl_call_original : NULL;
 
-    if (!api->on_game_loaded || api->on_game_loaded(on_game_loaded, NULL))
-        mkwmp_log("plugin: no on_game_loaded; the game counts as loaded once main_base is known");
-    if (api->text_entry_hook && !api->text_entry_hook(text_entry)) mkwmp_log("plugin: text-entry hook installed");
-    else mkwmp_log("plugin: no text-entry hook; the Room ID reaches the game only through MKW_SWKBD_ANSWER");
+    api->on_game_loaded(on_game_loaded, NULL);
     if (api->notice) notify_set_sink(notice_sink);
 
     log_line("runtime resolved from the plugin API");
     int n = probe_register();
-    if (n < 0) return refuse(api, "MKWMP: the probe does not fit this mkw-recomp (see mkwmp.log); online play is off");
+    if (n < 0) return refuse(message, "MKWMP does not fit this mkw-recomp (see mods/<mod>/mkwmp.log); online play is off");
+    g_active = n > 0;
     return 0;
 }

@@ -1,8 +1,9 @@
 # Readiness for mkw-recomp's native plugin API (MkwPluginApi)
 
-Status 2026-11-18: upstream has **proposed** the API; a prototype header exists on our fork (phase 2 below) (conversation in `~/MESSAGES.MD`, not in the repo). Nothing has landed
-on mkw-recomp main (2cf005a). Upstream's CONTRIBUTING.md (ecafc22) now promises "generic, documented hooks" for outside
-projects and names MKWMP as the place for online play.
+**Status 2026-11-18: landed.** mkw-recomp `main` has plugin API version 1 (`ed04f94` feat(plugin), `730ce0f` number pad
+and overlay, `c7142dc` docs; the wiki's "Writing a plugin"). The probe now builds against that header unchanged
+(`native/probe/src/mkw_plugin.h`, branch `plugin-v1`); see **Version 1 (upstream)** at the end. The sections before it
+record what was proposed and our fork's prototype, which v1 supersedes.
 
 Proposed by upstream: `.dll`/`.so` from `<mod>/plugin/`, loaded only when the player enables the mod;
 `mkw_plugin_init(const MkwPluginApi *api, uint32_t api_version)` before the game loads; a versioned function table
@@ -109,3 +110,36 @@ Not mapped yet / left undone:
 - Override order (gap 6) and load errors on the start screen (gap 3) are the runtime's; `fail` is what we use.
 - The launcher does not pick a loader or install `mods/mkwmp/plugin/` yet.
 - Untested against a real runtime; only the fake-API test has run.
+
+## Version 1 (upstream, landed): how the probe maps onto it
+
+Upstream's v1 differs from our prototype; `backend_plugin.c` (branch `plugin-v1`) is rewritten for it:
+
+| Probe need | v1 entry | How |
+|---|---|---|
+| SDK overrides (npln.c kRegs 62 + core-mask pair) | `override_symbol` (1 = done), no cap | `g_rt.override` |
+| fs log-then-chain | `stock` | `g_rt.fs_*` = `stock(name)` |
+| guest symbols, calls, core away/back, log, cfg | `guest_symbol`, `call`, `core_away/back`, `log`, `cfg_get` | as they are |
+| game loaded | `guest_modules`, `on_game_loaded`, `module_base("main")`, `game_version` "1.8.0", `game_id` | `g_rt.guest_modules` / `game_code_loaded`; logged at load |
+| `rt_dispatch` hook (`profile_dispatch`: error skips, idle-kick guard, BulkGet / Pia / matchmake / room traces) | `override_address` + `call_original` | one override per target address of the build's row (`npln.c` `install_by_address`), from `on_game_loaded` only; the kart and room ones only with their switch on. Matches by caller only (controller next-phase / prepare BLRs) and `MKWMP_TRACE_EDGES` have no target: COFF-only |
+| vtable hooks with a fake address (`guesthook.c`, voice UI) | `override_address` on the slot's function | the slot is not written; the function is overridden for every indirect caller, so `voice_ui.c` checks the page's vtable and passes others on (`guesthook_original` = `call_original`) |
+| Room ID keypad (`keypad.c`, text hook) | none needed | mkw-recomp draws its own number pad; no text hook in the plugin |
+| errors to the player | `const char **message` of `mkw_plugin_init` | `refuse()` |
+| notices | `notice` | `notify_set_sink` |
+| readable guest memory | not in v1 | `plat_mem_readable` (ours) |
+
+Rules that shaped it: address overrides are allowed only in `mkw_plugin_init` and `on_game_loaded` (the probe used to
+hook lazily once online), so `on_game_loaded` installs them when the probe is active (mkwmp.toml or `MKWMP_ENABLE`)
+and then clears `g_rt.override_address`. An address where no function starts is fatal in the runtime, so only the
+build row's verified function starts are used.
+
+Folders: the probe's home is the mod folder (`mods/mkwmp/`: `mkwmp.log`, `mkwmp.env`, the voice library). `mkwmp.toml`
+and the lobby CA are read from there, else from the game executable's folder, where the MKWMP launcher writes them
+(`config.c` `mkwmp_config_path`). Only libraries with `mkw_plugin_init` go in `plugin/`: the runtime loads every one.
+
+The mod: `build_plugin.py --package` lays out `mods/mkwmp/` (`mod.json` with `has_plugin`, `plugin/mkwmp.dll` +
+`mkwmp.so`, the voice libraries) and zips it; CI uploads it as the `mkwmp-mod` artifact. To try it: copy the folder
+into `<game>/mods/` and run `mkw --play --mod mkwmp`, or enable it on the Mods page. Not released.
+
+Not in v1, to ask upstream (generic): a per-mod settings page in the launcher (fields, toggles, buttons, the current
+profile's name) so the mod can replace the MKWMP launcher's register / server / voice / consent settings.

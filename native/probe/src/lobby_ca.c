@@ -59,7 +59,7 @@ const unsigned char *lobby_ca(size_t *len) {
         char path[1024];
         const char *name = mkwmp_config()->lobby_ca;
         if (name[0] && !strchr(name, '\\') && !strchr(name, '/') && !strstr(name, "..") &&
-            plat_home_path(path, sizeof path, name)) {
+            mkwmp_config_path(path, sizeof path, name)) {
             static unsigned char text[16384];
             long got = plat_read_file(path, text, sizeof text);
             if (got >= 0) {

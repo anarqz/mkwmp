@@ -5,6 +5,8 @@
 #ifndef MKWMP_CONFIG_H
 #define MKWMP_CONFIG_H
 
+#include <stddef.h>
+
 typedef struct {
     int present;             // a config file was found and parsed
     char host[128];          // lobby host: IP literal or hostname (default 127.0.0.1)
@@ -27,6 +29,10 @@ void mkwmp_config_parse(const char *text, MkwmpConfig *out);
 // Load <exe dir>\mkwmp.toml once (cached). Returns a struct with present=0 if
 // the file is absent or unreadable, defaults otherwise.
 const MkwmpConfig *mkwmp_config(void);
+
+// <the folder mkwmp.toml was read from>/name (home, or the executable's folder; home when there is none): the files
+// the launcher writes beside it (the lobby CA). 1 on success.
+int mkwmp_config_path(char *out, size_t cap, const char *name);
 
 // Re-read mkwmp.toml (e.g. the launcher restarted with a new token). Returns the same cache.
 const MkwmpConfig *mkwmp_config_reload(void);

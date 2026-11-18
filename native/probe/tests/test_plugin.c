@@ -5,10 +5,11 @@
 //   zig cc -target x86_64-linux-gnu -Wall -Wextra -Werror -o test_plugin native/probe/tests/test_plugin.c -ldl
 //   ./test_plugin native/probe/build/plugin/linux/mkwmp.so native/probe/src/npln.c
 //
-// Checks: an old api_version and a short table are refused through fail; a good table gets init 0, exactly the
-// overrides the COFF path registers (npln.c's kRegs, read from the source, plus the core-mask pair), the fs stock
-// handlers asked for under the names the probe overrides, mkwmp.env read and mkwmp.log written in plugin_dir, and
-// the text-entry hook answering with MKW_SWKBD_ANSWER only.
+// Against mkw-recomp's plugin API version 1 (src/mkw_plugin.h, upstream's header). Checks: an old version and a short
+// table are declined with a message; a good table gets init 0, exactly the overrides the COFF path registers (npln.c's
+// kRegs, read from the source, plus the core-mask pair), the fs stock handlers asked for under the names the probe
+// overrides, mkwmp.env read and mkwmp.log written in mod_dir, and on_game_loaded with main not mapped (no game build)
+// installing no address override.
 #define _GNU_SOURCE
 #undef NDEBUG
 #include "../src/mkw_plugin.h"
@@ -16,6 +17,7 @@
 #include <assert.h>
 #include <dlfcn.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,44 +25,38 @@
 
 enum { MAX_NAMES = 256 };
 static char *g_overrides[MAX_NAMES], *g_stocks[MAX_NAMES], *g_expected[MAX_NAMES];
-static int g_n_overrides, g_n_stocks, g_n_expected, g_fails, g_logs;
-static char g_fail_reason[256];
+static int g_n_overrides, g_n_stocks, g_n_expected, g_logs, g_n_address;
 static void (*g_loaded_fn)(void *);
-static int (*g_text_fn)(const char *, const char *, char *, size_t);
 
 static void fake_host(MkwCpu *c) { (void)c; }
 static void fake_log(const char *fmt, ...) { (void)fmt; g_logs++; }
 static const char *fake_cfg_get(const char *key) { return getenv(key); }
-static void fake_fail(const char *reason) {
-    g_fails++;
-    snprintf(g_fail_reason, sizeof g_fail_reason, "%s", reason);
-}
-static int fake_override(const char *name, MkwHostFn fn) {
+static int fake_override(const char *name, MkwGuestFn fn) {
     assert(fn && g_n_overrides < MAX_NAMES);
     g_overrides[g_n_overrides++] = strdup(name);
-    return 0;
+    return 1;
 }
 // A runtime has stock handlers for the fs names and for the typed FreeAddrInfo (npln.c's kStockFreeAddrInfo, which
 // every supported runtime has: without it the probe gives GetCurrentIpConfigInfo(InAddr *)'s slot back to it).
-static MkwHostFn fake_stock(const char *name) {
+static MkwGuestFn fake_stock(const char *name) {
     assert(g_n_stocks < MAX_NAMES);
     g_stocks[g_n_stocks++] = strdup(name);
     return !strncmp(name, "_ZN2nn2fs", 9) || !strcmp(name, "_ZN2nn6socket12FreeAddrInfoEPNS0_8AddrInfoE") ? fake_host
                                                                                                           : NULL;
 }
-static int fake_observe(const char *name, MkwHostFn fn) { (void)name, (void)fn; return 0; }
 static uint64_t fake_call_original(MkwCpu *c) { (void)c; return 0; }
 static uint64_t fake_guest_symbol(const char *name) { (void)name; return 0; }
+static uint64_t fake_module_base(const char *name) { (void)name; return 0; }
+static int fake_guest_modules(void) { return 0; }
 static uint64_t fake_call(MkwCpu *c, uint64_t fn, int n, ...) { (void)c, (void)fn, (void)n; return 0; }
-static uint64_t fake_main_base(void) { return 0; }
+static MkwCpu *fake_current_cpu(void) { return NULL; }
 static int fake_core_away(void) { return 1; }
 static void fake_core_back(int *away) { *away = 0; }
-static int fake_readable(uint64_t addr, size_t n) { (void)addr, (void)n; return 0; }
-static int fake_host_at(uint64_t addr, MkwHostFn fn) { (void)addr, (void)fn; return 0; }
-static int fake_dispatch_hook(MkwHostFn ours, MkwHostFn *original) { (void)ours, (void)original; return 1; }
-static int fake_on_game_loaded(void (*fn)(void *), void *user) { (void)user; g_loaded_fn = fn; return 0; }
+static int fake_override_address(uint64_t addr, MkwGuestFn fn) { (void)addr, (void)fn; g_n_address++; return 1; }
+static void fake_on_game_loaded(void (*fn)(void *), void *user) { (void)user; g_loaded_fn = fn; }
 static void fake_notice(const char *text, int seconds) { (void)text, (void)seconds; }
-static int fake_text_entry_hook(int (*fn)(const char *, const char *, char *, size_t)) { g_text_fn = fn; return 0; }
+static int fake_overlay_set(MkwOverlayFn draw, void *user) { (void)draw, (void)user; return 1; }
+static void fake_overlay_show(MkwOverlayFn draw, int on) { (void)draw, (void)on; }
 
 static int has(char **list, int n, const char *name) {
     for (int i = 0; i < n; i++)
@@ -118,27 +114,29 @@ int main(int argc, char **argv) {
     assert(!dlsym(so, "npln_register") && !dlsym(so, "g_rt"));   // nothing else is exported
 
     MkwPluginApi api = {
-        .size = sizeof api, .api_version = MKW_PLUGIN_API_VERSION, .runtime_version = "test",
-        .game_code_id = "00", .plugin_dir = dir, .data_dir = dir,
-        .log = fake_log, .cfg_get = fake_cfg_get, .fail = fake_fail,
-        .override = fake_override, .stock = fake_stock, .observe = fake_observe, .call_original = fake_call_original,
-        .guest_symbol = fake_guest_symbol, .call = fake_call, .main_base = fake_main_base,
-        .core_away = fake_core_away, .core_back = fake_core_back, .guest_readable = fake_readable,
-        .host_at = fake_host_at, .dispatch_hook = fake_dispatch_hook, .on_game_loaded = fake_on_game_loaded,
-        .notice = fake_notice, .text_entry_hook = fake_text_entry_hook,
+        .size = sizeof api, .version = MKW_PLUGIN_API_VERSION, .port_version = "test", .game_version = "1.8.0",
+        .game_id = "00", .mod_dir = dir, .mod_name = "mkwmp",
+        .log = fake_log, .cfg_get = fake_cfg_get, .guest_modules = fake_guest_modules,
+        .guest_symbol = fake_guest_symbol, .module_base = fake_module_base,
+        .override_symbol = fake_override, .stock = fake_stock, .on_game_loaded = fake_on_game_loaded,
+        .override_address = fake_override_address, .call = fake_call, .call_original = fake_call_original,
+        .current_cpu = fake_current_cpu, .core_away = fake_core_away, .core_back = fake_core_back,
+        .notice = fake_notice, .overlay_set = fake_overlay_set, .overlay_show = fake_overlay_show,
     };
 
-    // an older API version, and a table shorter than version 1's: refused through fail, nothing registered
-    assert(init(&api, 0) != 0 && g_fails == 1 && g_n_overrides == 0);
-    printf("old api_version refused: %s\n", g_fail_reason);
+    // an older API version, and a table shorter than version 1's: declined with a message, nothing registered
+    const char *message = NULL;
+    assert(init(&api, 0, &message) != 0 && message && g_n_overrides == 0);
+    printf("old version declined: %s\n", message);
     MkwPluginApi short_api = api;
     short_api.size = (uint32_t)offsetof(MkwPluginApi, notice);
-    assert(init(&short_api, MKW_PLUGIN_API_VERSION) != 0 && g_fails == 2 && g_n_overrides == 0);
-    printf("short table refused: %s\n", g_fail_reason);
+    message = NULL;
+    assert(init(&short_api, MKW_PLUGIN_API_VERSION, &message) != 0 && message && g_n_overrides == 0);
+    printf("short table declined: %s\n", message);
 
     // the real thing
-    assert(init(&api, MKW_PLUGIN_API_VERSION) == 0);
-    assert(g_fails == 2);
+    message = NULL;
+    assert(init(&api, MKW_PLUGIN_API_VERSION, &message) == 0 && !message);
     printf("init 0: %d overrides registered (kRegs %d + core-mask pair)\n", g_n_overrides, g_n_expected - 2);
     assert(g_n_overrides == g_n_expected);
     for (int i = 0; i < g_n_expected; i++) {
@@ -157,9 +155,10 @@ int main(int argc, char **argv) {
     assert(fs_asked == 5);
     assert(g_logs > 0);   // the probe's mlog lines reach the runtime's log
     assert(g_loaded_fn);
-    g_loaded_fn(NULL);    // on_game_loaded: the game counts as loaded
+    g_loaded_fn(NULL);    // on_game_loaded, main not mapped: no game build, so no address override
+    assert(g_n_address == 0);
 
-    // the env file and the log are the plugin folder's
+    // the env file and the log are the mod folder's
     const char *v = getenv("MKWMP_TEST_FROM_ENV_FILE");
     assert(v && !strcmp(v, "yes"));
     snprintf(path, sizeof path, "%s/mkwmp.log", dir);
@@ -171,16 +170,8 @@ int main(int argc, char **argv) {
     assert(strstr(text, "=== mkwmp session log ==="));
     assert(strstr(text, "runtime resolved from the plugin API"));
     assert(strstr(text, "overrides registered"));
-    assert(strstr(text, "plugin: game loaded"));
-    printf("mkwmp.log written in plugin_dir (%zu bytes), mkwmp.env applied:\n%s", strlen(text), text);
-
-    // Room ID text entry: only with the launcher's answer
-    assert(g_text_fn);
-    char answer[16];
-    assert(g_text_fn("Room ID", "", answer, sizeof answer) == 0);
-    setenv("MKW_SWKBD_ANSWER", "123456", 1);
-    assert(g_text_fn("Room ID", "", answer, sizeof answer) == 1 && !strcmp(answer, "123456"));
-    printf("text entry answers with the Room ID only when there is one\n");
+    assert(strstr(text, "plugin: game 1.8.0 loaded"));
+    printf("mkwmp.log written in mod_dir (%zu bytes), mkwmp.env applied:\n%s", strlen(text), text);
 
     remove(path);
     snprintf(path, sizeof path, "%s/mkwmp.env", dir);

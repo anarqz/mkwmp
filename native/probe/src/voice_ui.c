@@ -158,9 +158,17 @@ static void apply(Cpu *c, uint64_t page) {
 
 // ---- hooks ---------------------------------------------------------------------------------------
 
+// The hooked functions may be shared with other pages' vtables (the plugin API overrides the function, not the slot):
+// only the online pause menu is ours.
+static int is_pause_page(uint64_t page) {
+    return page && plat_mem_readable((const void *)(uintptr_t)page) >= 8 &&
+           *(const uint64_t *)(uintptr_t)page == ga->vt_online_pause;
+}
+
 static void hook_open(Cpu *c) {
     uint64_t page = c->x[0];
-    g_rt.call(c, g_orig_open, 0);   // the game fills the plates
+    if (!is_pause_page(page)) { guesthook_original(c, g_orig_open); return; }
+    guesthook_original(c, g_orig_open);   // the game fills the plates
     uint64_t ret = c->x[0];
     memset(g.shown_valid, 0, sizeof g.shown_valid);   // the game rewrote every plate
     g.cursor = -1;
@@ -172,9 +180,10 @@ static void hook_open(Cpu *c) {
 
 static void hook_frame(Cpu *c) {
     uint64_t page = c->x[0];
+    if (!is_pause_page(page)) { guesthook_original(c, g_orig_frame); return; }
     uint64_t saved[8];
     memcpy(saved, c->x, sizeof saved);
-    g_rt.call(c, g_orig_frame, 0);
+    guesthook_original(c, g_orig_frame);
     uint64_t ret = c->x[0];
     uint64_t now = plat_ms();
     if (now - g.last_frame > 1000) memset(g.shown_valid, 0, sizeof g.shown_valid);   // reopened, or refilled

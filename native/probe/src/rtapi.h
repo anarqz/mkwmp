@@ -1,12 +1,13 @@
 // The probe's only view of the mkw-recomp runtime (docs/PLUGIN-API-READINESS.md).
 //
-// Everything outside the backend calls the runtime through g_rt and nothing else. Today one backend fills it: coff.c,
-// from mkw.exe's COFF symbol table, its .ovr section, its g_host registry and the rt_dispatch import of mkwgame.dll
-// (Windows, loaded as the winmm.dll proxy). The other is backend_plugin.c, from mkw-recomp's native plugin API
-// (mkw_plugin.h's MkwPluginApi, Windows and Linux). The rest of the probe does not know which one filled it.
+// Everything outside the backend calls the runtime through g_rt and nothing else. Two backends fill it: coff.c, from
+// mkw.exe's COFF symbol table, its .ovr section, its g_host registry and the rt_dispatch import of mkwgame.dll
+// (Windows, loaded as the winmm.dll proxy), and backend_plugin.c, from mkw-recomp's native plugin API version 1
+// (mkw_plugin.h, upstream's header unchanged; Windows and Linux). The rest of the probe does not know which one filled
+// it, except where a hook has to go in differently (host_fn_at / dispatch_hook vs override_address).
 //
-// Exception: keypad.c's detours and ImGui calls resolve their own COFF symbols (coff_symbol). The keypad moves into
-// the recomp itself and a plugin gets text-entry / overlay hooks instead, so that file stays COFF-only.
+// Exception: keypad.c's detours and ImGui calls resolve their own COFF symbols (coff_symbol). mkw-recomp now draws its
+// own number pad for the software keyboard, so the plugin build has no keypad at all.
 #ifndef MKWMP_RTAPI_H
 #define MKWMP_RTAPI_H
 
@@ -39,6 +40,13 @@ typedef struct RtApi {
     // c is a guest thread's CPU (it may give its core up: core_away). NULL: the COFF test, the runtime's Cpu.thread
     // (beyond the guaranteed prefix). The plugin API calls every host function on a guest thread.
     int (*guest_thread)(Cpu *c);
+    // ---- the plugin API's hooks by address (backend_plugin.c; NULL with COFF, and again once the game runs)
+    // Indirect calls to the game function starting at addr run fn (every vtable and function pointer that holds it).
+    // Only while the game is being loaded (before its first instruction); 1 on success.
+    int (*override_address)(uint64_t addr, GuestFn fn);
+    // Inside such an override (or a symbol override): what the call would have run without it; c->pc must still be
+    // the overridden address. Returns x0, which it also leaves in c->x[0].
+    uint64_t (*call_original)(Cpu *c);
 } RtApi;
 
 extern RtApi g_rt;
