@@ -92,7 +92,7 @@ pub struct RegistryCfg {
     pub admin_token_file: Option<PathBuf>,
 }
 
-fn d_expire() -> u64 { 180 }
+fn d_expire() -> u64 { 30 }
 
 impl Default for RegistryCfg {
     fn default() -> Self {

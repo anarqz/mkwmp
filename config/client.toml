@@ -5,6 +5,7 @@
 server = "https://mkw.anarqz.dev"  # seat server URL (the official one)
 name = "Player1"                   # gamertag: 3-16 letters, digits, '-' or '_'; registered on the server
 pin = ""                           # its 6-digit PIN (REGISTER in the window fills this in)
+adult_consent = false              # you are 18+ and accept the privacy policy (the window asks); --headless needs it true
 game = "C:/Games/mkw"              # game folder containing mkw.exe
 
 # Friends are kept on the server: add them in the launcher window.

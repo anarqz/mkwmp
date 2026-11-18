@@ -114,6 +114,31 @@ fn wait_text(secs: u64) -> String {
 /// What the player sees for the two refusals they can fix.
 pub const WRONG_PIN: &str = "Wrong PIN for this gamertag";
 pub const NOT_REGISTERED: &str = "Register this gamertag first";
+pub const NO_CONSENT: &str = "Confirm you're 18 or older and accept the privacy policy (SETTINGS > PRIVACY)";
+/// The privacy policy on the project site.
+pub const PRIVACY_URL: &str = "https://anarqz.github.io/mkwmp/#privacy";
+/// Why a player can be reported (the server's list), with what the launcher shows.
+pub const REPORT_REASONS: [(&str, &str); 6] = [
+    ("harassment", "Harassment or bullying"),
+    ("hate", "Hate speech or slurs"),
+    ("sexual", "Sexual content"),
+    ("threats", "Threats or doxxing"),
+    ("disruption", "Loud noise, music or spam"),
+    ("other", "Something else"),
+];
+/// Longest description the server keeps.
+pub const REPORT_DETAILS_MAX: usize = 500;
+
+/// A voice-chat report this profile filed and the host hasn't reviewed yet.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct Report {
+    pub reported: String,
+    pub reason: String,
+    #[serde(default)]
+    pub details: String,
+    /// When it was filed (seconds).
+    pub created: u64,
+}
 /// Joins that wait and retry.
 pub const IN_USE: &str = "This gamertag is in use (another launcher, or a seat not expired yet): retrying";
 pub const QUEUE_FULL: &str = "The server and its queue are full: retrying";
@@ -235,11 +260,25 @@ impl Api {
 
     /// Register `name`; returns its PIN.
     pub async fn register(&self, name: &str) -> Result<String, ApiError> {
+        self.register_with(name, None).await
+    }
+
+    /// Register `name` again with the PIN this launcher already has (the
+    /// server deleted the profile after a month unused).
+    pub async fn restore(&self, name: &str, pin: &str) -> Result<(), ApiError> {
+        self.register_with(name, Some(pin)).await.map(|_| ())
+    }
+
+    async fn register_with(&self, name: &str, pin: Option<&str>) -> Result<String, ApiError> {
         let url = format!("{}/seat/v1/profiles", self.base);
+        let body = match pin {
+            Some(p) => json!({ "name": name, "pin": p }),
+            None => json!({ "name": name }),
+        };
         let res = self
             .http
             .post(url)
-            .json(&json!({ "name": name }))
+            .json(&body)
             .send()
             .await
             .map_err(|e| ApiError::Transient(format!("cannot reach the server: {e}")))?;
@@ -331,6 +370,27 @@ impl Api {
     /// Reject, cancel or unfriend.
     pub async fn friend_remove(&self, token: &str, name: &str) -> Result<(), ApiError> {
         let url = format!("{}/seat/v1/friends/{name}", self.base);
+        Self::friendly(self.http.delete(url).bearer_auth(token).send().await).await.map(|_| ())
+    }
+
+    /// This profile's report waiting for review, if any.
+    pub async fn report(&self, token: &str) -> Result<Option<Report>, ApiError> {
+        let url = format!("{}/seat/v1/reports", self.base);
+        let v = Self::friendly(self.http.get(url).bearer_auth(token).send().await).await?;
+        serde_json::from_value(v["report"].clone()).map_err(|e| ApiError::Transient(format!("bad answer: {e}")))
+    }
+
+    /// Report `name`'s voice chat (one report waiting at a time).
+    pub async fn report_file(&self, token: &str, name: &str, reason: &str, details: &str) -> Result<Report, ApiError> {
+        let url = format!("{}/seat/v1/reports", self.base);
+        let body = json!({ "name": name, "reason": reason, "details": details });
+        let v = Self::friendly(self.http.post(url).bearer_auth(token).json(&body).send().await).await?;
+        serde_json::from_value(v["report"].clone()).map_err(|e| ApiError::Transient(format!("bad answer: {e}")))
+    }
+
+    /// Take back the report waiting for review.
+    pub async fn report_withdraw(&self, token: &str) -> Result<(), ApiError> {
+        let url = format!("{}/seat/v1/reports", self.base);
         Self::friendly(self.http.delete(url).bearer_auth(token).send().await).await.map(|_| ())
     }
 

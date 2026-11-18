@@ -121,6 +121,8 @@ pub fn router(state: AppState) -> Router {
         .route("/seat/v1/friends/:name/accept", post(friend_accept))
         .route("/seat/v1/friends/:name", delete(friend_remove))
         .route("/seat/v1/lobby/roster", post(lobby_roster))
+        .route("/seat/v1/reports", get(report_get).post(report_file).delete(report_withdraw))
+        .route("/seat/v1/admin/reports", get(admin_reports).post(admin_report_action))
         .layer(DefaultBodyLimit::max(16 * 1024))
         .with_state(state)
 }
@@ -215,6 +217,14 @@ fn registry_error(e: RegistryError) -> Response {
             };
             (status, *code)
         }
+        RegistryError::Report(code, _) => {
+            let status = match *code {
+                "REPORT_UNKNOWN" | "REPORT_NOT_FOUND" => StatusCode::NOT_FOUND,
+                "REPORT_ACTIVE" => StatusCode::CONFLICT,
+                _ => StatusCode::BAD_REQUEST,
+            };
+            (status, *code)
+        }
         RegistryError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, "REGISTRY_ERROR"),
     };
     error(status, code, e)
@@ -267,6 +277,10 @@ async fn create(
 #[derive(Deserialize)]
 struct RegisterBody {
     name: String,
+    /// The PIN to register with (a launcher restoring its expired profile);
+    /// without it the server picks one.
+    #[serde(default)]
+    pin: Option<String>,
 }
 
 /// Register a free name. The PIN is in this answer only.
@@ -283,8 +297,8 @@ async fn register(
     if wait > 0 {
         return too_many(wait);
     }
-    let name = b.name.clone();
-    let result = s.hashing(move |r| r.register(&name, now / 1000, false)).await;
+    let (name, pin) = (b.name.clone(), b.pin.clone());
+    let result = s.hashing(move |r| r.register_with(&name, pin.as_deref(), now / 1000, false)).await;
     match result {
         Ok(pin) => {
             s.presence.lock().unwrap().end_name(&b.name);
@@ -665,6 +679,126 @@ async fn friend_accept(State(s): State<AppState>, Path(name): Path<String>, h: H
             s.friends_changed();
             StatusCode::NO_CONTENT.into_response()
         }
+        Err(e) => registry_error(e),
+    }
+}
+
+// ---- voice-chat abuse reports ------------------------------------------------
+
+/// The caller's open report (`{"report": null}` when none).
+async fn report_get(State(s): State<AppState>, h: HeaderMap) -> Response {
+    let (token, who) = match me(&s, &h) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    if let Err(w) = s.limiter.lock().unwrap().take(&format!("rget:{token}"), limits::REPORT_GET_PER_TOKEN, s.now()) {
+        return too_many(w);
+    }
+    match s.registry.open_report(&who.name) {
+        Ok(r) => no_store(json!({"report": r})),
+        Err(e) => registry_error(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct ReportBody {
+    name: String,
+    reason: String,
+    #[serde(default)]
+    details: String,
+}
+
+/// File a report about a player's voice chat. One open report per profile;
+/// 5 tries per profile and 10 per address a day.
+async fn report_file(
+    State(s): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    h: HeaderMap,
+    Json(b): Json<ReportBody>,
+) -> Response {
+    let (_, who) = match me(&s, &h) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let now = s.now();
+    {
+        let ip = client_ip(peer, &h);
+        let mut l = s.limiter.lock().unwrap();
+        let w = l
+            .wait_ms(&format!("report:{}", who.key), limits::REPORT_PER_NAME, now)
+            .max(l.wait_ms(&format!("reportip:{ip}"), limits::REPORT_PER_IP, now));
+        if w > 0 {
+            return too_many(w);
+        }
+        l.record(&format!("report:{}", who.key), limits::REPORT_PER_NAME, now);
+        l.record(&format!("reportip:{ip}"), limits::REPORT_PER_IP, now);
+    }
+    match s.registry.file_report(&who.name, b.name.trim(), b.reason.trim(), &b.details, now / 1000) {
+        Ok(r) => (StatusCode::CREATED, [(header::CACHE_CONTROL, "no-store")], Json(json!({"report": r}))).into_response(),
+        Err(RegistryError::NotFound) => error(StatusCode::UNAUTHORIZED, "PRESENCE_NOT_FOUND", "sign in again"),
+        Err(e) => registry_error(e),
+    }
+}
+
+/// Take back the caller's open report.
+async fn report_withdraw(State(s): State<AppState>, h: HeaderMap) -> Response {
+    let (_, who) = match me(&s, &h) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    if let Err(w) = s.limiter.lock().unwrap().take(&format!("rdel:{}", who.key), limits::REPORT_WITHDRAW_PER_NAME, s.now()) {
+        return too_many(w);
+    }
+    match s.registry.withdraw_report(&who.name) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => registry_error(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct ReportsQuery {
+    status: Option<String>,
+}
+
+async fn admin_reports(
+    State(s): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Query(q): Query<ReportsQuery>,
+    h: HeaderMap,
+) -> Response {
+    if !admin_ok(&s, peer, &h) {
+        return error(StatusCode::FORBIDDEN, "FORBIDDEN", "admin only");
+    }
+    match s.registry.reports(q.status.as_deref().unwrap_or("open")) {
+        Ok(list) => no_store(json!({"reports": list})),
+        Err(e) => registry_error(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct AdminReportBody {
+    action: String, // close | delete
+    id: i64,
+    #[serde(default)]
+    outcome: String,
+}
+
+async fn admin_report_action(
+    State(s): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    h: HeaderMap,
+    Json(b): Json<AdminReportBody>,
+) -> Response {
+    if !admin_ok(&s, peer, &h) {
+        return error(StatusCode::FORBIDDEN, "FORBIDDEN", "admin only");
+    }
+    let r = match b.action.as_str() {
+        "close" => s.registry.close_report(b.id, &b.outcome, s.now() / 1000),
+        "delete" => s.registry.delete_report(b.id),
+        _ => return error(StatusCode::BAD_REQUEST, "BAD_ACTION", "action: close | delete"),
+    };
+    match r {
+        Ok(()) => no_store(json!({"id": b.id, "done": b.action})),
         Err(e) => registry_error(e),
     }
 }

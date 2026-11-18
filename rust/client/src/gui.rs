@@ -162,6 +162,14 @@ struct App {
     patch_state: Option<(std::time::Instant, std::path::PathBuf, crate::probe::PatchReport)>,
     patch_job: Option<PatchJob>,
     patch_note: Option<(String, bool)>,
+    /// The first-run "18 or older" box, ticked but not yet confirmed.
+    consent_tick: bool,
+    /// SETTINGS asked the server for this profile's open report.
+    report_asked: bool,
+    /// The REPORT VOICE ABUSE form: gamertag, reason (index), what happened.
+    report_name: String,
+    report_reason: usize,
+    report_details: String,
 }
 
 impl App {
@@ -185,11 +193,17 @@ impl App {
             patch_note: None,
             shot_taken: false,
             settings_open: false,
+            consent_tick: false,
+            report_asked: false,
+            report_name: String::new(),
+            report_reason: 0,
+            report_details: String::new(),
         }
     }
 
     /// Development: MKWMP_GUI_SHOT=<file.png> saves a screenshot of the window
-    /// after it settled (MKWMP_GUI_SETTINGS=1 opens SETTINGS first), then quits.
+    /// after it settled (MKWMP_GUI_SETTINGS=1 opens SETTINGS first, =bottom
+    /// scrolled down), then quits.
     fn dev_screenshot(&mut self, ctx: &egui::Context) {
         let Some(path) = std::env::var_os("MKWMP_GUI_SHOT") else { return };
         if self.frames == 2 && std::env::var_os("MKWMP_GUI_SETTINGS").is_some() {
@@ -333,6 +347,9 @@ impl eframe::App for App {
         }
         if self.confirm_unfriend.is_some() {
             self.unfriend_dialog(&ctx);
+        }
+        if !self.draft.adult_consent {
+            self.consent_dialog(&ctx);
         }
 
         // Footer on the road.
@@ -569,11 +586,19 @@ impl App {
 
     fn settings_dialog(&mut self, ctx: &egui::Context) {
         let has_tray = self.tray.is_some();
+        if !std::mem::replace(&mut self.report_asked, true) && self.signed_up() {
+            self.core.refresh_report();
+        }
         let r = pixel_modal("settings").show(ctx, |ui| {
             ui.set_width(820.0);
             ui.label(RichText::new("SETTINGS").font(pixel(13.0)).color(INK));
             ui.add_space(8.0);
             let mut changed = false;
+            let mut scroll = egui::ScrollArea::vertical().id_salt("settings-scroll").max_height(470.0);
+            if std::env::var_os("MKWMP_GUI_SETTINGS").is_some_and(|v| v == "bottom") {
+                scroll = scroll.vertical_scroll_offset(330.0); // dev screenshots of the lower half
+            }
+            scroll.show(ui, |ui| {
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
                     ui.set_width(390.0);
@@ -601,12 +626,17 @@ impl App {
                     changed |= ui.checkbox(&mut b.notify_requests, "someone sends me a friend request").changed();
                     ui.add_space(6.0);
                     self.patch_settings(ui);
+                    ui.add_space(6.0);
+                    self.privacy_settings(ui);
                 });
                 ui.add_space(20.0);
                 ui.vertical(|ui| {
                     ui.set_width(390.0);
                     changed |= self.voice_settings(ui);
+                    ui.add_space(6.0);
+                    self.report_settings(ui);
                 });
+            });
             });
             if changed {
                 self.save();
@@ -638,6 +668,139 @@ impl App {
         });
         if r.should_close() {
             self.settings_open = false;
+        }
+        if !self.settings_open {
+            self.report_asked = false;
+        }
+    }
+
+    /// Registered, signed up (18+ confirmed): the server may be asked.
+    fn signed_up(&self) -> bool {
+        self.draft.adult_consent && self.draft.pin.len() == 6 && valid_name(&self.draft.name)
+    }
+
+    /// First run (or consent taken back): nothing reaches the server until
+    /// the player confirms they're 18 or older and accepts the privacy policy.
+    fn consent_dialog(&mut self, ctx: &egui::Context) {
+        pixel_modal("consent").show(ctx, |ui| {
+            ui.set_width(520.0);
+            ui.label(RichText::new("BEFORE YOU PLAY ONLINE").font(pixel(12.0)).color(INK));
+            ui.add_space(8.0);
+            for line in [
+                "MKWMP's online play, friends and voice chat are for adults: you must be 18 or older.",
+                "The server keeps your gamertag, a hash of your PIN, your friends and any report you file. \
+                 Unused gamertags are deleted after a month; you can delete yours any time (SETTINGS > PRIVACY).",
+                "Voice chat is relayed live to the players in your lobby and never recorded.",
+            ] {
+                ui.label(RichText::new(line).size(13.0).color(MUTED));
+                ui.add_space(4.0);
+            }
+            ui.add_space(4.0);
+            ui.checkbox(&mut self.consent_tick, "I'm 18 or older and I accept the privacy policy");
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                if pixel_button(ui, "PRIVACY POLICY", vec2(200.0, 36.0), YELLOW, YELLOW_D, INK, 9.0, true)
+                    .on_hover_text(crate::api::PRIVACY_URL)
+                    .clicked()
+                {
+                    let _ = open::that(crate::api::PRIVACY_URL);
+                }
+                ui.add_space(8.0);
+                if pixel_button(ui, "CONTINUE", vec2(150.0, 36.0), BLUE, BLUE_D, PAPER, 11.0, self.consent_tick).clicked() {
+                    self.draft.adult_consent = true;
+                    self.save();
+                    self.core.consent_changed();
+                }
+            });
+        });
+    }
+
+    /// SETTINGS → PRIVACY: the 18+ consent, the policy, deleting the account.
+    fn privacy_settings(&mut self, ui: &mut egui::Ui) {
+        section(ui, "PRIVACY");
+        if ui.checkbox(&mut self.draft.adult_consent, "I'm 18 or older and I accept the privacy policy").changed() {
+            self.consent_tick = false;
+            self.save(); // before the sign-in reacts to it
+            self.core.consent_changed();
+        }
+        hint(ui, "Without it the launcher doesn't sign in, register or play.", MUTED);
+        ui.horizontal(|ui| {
+            if pixel_button(ui, "PRIVACY POLICY", vec2(180.0, 30.0), YELLOW, YELLOW_D, INK, 8.0, true)
+                .on_hover_text(crate::api::PRIVACY_URL)
+                .clicked()
+            {
+                let _ = open::that(crate::api::PRIVACY_URL);
+            }
+            let can = self.draft.pin.len() == 6 && !self.deleting;
+            if pixel_button(ui, "DELETE MY ACCOUNT", vec2(190.0, 30.0), RED, RED_D, PAPER, 8.0, can)
+                .on_hover_text("Delete your gamertag, PIN, friends and the reports you filed from this server")
+                .clicked()
+            {
+                self.settings_open = false;
+                self.confirm_delete = true;
+            }
+        });
+    }
+
+    /// SETTINGS → REPORT VOICE ABUSE: one report waiting for review at a time.
+    fn report_settings(&mut self, ui: &mut egui::Ui) {
+        use crate::api::{REPORT_DETAILS_MAX, REPORT_REASONS};
+        section(ui, "REPORT VOICE ABUSE");
+        if !self.signed_up() {
+            hint(ui, "Register your gamertag (and confirm you're 18+) to report a player.", MUTED);
+            return;
+        }
+        let rep = self.core.ui().report;
+        let label = |code: &str| REPORT_REASONS.iter().find(|(c, _)| *c == code).map_or(code.to_string(), |(_, l)| l.to_string());
+        match &rep.mine {
+            None => hint(ui, if rep.working { "Checking…" } else { "Can't check right now." }, MUTED),
+            Some(Some(r)) => {
+                hint(ui, &format!("Your report about {} ({}) is waiting for the host's review.", r.reported, label(&r.reason)), INK);
+                hint(ui, "You can have one report waiting at a time.", MUTED);
+                if pixel_button(ui, "WITHDRAW", vec2(150.0, 30.0), RED, RED_D, PAPER, 9.0, !rep.working).clicked() {
+                    self.core.withdraw_report();
+                }
+            }
+            Some(None) => {
+                field_label(ui, "GAMERTAG");
+                let r = ui.add(
+                    TextEdit::singleline(&mut self.report_name)
+                        .hint_text("who (REPORT next to a muted player fills this)")
+                        .char_limit(16)
+                        .margin(vec2(8.0, 6.0))
+                        .desired_width(370.0),
+                );
+                if r.changed() {
+                    self.report_name.retain(|c| !c.is_whitespace());
+                }
+                field_label(ui, "WHAT HAPPENED");
+                egui::ComboBox::from_id_salt("report-reason")
+                    .width(370.0)
+                    .selected_text(REPORT_REASONS[self.report_reason].1)
+                    .show_ui(ui, |ui| {
+                        for (i, (_, l)) in REPORT_REASONS.iter().enumerate() {
+                            ui.selectable_value(&mut self.report_reason, i, *l);
+                        }
+                    });
+                ui.add(
+                    TextEdit::multiline(&mut self.report_details)
+                        .hint_text("Optional: when, in which lobby, what was said")
+                        .char_limit(REPORT_DETAILS_MAX)
+                        .desired_rows(3)
+                        .margin(vec2(8.0, 6.0))
+                        .desired_width(370.0),
+                );
+                hint(ui, "The server's host reviews reports. Filing false reports can get you blocked.", MUTED);
+                let ok = !rep.working && valid_name(&self.report_name) && !self.report_name.eq_ignore_ascii_case(&self.draft.name);
+                if pixel_button(ui, "SEND REPORT", vec2(170.0, 30.0), RED, RED_D, PAPER, 9.0, ok).clicked() {
+                    let reason = REPORT_REASONS[self.report_reason].0;
+                    self.core.file_report(std::mem::take(&mut self.report_name), reason, std::mem::take(&mut self.report_details));
+                    self.report_reason = 0;
+                }
+            }
+        }
+        if let Some((m, err)) = &rep.note {
+            hint(ui, m, if *err { RED_D } else { GREEN_D });
         }
     }
 
@@ -788,6 +951,7 @@ impl App {
         ui.add_space(6.0);
         section(ui, "MUTED PLAYERS");
         let mut unmute = None;
+        let mut report = None;
         if v.mutes.is_empty() {
             hint(ui, "Nobody. Mute a player from their menu in the game's lobby.", MUTED);
         } else {
@@ -798,6 +962,12 @@ impl App {
                             ui.add_space(12.0);
                             if small_button(ui, "UNMUTE", 80.0, BLUE, BLUE_D, true).clicked() {
                                 unmute = Some(m.account.clone());
+                            }
+                            if small_button(ui, "REPORT", 80.0, RED, RED_D, true)
+                                .on_hover_text("Report this player's voice chat (below)")
+                                .clicked()
+                            {
+                                report = Some(m.name.clone());
                             }
                         });
                     });
@@ -810,6 +980,9 @@ impl App {
                 self.error = Some(e);
             }
             self.draft.voice.mutes.retain(|m| m.account != account);
+        }
+        if let Some(name) = report {
+            self.report_name = name;
         }
         changed
     }

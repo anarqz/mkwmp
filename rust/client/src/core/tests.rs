@@ -26,6 +26,9 @@ enum Seat {
     Down,
     /// 409 NAME_TAKEN for this many joins, then seated.
     TakenFor(usize),
+    /// The server deleted the profile (a month unused): 404 until the
+    /// launcher registers it again, then seated.
+    Expired,
 }
 
 #[derive(Clone)]
@@ -35,6 +38,8 @@ struct Fake {
     polls: Arc<AtomicUsize>,
     joins: Arc<AtomicUsize>,
     deletes: Arc<Mutex<Vec<String>>>,
+    /// Bodies of POST /seat/v1/profiles.
+    registers: Arc<Mutex<Vec<Value>>>,
 }
 
 fn err(status: u16, code: &str) -> Response {
@@ -60,6 +65,7 @@ async fn join(State(f): State<Fake>) -> Response {
         Seat::QueuedFor(_) => Json(view("queued", Some(2))).into_response(),
         Seat::Refused(s, c) => err(s, c),
         Seat::Down => err(503, "UNAVAILABLE"),
+        Seat::Expired => Json(view("seated", None)).into_response(),
     }
 }
 
@@ -79,8 +85,15 @@ async fn delete_profile(State(f): State<Fake>, UrlPath(name): UrlPath<String>) -
     }
 }
 
+async fn register(State(f): State<Fake>, Json(b): Json<Value>) -> Response {
+    f.registers.lock().unwrap().push(b.clone());
+    let pin = b["pin"].as_str().unwrap_or("654321").to_string();
+    (StatusCode::CREATED, Json(json!({"name": b["name"], "pin": pin}))).into_response()
+}
+
 async fn presence(State(f): State<Fake>) -> Response {
     match f.seat {
+        Seat::Expired if f.registers.lock().unwrap().is_empty() => err(404, "PROFILE_NOT_FOUND"),
         Seat::Refused(s, c) => err(s, c),
         Seat::Down => err(503, "UNAVAILABLE"),
         _ => Json(json!({"token": "p1"})).into_response(),
@@ -99,6 +112,7 @@ async fn serve(f: Fake) -> String {
         .route("/seat/v1/sessions/:sid", get(poll).delete(|| async { StatusCode::NO_CONTENT }))
         .route("/seat/v1/profiles/:name", delete(delete_profile))
         .route("/seat/v1/presence", post(presence))
+        .route("/seat/v1/profiles", post(register))
         .with_state(f);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = l.local_addr().unwrap();
@@ -107,7 +121,7 @@ async fn serve(f: Fake) -> String {
 }
 
 fn fake(seat: Seat, delete: (u16, &'static str)) -> Fake {
-    Fake { seat, delete, polls: Arc::default(), joins: Arc::default(), deletes: Arc::default() }
+    Fake { seat, delete, polls: Arc::default(), joins: Arc::default(), deletes: Arc::default(), registers: Arc::default() }
 }
 
 static N: AtomicUsize = AtomicUsize::new(0);
@@ -142,6 +156,7 @@ fn setup(server: &str) -> (Arc<Core>, PathBuf) {
             ..Default::default()
         },
         patch: true,
+        adult_consent: true,
     };
     let path = dir.join("client.toml");
     cfg.save(path.to_str().unwrap()).unwrap();
@@ -251,6 +266,32 @@ async fn play_refused_does_not_start_the_game() {
         assert!(!game.join("started").exists());
         assert_eq!(ticket(&game), None, "no stale ticket either");
     }
+}
+
+#[tokio::test]
+async fn an_expired_profile_is_registered_again_with_the_saved_pin() {
+    let f = fake(Seat::Expired, (204, ""));
+    let (core, game) = setup(&serve(f.clone()).await);
+    core.play();
+    until("the game", || game.join("started").exists()).await;
+    assert_eq!(*f.registers.lock().unwrap(), vec![json!({"name": "Ana", "pin": "123456"})]);
+    assert_eq!(core.ui().cfg.pin, "123456", "the PIN stays");
+}
+
+#[tokio::test]
+async fn nothing_reaches_the_server_without_consent() {
+    let f = fake(Seat::Seated, (204, ""));
+    let (core, game) = setup(&serve(f.clone()).await);
+    let mut cfg = core.ui().cfg;
+    cfg.adult_consent = false;
+    core.set_config(cfg).unwrap();
+    core.play();
+    assert_eq!(settle_session(&core).await, SessionView::Failed(crate::api::NO_CONSENT.into()));
+    core.register();
+    assert_eq!(core.ui().register, RegisterView::Failed(crate::api::NO_CONSENT.into()));
+    assert!(!game.join("started").exists());
+    assert_eq!(f.joins.load(Ordering::SeqCst), 0);
+    assert!(f.registers.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

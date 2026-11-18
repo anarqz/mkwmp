@@ -58,6 +58,10 @@ pub struct ClientConfig {
     /// INSTALL turns it back on. PLAY needs it.
     #[serde(default = "yes")]
     pub patch: bool,
+    /// The player confirmed they are 18 or older and accept the privacy
+    /// policy. Until then the launcher doesn't register, sign in or play.
+    #[serde(default)]
+    pub adult_consent: bool,
 }
 
 /// Lobby voice chat. The window edits the switches, devices and volumes; the
@@ -197,6 +201,7 @@ impl Default for ClientConfig {
             background: Background::default(),
             voice: Voice::default(),
             patch: true,
+            adult_consent: false,
         }
     }
 }
@@ -227,6 +232,9 @@ impl ClientConfig {
 
     /// What is missing before PLAY can work.
     pub fn problem(&self) -> Option<String> {
+        if !self.adult_consent {
+            return Some(crate::api::NO_CONSENT.into());
+        }
         if !valid_name(&self.name) {
             return Some("Pick a gamertag: 3-16 letters, digits, - or _ (no spaces)".into());
         }

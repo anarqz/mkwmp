@@ -11,6 +11,10 @@
 //! | friends reads      | presence   | 120 per minute |
 //! | poll / heartbeat   | session    | 60 per minute  |
 //! | lobby roster       | token      | 120 per minute |
+//! | reports filed      | profile    | 5 per day      |
+//! | reports filed      | ip         | 10 per day     |
+//! | report withdrawals | profile    | 5 per day      |
+//! | report reads       | presence   | 60 per minute  |
 //! | status, profile    | ip         | 120 per minute |
 //!
 //! Every refusal is a 429 with Retry-After.
@@ -37,6 +41,11 @@ pub const FRIENDS_GET_PER_TOKEN: Limit = Limit { max: 120, window_ms: 60_000 };
 pub const POLL_PER_SESSION: Limit = Limit { max: 60, window_ms: 60_000 };
 pub const ROSTER_PER_TOKEN: Limit = Limit { max: 120, window_ms: 60_000 };
 pub const READS_PER_IP: Limit = Limit { max: 120, window_ms: 60_000 };
+const DAY_MS: u64 = 86_400_000;
+pub const REPORT_PER_NAME: Limit = Limit { max: 5, window_ms: DAY_MS };
+pub const REPORT_PER_IP: Limit = Limit { max: 10, window_ms: DAY_MS };
+pub const REPORT_WITHDRAW_PER_NAME: Limit = Limit { max: 5, window_ms: DAY_MS };
+pub const REPORT_GET_PER_TOKEN: Limit = Limit { max: 60, window_ms: 60_000 };
 
 #[derive(Default)]
 pub struct Limiter {

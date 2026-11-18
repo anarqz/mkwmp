@@ -24,7 +24,7 @@ Download `mkwmp-server-x86_64-windows.exe` or `mkwmp-server-x86_64-linux` from t
    - `keys/`: the ticket signing key, the lobby's tokens, and the lobby's TLS certificate (self-signed, for the host names the game asks for);
    - `host.toml`: your settings;
    - `server.toml`: the config written from them;
-   - `registry.db`: gamertags, PIN hashes and friends.
+   - `registry.db`: gamertags, PIN hashes, friends and voice-chat reports.
 3. It runs the seat server and the lobby together until you close it. Later runs reuse `host.toml`; flags change it:
 
        mkwmp-server host --public-ip 203.0.113.7 --name "Friday kart" --capacity 12
@@ -60,6 +60,16 @@ Docker runs the same `mkwmp host`. Use any Linux machine with Docker, for exampl
     docker compose exec server mkwmp admin register <name> --config /data/server.toml   # reserve + new PIN
     docker compose exec server mkwmp admin reset-pin <name> --config /data/server.toml
     docker compose exec server mkwmp admin release <name> --config /data/server.toml
+
+**Voice-chat reports.** Players report abuse from the launcher (SETTINGS → REPORT VOICE ABUSE); each player has at most one waiting. Review them from the same machine:
+
+    docker compose exec server mkwmp admin reports --config /data/server.toml          # open ones (or: closed, all)
+    docker compose exec server mkwmp admin close-report <id> warned in DM --config /data/server.toml
+    docker compose exec server mkwmp admin delete-report <id> --config /data/server.toml
+
+To block an abusive player, `release` their gamertag. Reports are deleted 90 days after they were filed.
+
+**Your players' data.** As the host you hold their gamertags, PIN hashes, friends and reports, and your logs can hold their IP addresses. The official server's [privacy policy](https://anarqz.github.io/mkwmp/#privacy) is a starting point for your own: tell your players what you keep and for how long. Unused gamertags are deleted after `[registry] expire_days` (30).
 
 **Backup:** everything is in the `mkwmp-data` volume (`registry.db` and `keys/`). For a consistent copy, stop the seat server first:
 
