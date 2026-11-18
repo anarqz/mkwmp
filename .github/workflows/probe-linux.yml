@@ -1,11 +1,12 @@
-# Keeps the probe's platform-neutral core and the voice library portable while mkw-recomp's plugin API does not
-# exist yet (docs/PLUGIN-API-READINESS.md): both must build for Linux with no Windows dependency, and the
-# Windows winmm.dll / mkwmp-voice.dll must still build. Nothing is uploaded or released.
+# Keeps the probe's platform-neutral core and the voice library portable while mkw-recomp's plugin API is a
+# prototype (docs/PLUGIN-API-READINESS.md): both must build for Linux with no Windows dependency, the Windows
+# winmm.dll / mkwmp-voice.dll must still build, and so must the plugin (mkwmp.so / mkwmp.dll, tested against a fake
+# API). Nothing is uploaded or released.
 name: probe-linux
 
 on:
   push:
-    branches: [probe-plat, voice-linux]
+    branches: [probe-plat, voice-linux, probe-plugin]
     paths: ["native/probe/**", "native/voice/**", ".github/workflows/probe-linux.yml"]
   pull_request:
     paths: ["native/probe/**", "native/voice/**", ".github/workflows/probe-linux.yml"]
@@ -36,6 +37,9 @@ jobs:
         run: python3 -I native/probe/build_linux.py
       - name: Windows probe (winmm.dll)
         run: python3 -I native/probe/build.py
+      # The native mkw-recomp plugin (src/mkw_plugin.h): mkwmp.so + mkwmp.dll, and the .so against a fake plugin API
+      - name: Plugin builds (mkwmp.so, mkwmp.dll) and test_plugin
+        run: python3 -I native/probe/build_plugin.py --test
 
   voice:
     runs-on: ubuntu-latest

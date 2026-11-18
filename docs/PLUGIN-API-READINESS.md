@@ -1,6 +1,6 @@
 # Readiness for mkw-recomp's native plugin API (MkwPluginApi)
 
-Status 2026-11-18: upstream has **proposed** the API (conversation in `~/MESSAGES.MD`, not in the repo). Nothing has landed
+Status 2026-11-18: upstream has **proposed** the API; a prototype header exists on our fork (phase 2 below) (conversation in `~/MESSAGES.MD`, not in the repo). Nothing has landed
 on mkw-recomp main (2cf005a). Upstream's CONTRIBUTING.md (ecafc22) now promises "generic, documented hooks" for outside
 projects and names MKWMP as the place for online play.
 
@@ -73,3 +73,39 @@ Phase 1 (no upstream dependency, keeps 0.1.10-0.1.14 working):
 
 Phase 2 (when an API build exists): `backend_plugin.c` + `mkw_plugin_init`; launcher picks loader by recomp version
 (winmm for COFF releases, plugin for API releases) and passes `--mod`; Steam Deck native Linux path without Proton.
+
+## Phase 2 started (branch probe-plugin, against the prototype header)
+
+The prototype API is `runtime/plugin/mkw_plugin.h` on the fork's `plugin-loader` branch (API version 1), vendored
+unchanged as `native/probe/src/mkw_plugin.h`. Nothing runs it yet: there is no runtime build with a plugin loader.
+
+- `native/probe/src/backend_plugin.c`: `mkw_plugin_init`. Refuses (`api->fail`, non-zero) an `api_version` below 1, a
+  table shorter than version 1's, or a table without override / guest_symbol / log / call / cfg_get / core_away /
+  core_back. Fills `g_rt`: override, stock, guest_symbol, call, log, cfg_get, core_away/back straight from the table;
+  `host_fn_at` from `host_at` and `dispatch_hook` (0-is-success turned into g_rt's 1); `fs_*` = `stock()` of the
+  nn::fs names npln.c overrides; `guest_modules` / `game_code_loaded` 0 until `on_game_loaded` fires; new
+  `guest_thread` always 1 (npln.c's poll used to read `Cpu.thread`, beyond MkwCpu's prefix; the COFF backend leaves it
+  NULL and keeps that test).
+- Start-up shared with the winmm loader: `probe.c` (`probe_log_start`: log, version, `mkwmp.env`; `probe_register`:
+  `npln_register`). `dllmain.c` keeps only the COFF resolve and the keypad.
+- Gap 2 covered on our side: `plat_set_home(api->plugin_dir)`, so `mkwmp.toml`, `mkwmp.env`, `mkwmp.log` and the
+  voice library are the plugin folder's.
+- Room ID: `text_entry_hook` answers with `MKW_SWKBD_ANSWER` (kept equal to the launcher's Room ID by voice.c), else
+  the runtime's own text entry. keypad.c stays COFF-only. `notify_push` also goes to `api->notice` (new
+  `notify_set_sink`).
+- Build: `native/probe/build_plugin.py` makes `build/plugin/linux/mkwmp.so` and `build/plugin/windows/mkwmp.dll`,
+  -Werror, only `mkw_plugin_init` exported (Linux: version script, `--no-undefined`). `--test` runs
+  `tests/test_plugin.c`: the .so against a fake API (64 overrides, the same names as the COFF path; refusals; log and
+  env file in plugin_dir). In CI (probe-linux.yml).
+
+Not mapped yet / left undone:
+- **Plugin threads calling guest code** (gap 1): the API's `call` is only for host functions on a guest thread. The
+  probe's own threads do not call guest code today, but nothing enforces it.
+- `guest_readable`: guesthook.c / gameaddrs.c still use `plat_mem_readable` (/proc/self/maps on Linux, slow).
+- `main_base` / `game_version`: the probe still assumes main at 0x7000000000 (`GUEST_MAIN`) and finds the game build
+  by reading guest memory (guesthook.c `game_build`); both could come from the API after `on_game_loaded`.
+- `observe` / `call_original`: unused; the fs overrides chain through `stock`, which is enough.
+- The voice UI's keyboard shortcuts: `plat_key_down` has no global keyboard from a Linux .so (always 0 there).
+- Override order (gap 6) and load errors on the start screen (gap 3) are the runtime's; `fail` is what we use.
+- The launcher does not pick a loader or install `mods/mkwmp/plugin/` yet.
+- Untested against a real runtime; only the fake-API test has run.

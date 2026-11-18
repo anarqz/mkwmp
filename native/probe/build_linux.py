@@ -5,9 +5,9 @@
 
 Produces build/libmkwmp-core.so for x86_64-linux-gnu: every source of build.py except the Windows-only ones
 (loader, COFF backend, keypad detours, Win32 plat), plus the POSIX plat files, compiled with -Werror and linked with
---no-undefined against tests/stub_rtapi.c (an empty g_rt). Not something to ship: until mkw-recomp's plugin API
-exists there is no backend, so the .so only proves that the core needs nothing from Windows
-(docs/PLUGIN-API-READINESS.md). Runs in CI (.github/workflows/probe-linux.yml).
+--no-undefined against tests/stub_rtapi.c (an empty g_rt). Not something to ship: the .so only proves that the core
+needs nothing from Windows (docs/PLUGIN-API-READINESS.md); the plugin build with a real backend is build_plugin.py.
+Runs in CI (.github/workflows/probe-linux.yml).
 """
 import argparse
 import pathlib
