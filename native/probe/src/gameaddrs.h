@@ -27,6 +27,12 @@ struct game_addrs {
     // the monotonic clock). Guard: the instruction before it is this BL.
     uint64_t grpc_timedwait_lr;
     uint32_t grpc_timedwait_bl;
+    // npln.c sdk_monotonic_repair, both in the sdk module: the slot clock_gettime reads its CLOCK_MONOTONIC source
+    // from, and the SDK's default source (nn::os tick based) to put back into it. 0: the build's SDK clock needs no
+    // repair. Guard: the default source (the slot holds nn::time::GetStandardSteadyClockCurrentTimespec when it fails)
+    // starts with these words.
+    uint64_t sdk_mono_source_slot, sdk_tick_source;
+    uint32_t sdk_tick_source_words[8];
     // Error service, vtable slot 6: post a communication error (x1 = info, id = its first u32). Target of
     // MKWMP_SKIP_ERROR, the Proton default skip and MKWMP_SKIP_REFEREE_TIMEOUT. Guard: slot 6 of the vtable holds it
     // and the function starts with these words.

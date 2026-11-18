@@ -87,19 +87,77 @@ static uint64_t sym_once(volatile LONG64 *slot, const char *name) {
 }
 #define SYM(name) ({ static volatile LONG64 slot_; sym_once(&slot_, name); })
 
+// The SDK's own clock_gettime, called directly (the import override below is not in its way). 1 = a usable timestamp.
+static int sdk_clock_gettime(Cpu *c, int id, int64_t *out) {
+    if (!g_rt.ldr_symbol || !g_rt.rt_call) return 0;
+    uint64_t original = SYM("clock_gettime");
+    return original && !g_rt.rt_call(c, original, 2, (uint64_t)(unsigned)id, (uint64_t)(uintptr_t)out) &&
+           out[1] >= 0 && out[1] < 1000000000;
+}
+
+// Game 1.8.0 (SDK 21.4.0): clock_gettime reads each clock through a source pointer (sdk+0xe40018 realtime, +0xe40020
+// monotonic). Both start at the tick source (sdk+0xaf300: nn::os::GetSystemTick -> ConvertToTimeSpan), and
+// nntimeStartup re-points them at nn::time::GetStandardUserSystemClockCurrentTimespec /
+// GetStandardSteadyClockCurrentTimespec. Those read the time service's shared memory, which mkw-recomp does not map
+// (its nn::time::Initialize override only returns success), so they answer 0x74 and clock_gettime fails with EAGAIN.
+// pthread_cond_timedwait / pthread_cond_clockwait take "now" from that same clock_gettime by a direct call and return
+// its errno at once: no timed wait in the SDK can block. The public way back, clock_setclockbase_np, is locked by the
+// SDK's first init_array entry, so the monotonic slot gets the tick source back by hand (gameaddrs.h: the row is
+// picked by main's build id, and the tick source must be the expected code). CLOCK_REALTIME has no source that works
+// here (the tick source would make it time since boot), so it stays with the host clock in ov_clock_gettime.
+//
+// Called when the SDK's monotonic clock fails (never on 1.0.0, whose clock_gettime computes it inline; its row has no
+// slot anyway). 1 = this call changed the source: ask the SDK again.
+static int sdk_monotonic_repair_row(const struct game_addrs *ga) {
+    if (!ga || !ga->sdk_mono_source_slot ||
+        !game_guard_words("SDK tick clock source", ga->sdk_tick_source, ga->sdk_tick_source_words, 8))
+        return 0;
+    volatile LONG64 *slot = (volatile LONG64 *)(uintptr_t)ga->sdk_mono_source_slot;
+    uint64_t was = (uint64_t)InterlockedExchange64(slot, (LONG64)ga->sdk_tick_source);
+    if (was == ga->sdk_tick_source) return 0;   // already the tick source: whatever fails, it is not the source
+    static volatile LONG said;
+    if (!InterlockedExchange(&said, 1))
+        mlog("SDK monotonic clock failed (source %#llx): tick source restored, timed waits can block",
+             (unsigned long long)was);
+    return 1;
+}
+static int sdk_monotonic_repair(void) {
+    static volatile LONG state;   // 0 undecided (main not mapped yet), 1 the build has a verified repair, 2 it has not
+    if (state == 2) return 0;
+    int build = game_build();
+    if (build == GAME_UNKNOWN) return 0;
+    const struct game_addrs *ga = game_addrs_for(build);
+    if (state == 1) return sdk_monotonic_repair_row(ga);
+    int ok = ga && ga->sdk_mono_source_slot &&
+             game_guard_words("SDK tick clock source", ga->sdk_tick_source, ga->sdk_tick_source_words, 8);
+    if (!InterlockedExchange(&state, ok ? 1 : 2) && !ok)
+        mlog("SDK monotonic clock failed on game build %s: no verified repair, SDK timed waits cannot block",
+             game_build_name(build));
+    return ok && sdk_monotonic_repair_row(ga);
+}
+
+// The SDK's default monotonic clock, computed here: the epoch its timed waits use once repaired.
+static int tick_monotonic(Cpu *c, int64_t *out) {
+    if (!g_rt.ldr_symbol || !g_rt.rt_call) return 0;
+    uint64_t tick = SYM("_ZN2nn2os13GetSystemTickEv"), span = SYM("_ZN2nn2os17ConvertToTimeSpanENS0_4TickE");
+    if (!tick || !span) return 0;
+    int64_t ns = (int64_t)g_rt.rt_call(c, span, 1, g_rt.rt_call(c, tick, 0));
+    if (ns < 0) return 0;
+    out[0] = ns / 1000000000;
+    out[1] = ns % 1000000000;
+    return 1;
+}
+
 // SDK pthread_cond_timedwait reads the SDK clock via a direct call, bypassing
 // this import override. Keep successful SDK timestamps in the same epoch.
-// gRPC reads the output even on SDK clock failure, so supply a fallback then.
+// gRPC reads the output even on SDK clock failure, so supply a fallback then:
+// the host's wall clock for CLOCK_REALTIME, the SDK tick clock for CLOCK_MONOTONIC.
 static void ov_clock_gettime(Cpu *c) {
     int id = (int)arg_x(c, 0);
     int64_t *out = arg_p(c, 1);
-    if (out && g_rt.ldr_symbol && g_rt.rt_call) {
-        uint64_t original = SYM("clock_gettime");
-        if (original && !g_rt.rt_call(c, original, 2, (uint64_t)(unsigned)id, (uint64_t)(uintptr_t)out)
-            && out[1] >= 0 && out[1] < 1000000000) {
-            ret_x(c, 0);
-            return;
-        }
+    if (out && sdk_clock_gettime(c, id, out)) {
+        ret_x(c, 0);
+        return;
     }
     if (!out || (id != 0 && id != 1)) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
@@ -112,7 +170,7 @@ static void ov_clock_gettime(Cpu *c) {
         uint64_t unix_ticks = ticks.QuadPart - 116444736000000000ull;
         out[0] = (int64_t)(unix_ticks / 10000000ull);
         out[1] = (int64_t)((unix_ticks % 10000000ull) * 100ull);
-    } else {
+    } else if (!(sdk_monotonic_repair() && sdk_clock_gettime(c, 1, out)) && !tick_monotonic(c, out)) {
         LARGE_INTEGER count, frequency;
         QueryPerformanceCounter(&count); QueryPerformanceFrequency(&frequency);
         out[0] = count.QuadPart / frequency.QuadPart;
@@ -139,6 +197,17 @@ static uint64_t grpc_timedwait_gate(void) {
     return lr;
 }
 
+// The deadline on another clock: as far after `to_now` as `deadline` is after `from_now` (not before it).
+static void deadline_on_clock(const int64_t *deadline, const int64_t *from_now, const int64_t *to_now, int64_t *out) {
+    __int128 remaining = ((__int128)deadline[0] - from_now[0]) * 1000000000 + deadline[1] - from_now[1];
+    if (remaining < 0) remaining = 0;
+    if (remaining > INT64_MAX) remaining = INT64_MAX;
+    int64_t ns = to_now[1] + (int64_t)(remaining % 1000000000);
+    __int128 sec = (__int128)to_now[0] + (int64_t)(remaining / 1000000000) + ns / 1000000000;
+    out[0] = sec > INT64_MAX ? INT64_MAX : (int64_t)sec;
+    out[1] = ns % 1000000000;
+}
+
 static void ov_cond_timedwait(Cpu *c) {
     uint64_t cond = arg_x(c, 0), mutex = arg_x(c, 1);
     const int64_t *deadline = arg_p(c, 2);
@@ -152,22 +221,19 @@ static void ov_cond_timedwait(Cpu *c) {
                                         (uint64_t)(uintptr_t)deadline) : G_EINVAL);
         return;
     }
+    // gRPC built the deadline from this override's CLOCK_REALTIME (gpr_cv_wait converts every deadline to
+    // GPR_CLOCK_REALTIME; gpr_now reads clock_gettime(0)): take the time left on that clock and wait it out on the
+    // SDK's monotonic clock, the one pthread_cond_clockwait itself reads.
     int64_t now[2], mono[2];
-    uint64_t gettime = SYM("clock_gettime");
     c->x[0] = 0;
     c->x[1] = (uintptr_t)now;
     ov_clock_gettime(c);
-    if (c->x[0] || !gettime ||
-        g_rt.rt_call(c, gettime, 2, (uint64_t)1, (uint64_t)(uintptr_t)mono)) {
+    if (c->x[0] || (!sdk_clock_gettime(c, 1, mono) && !(sdk_monotonic_repair() && sdk_clock_gettime(c, 1, mono)))) {
         ret_x(c, G_EAGAIN);
         return;
     }
-    __int128 remaining = ((__int128)deadline[0] - now[0]) * 1000000000 + deadline[1] - now[1];
-    if (remaining < 0) remaining = 0;
-    if (remaining > INT64_MAX) remaining = INT64_MAX;
-    int64_t ns = mono[1] + (int64_t)(remaining % 1000000000);
-    int64_t absolute[2] = {mono[0] + (int64_t)(remaining / 1000000000) + ns / 1000000000,
-                           ns % 1000000000};
+    int64_t absolute[2];
+    deadline_on_clock(deadline, now, mono, absolute);
     static volatile LONG announced;
     if (InterlockedCompareExchange(&announced, 1, 0) == 0) rlog("gRPC timed waits use SDK monotonic clock");
     ret_x(c, g_rt.rt_call(c, clockwait, 4, cond, mutex, (uint64_t)1,

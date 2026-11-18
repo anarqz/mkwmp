@@ -77,6 +77,11 @@ static const struct game_addrs kRows[] = {
         .build = GAME_180,
         // ---- functional (all "exact" in GAME-1.8.0-ADDRESSES.md §3)
         .grpc_timedwait_lr = M(0x111232c), .grpc_timedwait_bl = 0x946a740e,
+        // sdk is at 0x7004400000: +0xe40020 is the source pointer `clock_gettime(1)` branches through (+0xaf3d0),
+        // +0xaf300 the tick source both clocks start with (GetSystemTick -> ConvertToTimeSpan -> timespec)
+        .sdk_mono_source_slot = 0x7004400000ull + 0xe40020, .sdk_tick_source = 0x7004400000ull + 0xaf300,
+        .sdk_tick_source_words = {0xd503237f, 0xa9be7bfd, 0xf9000bf3, 0x910003fd, 0xaa0003f3, 0x941db677, 0x941db67a,
+                                  0xd2929668},
         .errsvc_post = M(0x2564cd0), .errsvc_vtable = M(0x3636ad0), .errsvc_words = {0xd503237f, 0xa9be7bfd},
         .err_referee_timeout = 0x606314c9,
         .proton_skip_error = 0,   // off until the error-post row is proven live (GAME-1.8.0-PLAN.md phase 3.5)

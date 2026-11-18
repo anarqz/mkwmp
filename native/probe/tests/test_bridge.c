@@ -22,20 +22,29 @@ Delegates g_dele;
 static int released, restored;
 static int release_core(void) { released++; return 1; }
 static void restore_core(int *away) { assert(*away == 1); restored++; *away = 0; }
+// A fake SDK: clock_gettime (CLOCK_REALTIME always fails, CLOCK_MONOTONIC unless sdk_mono_broken), nn::os ticks.
+enum { FN_CLOCK = 42, FN_TICK, FN_SPAN };
+static int sdk_mono_broken, sdk_clock_calls;
 static uint64_t clock_symbol(const char *name) {
-    assert(!strcmp(name, "clock_gettime"));
-    return 42;
+    if (!strcmp(name, "clock_gettime")) return FN_CLOCK;
+    if (!strcmp(name, "_ZN2nn2os13GetSystemTickEv")) return FN_TICK;
+    if (!strcmp(name, "_ZN2nn2os17ConvertToTimeSpanENS0_4TickE")) return FN_SPAN;
+    assert(!"unexpected symbol");
+    return 0;
 }
 static uint64_t sdk_clock(Cpu *c, uint64_t fn, int n, ...) {
     (void)c;
-    assert(fn == 42 && n == 2);
     va_list args;
     va_start(args, n);
-    uint64_t id = va_arg(args, uint64_t);
-    int64_t *out = (int64_t *)(uintptr_t)va_arg(args, uint64_t);
+    uint64_t a0 = n > 0 ? va_arg(args, uint64_t) : 0;
+    int64_t *out = n > 1 ? (int64_t *)(uintptr_t)va_arg(args, uint64_t) : NULL;
     va_end(args);
-    if (id == 0) return UINT32_MAX;
-    assert(id == 1);
+    if (fn == FN_TICK) { assert(n == 0); return 31250000ull * 7; }                    // 7 s of 31.25 MHz ticks
+    if (fn == FN_SPAN) { assert(n == 1 && a0 == 31250000ull * 7); return 7000000123ull; }   // TimeSpan: ns
+    assert(fn == FN_CLOCK && n == 2);
+    sdk_clock_calls++;
+    if (a0 == 0 || sdk_mono_broken) return UINT32_MAX;   // what 1.8.0's SDK returns: w0 = -1
+    assert(a0 == 1);
     out[0] = 123;
     out[1] = 456;
     return 0;
@@ -80,6 +89,47 @@ int main(void) {
     g_rt.rt_call = sdk_clock;
     assert(call2(ov_clock_gettime, 1, (uintptr_t)clock) == 0 && clock[0] == 123 && clock[1] == 456);
     assert(call2(ov_clock_gettime, 0, (uintptr_t)clock) == 0 && clock[0] > 1700000000);
+    // Game 1.8.0: the SDK's monotonic clock fails too. No repair without a known build (main is not mapped here), so
+    // the override computes the SDK's tick clock itself; CLOCK_REALTIME stays the host's.
+    sdk_mono_broken = 1;
+    sdk_clock_calls = 0;
+    assert(call2(ov_clock_gettime, 1, (uintptr_t)clock) == 0 && clock[0] == 7 && clock[1] == 123);
+    assert(sdk_clock_calls == 1);
+    assert(call2(ov_clock_gettime, 0, (uintptr_t)clock) == 0 && clock[0] > 1700000000);
+    sdk_mono_broken = 0;
+    assert(call2(ov_clock_gettime, 1, (uintptr_t)clock) == 0 && clock[0] == 123 && clock[1] == 456);
+    {
+        // The repair: the monotonic source slot gets the tick source back, once, and only past the guard.
+        static const uint32_t tick_code[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+        uint64_t slot = 0x70049cd4e0ull;
+        struct game_addrs row = {.sdk_mono_source_slot = (uintptr_t)&slot, .sdk_tick_source = (uintptr_t)tick_code,
+                                 .sdk_tick_source_words = {1, 2, 3, 4, 5, 6, 7, 8}};
+        struct game_addrs wrong = row, none = row;
+        wrong.sdk_tick_source_words[7] = 9;
+        none.sdk_mono_source_slot = 0;
+        assert(!sdk_monotonic_repair_row(NULL) && !sdk_monotonic_repair_row(&none));
+        assert(!sdk_monotonic_repair_row(&wrong) && slot == 0x70049cd4e0ull);
+        assert(sdk_monotonic_repair_row(&row) && slot == (uintptr_t)tick_code);
+        assert(!sdk_monotonic_repair_row(&row) && slot == (uintptr_t)tick_code);   // nothing left to repair
+        assert(!sdk_monotonic_repair());                                           // unknown build
+        // 1.8.0's row: both addresses in the sdk module; 1.0.0 needs no repair
+        const struct game_addrs *r180 = game_addrs_for(GAME_180), *r100 = game_addrs_for(GAME_100);
+        assert(r180->sdk_mono_source_slot == 0x7005240020ull && r180->sdk_tick_source == 0x70044af300ull);
+        assert(!r100->sdk_mono_source_slot && !sdk_monotonic_repair_row(r100));
+    }
+    {
+        // A realtime deadline as the same distance on the monotonic clock.
+        int64_t out[2];
+        deadline_on_clock((int64_t[]){1795002543, 634034300}, (int64_t[]){1795002543, 134034300},
+                          (int64_t[]){7, 900000000}, out);
+        assert(out[0] == 8 && out[1] == 400000000);                               // 0.5 s left, carried
+        deadline_on_clock((int64_t[]){1795002545, 100}, (int64_t[]){1795002543, 999999900}, (int64_t[]){7, 0}, out);
+        assert(out[0] == 8 && out[1] == 200);                                     // 1.0000002 s, borrowed
+        deadline_on_clock((int64_t[]){1795002540, 0}, (int64_t[]){1795002543, 0}, (int64_t[]){7, 5}, out);
+        assert(out[0] == 7 && out[1] == 5);                                       // already past: now
+        deadline_on_clock((int64_t[]){INT64_MAX, 999999999}, (int64_t[]){0, 0}, (int64_t[]){7, 999999999}, out);
+        assert(out[0] > 9000000000ll && out[1] >= 0 && out[1] < 1000000000);      // clamped, still a timespec
+    }
     g_rt.ldr_symbol = NULL;
     g_rt.rt_call = NULL;
     int fd = (int)call2(ov_eventfd, 0, 6);
