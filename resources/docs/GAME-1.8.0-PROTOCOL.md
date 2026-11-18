@@ -303,3 +303,96 @@ Run with `.venv\Scripts\python.exe -I <script>`; each adds `.deps` itself and re
 | `rpcs.py <d100> <d180>` | NPLN method paths, new ones, which the Rust lobby serves |
 | `commver.py <image>` | candidate writers of the `cv%d` number (inconclusive: it is not a constant store) |
 | `pbshapes.py` | serializer tag shapes of a code range and a multiset diff (noisy; a hint, not proof) |
+
+## 9. Comm error 0x884b839c (T2, 2026-11-18)
+
+Static only (no game run). Addresses are 1.8.0 `main` offsets unless marked. **V** = read in the binary.
+
+### 9.1 Symptom
+Two 1.8.0 clients matched into one `Normal24` lobby. About 280 ms after the Gamesync connect, both post
+`0x884b839c` (reason 0xc, kind 0x25): caller `0x297d91c`, frames `0x2981090`, `0x6f6e60`, `0x6f6ee4`. The clients
+half-close `KeepUserSession` at that moment; no SessionJoin, no Pia.
+
+### 9.2 Raiser **V**
+- `0x297d8c0` / `0x2981050` are the generic poster (`0x2981050` = 1.0.0 `FUN_02624ad8`, same instruction bag).
+- The id is built at exactly one site, `0x6f6e4c..0x6f6e5c`, in the function `0x6f6d10`. It is absent from 1.0.0
+  (no mov/movk pair), and `0x6f6d10`, `0x20fa450`, `0x20ff7b0`, `0x256d5a0` have no 1.0.0 counterpart: **the
+  check is new in 1.8.0**.
+- `0x6f6d10` is called every frame by the net-system update `0x6f6e70` (at `0x6f6ee0`) on the 0x18-byte object at
+  `[net system + 0xc8]` (created in `0xbf4720` at `0xbf48b4`, vtable `0x35afaf0`, getter `0x2108560`). Fields:
+  `+8` local player index, `+0xd` armed, `+0xe` "session joined", `+0xf` "error when no seat", `+0x10` "skip the
+  seat check".
+
+```
+0x6f6d10(obj):
+  ctx = netsys[0xa0 + idx*8]                      // per-local-player document context
+  if ctx[0xc4c0] != 1 or slot handle[0] == null or obj[0xd] != 1: return
+  if obj[0x10] == 0 and has_seat(obj) /*0x20fa450*/:
+      if 0x297af60(match controller, ""): obj[0xd] = obj[0xe] = 0      // normal path
+      return
+  if ctx[0] (PlayerStatic collection)[0x128] /*0x20f5be0: listen in sync*/:
+      obj[0xe] = 1
+      if obj[0xf] == 1: post 0x884b839c; obj[0xd..0x10] = 0
+```
+
+- Who arms it: `0x20fa7e0(obj, &mode, w2, idx)` starts matchmaking (`0x297c7a0`, controller op 2) and sets
+  `+0xd = 1`, `+0x10 = 0`, `+0xf = !w2`. `w2 = 0` only from `AIGlobalSeqAfterLoadingMapOuter` (`0x1c93140`, param
+  `NetSeqType`): that is the matchmade path of the event. The other callers (`0x637544`, `0x63766c`, `w2 = 1`) and
+  `0x20fa6e0` / `0x20fa760` (join a known session) leave `+0xf = 0`: with no seat they only get `+0xe = 1` and their
+  own state machine (`0x6326fc`) handles it, so the comm error is specific to the matchmade entry.
+
+### 9.3 The seat check `0x20fa450` **V**
+```
+has_seat(obj):
+  need ctx[0xc4c0]==1 and handle[0] != null            (0x20f5b40)
+       PlayerStatic collection in sync                   (0x20f5be0, ctx[0]+0x128)
+       member collection in sync                         (0x20f5c00, [mgr slot+0x138]+0x128)
+  n    = number of nodes of the member tree ctx+0x30 (keys = ussid), minus 1 with two local players
+  X    = 0x20ff7b0 -> 0x256d5a0(mgr, -1) = u32 [session handle[0] + 0x80]
+  cap  = 24, or 26 when controller mode != 3 and its target field is non-zero
+  thr  = min(X, cap)
+  if X < 1: return false                                 (0x20fa5ec)
+  if n < thr: return true
+  return own key != 0 and own key <= (thr-th smallest key)
+```
+"In sync" is the byte the collection's listen callback sets (`0x258ce20` registers `0x258f040`: `*(coll+0x1a0) = 1`,
+copied to `+0x128` each frame by `0x258cb30`); the lobby's `OP_CURRENT` satisfies it.
+
+**X is the max player count of the GameSession in the matchmaking reply:**
+- session handle = SDK UserSession. Its factory `0x1364830` copies 16 bytes `[P+0x48]` to `[session+0x78]`
+  (`0x1364b90..0x1364ba0`); `P` is built by `0x14a46a0` from the converted GameSession (`0x14e2bf0`:
+  `ldp x4, x5, [gs+0x48]`).
+- Converter `0x14f93c0` (1.0.0 `0x13dbf00`): `ldpsw x10, x9, [msg+0x50]` ... `stp x9, x10, [gs+0x48]`, so
+  `gs+0x48` = msg `+0x54`, `gs+0x50` = msg `+0x50`. Serializer `0x152c460` writes msg `+0x50` with tag 0x10 and
+  `+0x54` with tag 0x18.
+- So `session+0x80` = **GameSession field 2** and `session+0x78` = **GameSession field 3**. Field 2 / field 3 are
+  max / current players (live-verified on the friend card, `msgs.rs:176`). 1.0.0 already read field 3 through the
+  handle (`FUN_01e46888`, `handle+0x58` minus `__gs/r.dpc`; 1.8.0 `0x21085d0`, `handle+0x78`); the read of field 2
+  is new.
+
+### 9.4 Root cause
+`msgs::assignment` (`rust/lobby/src/msgs.rs:139`, the `TrackMatchmakingTicket` reply) builds the GameSession with
+fields 1, 8, 9, 10, 12 only. Field 2 is absent, X = 0, `has_seat` is false, and the first frame after the
+PlayerStatic listen is in sync (which is when the client has just written PlayerStatic / Companion, hence the
+apparent link with the Companion echo) posts `0x884b839c`. Both clients fail regardless of ussid, as observed
+(with X >= 1 at least the lower ussid would pass).
+
+Not involved (the raiser reads none of them): Companion fields (`my_follow_ussid`, `my_sub_ussid`,
+`companion_state`, `members`, ...), the self-echo of client writes, `pusa` in `__us` (SDK-side: parsed into the
+member struct `+0x78` by `0x1386fe0`, and written by the `__pus` builder `0x137cee0` from the join parameters),
+`__gs/f.maxu`, Swarm / DPID / Global documents. Friend rooms are not affected by this bug: `msgs::game_session`
+already sends fields 2 and 3.
+
+### 9.5 Fix
+Server, `rust/lobby/src/msgs.rs` `assignment()` (and its caller `core.rs:890`, which has the lobby): add to the
+GameSession (reply field 7)
+- **field 2 (varint) = lobby capacity** (`lobby.maxu(policy)`, 24 for `Normal24`; must be >= the number of members
+  or the highest ussids are refused), and
+- **field 3 (varint) = current member count** (the client subtracts `__gs/r.dpc` from it; 1.0.0 ran with 0, so it is
+  for consistency with `game_session()`).
+Same for `match_assignment` in `resources/python-lobby/mkwmp_server.py:241` if it is used with 1.8.0. No probe
+change is needed. `MKWMP_SKIP_ERROR=884b839c` is not a workaround: it drops the dialog but the "has seat" branch
+(`0x297af60`, controller op 3) still never runs.
+
+Not proven statically: that nothing else blocks after the seat check passes (next step is `0x297af60`: controller
+state 2, `+0x4d4 == 0`, `+0x48c == 0`, then op 3), and the exact meaning of the 26 cap.
