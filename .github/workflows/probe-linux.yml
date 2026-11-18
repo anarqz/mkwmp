@@ -1,0 +1,28 @@
+# Keeps the probe's platform-neutral core portable while mkw-recomp's plugin API does not exist yet
+# (resources/docs/PLUGIN-API-READINESS.md): the core must build as a Linux shared object with no Windows
+# dependency, and the Windows winmm.dll must still build. Nothing is uploaded or released.
+name: probe-linux
+
+on:
+  push:
+    branches: [probe-plat]
+    paths: ["native/probe/**", ".github/workflows/probe-linux.yml"]
+  pull_request:
+    paths: ["native/probe/**", ".github/workflows/probe-linux.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - name: Linux core (.so, -Werror, --no-undefined)
+        run: python3 -I native/probe/build_linux.py
+      - name: Windows probe (winmm.dll)
+        run: python3 -I native/probe/build.py
