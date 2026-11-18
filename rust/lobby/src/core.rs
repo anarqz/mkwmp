@@ -911,6 +911,7 @@ impl State {
             .collect();
         let member_refs: Vec<Member<'_>> = members.iter().map(|(u, p)| Member { user: u, player: p }).collect();
         let gamesync = (self.cfg.gamesync_host.as_str(), self.cfg.gamesync_port);
+        let size = (lobby.game == Some(msgs::GAME_180)).then(|| (lobby.maxu(&self.mm.policy), members.len()));
         let mut done = Vec::new();
         for tid in &a.recipients {
             let Some(t) = self.mm.tickets.get(tid) else { continue };
@@ -922,6 +923,7 @@ impl State {
                 &Member { user: &t.user, player: &t.player },
                 &member_refs,
                 gamesync,
+                size,
                 now as u64,
             );
             for k in &t.trackers {

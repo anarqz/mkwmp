@@ -166,7 +166,8 @@ pub struct Member<'a> {
 ///   reply main+0x1408a40: 1 ticket, 2 config, 4 Player, 5 state (3 = matched),
 ///                         6 MatchedPlayer*, 7 GameSession
 ///   MatchedPlayer main+0x140c708: 1 Player, 2 userSession, 3 user id
-///   GameSession main+0x140b440: 1 name, 8 Gamesync host, 9 port, 10 Timestamp, 12 Member*
+///   GameSession main+0x140b440: 1 name, [2 max players, 3 members: 1.8.0], 8 Gamesync host,
+///                               9 port, 10 Timestamp, 12 Member*
 ///   Member main+0x1405fec: 1 userSession, 2 user, 4 Timestamp
 pub fn assignment(
     tenant: &str,
@@ -176,6 +177,7 @@ pub fn assignment(
     recipient: &Member<'_>,
     members: &[Member<'_>],
     gamesync: (&str, u16),
+    size: Option<(u32, usize)>,
     now: u64,
 ) -> Vec<u8> {
     let name = format!("{tenant}/gameSessions/{lobby}");
@@ -184,7 +186,14 @@ pub fn assignment(
         .bytes(2, format!("{tenant}/matchmakingConfigs/{mode}"))
         .bytes(4, player_for(recipient.user, recipient.player))
         .varint(5, 3);
-    let mut session = Msg::new().bytes(1, &name).bytes(8, gamesync.0).varint(9, gamesync.1.into()).msg(10, &wire::seconds(now + 600));
+    let mut session = Msg::new().bytes(1, &name);
+    // `size` = (max players, members): GameSession fields 2 and 3 as on friend rooms. 1.8.0
+    // fails its per-frame seat check (0x884b839c, has_seat 0x20fa450) when field 2 is 0
+    // (GAME-1.8.0-PROTOCOL.md 9); 1.0.0 never read them, and still gets None (unchanged bytes).
+    if let Some((max, players)) = size {
+        session = session.varint(2, max.into()).varint(3, players as u64);
+    }
+    session = session.bytes(8, gamesync.0).varint(9, gamesync.1.into()).msg(10, &wire::seconds(now + 600));
     for m in members {
         let uid = crate::users::tail(m.user);
         let user_session = format!("{name}/userSessions/{uid}");
@@ -477,6 +486,21 @@ mod tests {
         let m = Msg::new().bytes(1, format!("{TICKET_PREFIX}{id}")).into_bytes();
         assert_eq!(parse_ticket_name(&m), Some(id));
         assert_eq!(parse_ticket_name(&Msg::new().bytes(1, format!("x/{id}")).0), None);
+    }
+
+    #[test]
+    fn assignment_carries_the_session_size_only_when_given() {
+        let player = Msg::new().bytes(1, "tenants/current/users/current").into_bytes();
+        let m = [Member { user: "tenants/t/users/a", player: &player }, Member { user: "tenants/t/users/b", player: &player }];
+        let session = |size| {
+            let r = assignment("tenants/t", "L", "T", "Normal24", &m[0], &m, ("gs", 8906), size, 100);
+            wire::bytes_field(&r, 7).unwrap().unwrap().to_vec()
+        };
+        let s180 = session(Some((24, 2)));
+        assert_eq!((wire::varint_field(&s180, 2).unwrap(), wire::varint_field(&s180, 3).unwrap()), (Some(24), Some(2)));
+        let s100 = session(None);
+        assert_eq!((wire::varint_field(&s100, 2).unwrap(), wire::varint_field(&s100, 3).unwrap()), (None, None), "1.0.0 bytes unchanged");
+        assert_eq!(wire::str_field(&s100, 8).unwrap().as_deref(), Some("gs"));
     }
 
     #[test]
