@@ -1,5 +1,5 @@
 // nn.npln.friends.v1: friend list and presence (who is online, in which room).
-// Recovered from mkw-recomp main.bin. Message classes (serializer = vtable
+// Interoperability spec (MKWMP's own): the wire format the game client speaks. Message classes (serializer = vtable
 // slot 12):
 //   friends    vtables main+0x30eb9c0..0x30ebc40 (6 classes)
 //   presence   vtables main+0x30ebcc0..0x30ec1c0 (11 classes)
@@ -9,9 +9,9 @@
 // message. Names are inferred (the binary has no descriptors) unless a
 // comment says otherwise. "captured" = seen in client frames logged by the
 // reference server (scratch/presence-stream.log). Consumer analysis:
-// resources/docs/RE-MAP.md part A.2.
+// research/docs/RE-MAP.md part A.2.
 //
-// How the game uses this (resources/docs/RE-MAP.md 2.3):
+// How the game uses this (research/docs/RE-MAP.md 2.3):
 //   1. The friend list itself comes from the console (nn::friends). A user
 //      that is not a console friend can never appear.
 //   2. SubscribeFriendUsers maps console account ids to NPLN users.

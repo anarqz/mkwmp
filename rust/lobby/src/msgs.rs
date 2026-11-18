@@ -92,7 +92,7 @@ pub fn latency_servers(spec: Option<&str>) -> Vec<u8> {
 
 /// Game versions the lobby keeps apart: Pia's header version byte differs (0x0F vs 0x10)
 /// and each drops the other's packets, so they can never share a mesh
-/// (resources/docs/GAME-1.8.0-PROTOCOL.md 3, 5).
+/// (research/docs/GAME-1.8.0-PROTOCOL.md 3, 5).
 pub const GAME_100: &str = "1.0.0";
 pub const GAME_180: &str = "1.8.0";
 
@@ -162,7 +162,7 @@ pub struct Member<'a> {
     pub player: &'a [u8],
 }
 
-/// `TrackMatchmakingTicket` reply announcing the session (resources/docs/NETCODE.md):
+/// `TrackMatchmakingTicket` reply announcing the session (research/docs/NETCODE.md):
 ///   reply main+0x1408a40: 1 ticket, 2 config, 4 Player, 5 state (3 = matched),
 ///                         6 MatchedPlayer*, 7 GameSession
 ///   MatchedPlayer main+0x140c708: 1 Player, 2 userSession, 3 user id
@@ -203,7 +203,7 @@ pub fn assignment(
     out.msg(7, &session).into_bytes()
 }
 
-// ---- GameSessionService: rooms, short aliases, friend sessions (resources/docs/RE-MAP.md 3.2-3.5) ------
+// ---- GameSessionService: rooms, short aliases, friend sessions (research/docs/RE-MAP.md 3.2-3.5) ------
 
 /// A GameSession as the room / friend-session RPCs show it (serializer main+0x140b440):
 /// 1 name, 2 players, 3 capacity, 4 joinable, 5 visible, 6 "*" when password-protected (never

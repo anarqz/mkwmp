@@ -42,7 +42,7 @@ stolen bytes are checked to be whole position-independent instructions, and func
 instructions instead of their raw bytes.
 
 A FAIL is a reason to read the upstream diff, not a verdict; an all-ok run does not replace the live test
-(behaviour changes do not show in symbols). See resources/docs/RECOMP-<version>.md for the reports written
+(behaviour changes do not show in symbols). See research/docs/RECOMP-<version>.md for the reports written
 from this output.
 """
 

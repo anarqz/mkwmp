@@ -4,7 +4,7 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 
 **Website and setup guides: <https://anarqz.github.io/mkwmp/>**
 
-> MKWMP is an unofficial community project, not affiliated with or endorsed by Nintendo. You need your own copy of the game.
+> MKWMP is an unofficial community project, not affiliated with or endorsed by Nintendo. You need your own copy of the game. MKWMP ships none of the game's code or assets and doesn't help obtain games: see [Interoperability and legal notes](docs/LEGAL.md).
 >
 > **Version 1.0.0** ([download](https://github.com/anarqz/mkwmp/releases/latest)): matchmade races and battles, friend rooms, lobby voice chat and self-hosted servers.
 
@@ -198,7 +198,7 @@ Two tests start the real `mkwmp` binary. One plays two clients from sign-in to a
 | `docs/` | [HOSTING](docs/HOSTING.md), [ARCHITECTURE](docs/ARCHITECTURE.md), [seat API](docs/contracts/SEAT_API.md), [launcher API](docs/contracts/LAUNCHER_API.md) |
 | `site/` | the website (GitHub Pages) |
 | `tools/` | release script (`tools/release`) and a local seat server helper (`tools/host`) |
-| `resources/` | research material: reverse-engineering notes and tools, captures, the original Python lobby, handoff notes |
+| `resources/` | the original Python reference lobby, the first Rust seat prototype, ticket test vectors and test scripts |
 
 ## Reporting a bug
 

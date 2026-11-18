@@ -1,5 +1,5 @@
 // nn.npln.ugcstore.v1: the player profile read at sign-in.
-// Recovered from mkw-recomp main.bin. Verified live for the profile read.
+// Interoperability spec (MKWMP's own): the wire format the game client speaks. Verified live for the profile read.
 //
 // Field numbers and wire types come from the serializers named on each
 // message. Names are inferred unless a comment says otherwise.
