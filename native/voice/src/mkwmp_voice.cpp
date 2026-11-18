@@ -10,11 +10,24 @@
 #include "voice_volume.h"
 #include "voice_wire.h"
 
+#ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
+#else
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <time.h>
+#include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -23,6 +36,13 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#ifndef _WIN32
+// POSIX sockets under Winsock's names: the relay client below is the same code on both.
+using SOCKET = int;
+constexpr SOCKET INVALID_SOCKET = -1;
+inline int closesocket(SOCKET s) { return close(s); }
+#endif
 
 namespace wire = mkwmp::voice_wire;
 namespace audio = fi::audio;
@@ -56,7 +76,6 @@ Shared g;
 
 std::atomic<bool> g_thread_started{false};
 std::atomic<SOCKET> g_socket{INVALID_SOCKET};
-std::atomic<uint32_t> g_rand{0};
 
 void Logf(const char *format, ...) {
     mkwmp_voice_log_fn log = g_log.load();
@@ -74,7 +93,17 @@ uint32_t Random32() {
     return rng();
 }
 
+#ifdef _WIN32
 int64_t NowMs() { return static_cast<int64_t>(GetTickCount64()); }
+void SleepMs(int ms) { Sleep(static_cast<DWORD>(ms)); }
+#else
+int64_t NowMs() {
+    timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<int64_t>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
+}
+void SleepMs(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
+#endif
 
 bool Muted(const std::vector<uint64_t> &mutes, uint64_t account) { return std::find(mutes.begin(), mutes.end(), account) != mutes.end(); }
 
@@ -106,12 +135,19 @@ SOCKET Open(const std::string &host, int port) {
         s = INVALID_SOCKET;
     }
     if (s != INVALID_SOCKET) {
+#ifdef _WIN32
         u_long nb = 1;
         ioctlsocket(s, FIONBIO, &nb);
         // Windows: an ICMP port unreachable must not turn every later recv into WSAECONNRESET
         BOOL off = FALSE;
         DWORD ret = 0;
         WSAIoctl(s, _WSAIOW(IOC_VENDOR, 12) /* SIO_UDP_CONNRESET */, &off, sizeof off, nullptr, 0, &ret, nullptr, nullptr);
+#else
+        // Linux: an ICMP port unreachable fails one recv (ECONNREFUSED) and nothing after; the loop just reads again
+        const int fl = fcntl(s, F_GETFL, 0);
+        fcntl(s, F_SETFL, (fl < 0 ? 0 : fl) | O_NONBLOCK);
+        fcntl(s, F_SETFD, FD_CLOEXEC);
+#endif
         char addr[64] = {};
         inet_ntop(AF_INET, &reinterpret_cast<sockaddr_in *>(res->ai_addr)->sin_addr, addr, sizeof addr);
         Logf("voice: relay %s:%d (%s)", host.c_str(), port, addr);
@@ -132,8 +168,10 @@ void SendControl(SOCKET s, uint8_t op, const std::string &ticket, uint8_t self, 
 
 // The network thread: lives for the process (the probe loads the DLL once).
 void NetLoop() {
+#ifdef _WIN32
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
+#endif
     SOCKET s = INVALID_SOCKET;
     uint32_t target_seen = ~0u, control_seen = ~0u;
     std::string ticket;
@@ -204,7 +242,12 @@ void NetLoop() {
             FD_ZERO(&rd);
             FD_SET(s, &rd);
             timeval tv{0, 50 * 1000};
-            if (select(0, &rd, nullptr, nullptr, &tv) > 0) {
+#ifdef _WIN32
+            const int nfds = 0; // ignored by Winsock
+#else
+            const int nfds = s + 1;
+#endif
+            if (select(nfds, &rd, nullptr, nullptr, &tv) > 0) {
                 for (int i = 0; i < 256; i++) {
                     const int n = recv(s, reinterpret_cast<char *>(buf.data()), static_cast<int>(buf.size()), 0);
                     if (n <= 0) break;
@@ -225,7 +268,7 @@ void NetLoop() {
                 }
             }
         } else {
-            Sleep(50);
+            SleepMs(50);
         }
 
         // 4. a relay gone quiet (it sends state at least every 1 s): out of the room after 10 s

@@ -18,10 +18,10 @@ there are 24 seats, and the mix has a per-talker leveler and a limiter (`voice_l
 
 | Component | Where | License |
 | --- | --- | --- |
-| libopus 1.5.2 (Xiph.Org, Skype, Microsoft, Amazon and others) | compiled into `mkwmp-voice.dll` | BSD-3-Clause |
-| RNNoise 0.2 (Xiph.Org, Mozilla, Jean-Marc Valin) | compiled into `mkwmp-voice.dll` | BSD-3-Clause |
-| WebRTC AudioProcessing 2.1, AEC3 (The WebRTC project authors; freedesktop's standalone release) | compiled into `mkwmp-voice.dll` | BSD-3-Clause, plus Google's additional IP rights grant (patents) |
-| Abseil 20240722.0 (headers only) | compiled into `mkwmp-voice.dll` | Apache-2.0 |
+| libopus 1.5.2 (Xiph.Org, Skype, Microsoft, Amazon and others) | compiled into `mkwmp-voice.dll` / `libmkwmp-voice.so` | BSD-3-Clause |
+| RNNoise 0.2 (Xiph.Org, Mozilla, Jean-Marc Valin) | compiled into `mkwmp-voice.dll` / `libmkwmp-voice.so` | BSD-3-Clause |
+| WebRTC AudioProcessing 2.1, AEC3 (The WebRTC project authors; freedesktop's standalone release) | compiled into `mkwmp-voice.dll` / `libmkwmp-voice.so` | BSD-3-Clause, plus Google's additional IP rights grant (patents) |
+| Abseil 20240722.0 (headers only) | compiled into `mkwmp-voice.dll` / `libmkwmp-voice.so` | Apache-2.0 |
 | Press Start 2P font (The Press Start 2P Project Authors) | embedded in the launcher | SIL Open Font License 1.1 (`rust/client/assets/PressStart2P-OFL.txt`) |
 | Rust crates (eframe/egui, tokio, axum, reqwest, rustls, ed25519-dalek, serde and others) | the launcher and the server | MIT and/or Apache-2.0 (each crate's own license; `cargo about` / `Cargo.lock` lists them) |
 

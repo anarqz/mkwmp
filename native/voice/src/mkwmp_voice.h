@@ -1,8 +1,8 @@
-/* mkwmp-voice.dll: lobby voice chat inside the game process (docs/contracts/VOICE_API.md). The probe (winmm.dll)
- * loads it when the game goes online and drives it through this C ABI; the DLL owns the audio engine (ForzaInfinity's:
- * WASAPI, AEC3 echo cancellation, AGC, RNNoise, Opus; plus listener-side loudness normalization) and the UDP socket to
- * the lobby's voice relay. Every call returns at once and is safe from any thread; nothing here blocks on a device or
- * the network. */
+/* mkwmp-voice.dll (Linux: libmkwmp-voice.so): lobby voice chat inside the game process (docs/contracts/VOICE_API.md).
+ * The probe loads it when the game goes online and drives it through this C ABI; the library owns the audio engine
+ * (ForzaInfinity's: WASAPI on Windows, PulseAudio on Linux, AEC3 echo cancellation, AGC, RNNoise, Opus; plus
+ * listener-side loudness normalization) and the UDP socket to the lobby's voice relay. Every call returns at once and
+ * is safe from any thread; nothing here blocks on a device or the network. */
 #ifndef MKWMP_VOICE_H
 #define MKWMP_VOICE_H
 
@@ -12,8 +12,10 @@
 extern "C" {
 #endif
 
-#ifdef MKWMP_VOICE_BUILD
+#if defined(MKWMP_VOICE_BUILD) && defined(_WIN32)
 #define MKWMP_VOICE_API __declspec(dllexport)
+#elif defined(MKWMP_VOICE_BUILD)
+#define MKWMP_VOICE_API __attribute__((visibility("default")))
 #else
 #define MKWMP_VOICE_API
 #endif
@@ -52,7 +54,7 @@ MKWMP_VOICE_API void mkwmp_voice_set_self(int mic_muted, int deafened);
 /* This player's own account id (to mark `self` in peers). */
 MKWMP_VOICE_API void mkwmp_voice_set_account(uint64_t account);
 /* {"inputs":[{"id","name"}],"outputs":[...]} as this process sees them; enumerates through COM on the calling thread
- * (never call it on a game thread). Returns the length, or -1 if `cap` is too small. */
+ * (Linux: PulseAudio, on a helper thread waited for at most 3 s; never call it on a game thread). Returns the length, or -1 if `cap` is too small. */
 MKWMP_VOICE_API int mkwmp_voice_devices_json(char *buf, int cap);
 /* The room's peers from the relay's last state (this player included). Returns the count written. */
 MKWMP_VOICE_API int mkwmp_voice_peers(mkwmp_voice_peer *out, int cap);
