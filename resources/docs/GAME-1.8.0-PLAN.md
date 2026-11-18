@@ -93,6 +93,23 @@ Order: PC (1.8.0) alone -> PC + PC (`scratch/game` + `scratch/game-p2`, both on 
 - Still open: SDK-internal CLOCK_REALTIME stays broken (`time()`, `gettimeofday`; gRPC's realtime goes through the
   probe's override and is fine). Next: two-player race (Pia 7.3 mesh, ping-socket refusal, referee).
 
+### Phase 3 log, two players (2026-11-18, PC + Steam Deck under Proton, LAN host)
+- Deck install `~/mkw-180`: 1.0.0 romfs hardlinked plus the 8295 changed files (`ROM\update` on the PC), the PC-built
+  1.8.0 mkwgame.dll, and a Linux game-180 launcher; Steam shortcut appid 2800733737 swapped to it (backup
+  `shortcuts.vdf.bak-180-20261118-102620`).
+- Matchmade race: both clients got **0x884b839c** 0.27 s into Gamesync. Cause: a new 1.8.0 seat check (`has_seat`,
+  main+0x20fa450) reads GameSession field 2 (max players) from the matchmaking assignment, which our lobby left
+  out. Fix (MACBOOK b566022, 1.8.0 lobbies only): fields 2/3 in the assignment's GameSession. After it: Gamesync, ICE,
+  Appconfig FindApplicationConfig (empty reply accepted), Pia 7.3 P2P PC<->Deck (ping socket refused, no harm),
+  referee open with the new `clutch_id`.
+- Mid-race **0x660ac5da** on a kart circling without course progress: the game's own anti-stall watchdog (same as
+  1.0.0), legitimate.
+- Friend room (Private24 create, BatchGet, JoinGameSession), battle: Reports, then the final @@RefereeResult with
+  `user_session_count` accepted by both. The Deck left each battle with **0x9b928162** (the known Proton-only
+  end-of-round kart watchdog), so the Proton default skip is now on for 1.8.0 too (86f00ca). Battle 3: both stayed.
+- Open: a 324 B Pia UDP send to 192.168.68.53:34343 that nothing serves (matters for internet play, not LAN); the Appconfig
+  contents; Clutch modes; the mixed 1.0.0 + 1.8.0 separation test; SDK-internal CLOCK_REALTIME.
+
 ## Phase 4: release (M, with the user's go)
 - Launcher: `recomp::GAMES = ["1.0.0", "1.8.0"]`. Show the game version in the window and the bug report.
 - Lobby deploy to mkwmp-sao-1. README/site: "game 1.0.0 or 1.8.0; players only meet others on the same version".
