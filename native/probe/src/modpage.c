@@ -1,0 +1,450 @@
+// MKWMP's options page in mkw-recomp's start screen (mkw_plugin.h's mkw_mod_page, plugin API 2): what the MKWMP
+// launcher's window asks today, so the mod needs no other program. Runs in the start screen's process, not the game's:
+// nothing of g_rt exists here, only the page, the mod's settings and the seat server (seatapi.c).
+//
+// Settings (the player's, <player>/mod-settings/mkwmp.ini; the game reads them back in backend_plugin.c):
+//   consent18   "1" once the player accepted the notice (18+, voice with strangers, the name shown to others)
+//   server      the seat server's URL; empty: SEATAPI_DEFAULT_SERVER
+//   pin         the PIN of the name below; pin_name the profile name it was registered or entered for (a renamed
+//               profile no longer matches, and the page asks again)
+//   voice       "0" turns voice chat off (default on)
+// Transient fields: pin_entry, friend_add.
+//
+// Network calls run on one worker thread of the page's own; the page draws its state each frame.
+#include "mkw_plugin.h"
+
+#include "plat.h"
+#include "seatapi.h"
+
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
+
+// ---- texts, English and Brazilian Portuguese (the plugin translates its own: page->language)
+enum {
+    T_HEAD, T_INTRO, T_CONSENT, T_CONSENT_BOX, T_CONSENT_FIRST, T_ACCOUNT, T_SERVER, T_PROFILE_BAD, T_SIGNED,
+    T_PIN_SHOW, T_FORGET, T_NOT_YET, T_REGISTER, T_HAVE_PIN, T_PIN, T_PIN_HINT, T_USE_PIN, T_VOICE_HEAD, T_VOICE,
+    T_FRIENDS, T_NO_FRIENDS, T_ADD, T_ADD_HINT, T_SEND, T_ACCEPT, T_DECLINE, T_CANCEL, T_REMOVE, T_WANTS, T_ASKED,
+    T_PLAYING, T_ONLINE, T_OFFLINE, T_BUSY_REG, T_BUSY_PIN, T_BUSY_FRIENDS, T_REG_OK, T_TAKEN, T_RESERVED,
+    T_RATE, T_OFFLINE_SRV, T_PIN_WRONG, T_PIN_OK, T_NOT_FOUND, T_FRIEND_SENT, T_FRIEND_DONE, T_FRIEND_UNKNOWN,
+    T_ENABLE, T_COUNT
+};
+static const char *const EN[T_COUNT] = {
+    "Online play (MKWMP)",
+    "MKWMP is a fan-run online service for mkw-recomp: races and battles with other players, friends and voice chat. "
+    "It is not affiliated with Nintendo.",
+    "Online, other players see your name and can hear you in voice chat; anyone can join a public race. You must be "
+    "18 or older to use it.",
+    "I am 18 or older and I accept this",
+    "Accept the notice above to set up online play.",
+    "Account",
+    "Server",
+    "The profile name \"%s\" cannot be used online: rename it on the Profiles page (3 to 16 letters, digits, - or _).",
+    "Signed up as %s. Turn MKWMP on in the Mods list, then choose Online Play in the game.",
+    "Your PIN is %s. Write it down: it is the only way to play as %s on another PC or with the MKWMP launcher.",
+    "Use another PIN",
+    "%s is not signed up yet.",
+    "Sign up as %s",
+    "Already signed up as this name (on another PC, or with the MKWMP launcher)? Enter its PIN:",
+    "PIN",
+    "6 digits",
+    "Use this PIN",
+    "Voice chat",
+    "Voice chat in online lobbies and races",
+    "Friends",
+    "No friends yet: send a request by name below.",
+    "Add a friend",
+    "their name",
+    "Send request",
+    "Accept",
+    "Decline",
+    "Cancel",
+    "Remove",
+    "wants to be your friend",
+    "request sent",
+    "playing",
+    "online",
+    "offline",
+    "Signing up...",
+    "Checking the PIN...",
+    "Updating friends...",
+    "Signed up.",
+    "This name is already signed up. If it is yours, enter its PIN below; if not, rename your profile.",
+    "This name is reserved.",
+    "Too many attempts: try again in %d s.",
+    "The server did not answer (%s).",
+    "Wrong PIN.",
+    "PIN accepted.",
+    "This name is not signed up on this server.",
+    "Request sent to %s.",
+    "Done.",
+    "There is no player named %s.",
+    "Turn MKWMP on in the Mods list to play online.",
+};
+static const char *const PT[T_COUNT] = {
+    "Jogo online (MKWMP)",
+    "MKWMP é um serviço online feito por fãs para o mkw-recomp: corridas e batalhas com outros jogadores, amigos e "
+    "chat de voz. Não tem ligação com a Nintendo.",
+    "Online, outros jogadores veem seu nome e podem ouvir você no chat de voz; qualquer um pode entrar numa corrida "
+    "pública. Você precisa ter 18 anos ou mais para usar.",
+    "Tenho 18 anos ou mais e aceito",
+    "Aceite o aviso acima para configurar o jogo online.",
+    "Conta",
+    "Servidor",
+    "O nome de perfil \"%s\" não pode ser usado online: renomeie na página Perfis (3 a 16 letras, números, - ou _).",
+    "Cadastrado como %s. Ligue o MKWMP na lista de Mods e escolha Jogo Online no jogo.",
+    "Seu PIN é %s. Anote: é o único jeito de jogar como %s em outro PC ou com o launcher do MKWMP.",
+    "Usar outro PIN",
+    "%s ainda não está cadastrado.",
+    "Cadastrar como %s",
+    "Já cadastrou este nome (em outro PC ou no launcher do MKWMP)? Digite o PIN:",
+    "PIN",
+    "6 dígitos",
+    "Usar este PIN",
+    "Chat de voz",
+    "Chat de voz nos lobbies e corridas online",
+    "Amigos",
+    "Nenhum amigo ainda: envie um pedido pelo nome abaixo.",
+    "Adicionar amigo",
+    "o nome",
+    "Enviar pedido",
+    "Aceitar",
+    "Recusar",
+    "Cancelar",
+    "Remover",
+    "quer ser seu amigo",
+    "pedido enviado",
+    "jogando",
+    "online",
+    "offline",
+    "Cadastrando...",
+    "Verificando o PIN...",
+    "Atualizando amigos...",
+    "Cadastrado.",
+    "Este nome já está cadastrado. Se for seu, digite o PIN abaixo; se não, renomeie o perfil.",
+    "Este nome é reservado.",
+    "Tentativas demais: tente de novo em %d s.",
+    "O servidor não respondeu (%s).",
+    "PIN errado.",
+    "PIN aceito.",
+    "Este nome não está cadastrado neste servidor.",
+    "Pedido enviado para %s.",
+    "Pronto.",
+    "Não existe jogador chamado %s.",
+    "Ligue o MKWMP na lista de Mods para jogar online.",
+};
+static const char *const *T = EN;
+
+// ---- the worker's state, shared with the page (under g_lock)
+enum { JOB_NONE, JOB_REGISTER, JOB_PIN, JOB_FRIENDS, JOB_ADD, JOB_ACCEPT, JOB_REMOVE };
+static PlatLock g_lock = PLAT_LOCK_INIT;
+static struct {
+    int job;
+    char base[256], name[SEATAPI_NAME_MAX + 1], pin[SEATAPI_PIN_LEN + 1], target[SEATAPI_NAME_MAX + 1];
+    int busy;                      // a T_BUSY_* while a job runs
+    int note_kind;
+    char note[300];
+    char revealed_pin[SEATAPI_PIN_LEN + 1];   // shown once after signing up, until the page closes
+    SeatApiFriends friends;
+    int have_friends;
+    uint64_t friends_at, drawn_at;
+    char token[160], token_for[SEATAPI_NAME_MAX + SEATAPI_PIN_LEN + 260];
+} W;
+static int (*g_set)(const char *key, const char *value);   // the page's setting_set (any thread)
+static int g_worker;
+
+static void set_note(int kind, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+static void set_note(int kind, const char *fmt, ...) {   // g_lock held
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(W.note, sizeof W.note, fmt, ap);
+    va_end(ap);
+    W.note_kind = kind;
+}
+
+// A failed call as a note; g_lock held.
+static void note_error(const SeatApiResult *r) {
+    if (r->status == 429) set_note(MKW_NOTE_WARN, T[T_RATE], r->retry_after ? r->retry_after : 60);
+    else if (!r->status) set_note(MKW_NOTE_ERROR, T[T_OFFLINE_SRV], r->message);
+    else if (!strcmp(r->code, "PIN_WRONG")) set_note(MKW_NOTE_ERROR, "%s", T[T_PIN_WRONG]);
+    else if (!strcmp(r->code, "PROFILE_NOT_FOUND")) set_note(MKW_NOTE_ERROR, "%s", T[T_NOT_FOUND]);
+    else if (!strcmp(r->code, "FRIEND_UNKNOWN")) set_note(MKW_NOTE_ERROR, T[T_FRIEND_UNKNOWN], W.target);
+    else set_note(MKW_NOTE_ERROR, "%s", r->message);
+}
+
+// A presence token for name + PIN (signed in again when they change); g_lock released during the call.
+static int presence(const char *base, const char *name, const char *pin) {
+    char key[sizeof W.token_for];
+    snprintf(key, sizeof key, "%s|%s|%s", base, name, pin);
+    plat_lock(&g_lock);
+    int have = W.token[0] && !strcmp(W.token_for, key);
+    plat_unlock(&g_lock);
+    if (have) return 1;
+    char token[160];
+    SeatApiResult r = seatapi_presence(base, name, pin, token, sizeof token);
+    plat_lock(&g_lock);
+    if (token[0]) {
+        snprintf(W.token, sizeof W.token, "%s", token);
+        snprintf(W.token_for, sizeof W.token_for, "%s", key);
+    } else {
+        note_error(&r);
+    }
+    plat_unlock(&g_lock);
+    return token[0] != 0;
+}
+
+static void refresh_friends(const char *base, const char *name, const char *pin) {
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (!presence(base, name, pin)) return;
+        static SeatApiFriends f;
+        char token[160];
+        plat_lock(&g_lock);
+        snprintf(token, sizeof token, "%s", W.token);
+        plat_unlock(&g_lock);
+        SeatApiResult r = seatapi_friends(base, token, &f);
+        plat_lock(&g_lock);
+        if (r.status == 401) {
+            W.token[0] = 0;   // expired: sign in again, once
+            plat_unlock(&g_lock);
+            continue;
+        }
+        if (r.status == 200) {
+            W.friends = f;
+            W.have_friends = 1;
+        } else {
+            note_error(&r);
+        }
+        W.friends_at = plat_ms();
+        plat_unlock(&g_lock);
+        return;
+    }
+}
+
+static void worker(void *unused) {
+    (void)unused;
+    for (;;) {
+        plat_sleep_ms(100);
+        plat_lock(&g_lock);
+        int job = W.job;
+        char base[sizeof W.base], name[sizeof W.name], pin[sizeof W.pin], target[sizeof W.target];
+        memcpy(base, W.base, sizeof base);
+        memcpy(name, W.name, sizeof name);
+        memcpy(pin, W.pin, sizeof pin);
+        memcpy(target, W.target, sizeof target);
+        uint64_t now = plat_ms();
+        // the list stays fresh while the page is shown and signed in
+        if (!job && pin[0] && now - W.drawn_at < 2000 && now - W.friends_at > 10000) job = JOB_FRIENDS;
+        W.job = JOB_NONE;
+        W.busy = job == JOB_REGISTER ? T_BUSY_REG : job == JOB_PIN ? T_BUSY_PIN : job ? T_BUSY_FRIENDS : 0;
+        plat_unlock(&g_lock);
+        if (!job) continue;
+
+        if (job == JOB_REGISTER) {
+            char got[SEATAPI_PIN_LEN + 1];
+            SeatApiResult r = seatapi_register(base, name, got);
+            plat_lock(&g_lock);
+            if (r.status == 201 && g_set && g_set("pin", got) && g_set("pin_name", name)) {
+                snprintf(W.revealed_pin, sizeof W.revealed_pin, "%s", got);
+                set_note(MKW_NOTE_OK, "%s", T[T_REG_OK]);
+                W.friends_at = 0;
+            } else if (r.status == 409) {
+                set_note(MKW_NOTE_WARN, "%s", T[T_TAKEN]);
+            } else if (r.status == 403) {
+                set_note(MKW_NOTE_ERROR, "%s", T[T_RESERVED]);
+            } else {
+                note_error(&r);
+            }
+        } else if (job == JOB_PIN) {
+            // the PIN typed is checked by signing in to a presence: 401 PIN_WRONG otherwise
+            char token[160];
+            SeatApiResult r = seatapi_presence(base, name, target, token, sizeof token);
+            plat_lock(&g_lock);
+            if (token[0] && g_set && g_set("pin", target) && g_set("pin_name", name)) {
+                g_set("pin_entry", NULL);
+                snprintf(W.token, sizeof W.token, "%s", token);
+                snprintf(W.token_for, sizeof W.token_for, "%s|%s|%s", base, name, target);
+                set_note(MKW_NOTE_OK, "%s", T[T_PIN_OK]);
+                W.friends_at = 0;
+            } else {
+                note_error(&r);
+            }
+        } else if (job == JOB_FRIENDS) {
+            refresh_friends(base, name, pin);
+            plat_lock(&g_lock);
+        } else {   // add, accept, remove
+            SeatApiResult r = {0};
+            if (presence(base, name, pin)) {
+                char token[160];
+                plat_lock(&g_lock);
+                snprintf(token, sizeof token, "%s", W.token);
+                plat_unlock(&g_lock);
+                r = job == JOB_ADD      ? seatapi_friend_request(base, token, target)
+                    : job == JOB_ACCEPT ? seatapi_friend_accept(base, token, target)
+                                        : seatapi_friend_remove(base, token, target);
+            }
+            plat_lock(&g_lock);
+            if (r.status == 200 || r.status == 201 || r.status == 204) {
+                if (job == JOB_ADD) {
+                    set_note(MKW_NOTE_OK, T[T_FRIEND_SENT], target);
+                    if (g_set) g_set("friend_add", NULL);
+                } else {
+                    set_note(MKW_NOTE_OK, "%s", T[T_FRIEND_DONE]);
+                }
+            } else if (r.status) {
+                note_error(&r);
+            }
+            plat_unlock(&g_lock);
+            refresh_friends(base, name, pin);
+            plat_lock(&g_lock);
+        }
+        W.busy = 0;
+        plat_unlock(&g_lock);
+    }
+}
+
+static void start_job(int job, const char *base, const char *name, const char *pin, const char *target) {
+    plat_lock(&g_lock);
+    if (!W.busy && !W.job) {
+        W.job = job;
+        snprintf(W.base, sizeof W.base, "%s", base);
+        snprintf(W.name, sizeof W.name, "%s", name);
+        snprintf(W.pin, sizeof W.pin, "%s", pin ? pin : "");
+        snprintf(W.target, sizeof W.target, "%s", target ? target : "");
+        W.note[0] = 0;
+    }
+    plat_unlock(&g_lock);
+}
+
+static int setting_is(const MkwPage *p, const char *key, const char *value, int unset) {
+    char v[16];
+    return p->setting_get(key, v, sizeof v) ? !strcmp(v, value) : unset;
+}
+
+MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p) {
+    if (p->size < sizeof(MkwPage)) return;
+    T = p->language && (!strcmp(p->language, "pt-BR") || !strcmp(p->language, "pt")) ? PT : EN;
+    g_set = p->setting_set;
+    if (!g_worker) g_worker = plat_thread_start(worker, NULL);
+    char line[400];
+
+    // what the page shows this frame
+    char server[256] = "", base[256], pin[16] = "", pin_name[64] = "";
+    p->setting_get("server", server, sizeof server);
+    if (!seatapi_base(server, base, sizeof base)) seatapi_base("", base, sizeof base);
+    p->setting_get("pin", pin, sizeof pin);
+    p->setting_get("pin_name", pin_name, sizeof pin_name);
+    const char *name = p->profile_name ? p->profile_name : "";
+    int name_ok = seatapi_name_ok(name);
+    int signed_up = name_ok && seatapi_pin_ok(pin) && !strcmp(pin_name, name);
+    plat_lock(&g_lock);
+    if (p->opened) {   // another page opening or another player: nothing of the last one shows
+        W.note[0] = W.revealed_pin[0] = 0;
+        W.have_friends = 0;
+        W.friends_at = 0;
+    }
+    W.drawn_at = plat_ms();
+    if (signed_up) {   // the worker's refresh uses the page's current account
+        snprintf(W.base, sizeof W.base, "%s", base);
+        snprintf(W.name, sizeof W.name, "%s", name);
+        snprintf(W.pin, sizeof W.pin, "%s", pin);
+    } else {
+        W.pin[0] = 0;
+    }
+    int busy = W.busy || W.job;
+    int busy_text = W.busy;
+    int note_kind = W.note_kind;
+    char note[sizeof W.note], revealed[sizeof W.revealed_pin];
+    memcpy(note, W.note, sizeof note);
+    memcpy(revealed, W.revealed_pin, sizeof revealed);
+    plat_unlock(&g_lock);
+
+    p->text(T[T_INTRO]);
+    p->note(MKW_NOTE_WARN, T[T_CONSENT]);
+    p->checkbox("consent18", T[T_CONSENT_BOX], 0);
+    int consented = setting_is(p, "consent18", "1", 0);
+    if (!consented) p->note(MKW_NOTE_DIM, T[T_CONSENT_FIRST]);
+    p->disabled_begin(!consented);
+
+    p->heading(T[T_ACCOUNT]);
+    p->input("server", T[T_SERVER], SEATAPI_DEFAULT_SERVER, 200, 0);
+    if (!name_ok) {
+        snprintf(line, sizeof line, T[T_PROFILE_BAD], name);
+        p->note(MKW_NOTE_ERROR, line);
+    } else if (signed_up) {
+        snprintf(line, sizeof line, T[T_SIGNED], name);
+        p->note(MKW_NOTE_OK, line);
+        if (revealed[0]) {
+            snprintf(line, sizeof line, T[T_PIN_SHOW], revealed, name);
+            p->note(MKW_NOTE_INFO, line);
+        }
+        if (p->button(T[T_FORGET])) {
+            p->setting_set("pin", NULL);
+            p->setting_set("pin_name", NULL);
+            plat_lock(&g_lock);
+            W.revealed_pin[0] = 0;
+            W.have_friends = 0;
+            plat_unlock(&g_lock);
+        }
+    } else {
+        snprintf(line, sizeof line, T[T_NOT_YET], name);
+        p->text(line);
+        p->disabled_begin(busy);
+        snprintf(line, sizeof line, T[T_REGISTER], name);
+        if (p->button(line)) start_job(JOB_REGISTER, base, name, NULL, NULL);
+        p->disabled_end();
+        p->text(T[T_HAVE_PIN]);
+        p->input("pin_entry", T[T_PIN], T[T_PIN_HINT], SEATAPI_PIN_LEN, MKW_INPUT_DIGITS | MKW_INPUT_PASSWORD);
+        char entry[16] = "";
+        p->setting_get("pin_entry", entry, sizeof entry);
+        p->disabled_begin(busy || !seatapi_pin_ok(entry));
+        if (p->button(T[T_USE_PIN])) start_job(JOB_PIN, base, name, NULL, entry);
+        p->disabled_end();
+    }
+    if (busy_text) p->busy(T[busy_text]);
+    if (note[0]) p->note(note_kind, note);
+
+    p->heading(T[T_VOICE_HEAD]);
+    p->checkbox("voice", T[T_VOICE], 1);
+
+    if (signed_up) {
+        p->heading(T[T_FRIENDS]);
+        static SeatApiFriends f;
+        plat_lock(&g_lock);
+        f = W.friends;
+        int have = W.have_friends;
+        plat_unlock(&g_lock);
+        if (have) {
+            int job = JOB_NONE;
+            const char *who = NULL;
+            p->list_begin("friends", 8);
+            p->list_empty(T[T_NO_FRIENDS]);
+            const char *const in_buttons[] = {T[T_ACCEPT], T[T_DECLINE]};
+            const char *const out_buttons[] = {T[T_CANCEL]};
+            const char *const friend_buttons[] = {T[T_REMOVE]};
+            for (int i = 0; i < f.nincoming; i++) {
+                int b = p->list_row(f.incoming[i].name, T[T_WANTS], in_buttons, 2);
+                if (b) job = b == 1 ? JOB_ACCEPT : JOB_REMOVE, who = f.incoming[i].name;
+            }
+            for (int i = 0; i < f.nfriends; i++) {
+                const char *st = f.friends[i].state;
+                const char *detail = !strcmp(st, "playing") ? T[T_PLAYING] : !strcmp(st, "online") ? T[T_ONLINE] : T[T_OFFLINE];
+                if (p->list_row(f.friends[i].name, detail, friend_buttons, 1)) job = JOB_REMOVE, who = f.friends[i].name;
+            }
+            for (int i = 0; i < f.noutgoing; i++)
+                if (p->list_row(f.outgoing[i].name, T[T_ASKED], out_buttons, 1)) job = JOB_REMOVE, who = f.outgoing[i].name;
+            p->list_end();
+            if (job && who) start_job(job, base, name, pin, who);
+        } else if (!busy_text) {
+            p->busy(T[T_BUSY_FRIENDS]);
+        }
+        p->input("friend_add", T[T_ADD], T[T_ADD_HINT], SEATAPI_NAME_MAX, 0);
+        char add[32] = "";
+        p->setting_get("friend_add", add, sizeof add);
+        p->disabled_begin(busy || !seatapi_name_ok(add));
+        if (p->button(T[T_SEND])) start_job(JOB_ADD, base, name, pin, add);
+        p->disabled_end();
+        p->separator();
+        p->note(MKW_NOTE_DIM, T[T_ENABLE]);
+    }
+    p->disabled_end();
+}

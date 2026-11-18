@@ -1608,7 +1608,7 @@ static void try_activate(void) {
     if (!g_active) {
         const MkwmpConfig *cfg = mkwmp_config();
         SeatReply r;
-        if (!cfg->launcher_port) {
+        if (!mkwmp_config_has_seat(cfg)) {
             mlog("online requested: no launcher in mkwmp.toml, going active without a seat");
             voice_online(cfg->host);
             plat_xchg(&g_active, 1);
@@ -1642,7 +1642,7 @@ static void eager_seat(void) {
     if (!seated) {
         const MkwmpConfig *cfg = mkwmp_config();
         SeatReply r;
-        if (!cfg->launcher_port) {
+        if (!mkwmp_config_has_seat(cfg)) {
             voice_online(cfg->host);
             seated = 1;
         } else if (seat_acquire(&r, 60 * 1000) == SEAT_SEATED) {

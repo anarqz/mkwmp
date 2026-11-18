@@ -6,7 +6,7 @@ name: probe-linux
 
 on:
   push:
-    branches: [probe-plat, voice-linux, probe-plugin, plugin-v1]
+    branches: [probe-plat, voice-linux, probe-plugin, plugin-v1, plugin-seat]
     paths: ["native/probe/**", "native/voice/**", ".github/workflows/probe-linux.yml"]
   pull_request:
     paths: ["native/probe/**", "native/voice/**", ".github/workflows/probe-linux.yml"]

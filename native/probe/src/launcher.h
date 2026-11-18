@@ -18,4 +18,10 @@ int launcher_request(const char *method, const char *path, char *buf, size_t cap
 int launcher_request_json(const char *method, const char *path, const char *json, char *buf, size_t cap,
                           const char **body);
 
+// The plugin without a launcher (config direct): requests go to fn instead of a socket, with the same answers
+// (seatd_request). Set once at start-up.
+typedef int (*LauncherDirect)(const char *method, const char *path, const char *json, char *buf, size_t cap,
+                              const char **body);
+void launcher_set_direct(LauncherDirect fn);
+
 #endif

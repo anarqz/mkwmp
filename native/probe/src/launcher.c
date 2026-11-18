@@ -41,6 +41,10 @@ static int request_once(const MkwmpConfig *cfg, const char *method, const char *
     return status;
 }
 
+static LauncherDirect g_direct;   // the plugin's in-process answers (seatd.c), used when the config is direct
+
+void launcher_set_direct(LauncherDirect fn) { g_direct = fn; }
+
 int launcher_request(const char *method, const char *path, char *buf, size_t cap, const char **body) {
     return launcher_request_json(method, path, NULL, buf, cap, body);
 }
@@ -53,6 +57,7 @@ int launcher_request_json(const char *method, const char *path, const char *json
     if (cap == 0) return 0;
     buf[0] = 0;
     *body = buf;
+    if (g_direct && mkwmp_config()->direct) return g_direct(method, path, json, buf, cap, body);
     plat_lock(&lock);
     const MkwmpConfig *cfg = mkwmp_config();
     int status = -1;

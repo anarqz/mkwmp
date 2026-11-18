@@ -5,8 +5,9 @@
 
 Produces build/plugin/linux/mkwmp.so (x86_64-linux-gnu) and build/plugin/windows/mkwmp.dll (x86_64-windows-gnu, a
 plain DLL, not the winmm.dll proxy): the core sources of build.py (minus the winmm loader, the COFF backend and the
-keypad detours, as build_linux.py), the plat files of the target and src/backend_plugin.c. Both export only
-mkw_plugin_init (Linux: a version script, linked with --no-undefined). --test also builds tests/test_plugin.c and runs
+keypad detours, as build_linux.py), the plat files of the target (with its HTTP: WinHTTP, or libcurl loaded at run
+time), the plugin's seat client (seatapi.c, seatd.c), its options page (modpage.c) and src/backend_plugin.c. Both
+export only mkw_plugin_init and mkw_mod_page (Linux: a version script, linked with --no-undefined). --test also builds tests/test_plugin.c and runs
 it against the Linux .so (on a Linux host): a fake MkwPluginApi, no runtime needed. Runs in CI
 (.github/workflows/probe-linux.yml).
 
@@ -36,8 +37,11 @@ from build_linux import WINDOWS_ONLY, POSIX  # noqa: E402
 SRC = HERE / "src"
 OUT = HERE / "build" / "plugin"
 BACKEND = "backend_plugin.c"
-WIN_PLAT = ["plat_win.c", "plat_net_win.c"]
-VERSION_SCRIPT = "{ global: mkw_plugin_init; local: *; };\n"
+# the plugin's own parts: its seat client (no launcher), its options page in mkw-recomp's start screen
+PLUGIN_ONLY = ["seatapi.c", "seatd.c", "modpage.c"]
+WIN_PLAT = ["plat_win.c", "plat_net_win.c", "plat_http_win.c"]
+POSIX_HTTP = ["plat_http_posix.c"]
+VERSION_SCRIPT = "{ global: mkw_plugin_init; mkw_mod_page; local: *; };\n"
 
 
 def run(cmd):
@@ -63,7 +67,7 @@ def build_linux(zig, version):
     run([zig, "cc", "-target", "x86_64-linux-gnu", "-shared", "-fPIC", "-fvisibility=hidden", "-O2",
          "-Wall", "-Wextra", "-Werror", f'-DMKWMP_VERSION="{version}"',
          "-Wl,--no-undefined", f"-Wl,--version-script={script}", "-o", str(out)]
-        + [str(SRC / s) for s in core() + POSIX + [BACKEND]] + ["-lpthread", "-ldl"])
+        + [str(SRC / s) for s in core() + POSIX + POSIX_HTTP + PLUGIN_ONLY + [BACKEND]] + ["-lpthread", "-ldl"])
     print("built", out, out.stat().st_size, "bytes", flush=True)
     return out
 
@@ -75,7 +79,7 @@ def build_windows(zig, version):
     # only __declspec(dllexport) symbols are exported (mkw_plugin_init), no import library is needed
     run([zig, "cc", "-target", "x86_64-windows-gnu", "-shared", "-O2",
          "-Wall", "-Wextra", "-Werror", f'-DMKWMP_VERSION="{version}"', "-o", str(out)]
-        + [str(SRC / s) for s in core() + WIN_PLAT + [BACKEND]] + ["-lws2_32"])
+        + [str(SRC / s) for s in core() + WIN_PLAT + PLUGIN_ONLY + [BACKEND]] + ["-lws2_32", "-lwinhttp"])
     print("built", out, out.stat().st_size, "bytes", flush=True)
     return out
 
@@ -86,7 +90,35 @@ def test(zig, so):
     exe = OUT / "linux" / "test_plugin"
     run([zig, "cc", "-target", "x86_64-linux-gnu", "-O1", "-Wall", "-Wextra", "-Werror", "-o", str(exe),
          str(HERE / "tests" / "test_plugin.c"), "-ldl"])
-    run([str(exe), str(so), str(SRC / "npln.c")])
+    # the options page and the plugin's own sign-in against a fake seat server (tests/fake_seat.py, plain HTTP)
+    import os
+    import tempfile
+    import time
+    with tempfile.TemporaryDirectory() as tmp:
+        portfile = pathlib.Path(tmp) / "port"
+        server = subprocess.Popen([sys.executable, "-I", str(HERE / "tests" / "fake_seat.py"), str(portfile)])
+        try:
+            for _ in range(100):
+                if portfile.exists() and portfile.read_text():
+                    break
+                time.sleep(0.05)
+            env = dict(os.environ, MKWMP_TEST_SERVER=f"http://127.0.0.1:{portfile.read_text()}")
+            print("+", exe, so, flush=True)
+            r = subprocess.run([str(exe), str(so), str(SRC / "npln.c")], env=env)
+            if r.returncode:
+                sys.exit(r.returncode)
+            # seatd.c alone (not exported by the .so): with the core sources it needs
+            seatd = OUT / "linux" / "test_seatd"
+            run([zig, "cc", "-target", "x86_64-linux-gnu", "-O1", "-Wall", "-Wextra", "-Werror", "-o", str(seatd),
+                 str(HERE / "tests" / "test_seatd.c"), str(HERE / "tests" / "stub_rtapi.c")]
+                + [str(SRC / s) for s in ["seatd.c", "seatapi.c", "seat.c", "config.c", "log.c", "launcher.c",
+                                          "notify.c", "plat_posix.c", "plat_net_posix.c", "plat_http_posix.c"]]
+                + ["-lpthread", "-ldl"])
+            home = pathlib.Path(tmp) / "home"
+            home.mkdir()
+            run([str(seatd), env["MKWMP_TEST_SERVER"], str(home)])
+        finally:
+            server.kill()
 
 
 VOICE = HERE.parent / "voice" / "build"

@@ -143,3 +143,45 @@ into `<game>/mods/` and run `mkw --play --mod mkwmp`, or enable it on the Mods p
 
 Not in v1, to ask upstream (generic): a per-mod settings page in the launcher (fields, toggles, buttons, the current
 profile's name) so the mod can replace the MKWMP launcher's register / server / voice / consent settings.
+
+## Without the MKWMP launcher: the options page and the plugin's own seat client (branch `plugin-seat`)
+
+Built on the fork's plugin API 2 proposal (anarqz/mkw-recomp branch `mod-page`: `mkw_mod_page`, per-player mod
+settings, the profile name and language), vendored as `src/mkw_plugin.h`. A version 1 runtime still loads the
+plugin: it then uses `mkwmp.toml` and the launcher only.
+
+- `modpage.c`: MKWMP's page in the start screen's Mods > MKWMP > Options, English and Brazilian Portuguese:
+  - the 18+ notice and its checkbox (everything else is greyed out until it is ticked);
+  - the server (default `https://mkw.anarqz.dev`);
+  - sign-up of the current profile's name (the PIN is stored and shown once), or entering the PIN of a name signed up
+    elsewhere (checked by a presence sign-in);
+  - voice on or off;
+  - the friends list: incoming requests (Accept / Decline), friends with their state (Remove), requests sent (Cancel),
+    and a request by name.
+
+  Network calls run on a worker thread of the page.
+- Settings (`<player>/mod-settings/mkwmp.ini`): `consent18`, `server`, `pin` + `pin_name` (the profile name it is
+  for), `voice`.
+- In the game, `backend_plugin.c` reads them. With consent and a PIN for this profile's name, and no `mkwmp.toml`
+  naming a launcher, the config becomes direct (`mkwmp_config_use_direct`), and `launcher.c` hands `/local/v1/...`
+  to `seatd.c`, which calls the seat server (`seatapi.c`) and answers as the launcher does. So `seat.c`, `friends.c`
+  and `voice.c` are unchanged.
+  - The seat: join, heartbeat, and join again when the session is lost.
+  - The lobby CA is saved in the mod folder and the voice port comes from `/seat/v1/status`.
+  - Friends come from a presence.
+  - Voice mutes are kept for the session.
+
+  Not completed: online play stays off, with a notice at game load pointing to the page.
+- HTTP: `plat_http.h`: WinHTTP on Windows, libcurl loaded at run time on Linux.
+- Tests (`build_plugin.py --test`) run against `tests/fake_seat.py`, a fake seat server:
+  - `test_plugin.c` drives the page through a fake `MkwPage`: the consent gate, sign-up, a friend request, a taken
+    name with a wrong and then the right PIN, a profile name the server refuses, and a version 2 init signing in by
+    itself.
+  - `test_seatd.c` covers the in-game local API: refusals, ticket, lobby and CA, heartbeat, rejoin, friends, voice
+    and mutes.
+
+Not yet:
+- releasing the seat when the game exits (the server frees it after 60 s);
+- mutes kept between games;
+- a confirmation before Remove;
+- in-game notices for friends coming online.

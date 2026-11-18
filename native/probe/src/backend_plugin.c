@@ -13,16 +13,24 @@
 // and the lobby CA are read from there, else from the game's folder, where the MKWMP launcher writes them
 // (config.c).
 //
+// Accounts: with plugin API 2, the mod's options page (modpage.c, in the start screen) stores the player's consent,
+// server, PIN and voice switch; at init they make the probe sign in itself (seatd.c answers the launcher's local API
+// in-process). A mkwmp.toml with a launcher still wins; API 1 runtimes use mkwmp.toml only.
+//
 // Types: the probe's Cpu (recomp.h) starts with MkwCpu's guaranteed prefix (x0..x31, sp, pc), and both are passed by
 // pointer, so a GuestFn is handed to the runtime as an MkwGuestFn as it is. Nothing here reads past that prefix.
 #include "mkw_plugin.h"
 
+#include "config.h"
 #include "guesthook.h"
+#include "launcher.h"
 #include "log.h"
 #include "notify.h"
 #include "plat.h"
 #include "probe.h"
 #include "rtapi.h"
+#include "seatapi.h"
+#include "seatd.h"
 #include "voice_ui.h"
 
 #include <stdarg.h>
@@ -35,6 +43,7 @@ RtApi g_rt;
 
 static const MkwPluginApi *g_api;
 static int g_active;                     // probe_register registered overrides (mkwmp.toml or MKWMP_ENABLE)
+static int g_needs_setup;                // enabled, but the options page was never completed: said at game load
 
 // The SDK names whose stock handlers the fs overrides chain to: npln.c's kRegs entries for ov_fs_open_file ...
 // (the COFF backend takes the same handlers from mkw.exe's ov_open_file ... symbols).
@@ -82,6 +91,8 @@ static void on_game_loaded(void *user) {
     uint64_t main = g_api->module_base ? g_api->module_base("main") : 0;
     mkwmp_log("plugin: game %s loaded (build id %s, main at %#llx)", g_api->game_version ? g_api->game_version : "?",
               g_api->game_id ? g_api->game_id : "?", (unsigned long long)main);
+    if (g_needs_setup && g_api->notice)
+        g_api->notice("MKWMP: open Mods, MKWMP, Options on the start screen to set up online play", 10);
     if (main && main != GUEST_MAIN(0))
         mkwmp_log("plugin: main is not at %#llx: every version-specific hook stays off", (unsigned long long)GUEST_MAIN(0));
     else if (g_active) {
@@ -95,6 +106,46 @@ static void notice_sink(NotifyLevel level, const char *text) {
     g_api->notice(text, level == NOTIFY_ERROR || level == NOTIFY_WARN ? 8 : 5);
 }
 
+// ---- the mod's own settings (plugin API 2: its options page in the start screen, modpage.c)
+static int has_settings(const MkwPluginApi *api) {
+    return api->size >= offsetof(MkwPluginApi, setting_set) + sizeof api->setting_set && api->setting_get &&
+           api->profile_name;
+}
+
+// With the player's consent and a signed-up name, the plugin signs in itself (seatd.c) unless a launcher is configured.
+static void use_settings(const MkwPluginApi *api) {
+    if (!has_settings(api)) {
+        mkwmp_log("plugin: runtime without mod settings (plugin API 1): mkwmp.toml and the MKWMP launcher only");
+        return;
+    }
+    char consent[8] = "", server[256] = "", pin[16] = "", pin_name[64] = "", voice[8] = "";
+    api->setting_get("consent18", consent, sizeof consent);
+    api->setting_get("server", server, sizeof server);
+    api->setting_get("pin", pin, sizeof pin);
+    api->setting_get("pin_name", pin_name, sizeof pin_name);
+    int voice_on = !api->setting_get("voice", voice, sizeof voice) || strcmp(voice, "0");
+    const char *name = api->profile_name;
+    if (strcmp(consent, "1") || !seatapi_name_ok(name) || !seatapi_pin_ok(pin) || strcmp(pin_name, name)) {
+        g_needs_setup = !mkwmp_config()->present;   // a mkwmp.toml (the launcher's) still works without the page
+        mkwmp_log("plugin: options page not completed for player %s (consent %s, %s): %s", name,
+                  strcmp(consent, "1") ? "no" : "yes", seatapi_pin_ok(pin) && !strcmp(pin_name, name) ? "signed up" : "not signed up",
+                  g_needs_setup ? "online play stays off" : "using mkwmp.toml");
+        return;
+    }
+    mkwmp_config_use_direct(name);
+    if (!mkwmp_config()->direct) {
+        mkwmp_log("plugin: mkwmp.toml names a launcher: it holds the seat, the mod's settings wait");
+        return;
+    }
+    SeatdConfig c = {0};
+    seatapi_base(server, c.server, sizeof c.server);
+    snprintf(c.name, sizeof c.name, "%s", name);
+    snprintf(c.pin, sizeof c.pin, "%s", pin);
+    c.voice = voice_on;
+    seatd_start(&c);
+    launcher_set_direct(seatd_request);
+}
+
 // ---- entry
 static int refuse(const char **message, const char *reason) {
     static char kept[256];   // the runtime reads it after we return
@@ -106,8 +157,8 @@ static int refuse(const char **message, const char *reason) {
 
 MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_version, const char **message) {
     if (!api) return 1;
-    // notice and the overlay are the table's last fields: a shorter table is an older runtime
-    if (api_version < 1 || api->size < sizeof(MkwPluginApi))
+    // version 1's table ends with the overlay; version 2 adds the player, the language and the mod's settings
+    if (api_version < 1 || api->size < offsetof(MkwPluginApi, language))
         return refuse(message, "MKWMP needs a newer mkw-recomp (plugin API version 1)");
 
     plat_set_home(api->mod_dir);   // mkwmp.log, mkwmp.env, the voice library: the mod's folder
@@ -154,6 +205,8 @@ MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_vers
 
     api->on_game_loaded(on_game_loaded, NULL);
     if (api->notice) notify_set_sink(notice_sink);
+
+    use_settings(api);
 
     log_line("runtime resolved from the plugin API");
     int n = probe_register();

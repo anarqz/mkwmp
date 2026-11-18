@@ -255,7 +255,7 @@ static void refresher(void *unused) {
 
 void friends_online(int wait_ms) {
     static PlatLock start_lock = PLAT_LOCK_INIT;
-    if (!mkwmp_config()->launcher_port) return;
+    if (!mkwmp_config_has_seat(mkwmp_config())) return;
     static int started;
     plat_lock(&start_lock);
     if (!started) {
