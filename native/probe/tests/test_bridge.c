@@ -173,6 +173,19 @@ int main(void) {
     datagram.x[4] = (uintptr_t)guest_peer; datagram.x[5] = sizeof guest_peer;
     ov_pia_sendto(&datagram);
     assert(datagram.x[0] == UINT64_MAX && g_errno == G_EINVAL);
+    // A port Pia asks for that cannot be bound (taken, or reserved by Windows) is refused with EADDRINUSE,
+    // never swapped for another one (Pia advertises the port it asked for).
+    Cpu udp3 = {0};
+    udp3.x[0] = 2; udp3.x[1] = 2;
+    ov_pia_socket(&udp3);
+    int third_fd = (int)udp3.x[0];
+    assert(third_fd >= 0);
+    uint8_t guest_taken[16] = {16, 2, 0, 0, 127, 0, 0, 1};
+    memcpy(guest_taken + 2, &address.sin_port, 2);   // to_fd's port
+    udp3.x[0] = third_fd; udp3.x[1] = (uintptr_t)guest_taken; udp3.x[2] = sizeof guest_taken;
+    ov_pia_bind(&udp3);
+    assert(udp3.x[0] == UINT64_MAX && g_errno == G_EADDRINUSE);
+    call2(ov_sock_close, third_fd, 0);
     call2(ov_sock_close, from_fd, 0); call2(ov_sock_close, to_fd, 0);
     uint8_t cert_buffer[2048]; GCertificateInfo *info = NULL;
     Cpu cert = {0}; cert.x[0] = (uintptr_t)&info; cert.x[1] = (uintptr_t)cert_buffer;

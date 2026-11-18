@@ -65,7 +65,7 @@ static void rhex(const char *tag, const void *buf, size_t len) {
 }
 
 // Linux errno numbers the game reads
-enum { G_EINTR = 4, G_EAGAIN = 11, G_EINVAL = 22, G_EINPROGRESS = 115 };
+enum { G_EINTR = 4, G_EAGAIN = 11, G_EINVAL = 22, G_EADDRINUSE = 98, G_EINPROGRESS = 115 };
 static _Thread_local int g_errno;
 
 // LAN mode (server host not loopback): see net_init.
@@ -840,7 +840,8 @@ static void ov_pia_bind(Cpu *c) {
     sa.sin_family = AF_INET;
     sa.sin_addr.s_addr = htonl(g_lan ? INADDR_ANY : INADDR_LOOPBACK);
     // Honour the port Pia asked for: Pia advertises it to peers as its private
-    // address (it never asks the socket afterwards). Fall back to ephemeral.
+    // address (it never asks the socket afterwards). When it cannot be had, say so
+    // (EADDRINUSE: Pia picks another); fall back to ephemeral only for port 0.
     unsigned requested = 0;
     if (guest && arg_x(c, 2) >= 4 && guest[1] == 2) {
         memcpy(&sa.sin_port, guest + 2, sizeof sa.sin_port);
@@ -848,6 +849,15 @@ static void ov_pia_bind(Cpu *c) {
     }
     if (s == INVALID_SOCKET) { g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return; }
     if (bind(s, (struct sockaddr *)&sa, sizeof sa)) {
+        // A port Windows reserves (Hyper-V / WSL "excluded port ranges", `netsh int ipv4 show
+        // excludedportrange protocol=udp`, e.g. 64652-64751) fails with WSAEACCES. Binding another
+        // port instead leaves Pia advertising the one it asked for, so peers send to a port nobody
+        // holds (seen live: asked 64720, got 65371, the peer's packets to 64720 were lost).
+        int err = WSAGetLastError();
+        if (requested && (err == WSAEACCES || err == WSAEADDRINUSE)) {
+            mlog("Pia UDP bind to port %u refused (WSA error %d): EADDRINUSE to the game", requested, err);
+            g_errno = G_EADDRINUSE; ret_x(c, UINT64_MAX); return;
+        }
         sa.sin_port = 0;
         if (bind(s, (struct sockaddr *)&sa, sizeof sa)) { g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return; }
     }
