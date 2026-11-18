@@ -22,7 +22,7 @@ sha2 = "0.10"
 semver = "1"
 open = "5"
 rfd = "0.18"
-eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
+eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "clipboard", "wayland", "x11"] }
 notify-rust = "4"
 
 [target.'cfg(windows)'.dependencies]
