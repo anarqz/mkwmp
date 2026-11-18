@@ -27,7 +27,7 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 
 ## Play
 
-1. Set up **mkw-recomp 0.1.13** (Windows build; 0.1.10 and 0.1.12 also work) with your own copy of the game, version 1.0.0 (1.8.0 isn't supported yet; the launcher won't start it). On a Steam Deck, run it through Proton 10.0.
+1. Set up **mkw-recomp 0.1.13** (Windows build; 0.1.10 and 0.1.12 also work) with your own copy of the game, version **1.0.0 or 1.8.0**. Players only meet others on the same game version. On a Steam Deck, run it through Proton 10.0.
 2. Download the zip for your system from the [latest release](https://github.com/anarqz/mkwmp/releases/latest) and unzip it anywhere:
    - `mkwmp-<version>-windows-x64.zip` for Windows;
    - `mkwmp-<version>-linux-x64.zip` for SteamOS and Linux. On a Steam Deck, one command in Desktop Mode (Konsole) installs it to `~/mkwmp` and adds it to Steam:

@@ -1,4 +1,13 @@
-**mkwmp 1.0.2**: mkw-recomp 0.1.12 support (new).
+**mkwmp 1.1.0**: game 1.8.0 support, and mkw-recomp 0.1.13 (recommended).
+
+- **Game 1.8.0.** MKWMP now plays game version 1.8.0 as well as 1.0.0. Players only meet others on the same game version: matchmaking, friend rooms and Room IDs keep 1.0.0 and 1.8.0 apart, because the two versions can't play together. To move to 1.8.0, apply the 1.8.0 update to your own game in mkw-recomp; MKWMP doesn't include any game data. The new 1.8.0 modes Clutch 24 and Clutch Survival 24 aren't available yet.
+- **mkw-recomp 0.1.13** is the recommended version. 0.1.10 and 0.1.12 still work.
+- The launcher refuses to start a game version MKWMP doesn't support, instead of letting the game patch run on it.
+- SAVE LOGS FOR A BUG REPORT also collects `mkwmp-game.log`, which the game writes when mkw-recomp's start screen is open.
+
+---
+
+**From 1.0.2** (**mkwmp 1.0.2**: mkw-recomp 0.1.12 support.)
 
 - **mkw-recomp 0.1.10 or 0.1.12.** The launcher now also accepts mkw-recomp 0.1.12. Support for it is new: online matches between two players on 0.1.12 work, but a match between 0.1.12 and 0.1.10 players hasn't been tested yet, so play with friends on the same version. If a match goes out of sync, tell us in an issue. 0.1.11 isn't supported.
 - If you use mkw-recomp 0.1.12's "choose game folder", SAVE LOGS FOR A BUG REPORT finds the game's log in that folder.
@@ -9,8 +18,8 @@
 
 Download one zip and unzip it anywhere:
 
-- **Windows:** `mkwmp-1.0.2-windows-x64.zip`. Open `mkwmp/mkwmp-launcher.exe`.
-- **Steam Deck / SteamOS / Linux:** `mkwmp-1.0.2-linux-x64.zip`. On a Steam Deck, one command in Desktop Mode installs it and adds it to Steam: `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`.
+- **Windows:** `mkwmp-1.1.0-windows-x64.zip`. Open `mkwmp/mkwmp-launcher.exe`.
+- **Steam Deck / SteamOS / Linux:** `mkwmp-1.1.0-linux-x64.zip`. On a Steam Deck, one command in Desktop Mode installs it and adds it to Steam: `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`.
 
 `README.txt` inside each zip has the steps.
 
@@ -34,7 +43,7 @@ Since rc.3:
 
 Files:
 
-- `mkwmp-1.0.2-windows-x64.zip` / `mkwmp-1.0.2-linux-x64.zip`: the launcher, the game patch, licenses and a README.
+- `mkwmp-1.1.0-windows-x64.zip` / `mkwmp-1.1.0-linux-x64.zip`: the launcher, the game patch, licenses and a README.
 - `mkwmp-launcher-x86_64-*`, `winmm.dll`, `mkwmp-voice.dll`: the same files loose, for launchers that update themselves.
 - `mkwmp-server-x86_64-windows.exe` / `mkwmp-server-x86_64-linux`: the server, for hosting your own (`mkwmp-server host --help`).
 - `SHA256SUMS` + `SHA256SUMS.sig`: checksums signed with the release key. The launcher verifies them before installing anything.

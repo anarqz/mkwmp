@@ -137,14 +137,12 @@ pub fn data_dir(game: &Path) -> PathBuf {
 }
 
 /// Game versions the game patch has guest-address tables for. On any other
-/// version its hooks would write into unrelated game memory.
-pub const GAMES: &[&str] = &["1.0.0"];
-/// Live tests only: `MKWMP_ALLOW_GAME_180=1` also lets game 1.8.0 play (the game patch
-/// switches its version-specific hooks by build itself).
-pub const ALLOW_180_ENV: &str = "MKWMP_ALLOW_GAME_180";
+/// version its hooks would write into unrelated game memory. Players only meet
+/// others on the same version (the lobby keeps them apart).
+pub const GAMES: &[&str] = &["1.0.0", "1.8.0"];
 
 fn allowed(version: &str) -> bool {
-    GAMES.contains(&version) || (version == "1.8.0" && std::env::var(ALLOW_180_ENV).is_ok_and(|v| v == "1"))
+    GAMES.contains(&version)
 }
 
 /// The game version mkw-recomp set up, from `<data dir>/setup-state.json`
@@ -185,14 +183,13 @@ pub fn game_problem(game: &Path) -> Option<String> {
 
 fn game_problem_for(version: Option<&str>) -> Option<String> {
     let v = version?;
-    (!allowed(v)).then(|| format!("Game {v}: MKWMP supports game {}; {v} support is coming", GAMES.join(" or ")))
+    (!allowed(v)).then(|| format!("Game {v}: MKWMP supports game {} (a newer MKWMP may support {v})", GAMES.join(" or ")))
 }
 
 /// One line for logs and bug reports.
 pub fn game_line(game: &Path) -> String {
     match game_version(game) {
-        Some(v) if GAMES.contains(&v.as_str()) => format!("game version: {v}"),
-        Some(v) if allowed(&v) => format!("game version: {v} (allowed by {ALLOW_180_ENV}=1, live test)"),
+        Some(v) if allowed(&v) => format!("game version: {v}"),
         Some(v) => format!("game version: {v} (not supported)"),
         None => "game version: unknown (no setup-state.json generate)".into(),
     }
@@ -255,9 +252,10 @@ mod tests {
         assert_eq!(game_version_in(r#"{"done": {"generate": "c0dd6cf12c07c23a b05897af8b40fec6"}}"#), None, "no version word");
         assert_eq!(game_version_in(r#"{"done": {"generate": "c0dd6cf12c07c23a 1.8.0"}}"#).as_deref(), Some("1.8.0"));
         assert_eq!(game_problem_for(Some("1.0.0")), None);
+        assert_eq!(game_problem_for(Some("1.8.0")), None);
         assert_eq!(game_problem_for(None), None, "unknown is allowed");
-        let p = game_problem_for(Some("1.8.0")).unwrap();
-        assert!(p.contains("MKWMP supports game 1.0.0") && p.contains("1.8.0 support is coming"), "{p}");
+        let p = game_problem_for(Some("1.9.0")).unwrap();
+        assert!(p.contains("MKWMP supports game 1.0.0 or 1.8.0"), "{p}");
 
         let d = std::env::temp_dir().join(format!("mkwmp_recomp_game_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
@@ -267,12 +265,9 @@ mod tests {
         std::fs::write(d.join("mkw.ini"), "game_dir = \"data\"\n").unwrap();
         std::fs::write(d.join("data/setup-state.json"), j).unwrap();
         assert_eq!(game_version(&d).as_deref(), Some("1.8.0"), "read from the data dir");
+        assert_eq!(game_problem(&d), None);
+        assert_eq!(game_line(&d), "game version: 1.8.0");
+        std::fs::write(d.join("data/setup-state.json"), r#"{"done": {"generate": "c0dd6cf12c07c23a 1.9.0 ab"}}"#).unwrap();
         assert!(game_problem(&d).is_some() && game_line(&d).contains("not supported"));
-        // The live-test override lets 1.8.0 (only) through. This is the only test that reads it.
-        std::env::set_var(ALLOW_180_ENV, "1");
-        let (on, other, line) = (game_problem(&d), game_problem_for(Some("1.9.0")), game_line(&d));
-        std::env::remove_var(ALLOW_180_ENV);
-        assert_eq!(on, None);
-        assert!(other.is_some() && line.contains("live test"), "{line}");
     }
 }
