@@ -77,6 +77,22 @@ Order: PC (1.8.0) alone -> PC + PC (`scratch/game` + `scratch/game-p2`, both on 
    re-enable the Proton default skip on 1.8.0 once the error-post row is proven.
 6. Mixed test: a 1.0.0 client and a 1.8.0 client searching at the same time must land in different lobbies.
 
+### Phase 3 log (2026-11-18, PC alone, mkw-recomp 0.1.13, MACBOOK LAN host on branch game-180)
+- Offline: build detected, 6 of 6 guards ok, full race, clean quit. 1.8.0 makes **no boot nifm sign-in**, so the first
+  Online Play click now activates the probe (`boot_signin = 0`, 4f393ea). Started without `--play`, the start screen
+  holds `mkwmp.log`, so the game process writes `mkwmp-game.log`.
+- Online, first try: the game crawled at 2-30% speed and froze on the Online menu. Two probe causes, both fixed:
+  1. `ldr_symbol` (a linear strcmp scan) ran per call in the hot clock/cond overrides. Now cached (e3bb742).
+  2. 1.8.0's SDK `clock_gettime` fails for clocks 0 and 1 under mkw-recomp: `nntimeStartup` re-points the clock sources
+     at nn::time Timespec functions whose shared memory the runtime never sets up. SDK timed waits returned EAGAIN at
+     once and gRPC's timer thread spun. The probe restores the SDK tick source in the monotonic slot (279d2ae; log
+     "tick source restored, timed waits can block").
+- Online, after the fix: smooth. Sign-in, CreateMatchmakingTicket (`Normal24`, lobby detects game 1.8.0, **rom_id
+  "cv13"**; 1.0.0 is "cv1"), 1.8.0 lobby created, free roam while waiting. No Appconfig call. New path
+  `LeaderboardService/UpdateHolder` (OK/empty is accepted). No gamesync/Pia while alone, as expected for a lobby still gathering.
+- Still open: SDK-internal CLOCK_REALTIME stays broken (`time()`, `gettimeofday`; gRPC's realtime goes through the
+  probe's override and is fine). Next: two-player race (Pia 7.3 mesh, ping-socket refusal, referee).
+
 ## Phase 4: release (M, with the user's go)
 - Launcher: `recomp::GAMES = ["1.0.0", "1.8.0"]`. Show the game version in the window and the bug report.
 - Lobby deploy to mkwmp-sao-1. README/site: "game 1.0.0 or 1.8.0; players only meet others on the same version".
