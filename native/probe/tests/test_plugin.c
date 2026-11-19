@@ -382,7 +382,7 @@ int main(int argc, char **argv) {
             if (!strstr(t2, "the plugin signs in to") || !strstr(t2, "as Luz itself")) { fputs(t2, stderr); _exit(12); }
             if (!strstr(t2, "overrides registered")) _exit(13);
             if (!g_exit_cb) _exit(14);   // the seat is given back at the game's end
-            if (g_tabs != 2) _exit(15);  // Voice chat and MKWMP in the in-game settings
+            if (g_tabs != 3) _exit(15);  // Voice chat, MKWMP and Camera in the in-game settings
             g_exit_cb(NULL);             // nothing seated yet: a no-op that must not hang
             _exit(0);
         }
@@ -409,7 +409,7 @@ int main(int argc, char **argv) {
             unsetenv("MKWMP_ENABLE");
             const char *m = NULL;
             if (init(&v2, MKW_PLUGIN_API_VERSION, &m)) _exit(20);
-            if (g_tabs != 2 || !g_voice_tab) _exit(21);   // Voice chat and MKWMP, not signed up
+            if (g_tabs != 3 || !g_voice_tab) _exit(21);   // Voice chat, MKWMP and Camera, not signed up
             g_page_fn = (MkwModPage)g_voice_tab;
             frame();
             if (!strstr(g_texts, "Voice chat needs an MKWMP account")) { fputs(g_texts, stderr); _exit(22); }

@@ -172,6 +172,8 @@ void camera_tile(uint8_t *rgba, int w, int h, const char *name);
 int camera_install(const CameraHost *host);
 // Why camera_install left the camera off (NULL when it is on, or before camera_install ran), for the Camera tab.
 const char *camera_off_reason(void);
+// For the Camera tab when camera_install never ran (online play not set up).
+void camera_set_off_reason(const char *why);
 // What the camera's thread does twice a second: settings, members, the room, the capture wanted. Tests call it.
 void camera_refresh(void);
 // The game is loaded and has run nothing yet (the plugin API's address overrides are still open): hooks the game's
