@@ -1,11 +1,14 @@
 // Voice chat, probe side (docs/contracts/VOICE_API.md §4, §5). The relay's voice room is the lobby; with the plugin
-// backend the player hears and talks to the chat room only (chatroom.h; voice.c push_mutes). The probe loads mkwmp-voice.dll (the engine and
+// backend the player hears and talks to the chat room only (chatroom.h): a relay that speaks rooms routes it so
+// (room mode, roomnet.c), with any other the plugin filters the lobby's voice itself (voice.c push_mutes). The probe loads mkwmp-voice.dll (the engine and
 // the relay client, native/voice) from the game folder the first time the game goes online, feeds it the seat ticket
 // and the relay address, and polls the launcher's voice settings (GET /local/v1/voice) every 2 s. Mutes chosen in
 // the game's menus go to the engine (and through it to the relay) and to the launcher (POST /local/v1/voice/mute).
 // Without the DLL, a launcher or a ticket, voice simply stays off.
 #ifndef MKWMP_VOICE_PROBE_H
 #define MKWMP_VOICE_PROBE_H
+
+#include "../../voice/src/mkwmp_voice.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -48,5 +51,21 @@ int voice_is_online(void);
 int voice_peer_accounts(uint64_t *out, int cap);
 // 1 while voice runs in a room (the engine is on and the relay has this player in a lobby).
 int voice_active(void);
+
+// ---- chat rooms and video (roomnet.c drives them; mkwmp_voice.h's second part). Any thread.
+// The loaded voice library's room API version: -1 while no library is loaded (the game was never online, or voice is
+// off on the server), 0 a library without it (an older mkwmp-voice: no room mode, the camera stays off the network).
+int voice_room_api(void);
+// 1 when voice chat is on in the settings (the launcher's or the mod's), as last read.
+int voice_enabled(void);
+// The library's calls; nothing without the room API. Room mode on: the relay is joined with voice chat off too, and
+// while the relay speaks rooms it routes voice inside the room, so the local filter (voice_room_mutes) steps aside.
+void voice_room_mode(int on);
+void voice_room_request(const char *sharing_key, const uint64_t *want, int count, const char *room_ticket);
+void voice_room_camera(int on);
+void voice_video_subscribe(const uint64_t *accounts, int count);
+int voice_video_send(const uint8_t *jpeg, int len, uint32_t ts_ms);
+void voice_video_receiver(mkwmp_voice_video_fn fn, void *user);
+int voice_room_state(mkwmp_voice_room *out);
 
 #endif

@@ -40,7 +40,7 @@
 // MKWMP_CAMERA_CODEC=1, with the loopback: the others' picture is the local one as it would arrive over the relay
 // (camcodec.h: a 256x144 JPEG of at most 6 KiB, ten a second, decoded and scaled back), so the codec is seen live.
 //
-// ---- For phase 4 (the relay's video/v1, not written yet) ----------------------------------------------------------
+// ---- The network (the relay's video/v1: roomnet.c, through the voice library) -------------------------------------
 // The transport plugs in here and nowhere else, and only moves bytes (the codec is camcodec.h, called from camera.c):
 //   camera_set_jpeg_out(fn, user)    every frame to send while the game streams the local camera: one standalone JPEG
 //   camera_jpeg_in(account, ...)     a member's frame as it arrived: decoded, shown at the game's next poll
@@ -175,7 +175,7 @@ void camera_game_loaded(void);
 struct game_addrs;
 int camera_setup_install(const struct game_addrs *row);
 
-// ---- phase 4's side (see the top of this file); any thread unless said ---------------------------------------------
+// ---- the network's side (see the top of this file); any thread unless said -----------------------------------------
 // fn runs on the game's thread, once per new local picture (CAMERA_W x CAMERA_H RGBA, rows CAMERA_W * 4 apart, valid
 // during the call only): copy it and return. ms is plat_ms() at capture. NULL removes it.
 typedef void (*CameraFrameOut)(const uint8_t *rgba, int w, int h, uint64_t ms, void *user);
@@ -199,5 +199,8 @@ int camera_subscriptions(uint64_t *accounts, int cap);
 int camera_local_streaming(void);
 // 1 while the player's Camera Off in the game's prompt holds (camera_declined): the Camera tab says so.
 int camera_declined_now(void);
+// 1 while the game is told a chat runs (camera_chatting): the camera wants its chat room on the network (roomnet.c).
+// 0 when the camera is not installed.
+int camera_chat_on(void);
 
 #endif

@@ -7,10 +7,10 @@
 // (voice.c: everybody else in the lobby's voice room is muted for this player).
 //
 // Who is in it:
-//   - the server's grant, once a relay speaks rooms (chatroom_grant): the server decides and the plugin takes what it
-//     is given. Nothing calls it yet; chatroom_request says what the plugin would ask for (the sharing key and the
-//     friends it wants);
-//   - until then the local pick (chatroom_pick): at most CHATROOM_FRIENDS of the player's friends, in the roster's
+//   - the server's grant, with a relay that speaks rooms (chatroom_grant, from roomnet.c: the relay's state down ver
+//     2): the server decides and the plugin takes what it is given, nobody included. chatroom_request says what the
+//     plugin asks for (the sharing key and the friends it wants);
+//   - without one (an older relay or voice library, a launcher holding the account) the local pick (chatroom_pick): at most CHATROOM_FRIENDS of the player's friends, in the roster's
 //     order, who are in the same game session. "In the same session" is what the lobby's voice relay says today: its
 //     room is the lobby, so a friend among the voice peers races with the player. With MKWMP_CAMERA_LOOPBACK=1 (one PC,
 //     no relay) every friend counts as in the session: the local sharing key is mirrored for them.
@@ -81,7 +81,7 @@ int chatroom_get(ChatRoom *out, char key[CHATROOM_KEY_SIZE]);
 int chatroom_has(uint64_t account);
 // 1 when voice is shared with the room only: a room object exists and MKWMP_VOICE_ROOM is not "0".
 int chatroom_voice_filter(void);
-// For the transport that will speak rooms (none yet). 1 when there is something to ask: a key is set.
+// For the transport that speaks rooms (roomnet.c). 1 when there is something to ask: a key is set.
 int chatroom_request(ChatRoomRequest *out);
 // The server's answer: the room it put the player in (n members besides the player, at most CHATROOM_FRIENDS kept).
 // members NULL or n < 0: no grant any more, back to the local pick.

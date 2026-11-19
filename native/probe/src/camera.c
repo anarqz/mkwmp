@@ -1168,7 +1168,7 @@ int camera_install(const CameraHost *host) {
     return CAMERA_OVERRIDES;
 }
 
-// ---- phase 4's side
+// ---- the network's side (roomnet.c)
 
 void camera_set_frame_out(CameraFrameOut fn, void *user) {
     plat_lock(&g_lock);
@@ -1236,6 +1236,13 @@ int camera_subscriptions(uint64_t *accounts, int cap) {
 int camera_local_streaming(void) {
     plat_lock_shared(&g_lock);
     int on = g_local_streaming && g_chatting && g_camera_on;
+    plat_unlock_shared(&g_lock);
+    return on;
+}
+
+int camera_chat_on(void) {
+    plat_lock_shared(&g_lock);
+    int on = g_installed && g_chatting;
     plat_unlock_shared(&g_lock);
     return on;
 }

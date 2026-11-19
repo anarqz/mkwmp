@@ -105,7 +105,10 @@ int chatroom_refresh(void) {
         int k = 0;
         for (int i = 0; i < now.n && k < (int)sizeof list - 30; i++)
             k += snprintf(list + k, sizeof list - (size_t)k, " %#llx", (unsigned long long)now.member[i].account);
-        if (now.granted)
+        if (now.granted && !now.id)
+            mkwmp_log("chat room: the server has put the player in no room (it waits for a friend in the same game session who "
+                      "asks for this player too): nobody");
+        else if (now.granted)
             mkwmp_log("chat room: %d members, the server's room %#llx:%s", now.n, (unsigned long long)now.id, now.n ? list : " nobody");
         else
             mkwmp_log("chat room: %d members (%d friends in the lobby's voice room%s; %d friends, %d players in the voice room):%s",
