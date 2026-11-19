@@ -1,6 +1,6 @@
 // seatd.c (the launcher's local API answered in the game) against tests/fake_seat.py: the seat with its ticket and
 // lobby, the heartbeat, a session lost and joined again, friends, voice settings and mutes, refusals (wrong PIN,
-// unknown name) as seat.c reads them, and the lobby CA saved in home. Built by build_plugin.py --test with the core
+// a purged profile restored) as seat.c reads them, and the lobby CA saved in home. Built by build_plugin.py --test with the core
 // sources it needs.   Usage: test_seatd <server base URL> <empty directory>
 #undef NDEBUG
 #include "../src/config.h"
@@ -135,11 +135,21 @@ int main(int argc, char **argv) {
     printf("voice settings from the mod's settings, live; the device list kept for the tab\n");
     printf("friends, voice settings and mutes, no room\n");
 
+    // a profile the server purged (30 days unused) comes back with the PIN the mod saved
     snprintf(c.name, sizeof c.name, "Nobody");
     seatd_stop();
     seatd_start(&c);
     seat_parse(req("POST", "/local/v1/seat", NULL, &body), body, &r);
-    assert(r.state == SEAT_REFUSED && strstr(r.message, "not registered"));
+    assert(r.state == SEAT_SEATED);
+    printf("a purged profile restored with the saved PIN, then seated\n");
+    seatd_stop();
+
+    // a name the server refuses to restore (reserved): refused, with the server's reason
+    snprintf(c.name, sizeof c.name, "admin");
+    seatd_start(&c);
+    seat_parse(req("POST", "/local/v1/seat", NULL, &body), body, &r);
+    assert(r.state == SEAT_REFUSED);
+    printf("a profile that cannot be restored: refused (%s)\n", r.message);
     seatd_stop();
     printf("test_seatd: OK\n");
     return 0;

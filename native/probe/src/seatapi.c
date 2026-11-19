@@ -155,6 +155,16 @@ SeatApiResult seatapi_register(const char *base, const char *name, char pin[SEAT
     return r;
 }
 
+SeatApiResult seatapi_restore(const char *base, const char *name, const char *pin) {
+    char json[96], out[1024];
+    if (!seatapi_name_ok(name) || !seatapi_pin_ok(pin)) {
+        SeatApiResult r = {400, 0, "NAME_INVALID", "3-16 letters, digits, - or _, and a 6-digit PIN"};
+        return r;
+    }
+    snprintf(json, sizeof json, "{\"name\":\"%s\",\"pin\":\"%s\"}", name, pin);
+    return call("POST", base, "/seat/v1/profiles", NULL, json, out, sizeof out);
+}
+
 SeatApiResult seatapi_status(const char *base, SeatApiStatus *s) {
     enum { CAP = 24576 };   // lobbyCa is at most 16 KiB of PEM
     memset(s, 0, sizeof *s);
