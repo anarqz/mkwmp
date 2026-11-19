@@ -365,7 +365,7 @@ static void ov_set_sharing_key(Cpu *c) {
 }
 static void ov_clear_sharing_key(Cpu *c) { ret_x(c, 0); }
 
-// nn::oe::{Disable,Enable}ScreenShot: the game blocks screenshots while it shows players' cameras (after SetSharingKey).
+// nn::oe::{Disable,Enable}{ScreenShot,Recording}, {Begin,End}PresentPhotographedContents (the 6 nn::oe imports of 1.8.0 the runtime has no handler for): the game blocks screenshots while it shows players' cameras (after SetSharingKey).
 // The SDK's versions call the applet service, which this runtime does not have: the first two-player camera run
 // crashed reading address 0 in DisableScreenShot (sdk+0x590340) right after the sharing key. Nothing to block here.
 static void ov_screenshot(Cpu *c) { ret_x(c, 0); }
@@ -630,6 +630,10 @@ int camera_install(const CameraHost *host) {
          ov_request_remote},
         {"_ZN2nn2oe17DisableScreenShotEv", ov_screenshot},
         {"_ZN2nn2oe16EnableScreenShotEv", ov_screenshot},
+        {"_ZN2nn2oe16DisableRecordingEv", ov_screenshot},
+        {"_ZN2nn2oe15EnableRecordingEv", ov_screenshot},
+        {"_ZN2nn2oe32BeginPresentPhotographedContentsEv", ov_screenshot},
+        {"_ZN2nn2oe30EndPresentPhotographedContentsEv", ov_screenshot},
         {"_ZN2nn2gs17TryWaitNativeSyncERKNS0_16NativeSyncHandleE", ov_try_wait_sync},   // last: chained to stock
     };
     char env[8] = "";

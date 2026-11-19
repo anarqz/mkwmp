@@ -332,7 +332,7 @@ static void test_overrides(void) {
     CameraHost h = host(3);
     CHECK(camera_install(&h) == CAMERA_OVERRIDES && g_nov == CAMERA_OVERRIDES);
     for (int i = 0; i < g_nov; i++) {
-        CHECK(strstr(g_ov[i].name, "nn4chat") || strstr(g_ov[i].name, "TryWaitNativeSync") || strstr(g_ov[i].name, "ScreenShot"));
+        CHECK(strstr(g_ov[i].name, "nn4chat") || strstr(g_ov[i].name, "TryWaitNativeSync") || strstr(g_ov[i].name, "nn2oe"));
         for (int k = 0; k < i; k++) CHECK(strcmp(g_ov[i].name, g_ov[k].name));
     }
 
