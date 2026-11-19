@@ -1,5 +1,6 @@
 #include "camera.h"
 
+#include "camcodec.h"
 #include "camlib.h"
 #include "gameaddrs.h"
 #include "guesthook.h"
@@ -45,12 +46,15 @@ int camera_hold(CameraHold *h, int online, uint64_t now) {
         h->was_online = 1;
         return 1;
     }
-    if (h->was_online || now - h->at > CAMERA_HOLD_MS) {   // left online play, or never got there
+    // left online play, or never got there (a clock read before `at` was taken is not "long ago")
+    if (h->was_online || (now > h->at && now - h->at > CAMERA_HOLD_MS)) {
         h->at = 0, h->was_online = 0;
         return 0;
     }
     return 1;
 }
+
+int camera_declined(int prompted, int online, int face_flag) { return prompted && online && !face_flag; }
 
 int camera_room_encode(uint8_t out[CAMERA_ROOM_SIZE], uint64_t self, int self_camera, const CameraMember *members, int n) {
     memset(out, 0, CAMERA_ROOM_SIZE);
@@ -238,11 +242,20 @@ static uint8_t g_room[CAMERA_ROOM_SIZE];
 static uint64_t g_event;                   // the room-info-changed event the game attached
 static CameraFrameOut g_out;
 static void *g_out_user;
+static CameraJpegOut g_jpeg_out;           // the transport's: every frame to send, encoded (camcodec.h)
+static void *g_jpeg_user;
+static int g_divisor = 1, g_loop_codec;    // the send divisor asked; loopback through the codec (MKWMP_CAMERA_CODEC=1)
+static CamEncoder g_enc, g_loop_enc;       // the game's thread only
+static uint8_t g_jpeg[CAMCODEC_FRAME_MAX], g_loop_rgba[PICTURE_BYTES];   // the game's thread only
 static uint32_t g_tick, g_capture_serial;
 static uint64_t g_pattern_at, g_capture_at;
 static char g_name[64];
 static int g_key_cleared;                  // ClearSharingKey calls (the next SetSharingKey is logged again)
 static CameraHold g_hold;                  // the chat held on for the game's camera prompt (camera_hold)
+static int g_prompted;                     // the game's prompt opened at the last Online Play (camera_declined)
+static int g_face;                         // the game's flag as setup_watch read it last: Camera On was chosen
+static int g_declined;                     // Camera Off was: the local camera is off until the next Online Play
+static int g_camera_on;                    // `camera` on and not declined: the local camera is captured, shown and sent
 static const struct game_addrs *g_setup;   // the build's row once the game's camera set-up is hooked (set once)
 static uint64_t g_setup_original;          // the update the hook stands in front of
 
@@ -484,12 +497,23 @@ static int local_picture(void) {
     }
     if (!fresh) return 0;
     bump(&g_local);
-    if (g_loopback)
-        for (int i = 0; i < CAMERA_REMOTE; i++)
+    if (g_loopback) {
+        // with MKWMP_CAMERA_CODEC=1 the others' picture is the local one as it would arrive: encoded, ten a second, decoded
+        const uint8_t *shown = g_local.rgba;
+        if (g_loop_codec) {
+            if (!g_loop_enc.quality) camcodec_encoder_init(&g_loop_enc);
+            int n = camcodec_encode(&g_loop_enc, g_local.rgba, now, g_jpeg, sizeof g_jpeg);
+            shown = n && camcodec_decode(g_jpeg, n, g_loop_rgba) ? g_loop_rgba : NULL;
+            if (shown && g_trace && g_loop_enc.frames % 100 == 1)
+                mkwmp_log("camera: trace: codec: frame %u is %d bytes at quality %d (%u encoded again so far)", (unsigned)g_loop_enc.frames,
+                          n, g_loop_enc.last_quality, (unsigned)g_loop_enc.over);
+        }
+        for (int i = 0; shown && i < CAMERA_REMOTE; i++)
             if (g_remote[i].account) {
-                memcpy(g_remote[i].rgba, g_local.rgba, PICTURE_BYTES);
+                memcpy(g_remote[i].rgba, shown, PICTURE_BYTES);
                 bump(&g_remote[i]);
             }
+    }
     return 1;
 }
 
@@ -524,11 +548,15 @@ static void hook_camera_check(Cpu *c) {
     uint64_t ret = c->x[0];
     if (slot) plat_mem_write_u64(slot, old);   // everybody else is still told there is no camera
     int after = (int)(peek32(node + a->cam_check_result) >> 30), answered = after >= 2 && before < 2;
-    if (answered && after == 2 && slot) {
-        // the prompt is about to open: the game takes Camera On only while a chat runs, and the player is not online yet
+    if (answered && online) {
+        // Online Play chosen again: whatever the last prompt's answer was, it is asked anew (or not asked at all)
         plat_lock(&g_lock);
-        g_hold.at = plat_ms() | 1, g_hold.was_online = 0;
-        if (camera_chatting(&g_settings, 1)) g_chatting = 1;   // from the next IsChatting, not the thread's next pass
+        g_prompted = after == 2, g_declined = 0;
+        if (after == 2 && slot) {
+            // the prompt is about to open: the game takes Camera On only while a chat runs, and the player is not online yet
+            g_hold.at = plat_ms() | 1, g_hold.was_online = 0;
+            if (camera_chatting(&g_settings, 1)) g_chatting = 1;   // from the next IsChatting, not the thread's next pass
+        }
         plat_unlock(&g_lock);
     }
     if (tr(T_SETUP))
@@ -598,6 +626,9 @@ static void setup_watch(void) {
     if (!global) return;
     int on = (int)(peek32(global + a->g_flags4) >> a->cam_setup_bit) & 1, changed = on != was && (on || was >= 0);
     was = on;
+    plat_lock(&g_lock);
+    g_face = on;   // what camera_refresh takes the prompt's answer from
+    plat_unlock(&g_lock);
     if (!changed) return;
     if (on)
         mkwmp_log("camera: set-up: done: the player chose Camera On in the game's prompt: its face goes above its kart, "
@@ -631,10 +662,13 @@ static void ov_is_chatting(Cpu *c) {
         g_room_dirty = 0;
         event = g_event;
     }
-    if (chatting && g_settings.camera) send = local_picture() && g_local_streaming;
+    if (chatting && g_camera_on) send = local_picture() && g_local_streaming;
     else g_local_kind = KIND_NONE;
     CameraFrameOut out = g_out;
     void *user = g_out_user;
+    CameraJpegOut jpeg_out = g_jpeg_out;
+    void *jpeg_user = g_jpeg_user;
+    int divisor = g_divisor;
     // the trace: once a second the cameras' counts, four times a second the game's own state (logged when it changes)
     static uint64_t counted_at, state_at;
     static int summaries, was_chatting = -1;
@@ -679,6 +713,13 @@ static void ov_is_chatting(Cpu *c) {
     }
     // g_local is written on this thread only, so it is read here without the lock (out may call camera_* back)
     if (send && out) out(g_local.rgba, CAMERA_W, CAMERA_H, plat_ms(), user);
+    if (send && jpeg_out) {   // the frame as it goes on the wire: at the codec's frame rate, never over its size
+        uint64_t ms = plat_ms();
+        if (!g_enc.quality) camcodec_encoder_init(&g_enc);
+        camcodec_encoder_divisor(&g_enc, divisor);
+        int n = camcodec_encode(&g_enc, g_local.rgba, ms, g_jpeg, sizeof g_jpeg);
+        if (n) jpeg_out(g_jpeg, n, ms, jpeg_user);
+    }
     ret_x(c, (uint64_t)chatting);
 }
 
@@ -967,8 +1008,20 @@ void camera_refresh(void) {
     const char *name = H.self_name ? H.self_name() : NULL;
     plat_lock(&g_lock);
     int held = camera_hold(&g_hold, online, plat_ms());   // the game's camera prompt, before the sign-in
+    // Camera Off in that prompt: the game draws and sends no face of this player, so nothing is captured, shown or
+    // sent either, until Online Play is chosen again; the others' cameras are still seen with camera_view on
+    int declined = camera_declined(g_prompted, online, g_face), was_declined = g_declined;
+    g_declined = declined;
     plat_unlock(&g_lock);
+    CameraSettings tab = s;   // what the Camera tab says: the game's next prompt is offered by it
+    if (declined) s.camera = 0;
     int chatting = camera_chatting(&s, online || held);
+    if (declined != was_declined)
+        mkwmp_log(declined ? "camera: set-up: the player chose Camera Off in the game's prompt: the local camera is off for this "
+                             "session (not captured, not shown, not sent); the others' cameras %s. Choose Online Play again "
+                             "to be asked again" :
+                             "camera: set-up: Camera Off no longer holds (the player left online play, or chose Camera On)%s",
+                  !declined ? "" : s.view ? "are still shown" : "are not shown either (\"See the others' cameras\" is off)");
 
     // The members are the chat room's (chatroom.h): the server's grant, else at most four friends in the same game
     // session. The game matches a member to a kart by account id alone and gives its four remote cameras to the first
@@ -1001,7 +1054,8 @@ void camera_refresh(void) {
     int listed = camera_room_encode(room, self, chatting && s.camera, chatting ? m : NULL, chatting ? n : 0);
     plat_lock(&g_lock);
     int was = g_chatting, changed = memcmp(room, g_room, sizeof room) != 0;
-    g_settings = s;
+    g_settings = tab;
+    g_camera_on = s.camera;
     g_chatting = chatting;
     snprintf(g_name, sizeof g_name, "%s", name ? name : "");
     if (changed) {
@@ -1013,8 +1067,8 @@ void camera_refresh(void) {
     camlib_want(capture, s.device, s.mirror, CAMERA_W, CAMERA_H, CAPTURE_FPS);
 
     if (was != chatting)
-        mkwmp_log("camera: chat %s (online %d, consent %d, camera %d, view %d%s%s)", chatting ? "on" : "off", online, s.consent,
-                  s.camera, s.view, g_loopback ? ", loopback" : "",
+        mkwmp_log("camera: chat %s (online %d, consent %d, camera %d%s, view %d%s%s)", chatting ? "on" : "off", online, s.consent,
+                  s.camera, declined ? " (Camera Off in the game's prompt)" : "", s.view, g_loopback ? ", loopback" : "",
                   held && !online ? ", held on for the game's camera prompt until the player is online" : "");
     if (changed && chatting) {
         char list[400] = "";
@@ -1093,6 +1147,7 @@ int camera_install(const CameraHost *host) {
     char v[8] = "";
     g_loopback = plat_getenv("MKWMP_CAMERA_LOOPBACK", v, sizeof v) && !strcmp(v, "1");
     g_env_pattern = plat_getenv("MKWMP_CAMERA_PATTERN", v, sizeof v) && !strcmp(v, "1");
+    g_loop_codec = plat_getenv("MKWMP_CAMERA_CODEC", v, sizeof v) && !strcmp(v, "1");
     g_trace = plat_getenv("MKWMP_CAMERA_TRACE", v, sizeof v) && !strcmp(v, "1");
     memset(g_trace_n, 0, sizeof g_trace_n);
     if (!plat_getenv("MKWMP_CAMERA_MEMBERS", g_env_members, sizeof g_env_members)) g_env_members[0] = 0;
@@ -1127,11 +1182,41 @@ int camera_frame_in(uint64_t account, const uint8_t *rgba, int w, int h) {
     plat_lock(&g_lock);
     Source *s = source_of(account);
     if (s) {
-        blit(s->rgba, CAMERA_W, CAMERA_H, CAMERA_W * 4, rgba, w, h);
+        // as it is, the right way round: the flip the game needs is made once, when the picture goes into its image
+        // (blit; this used blit too, and a member's picture came out flipped twice)
+        if (w == CAMERA_W && h == CAMERA_H) memcpy(s->rgba, rgba, PICTURE_BYTES);
+        else camcodec_scale(rgba, w, h, s->rgba, CAMERA_W, CAMERA_H);
         bump(s);
     }
     plat_unlock(&g_lock);
     return s != NULL;
+}
+
+void camera_set_jpeg_out(CameraJpegOut fn, void *user) {
+    plat_lock(&g_lock);
+    g_jpeg_out = fn;
+    g_jpeg_user = user;
+    plat_unlock(&g_lock);
+}
+
+void camera_set_send_divisor(int divisor) {
+    plat_lock(&g_lock);
+    g_divisor = divisor == 2 || divisor == 4 ? divisor : 1;
+    plat_unlock(&g_lock);
+}
+
+int camera_jpeg_in(uint64_t account, const uint8_t *jpeg, int len) {
+    static PlatLock one = PLAT_LOCK_INIT;   // one decoded picture at a time: the relay's thread is one anyway
+    static uint8_t rgba[PICTURE_BYTES];
+    if (!jpeg || len < 4 || len > CAMERA_JPEG_MAX) return 0;
+    plat_lock_shared(&g_lock);
+    int wanted = source_of(account) != NULL;
+    plat_unlock_shared(&g_lock);
+    if (!wanted) return 0;   // nothing is decoded for a member the game did not ask for
+    plat_lock(&one);
+    int ok = camcodec_decode(jpeg, len, rgba) && camera_frame_in(account, rgba, CAMERA_W, CAMERA_H);
+    plat_unlock(&one);
+    return ok;
 }
 
 void camera_members_set(const CameraMember *members, int n) {
@@ -1150,7 +1235,14 @@ int camera_subscriptions(uint64_t *accounts, int cap) {
 
 int camera_local_streaming(void) {
     plat_lock_shared(&g_lock);
-    int on = g_local_streaming && g_chatting && g_settings.camera;
+    int on = g_local_streaming && g_chatting && g_camera_on;
     plat_unlock_shared(&g_lock);
     return on;
+}
+
+int camera_declined_now(void) {
+    plat_lock_shared(&g_lock);
+    int declined = g_declined;
+    plat_unlock_shared(&g_lock);
+    return declined;
 }

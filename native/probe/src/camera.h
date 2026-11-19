@@ -18,6 +18,7 @@
 //     prompt, when Online Play is chosen, only if the console's camera service says a camera is attached. The
 //     runtime's stand-in for that service says none is; while the game's node asks, and the Camera tab has the
 //     camera on, ours says yes. MKWMP_CAMERA_SETUP=0 leaves the runtime's answer alone (no prompt, no faces).
+//     Camera Off in that prompt turns the local camera off for the session (camera_declined).
 //
 // Settings (the mod's, per player; all off unless "1", as voice): `camera` (show my camera), `camera_view` (see the
 // others'), `camera_mirror`, `camera_device` (a capture device's name; "" the first one; CAMERA_DEVICE_TEST the test
@@ -36,10 +37,15 @@
 // what its GameChat mode waits for, whether its screen guard hands cameras to the UI, whether the player went through
 // the game's camera set-up, which players the UI may draw a face for, the texture ids it draws).
 //
+// MKWMP_CAMERA_CODEC=1, with the loopback: the others' picture is the local one as it would arrive over the relay
+// (camcodec.h: a 256x144 JPEG of at most 6 KiB, ten a second, decoded and scaled back), so the codec is seen live.
+//
 // ---- For phase 4 (the relay's video/v1, not written yet) ----------------------------------------------------------
-// The transport plugs in here and nowhere else:
-//   camera_set_frame_out(fn, user)   every new local picture while the game streams the local camera: encode and send
-//   camera_frame_in(account, ...)    a decoded picture of a member: shown at the game's next poll
+// The transport plugs in here and nowhere else, and only moves bytes (the codec is camcodec.h, called from camera.c):
+//   camera_set_jpeg_out(fn, user)    every frame to send while the game streams the local camera: one standalone JPEG
+//   camera_jpeg_in(account, ...)     a member's frame as it arrived: decoded, shown at the game's next poll
+//   camera_set_send_divisor(n)       the relay's "send fewer": every frame, every second or every fourth
+//   (camera_set_frame_out / camera_frame_in are the same two ends before and after the codec, RGBA)
 //   camera_members_set(list, n)      the room the server granted: who is in it and whose camera is on (chatroom_grant)
 //   camera_subscriptions(out, cap)   the accounts the game asked pictures of (at most 4): the relay's "send me these"
 //   camera_local_streaming()         1 while the game wants the local camera sent: the relay's "my camera is on"
@@ -113,6 +119,13 @@ enum { CAMERA_HOLD_MS = 5 * 60 * 1000 };
 typedef struct { uint64_t at; int was_online; } CameraHold;
 int camera_hold(CameraHold *h, int online, uint64_t now);
 
+// The prompt's other answer. 1 when the player chose Camera Off: the prompt opened at the last Online Play (prompted),
+// the player is online (so it was answered: it comes before the sign-in) and the game's flag DisplayFaceIconMyself is
+// down (face_flag 0). The game then draws and sends no face of this player, so the plugin's local camera is off too
+// for that session: GetRoomInfo's own-camera flag is 0, nothing is captured and nothing reaches camera_set_frame_out's
+// function. The others' cameras are still shown when `camera_view` is on. Choosing Online Play again asks again.
+int camera_declined(int prompted, int online, int face_flag);
+
 // nn::chat::RoomInfo: zeroes, the player's account at +0x28 and camera flag at +0x30, the member count at +0x38 and
 // { u64 account; u8 camera } at +0x40 + i * 0x10. Members with a camera come first and at most CAMERA_REMOTE keep the
 // flag (the game has that many remote cameras); the player's own account, account 0 and repeats are left out; at most
@@ -170,8 +183,21 @@ void camera_set_frame_out(CameraFrameOut fn, void *user);
 // A member's decoded picture, RGBA, rows w * 4 apart, any size (scaled to CAMERA_W x CAMERA_H; send that size to skip
 // it). 1 taken; 0 when the game did not ask for that account's pictures (camera_subscriptions) or the size is absurd.
 int camera_frame_in(uint64_t account, const uint8_t *rgba, int w, int h);
+// The same two ends with the codec in between (camcodec.h): what video/v1 carries. fn runs on the game's thread, at
+// most CAMCODEC_FPS / divisor times a second, with one standalone baseline JPEG (256x144, at most CAMCODEC_TARGET
+// bytes; valid during the call only): chunk it and send it. NULL removes it.
+enum { CAMERA_JPEG_MAX = 64 * 1024 };   // a frame larger than this is not looked at
+typedef void (*CameraJpegOut)(const uint8_t *jpeg, int len, uint64_t ms, void *user);
+void camera_set_jpeg_out(CameraJpegOut fn, void *user);
+// 1 (ten frames a second), 2 or 4; anything else is 1. Applies from the next frame.
+void camera_set_send_divisor(int divisor);
+// A member's frame, reassembled: a baseline JPEG of any size up to 384x216. 1 shown; 0 when the game did not ask for
+// that account's pictures (nothing is decoded then), or the bytes are not such a JPEG.
+int camera_jpeg_in(uint64_t account, const uint8_t *jpeg, int len);
 void camera_members_set(const CameraMember *members, int n);
 int camera_subscriptions(uint64_t *accounts, int cap);
 int camera_local_streaming(void);
+// 1 while the player's Camera Off in the game's prompt holds (camera_declined): the Camera tab says so.
+int camera_declined_now(void);
 
 #endif

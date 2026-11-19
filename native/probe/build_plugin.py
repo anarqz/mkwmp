@@ -7,7 +7,7 @@ Produces build/plugin/linux/mkwmp.so (x86_64-linux-gnu) and build/plugin/windows
 plain DLL, not the winmm.dll proxy): the core sources of build.py (minus the winmm loader, the COFF backend and the
 keypad detours, as build_linux.py), the plat files of the target (with its HTTP: WinHTTP, or libcurl loaded at run
 time), the plugin's seat client (seatapi.c, seatd.c), its options page (modpage.c), the GameChat camera (camera.c,
-camlib.c, cameratab.c; plugin API 3) and src/backend_plugin.c. Both
+camcodec.c, camlib.c, cameratab.c; plugin API 3) and src/backend_plugin.c. Both
 export only mkw_plugin_init and mkw_mod_page (Linux: a version script, linked with --no-undefined). --test also builds tests/test_plugin.c and runs
 it against the Linux .so (on a Linux host): a fake MkwPluginApi, no runtime needed. Runs in CI
 (.github/workflows/probe-linux.yml).
@@ -40,7 +40,7 @@ SRC = HERE / "src"
 OUT = HERE / "build" / "plugin"
 BACKEND = "backend_plugin.c"
 # the plugin's own parts: its seat client (no launcher), its options page in mkw-recomp's start screen
-PLUGIN_ONLY = ["seatapi.c", "seatd.c", "modpage.c", "voicetab.c", "camera.c", "camlib.c", "cameratab.c"]
+PLUGIN_ONLY = ["seatapi.c", "seatd.c", "modpage.c", "voicetab.c", "camera.c", "camcodec.c", "camlib.c", "cameratab.c"]
 WIN_PLAT = ["plat_win.c", "plat_net_win.c", "plat_http_win.c"]
 POSIX_HTTP = ["plat_http_posix.c"]
 VERSION_SCRIPT = "{ global: mkw_plugin_init; mkw_mod_page; local: *; };\n"

@@ -5,9 +5,10 @@
 //
 //   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"; $s = "native\probe\src"
 //   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_camera.exe `
-//       native\probe\tests\test_camera.c $s\camera.c $s\chatroom.c $s\camlib.c $s\gameaddrs.c $s\guesthook.c $s\log.c $s\plat_win.c
+//       native\probe\tests\test_camera.c $s\camera.c $s\camcodec.c $s\chatroom.c $s\camlib.c $s\gameaddrs.c $s\guesthook.c $s\log.c $s\plat_win.c
 //   scratch\test_camera.exe            (the camera installed, with MKWMP_CAMERA_LOOPBACK=1)
 //   scratch\test_camera.exe api2       (a plugin API 2 runtime: the feature stays off)
+#include "../src/camcodec.h"
 #include "../src/camera.h"
 #include "../src/gameaddrs.h"
 #include "../src/plat.h"
@@ -329,10 +330,13 @@ static CameraHost host(uint32_t api) {
     return h;
 }
 
+// The image holds that picture, as the plugin stores it: flipped left to right (the game draws its camera images
+// mirrored, so that is what shows the right way round).
 static int image_is(uint32_t handle, const uint8_t *rgba) {
     const uint8_t *p = g_img[handle & 0x7fffffffu].pixels;
     for (int y = 0; y < HT; y++)
-        if (memcmp(p + y * ROW, rgba + y * W * 4, W * 4)) return 0;
+        for (int x = 0; x < W; x++)
+            if (memcmp(p + y * ROW + x * 4, rgba + (y * W + (W - 1 - x)) * 4, 4)) return 0;
     return 1;
 }
 
@@ -341,6 +345,18 @@ static uint8_t g_out_first[4];
 static void frame_out(const uint8_t *rgba, int w, int h, uint64_t ms, void *user) {
     (void)ms;
     if (w == W && h == HT && user == &g_out_calls) g_out_calls++, memcpy(g_out_first, rgba, 4);
+}
+
+// the same pictures as the transport gets them: encoded, at most ten a second, never over the frame size
+static int g_jpeg_calls, g_jpeg_bad, g_jpeg_len;
+static uint8_t g_jpeg_last[CAMCODEC_TARGET];
+static uint64_t g_jpeg_ms;
+static void jpeg_out(const uint8_t *jpeg, int len, uint64_t ms, void *user) {
+    int ok = user == &g_jpeg_calls && len > 600 && len <= CAMCODEC_TARGET && jpeg[0] == 0xff && jpeg[1] == 0xd8 &&
+             jpeg[len - 2] == 0xff && jpeg[len - 1] == 0xd9 && (!g_jpeg_calls || ms - g_jpeg_ms >= 60);
+    g_jpeg_bad += !ok;
+    g_jpeg_calls++, g_jpeg_ms = ms;
+    if (ok) memcpy(g_jpeg_last, jpeg, (size_t)len), g_jpeg_len = len;
 }
 
 static void test_api2(void) {
@@ -438,6 +454,7 @@ static void test_overrides(void) {
 
     // the member refresh (0x2996750): the local stream, then the member's
     camera_set_frame_out(frame_out, &g_out_calls);
+    camera_set_jpeg_out(jpeg_out, &g_jpeg_calls);
     CHECK(camera_local_streaming() == 0);
     CHECK(call("StartLocalCameraStreaming", 0, 0, 0, 0, 0, 0) == 0);
     CHECK(camera_local_streaming() == 1);
@@ -472,10 +489,13 @@ static void test_overrides(void) {
     CHECK(!memcmp(sequence[0], order, sizeof order) && !memcmp(sequence[1], order, sizeof order));
     CHECK(g_stock_trywait_calls == 2);   // each camera's first poll: slot 0's zero handle, the runtime's to answer
     CHECK(g_out_calls >= 3 && g_out_first[3] == 255);   // the local pictures were handed to the transport
+    CHECK(g_jpeg_calls >= 2 && g_jpeg_calls <= g_out_calls && !g_jpeg_bad);   // and as frames to send, fewer of them
     // what is shown is the test pattern with the player's name, on both: the remote one is the loopback
     const uint8_t *local = g_img[g[0].current].pixels, *remote = g_img[3 + g[1].current].pixels;
-    CHECK(local[(HT - 3) * ROW + 3] == 255 && is(local + 16 * ROW + (84 + 16) * 4, 255, 0, 0));
-    CHECK(is(remote + 16 * ROW + (84 + 16) * 4, 255, 0, 0));
+    // (stored flipped left to right: the corner mark, top left of the picture, is top right in the image)
+    CHECK(local[(HT - 3) * ROW + 3] == 255 && is(local + 16 * ROW + (W - 1 - (84 + 16)) * 4, 255, 0, 0));
+    CHECK(!is(local + 16 * ROW + (84 + 16) * 4, 255, 0, 0));
+    CHECK(is(remote + 16 * ROW + (W - 1 - (84 + 16)) * 4, 255, 0, 0));
     int white = 0;
     for (int x = 84; x < 300; x++) white += is(local + (HT / 2) * ROW + x * 4, 255, 255, 255);
     CHECK(white > 10);
@@ -486,9 +506,22 @@ static void test_overrides(void) {
     // phase 4's entry: a picture for the member the game asked for is the next one shown; for anyone else, refused
     memset(pic[0], 0x40, sizeof pic[0]);
     CHECK(camera_frame_in(0xdead, pic[0], W, HT) == 0);
+    for (int y = 0; y < HT; y++) memset(PX(pic[0], 0, y), 0xc0, 40 * 4);   // a lighter band down its left side
     CHECK(camera_frame_in(fake, pic[0], W, HT) == 1);
     CHECK(call("TryWaitNativeSync", P(g[1].sync[g[1].next]), 0, 0, 0, 0, 0) == 1);
-    CHECK(image_is(handles[1][g[1].next], pic[0]));
+    CHECK(image_is(handles[1][g[1].next], pic[0]));   // (flipped once, as every picture in an image)
+    CHECK(g_img[handles[1][g[1].next] & 0x7fffffffu].pixels[0] == 0x40 && g_img[handles[1][g[1].next] & 0x7fffffffu].pixels[(W - 1) * 4] == 0xc0);
+    g[1].current = g[1].next, g[1].next = g[1].next > 1 ? 0 : g[1].next + 1;
+    CHECK(call("RequestNextRemoteCameraImage", P(g[1].sync[g[1].next]), P(g_types[1]), (uint64_t)g[1].next, 0, 0, P(&fake)) == 0);
+    // the same entry for a frame off the wire: the local camera's own last frame, as the member's. Decoded, it is
+    // the test pattern again (its corner mark, top left of the picture)
+    CHECK(camera_jpeg_in(0xdead, g_jpeg_last, g_jpeg_len) == 0);
+    CHECK(camera_jpeg_in(fake, g_jpeg_last, g_jpeg_len - 40) == 0 && camera_jpeg_in(fake, g_jpeg_last + 2, g_jpeg_len - 2) == 0);
+    CHECK(call("TryWaitNativeSync", P(g[1].sync[g[1].next]), 0, 0, 0, 0, 0) == 0);   // nothing new came of those
+    CHECK(camera_jpeg_in(fake, g_jpeg_last, g_jpeg_len) == 1);
+    CHECK(call("TryWaitNativeSync", P(g[1].sync[g[1].next]), 0, 0, 0, 0, 0) == 1);
+    const uint8_t *mark = g_img[handles[1][g[1].next] & 0x7fffffffu].pixels + 16 * ROW + (W - 1 - (84 + 16)) * 4;
+    CHECK(mark[0] > 200 && mark[1] < 60 && mark[2] < 60 && mark[3] == 255);
     g[1].current = g[1].next, g[1].next = g[1].next > 1 ? 0 : g[1].next + 1;
     CHECK(call("RequestNextRemoteCameraImage", P(g[1].sync[g[1].next]), P(g_types[1]), (uint64_t)g[1].next, 0, 0, P(&fake)) == 0);
     static uint8_t small[64 * 36 * 4];   // another size is scaled
@@ -496,6 +529,7 @@ static void test_overrides(void) {
     CHECK(camera_frame_in(fake, small, 64, 36) == 1);
     CHECK(call("TryWaitNativeSync", P(g[1].sync[g[1].next]), 0, 0, 0, 0, 0) == 1);
     memset(pic[1], 0x90, sizeof pic[1]);
+    for (int i = 3; i < W * HT * 4; i += 4) pic[1][i] = 255;   // a scaled picture is opaque whatever came in
     CHECK(image_is(handles[1][g[1].next], pic[1]));
     CHECK(camera_frame_in(fake, NULL, W, HT) == 0 && camera_frame_in(fake, small, 0, 36) == 0);
 
@@ -625,6 +659,17 @@ static void test_hold(void) {
     CHECK(camera_hold(&h, 1, 6000) && camera_hold(&h, 1, 6000 + 10 * CAMERA_HOLD_MS)); // online: no clock
     CHECK(!camera_hold(&h, 0, 7000) && !h.at && !h.was_online);                        // left online play
     CHECK(!camera_hold(&h, 0, 8000) && !camera_hold(&h, 1, 8000));
+    // the hold's time is plat_ms() | 1, which can be a millisecond ahead of a clock read right after: still held
+    // (it used to end here, once in a few runs of test_setup below, and with it the chat the prompt needs)
+    h.at = 1001;
+    CHECK(camera_hold(&h, 0, 1000) && h.at == 1001 && camera_hold(&h, 0, 1001) && camera_hold(&h, 0, 1002));
+    h.at = 0;
+
+    // Camera Off: the prompt opened, the player got online, the game's flag is down
+    CHECK(camera_declined(1, 1, 0));
+    CHECK(!camera_declined(1, 1, 1));    // Camera On
+    CHECK(!camera_declined(1, 0, 0));    // the prompt is still open (or the sign-in runs): no answer yet
+    CHECK(!camera_declined(0, 1, 0));    // no prompt at all (the set-up is not hooked, the camera came on later)
 }
 
 // After test_overrides: the camera installed, the player online, consent given, camera and camera_view off.
@@ -693,6 +738,53 @@ static void test_setup(void) {
     g_online = 1;
     camera_refresh();
     CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1);
+    g_online = 0;
+    camera_refresh();
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 0);
+    // Online Play again, and this time Camera Off: the flag stays down. While the prompt is open that is no answer yet
+    g_global[0x12d] = 0;
+    set("camera_view", "1");
+    CHECK(run_check(1) == 2);
+    plat_sleep_ms(260);
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1);
+    camera_refresh();
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && room[0x30] == 1 && !camera_declined_now());
+    // online with the flag down: the local camera is off for the session (the room's own flag, the transport), the
+    // others' cameras stay (camera_view), and the chat with them
+    CHECK(call("StartLocalCameraStreaming", 0, 0, 0, 0, 0, 0) == 0);
+    g_online = 1;
+    camera_refresh();
+    CHECK(camera_declined_now() && call("IsChatting", 0, 0, 0, 0, 0, 0) == 1);
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && room[0x30] == 0 && i32_at(room + 0x38) == 2 && room[0x48] == 1);
+    CHECK(camera_local_streaming() == 0);
+    int out_calls = g_out_calls, jpeg_calls = g_jpeg_calls;
+    plat_sleep_ms(80);
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1 && g_out_calls == out_calls);   // no picture of the player's is made
+    CHECK(g_jpeg_calls == jpeg_calls);
+    set("camera_view", "0");            // and without watching there is nothing left to chat for
+    camera_refresh();
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 0 && camera_declined_now());
+    set("camera_view", "1");
+    camera_refresh();
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1 && camera_declined_now());
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && room[0x30] == 0);
+    // it lasts until Online Play is chosen again: asked again, Camera On this time
+    g_online = 0;
+    camera_refresh();
+    CHECK(!camera_declined_now() && call("IsChatting", 0, 0, 0, 0, 0, 0) == 0);
+    CHECK(run_check(1) == 2);
+    g_global[0x12d] = 0x08;
+    plat_sleep_ms(260);
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1);
+    g_online = 1;
+    camera_refresh();
+    CHECK(!camera_declined_now() && call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && room[0x30] == 1);
+    CHECK(camera_local_streaming() == 1);
+    plat_sleep_ms(80);
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1 && g_out_calls > out_calls);    // the pictures leave again
+    CHECK(g_jpeg_calls > jpeg_calls && !g_jpeg_bad);
+    CHECK(call("StopLocalCameraStreaming", 0, 0, 0, 0, 0, 0) == 0);
+    set("camera_view", "0");
     g_online = 0;
     camera_refresh();
     CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 0);
