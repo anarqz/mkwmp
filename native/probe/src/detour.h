@@ -16,4 +16,12 @@ enum { DETOUR_MIN = 5, DETOUR_MAX = 16 };
 // Not atomic: install while no other thread can be executing the target (the probe does it in DllMain).
 int detour_install(void *target, const uint8_t *expect, size_t n, void *hook, void **original);
 
+// A function's first bytes in one build of mkw.exe: `sig` (n bytes) identifies it; the first `steal` of them
+// (DETOUR_MIN..DETOUR_MAX, steal <= n, whole position-independent instructions) go to the trampoline. A function whose
+// prologue differs between mkw-recomp releases gets one entry per prologue.
+typedef struct { const uint8_t *sig; size_t n, steal; } DetourPrologue;
+
+// The first entry of list the target starts with; NULL when none does (an unknown build: nothing is patched).
+const DetourPrologue *detour_match(const void *target, const DetourPrologue *list, size_t count);
+
 #endif

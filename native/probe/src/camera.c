@@ -1114,6 +1114,7 @@ static void worker(void *unused) {
 
 static const char *g_off_reason;
 const char *camera_off_reason(void) { return g_off_reason; }
+void camera_set_off_reason(const char *why) { g_off_reason = why; }
 
 int camera_install(const CameraHost *host) {
     static const struct { const char *name; GuestFn fn; } kOverrides[CAMERA_OVERRIDES] = {

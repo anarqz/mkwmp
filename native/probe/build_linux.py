@@ -22,7 +22,7 @@ from build import SOURCES  # noqa: E402  (the Windows build's list: new core fil
 
 SRC = HERE / "src"
 BUILD = HERE / "build"
-WINDOWS_ONLY = {"dllmain.c", "coff.c", "keypad.c", "detour.c", "plat_win.c", "plat_net_win.c"}
+WINDOWS_ONLY = {"dllmain.c", "modmode.c", "coff.c", "keypad.c", "detour.c", "plat_win.c", "plat_net_win.c"}
 POSIX = ["plat_posix.c", "plat_net_posix.c"]
 STUB = HERE / "tests" / "stub_rtapi.c"
 

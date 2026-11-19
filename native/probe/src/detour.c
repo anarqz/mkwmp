@@ -60,6 +60,12 @@ static uint8_t *put_jmp_abs(uint8_t *p, uintptr_t to) {
     return p + 14;
 }
 
+const DetourPrologue *detour_match(const void *target, const DetourPrologue *list, size_t count) {
+    for (size_t i = 0; target && list && i < count; i++)
+        if (list[i].sig && list[i].steal <= list[i].n && !memcmp(target, list[i].sig, list[i].n)) return &list[i];
+    return NULL;
+}
+
 int detour_install(void *target, const uint8_t *expect, size_t n, void *hook, void **original) {
     uint8_t *t = (uint8_t *)target;
     if (!t || !expect || !hook || !original || n < DETOUR_MIN || n > DETOUR_MAX) return 0;

@@ -292,6 +292,12 @@ MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_vers
     if (n < 0) return refuse(message, "MKWMP does not fit this mkw-recomp (see mods/<mod>/mkwmp.log); online play is off");
     g_active = n > 0;
     if (g_active) use_camera(api, api_version);   // the GameChat camera: 1.8.0 on plugin API 3, else off (logged)
-    else mkwmp_log("camera: off: online play is not set up");
+    else {
+        mkwmp_log("camera: off: online play is not set up");
+        camera_set_off_reason("online play is not set up (sign up in Mods > MKWMP > Options)");
+        int pt = api->language && (!strcmp(api->language, "pt-BR") || !strcmp(api->language, "pt"));
+        if (api->size >= offsetof(MkwPluginApi, settings_tab) + sizeof api->settings_tab && api->settings_tab)
+            api->settings_tab(pt ? "Câmera" : "Camera", cameratab_draw);   // there to say why, as Voice chat is
+    }
     return 0;
 }

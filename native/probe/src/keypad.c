@@ -1,8 +1,10 @@
 // On-screen numeric keypad for nn::swkbd::ShowKeyboard (research/docs/SWKBD-KEYPAD.md).
 //
 // mkw-recomp's ov_show_keyboard builds a request, then (unless MKW_SWKBD_ANSWER answers it) calls its text-entry
-// stub `text_entry_run(req, out, cap, &len)`, which today only logs "no text entry window on this host yet" and
-// returns the default text. We detour that stub: for a digits-only request the calling guest thread waits here
+// stub `text_entry_run(req, out, cap, &len)`, which up to 0.1.13 only logs "no text entry window on this host yet" and
+// returns the default text. (0.1.15 opens a number pad of its own there, ui/menu/text_entry.cpp; our detour still
+// answers the digits-only requests first, so the keypad is the same on every supported runtime, and MKWMP_KEYPAD=0
+// leaves them to the runtime's.) We detour that stub: for a digits-only request the calling guest thread waits here
 // (as the real, modal swkbd would; ov_show_keyboard already left its core and blocked the game's input around the
 // call) while the keypad is drawn into the recomp's own Dear ImGui overlay frame on the present thread:
 //   _Z17menu_notice_shownv   -> true while the keypad is open, so menu_overlay_frame runs a frame
@@ -13,6 +15,7 @@
 
 #include "detour.h"
 #include "keypad_logic.h"
+#include "keypad_sigs.h"
 #include "log.h"
 #include "rtapi.h"
 
@@ -40,15 +43,7 @@ typedef int (*TextEntryFn)(const uint8_t *req, uint16_t *out, size_t cap, size_t
 typedef _Bool (*NoticeShownFn)(void);
 typedef void (*NoticeDrawFn)(float width, float scale);
 
-// The functions' first bytes, as disassembled; the first *_STEAL of them (whole, position-independent
-// instructions) move to the trampoline.
-static const uint8_t kEntrySig[] = {0x41, 0x57, 0x41, 0x56, 0x56, 0x57, 0x53,      // push r15; r14; rsi; rdi; rbx
-                                    0x48, 0x83, 0xEC, 0x20, 0x4C, 0x89, 0xCE};      // sub rsp,0x20; mov rsi,r9
-static const uint8_t kShownSig[] = {0x56, 0x48, 0x83, 0xEC, 0x20,                  // push rsi; sub rsp,0x20
-                                    0x48, 0x8B, 0x35};                              // mov rsi,[rip+g_until]
-static const uint8_t kDrawSig[] = {0x56, 0x57, 0x48, 0x81, 0xEC, 0x78, 0x01, 0x00, 0x00,   // push rsi; rdi; sub rsp,0x178
-                                   0xC5, 0x78, 0x29, 0x84, 0x24};                           // vmovaps [rsp+..],xmm8
-enum { ENTRY_STEAL = 7, SHOWN_STEAL = 5, DRAW_STEAL = 9 };
+// The functions' first bytes per mkw-recomp release and how many of them move to the trampoline: keypad_sigs.h.
 
 static TextEntryFn g_orig_entry;
 static NoticeShownFn g_orig_shown;
@@ -389,7 +384,9 @@ static int hook_text_entry_run(const uint8_t *req, uint16_t *out, size_t cap, si
 
 // ---- install -------------------------------------------------------------------------------------------------------
 
-static int signature_ok(const void *fn, const uint8_t *sig, size_t n) { return fn && !memcmp(fn, sig, n); }
+static int install(void *fn, const DetourPrologue *p, void *hook, void **original) {
+    return detour_install(fn, p->sig, p->steal, hook, original);
+}
 
 void keypad_install(void) {
     static int done;
@@ -416,17 +413,20 @@ void keypad_install(void) {
         return;
     }
     // all three or none: check every prologue before the first patch
-    if (!signature_ok(entry, kEntrySig, sizeof kEntrySig) || !signature_ok(shown, kShownSig, sizeof kShownSig) ||
-        !signature_ok(draw, kDrawSig, sizeof kDrawSig)) {
-        mkwmp_log("keypad: NOT installed (this mkw.exe has other prologues than the build the hooks were made for)");
+    const DetourPrologue *pe = detour_match(entry, kEntryPrologues, KEYPAD_COUNT(kEntryPrologues));
+    const DetourPrologue *ps = detour_match(shown, kShownPrologues, KEYPAD_COUNT(kShownPrologues));
+    const DetourPrologue *pd = detour_match(draw, kDrawPrologues, KEYPAD_COUNT(kDrawPrologues));
+    if (!pe || !ps || !pd) {
+        mkwmp_log("keypad: NOT installed (this mkw.exe has other prologues than the builds the hooks were made for:%s%s%s)",
+                  pe ? "" : " text_entry_run", ps ? "" : " menu_notice_shown", pd ? "" : " menu_notice_draw");
         return;
     }
     g_done = CreateEventA(NULL, TRUE, FALSE, NULL);
     if (!g_done) return;
     // the overlay hooks are inert until a keypad opens; the entry hook goes in last, only when they are in place
-    int ok = detour_install(draw, kDrawSig, DRAW_STEAL, (void *)hook_notice_draw, (void **)&g_orig_draw) &&
-             detour_install(shown, kShownSig, SHOWN_STEAL, (void *)hook_notice_shown, (void **)&g_orig_shown) &&
-             detour_install(entry, kEntrySig, ENTRY_STEAL, (void *)hook_text_entry_run, (void **)&g_orig_entry);
+    int ok = install(draw, pd, (void *)hook_notice_draw, (void **)&g_orig_draw) &&
+             install(shown, ps, (void *)hook_notice_shown, (void **)&g_orig_shown) &&
+             install(entry, pe, (void *)hook_text_entry_run, (void **)&g_orig_entry);
     mkwmp_log("keypad: hooks %s (text_entry_run %p, menu_notice_shown %p, menu_notice_draw %p)",
               ok ? "installed" : "NOT fully installed; the keypad stays off", entry, shown, draw);
 }
