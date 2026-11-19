@@ -447,6 +447,13 @@ fn video_off_rate_limit_and_frame_rate_divisor() {
         r
     };
     let mut off = mk(Options { video: false, ..Options::default() });
+    // The stats lines name rooms, pairs, subscriptions and counts.
+    let mut on = mk(Options { stats_secs: 1.0, ..Options::default() });
+    on.handle(0.2, ep(1), &video(1, 0, 1));
+    let lines = on.stats();
+    assert!(lines.iter().any(|l| l.contains("friends [") && l.contains('-')), "{lines:?}");
+    assert!(lines.iter().any(|l| l.contains("wants video of")), "{lines:?}");
+    assert!(lines.iter().any(|l| l.contains("up 1 dgrams") && l.contains("down 1 dgrams")), "{lines:?}");
     assert!(video_to(&off.handle(0.1, ep(1), &video(1, 0, 1))).is_empty());
     assert_eq!(v2_to(&off.tick(1.0), ep(2)).unwrap().members, vec![(acct("a"), MEMBER_BOUND)], "no camera flag");
     // 64 KiB/s per sender: about 63 datagrams of 1024 bytes in one second.
@@ -454,7 +461,7 @@ fn video_off_rate_limit_and_frame_rate_divisor() {
     let sent: usize = (0..200).map(|i| video_to(&r.handle(0.5, ep(1), &video(i, 0, 1))).len()).sum();
     assert!((60..=64).contains(&sent), "{sent}");
     // A tiny budget: one second over it halves the frame rate, five calm seconds restore it.
-    let mut r = mk(Options { video: true, video_budget: 10_000 });
+    let mut r = mk(Options { video: true, video_budget: 10_000, ..Options::default() });
     for i in 0..20 {
         r.handle(0.5, ep(1), &video(i, 0, 1));
     }

@@ -335,13 +335,19 @@ pub type Datagrams = Vec<(SocketAddr, Vec<u8>)>;
 pub struct Options {
     pub video: bool,
     pub video_budget: usize,
+    /// Every this many seconds, log rooms, friend pairs, op 6 subscriptions and video counts
+    /// (env `MKWMP_VOICE_STATS=<secs>`, for test hosts; 0 = never). Names players: off by default.
+    pub stats_secs: f64,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { video: true, video_budget: VIDEO_BUDGET }
+        Self { video: true, video_budget: VIDEO_BUDGET, stats_secs: 0.0 }
     }
 }
+
+/// Video datagrams and bytes per sender since the last stats line: (up n, up bytes, down n, down bytes).
+type VideoCounts = HashMap<String, (u64, u64, u64, u64)>;
 
 /// A token bucket holding at most one second of allowance.
 #[derive(Debug, Clone, Copy)]
@@ -422,6 +428,8 @@ pub struct Relay<R: Rooms> {
     video_egress: (f64, usize),
     fps: u8,
     calm_since: Option<f64>,
+    stats_at: f64,
+    video_counts: VideoCounts,
 }
 
 impl<R: Rooms> Relay<R> {
@@ -443,6 +451,8 @@ impl<R: Rooms> Relay<R> {
             video_egress: (0.0, 0),
             fps: 1,
             calm_since: None,
+            stats_at: 0.0,
+            video_counts: HashMap::new(),
         }
     }
 
@@ -498,6 +508,12 @@ impl<R: Rooms> Relay<R> {
             }
         }
         self.video_window(now);
+        if self.opts.stats_secs > 0.0 && now - self.stats_at >= self.opts.stats_secs {
+            self.stats_at = now;
+            for l in self.stats() {
+                crate::log::line(l);
+            }
+        }
         let mut out = vec![];
         if now - self.last_state >= STATE_SECS {
             self.last_state = now;
@@ -637,7 +653,11 @@ impl<R: Rooms> Relay<R> {
             return;
         }
         let account = s.account;
+        let c = self.video_counts.entry(uid.clone()).or_default();
+        c.0 += 1;
+        c.1 += size as u64;
         let s = &self.subs[&uid];
+        let mut down = (0u64, 0u64);
         for f in &s.friends {
             let Some(l) = self.subs.get(f) else { continue };
             if l.room_id() != Some(room)
@@ -651,8 +671,54 @@ impl<R: Rooms> Relay<R> {
             }
             let d = write_video_down(txid, seat, chunk);
             self.video_egress.1 += d.len();
+            down = (down.0 + 1, down.1 + d.len() as u64);
             out.push((l.endpoint, d));
         }
+        let c = self.video_counts.get_mut(&uid).expect("counted");
+        c.2 += down.0;
+        c.3 += down.1;
+    }
+
+    /// The stats lines (Options::stats_secs); video counts restart.
+    fn stats(&mut self) -> Vec<String> {
+        let name = |u: &str| format!("{u:.8}");
+        let mut rooms: Vec<Room> = self.subs.values().filter_map(Sub::room_id).collect();
+        rooms.sort_unstable();
+        rooms.dedup();
+        let mut lines = vec![format!("voice stats: {} bound, {} rooms, fps divisor {}", self.subs.len(), rooms.len(), self.fps)];
+        for r in rooms {
+            let mut members: Vec<(&String, &Sub)> = self.subs.iter().filter(|(_, s)| s.room_id() == Some(r)).collect();
+            members.sort_by_key(|(_, s)| s.seat);
+            let who: Vec<String> = members
+                .iter()
+                .map(|(u, s)| {
+                    let mode = if s.room_mode() { if s.camera() { "v2+cam" } else { "v2" } } else { "v1" };
+                    format!("{}@{}({mode})", name(u), s.seat.map_or("-".into(), |x| x.to_string()))
+                })
+                .collect();
+            let mut pairs = vec![];
+            for (i, (a, sa)) in members.iter().enumerate() {
+                for (b, sb) in &members[i + 1..] {
+                    if sa.friends.contains(*b) && sb.friends.contains(*a) {
+                        pairs.push(format!("{}-{}", name(a), name(b)));
+                    }
+                }
+            }
+            lines.push(format!("  room {:016x}: [{}] friends [{}]", r as u64, who.join(" "), pairs.join(" ")));
+            for (u, s) in &members {
+                if !s.video_want.is_empty() {
+                    let mut w: Vec<String> = s.video_want.iter().map(|a| format!("{a:016x}")).collect();
+                    w.sort();
+                    lines.push(format!("    {} wants video of [{}]", name(u), w.join(" ")));
+                }
+            }
+        }
+        let mut counts: Vec<_> = std::mem::take(&mut self.video_counts).into_iter().collect();
+        counts.sort();
+        for (u, (un, ub, dn, db)) in counts {
+            lines.push(format!("  video {}: up {un} dgrams {ub} B, down {dn} dgrams {db} B", name(&u)));
+        }
+        lines
     }
 
     /// Once a second: the frame-rate divisor from the last second's video egress.

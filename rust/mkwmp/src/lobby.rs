@@ -175,7 +175,8 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn Error>> {
         None
     };
     let rooms = Arc::new(VoiceRooms(core.clone()));
-    let video = gateway::voice::Options { video: l.video, video_budget: l.video_budget };
+    let stats_secs = std::env::var("MKWMP_VOICE_STATS").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    let video = gateway::voice::Options { video: l.video, video_budget: l.video_budget, stats_secs };
     let voice = async move {
         match voice {
             Some(sock) => gateway::voice::run(sock, rooms, video).await,
