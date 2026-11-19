@@ -219,9 +219,10 @@ static void use_camera(const MkwPluginApi *api, uint32_t api_version) {
     ChatRoomHost room = {.self_account = cam_self_account, .friends = friends_accounts};
     chatroom_install(&room);
     roomnet_start();   // the friend room on the relay: room mode, its state, the camera's frames (nothing with the loopback)
-    if (!camera_install(&h)) return;
+    camera_install(&h);   // off: the Camera tab says why (camera_off_reason), as the Voice chat tab does when not signed up
     int pt = api->language && (!strcmp(api->language, "pt-BR") || !strcmp(api->language, "pt"));
-    if (api->settings_tab) api->settings_tab(pt ? "Câmera" : "Camera", cameratab_draw);
+    if (api->size >= offsetof(MkwPluginApi, settings_tab) + sizeof api->settings_tab && api->settings_tab)
+        api->settings_tab(pt ? "Câmera" : "Camera", cameratab_draw);
 }
 
 // ---- entry

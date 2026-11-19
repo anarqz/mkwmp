@@ -117,7 +117,7 @@ int main(int argc, char **argv) {
     if (!strcmp(mode, "v3")) {
         CHECK(g_chat == 21 && g_trywait == 1 && g_camera_tab == 1);
     } else {
-        CHECK(g_chat == 0 && g_trywait == 0 && g_camera_tab == 0 && g_images == 0);
+        CHECK(g_chat == 0 && g_trywait == 0 && g_camera_tab == 1 && g_images == 0);
     }
     CHECK(g_loaded != NULL);
     if (g_loaded) g_loaded(NULL);

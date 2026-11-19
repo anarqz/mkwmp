@@ -162,11 +162,20 @@ void cameratab_widgets(const MkwPage *p) {
         }
     }
     p->note(MKW_NOTE_DIM, T[C_WHAT]);
-    p->note(MKW_NOTE_WARN, T[C_NOT_SENT]);
     p->note(MKW_NOTE_DIM, T[C_GAME]);
 }
 
+// In the game the tab is there even when camera_install left the camera off (not signed up, an older runtime or
+// game): it says why, and the settings can still be set for the next start.
 void cameratab_draw(const MkwPage *p) {
     if (p->size < sizeof(MkwPage)) return;
+    const char *why = camera_off_reason();
+    if (why) {
+        int pt = p->language && (!strcmp(p->language, "pt-BR") || !strcmp(p->language, "pt"));
+        char line[320];
+        snprintf(line, sizeof line, pt ? "A câmera está desligada nesta sessão do jogo: %s. Mudanças valem no próximo início."
+                                       : "The camera is off in this game session: %s. Changes apply at the next start.", why);
+        p->note(MKW_NOTE_WARN, line);
+    }
     cameratab_widgets(p);
 }

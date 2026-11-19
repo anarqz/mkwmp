@@ -1112,6 +1112,9 @@ static void worker(void *unused) {
 
 // ---- install
 
+static const char *g_off_reason;
+const char *camera_off_reason(void) { return g_off_reason; }
+
 int camera_install(const CameraHost *host) {
     static const struct { const char *name; GuestFn fn; } kOverrides[CAMERA_OVERRIDES] = {
         {"_ZN2nn4chat10IsChattingEv", ov_is_chatting},
@@ -1149,6 +1152,7 @@ int camera_install(const CameraHost *host) {
     const char *why = camera_unavailable(host->api_version, host->native_image_create && host->native_image_touch,
                                          host->game_version, host->setting_get != NULL, has_env ? env : NULL);
     if (!why && (!g_rt.override || (g_rt.guest_modules && g_rt.guest_modules()))) why = "the game is already loaded";
+    g_off_reason = why;
     if (why) {
         mkwmp_log("camera: off: %s (plugin API %u, game %s)", why, (unsigned)host->api_version,
                   host->game_version ? host->game_version : "?");
