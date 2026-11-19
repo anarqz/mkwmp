@@ -20,6 +20,8 @@ SESSIONS = {}    # id -> {key, name}
 PRESENCE = {}    # token -> name
 FRIENDS = set()  # frozenset({a, b}) accepted
 PENDING = set()  # (from, to)
+REPORTS = {}     # reporter -> Report (the open one)
+REASONS = {"harassment", "hate", "sexual", "threats", "disruption", "other"}
 CA = "-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----\n"
 
 
@@ -72,6 +74,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, {"bootId": "boot", "name": "fake", "lobbyEndpoint": "lobby.example:443",
                                        "lobbyCa": CA, "voicePort": 8907, "seatsTotal": 24, "seated": len(SESSIONS),
                                        "queued": 0, "lobbies": {}})
+            if p == "/seat/v1/reports":
+                me = PRESENCE.get(self.bearer())
+                if not me:
+                    return self.error(401, "PRESENCE_NOT_FOUND")
+                return self.send(200, {"report": REPORTS.get(me)})
             m = re.match(r"^/seat/v1/sessions/([^/]+)$", p)
             if m:
                 s = SESSIONS.get(m.group(1))
@@ -120,6 +127,22 @@ class Handler(BaseHTTPRequestHandler):
                 SESSIONS[sid] = {"key": uuid.uuid4().hex, "name": name}
                 return self.send(201, dict(self.view(sid), sessionKey=SESSIONS[sid]["key"]))
             me = PRESENCE.get(self.bearer())
+            if p == "/seat/v1/reports":
+                if not me:
+                    return self.error(401, "PRESENCE_NOT_FOUND")
+                if me in REPORTS:
+                    return self.error(409, "REPORT_ACTIVE")
+                other = canon(b.get("name", ""))
+                if not other:
+                    return self.error(404, "REPORT_UNKNOWN")
+                if other == me:
+                    return self.error(400, "REPORT_SELF")
+                if b.get("reason") not in REASONS:
+                    return self.error(400, "REPORT_INVALID")
+                REPORTS[me] = {"id": len(REPORTS) + 1, "reporter": me, "reported": other, "reportedCreated": 0,
+                               "reason": b["reason"], "details": str(b.get("details", ""))[:500], "created": 1,
+                               "status": "open", "closed": None, "outcome": None}
+                return self.send(201, {"report": REPORTS[me]})
             if p == "/seat/v1/friends":
                 if not me:
                     return self.error(401, "PRESENCE_NOT_FOUND")
@@ -146,7 +169,26 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         with LOCK:
-            p = self.path
+            p, b = self.path, self.body()
+            m = re.match(r"^/seat/v1/profiles/([^/]+)$", p)
+            if m:
+                name = canon(m.group(1))
+                if not name:
+                    return self.error(404, "PROFILE_NOT_FOUND")
+                if PROFILES[name] != b.get("pin"):
+                    return self.error(403, "PIN_WRONG")
+                del PROFILES[name]
+                REPORTS.pop(name, None)
+                for t in [t for t, n in PRESENCE.items() if n == name]:
+                    del PRESENCE[t]
+                return self.send(204)
+            if p == "/seat/v1/reports":
+                me = PRESENCE.get(self.bearer())
+                if not me:
+                    return self.error(401, "PRESENCE_NOT_FOUND")
+                if REPORTS.pop(me, None) is None:
+                    return self.error(404, "REPORT_NOT_FOUND")
+                return self.send(204)
             m = re.match(r"^/seat/v1/sessions/([^/]+)$", p)
             if m:
                 SESSIONS.pop(m.group(1), None)

@@ -13,17 +13,19 @@
 #include <string.h>
 
 enum { V_HEAD, V_ON, V_INPUT, V_OUTPUT, V_DEFAULT, V_NO_DEVICES, V_IN_GAIN, V_OUT_GAIN, V_MUTED, V_NONE_MUTED,
-       V_UNMUTE, V_PLAYER, V_HOW, V_COUNT };
+       V_UNMUTE, V_PLAYER, V_HOW, V_REPORT, V_REPORT_NEXT, V_COUNT };
 static const char *const EN[V_COUNT] = {
     "Voice chat", "Voice chat in online lobbies and races", "Microphone", "Speakers or headphones", "System default",
     "The devices show up once voice chat has started (go online once).", "Microphone volume", "Voice volume",
     "Muted players", "Nobody is muted.", "Unmute", "player %llu",
-    "To mute someone: pause in an online race, pick their name with L and R, then press Y (or M on the keyboard)."};
+    "To mute someone: pause in an online race, pick their name with L and R, then press Y (or M on the keyboard).",
+    "Report", "%s is in the report form: finish it in the MKWMP tab (Report voice abuse)."};
 static const char *const PT[V_COUNT] = {
     "Chat de voz", "Chat de voz nos lobbies e corridas online", "Microfone", "Alto-falantes ou fones", "Padrão do sistema",
     "Os dispositivos aparecem depois que o chat de voz começa (entre online uma vez).", "Volume do microfone",
     "Volume das vozes", "Jogadores silenciados", "Ninguém está silenciado.", "Reativar", "jogador %llu",
-    "Para silenciar alguém: pause numa corrida online, escolha o nome com L e R e aperte Y (ou M no teclado)."};
+    "Para silenciar alguém: pause numa corrida online, escolha o nome com L e R e aperte Y (ou M no teclado).",
+    "Denunciar", "%s está no formulário de denúncia: termine na aba MKWMP (Denunciar abuso no chat de voz)."};
 
 enum { DEVICES_MAX = 24 };
 typedef struct {
@@ -95,17 +97,26 @@ void voicetab_draw(const MkwPage *p) {
     SeatdMute mutes[SEATD_MUTES_MAX];
     int n = seatd_mutes(mutes, SEATD_MUTES_MAX);
     unsigned long long unmute = 0;
+    static char reported[64];   // the last one sent to the report form (the menu's thread only)
     p->list_begin("muted", 8);
     p->list_empty(T[V_NONE_MUTED]);
-    const char *const buttons[] = {T[V_UNMUTE]};
+    const char *const buttons[] = {T[V_UNMUTE], T[V_REPORT]};
     for (int i = 0; i < n; i++) {
         char name[64];
         if (mutes[i].name[0]) snprintf(name, sizeof name, "%s", mutes[i].name);
         else snprintf(name, sizeof name, T[V_PLAYER], mutes[i].account);
-        if (p->list_row(name, NULL, buttons, 1)) unmute = mutes[i].account;
+        // Report only where the game told the gamertag (the form needs it); it fills the MKWMP tab's form
+        int b = p->list_row(name, NULL, buttons, seatapi_name_ok(mutes[i].name) ? 2 : 1);
+        if (b == 1) unmute = mutes[i].account;
+        if (b == 2 && p->setting_set("report_name", mutes[i].name)) snprintf(reported, sizeof reported, "%s", mutes[i].name);
     }
     p->list_end();
     if (unmute) seatd_unmute(unmute);
+    if (reported[0]) {
+        char line[200];
+        snprintf(line, sizeof line, T[V_REPORT_NEXT], reported);
+        p->note(MKW_NOTE_INFO, line);
+    }
     p->note(MKW_NOTE_DIM, T[V_HOW]);
     p->columns_end();
 }

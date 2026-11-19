@@ -340,3 +340,79 @@ SeatApiResult seatapi_friend_remove(const char *base, const char *token, const c
     snprintf(path, sizeof path, "/seat/v1/friends/%s", name);
     return call("DELETE", base, path, token, NULL, out, sizeof out);
 }
+
+// ---- the account and voice-chat reports
+SeatApiResult seatapi_profile_delete(const char *base, const char *name, const char *pin) {
+    char path[96], json[48], out[512];
+    if (!seatapi_name_ok(name) || !seatapi_pin_ok(pin)) {
+        SeatApiResult r = {400, 0, "NAME_INVALID", ""};
+        return r;
+    }
+    snprintf(path, sizeof path, "/seat/v1/profiles/%s", name);
+    snprintf(json, sizeof json, "{\"pin\":\"%s\"}", pin);
+    return call("DELETE", base, path, NULL, json, out, sizeof out);
+}
+
+static void parse_report(const char *body, SeatApiReport *r) {
+    memset(r, 0, sizeof *r);
+    seatapi_json_str(body, "reported", r->reported, sizeof r->reported);
+    seatapi_json_str(body, "reason", r->reason, sizeof r->reason);
+    seatapi_json_str(body, "status", r->status, sizeof r->status);
+    seatapi_json_int(body, "created", &r->created);
+}
+
+// The report object of an answer {report: Report|null}: 1 and *r filled, 0 for null.
+static int report_of(const char *out, SeatApiReport *r) {
+    const char *b, *e;
+    memset(r, 0, sizeof *r);
+    if (!seatapi_json_span(out, "report", &b, &e) || *b != '{') return 0;
+    char obj[2048];
+    size_t n = (size_t)(e - b) < sizeof obj - 1 ? (size_t)(e - b) : sizeof obj - 1;
+    memcpy(obj, b, n);
+    obj[n] = 0;
+    parse_report(obj, r);
+    return r->reported[0] != 0;
+}
+
+SeatApiResult seatapi_report_get(const char *base, const char *token, SeatApiReport *out, int *has) {
+    char body[2048];
+    *has = 0;
+    SeatApiResult r = call("GET", base, "/seat/v1/reports", token, NULL, body, sizeof body);
+    if (r.status == 200) *has = report_of(body, out);
+    return r;
+}
+
+// s as the inside of a JSON string: quotes and backslashes escaped, control characters dropped (the server drops
+// them too), at most max bytes of s.
+static void json_escape(const char *s, size_t max, char *out, size_t cap) {
+    size_t k = 0;
+    for (size_t i = 0; s[i] && i < max && k + 2 < cap; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c < 0x20 || c == 0x7f) continue;
+        if (c == '"' || c == '\\') out[k++] = '\\';
+        out[k++] = (char)c;
+    }
+    out[k] = 0;
+}
+
+SeatApiResult seatapi_report_file(const char *base, const char *token, const char *name, const char *reason,
+                                  const char *details, SeatApiReport *out) {
+    static const char *const reasons[] = {SEATAPI_REPORT_REASONS};
+    int known = 0;
+    for (size_t i = 0; i < sizeof reasons / sizeof *reasons; i++) known |= reason && !strcmp(reason, reasons[i]);
+    if (!seatapi_name_ok(name) || !known) {
+        SeatApiResult r = {400, 0, "REPORT_INVALID", "a player's name and one of the reasons"};
+        return r;
+    }
+    char esc[2 * SEATAPI_REPORT_DETAILS_MAX + 1], json[2 * SEATAPI_REPORT_DETAILS_MAX + 128], body[2048];
+    json_escape(details ? details : "", SEATAPI_REPORT_DETAILS_MAX, esc, sizeof esc);
+    snprintf(json, sizeof json, "{\"name\":\"%s\",\"reason\":\"%s\",\"details\":\"%s\"}", name, reason, esc);
+    SeatApiResult r = call("POST", base, "/seat/v1/reports", token, json, body, sizeof body);
+    if (r.status == 201 && out) report_of(body, out);
+    return r;
+}
+
+SeatApiResult seatapi_report_withdraw(const char *base, const char *token) {
+    char out[512];
+    return call("DELETE", base, "/seat/v1/reports", token, NULL, out, sizeof out);
+}

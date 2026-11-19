@@ -385,6 +385,37 @@ int main(int argc, char **argv) {
         if (!WIFEXITED(st) || WEXITSTATUS(st)) fprintf(stderr, "child: status %d\n", WIFEXITED(st) ? WEXITSTATUS(st) : -1);
         assert(WIFEXITED(st) && WEXITSTATUS(st) == 0);
         printf("version 2 init with the page's settings: engaged, signing in itself as Luz\n");
+
+        // a voice-abuse report: filed, shown as waiting, withdrawn; reporting oneself is greyed out
+        g_opened = 1;
+        FRAMES_UNTIL(strstr(g_texts, "Report voice abuse") && !strstr(g_texts, "Checking your reports"));
+        s_set("report_name", "Luz");
+        snprintf(g_click, sizeof g_click, "Send report");
+        frame();
+        assert(g_click[0]);                                          // oneself: not pressed
+        s_set("report_name", "Rafa");
+        s_set("report_reason", "hate");
+        s_set("report_details", "slurs in \"Mario Circuit\"\\lobby");
+        FRAMES_UNTIL(!g_click[0]);
+        FRAMES_UNTIL(strstr(g_texts, "Your report about Rafa (Hate speech or slurs) is waiting"));
+        assert(!s_get("report_name", pin, sizeof pin));              // the form is emptied
+        snprintf(g_click, sizeof g_click, "Withdraw");
+        FRAMES_UNTIL(!g_click[0]);
+        FRAMES_UNTIL(strstr(g_texts, "Report withdrawn.") && !strstr(g_texts, "Your report about"));
+        printf("options page: a report filed, shown as waiting, withdrawn; oneself cannot be reported\n");
+
+        // deleting the account: asked first, then gone from the server (the name is free again), the PIN forgotten
+        snprintf(g_click, sizeof g_click, "Delete my account");
+        FRAMES_UNTIL(!g_click[0]);
+        FRAMES_UNTIL(strstr(g_texts, "Delete \"Luz\" from this server?"));
+        snprintf(g_click, sizeof g_click, "Delete");
+        FRAMES_UNTIL(!g_click[0]);
+        FRAMES_UNTIL(strstr(g_texts, "Account deleted from this server."));
+        assert(!s_get("pin", pin, sizeof pin) && !s_get("pin_name", pin, sizeof pin));
+        snprintf(g_click, sizeof g_click, "Sign up as Luz");         // free again: anyone can sign up as it
+        FRAMES_UNTIL(!g_click[0]);
+        FRAMES_UNTIL(setting_is("pin_name", "Luz"));
+        printf("options page: the account deleted after a confirmation, the name free again\n");
     } else {
         printf("(MKWMP_TEST_SERVER unset: options page not tested)\n");
     }

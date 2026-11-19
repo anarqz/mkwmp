@@ -88,4 +88,27 @@ SeatApiResult seatapi_friend_request(const char *base, const char *token, const 
 SeatApiResult seatapi_friend_accept(const char *base, const char *token, const char *name);
 SeatApiResult seatapi_friend_remove(const char *base, const char *token, const char *name);  // reject, cancel or end
 
+// ---- the account and voice-chat reports (seat server 1.2.0)
+// DELETE /seat/v1/profiles/{name} {pin}: the profile, its PIN, friendships, presences and seats, and the reports it
+// filed, gone; the name is free again. 204 deleted; 404 PROFILE_NOT_FOUND is as good (nothing left); 403/401 wrong PIN.
+SeatApiResult seatapi_profile_delete(const char *base, const char *name, const char *pin);
+
+enum { SEATAPI_REPORT_DETAILS_MAX = 500 };
+// The reasons the server takes, in the order the page lists them.
+#define SEATAPI_REPORT_REASONS "harassment", "hate", "sexual", "threats", "disruption", "other"
+typedef struct {
+    char reported[SEATAPI_NAME_MAX + 1];
+    char reason[16];
+    char status[8];   // "open" or "closed"
+    long long created;
+} SeatApiReport;
+// GET /seat/v1/reports (presence bearer): the caller's open report; *has 0 when none. 200 on success.
+SeatApiResult seatapi_report_get(const char *base, const char *token, SeatApiReport *out, int *has);
+// POST /seat/v1/reports {name, reason, details}: 201 filed. 409 REPORT_ACTIVE (one open at a time), 404
+// REPORT_UNKNOWN (no such player), 400 REPORT_SELF / REPORT_INVALID, 429 (5 tries a day). details may be "" (cut at 500).
+SeatApiResult seatapi_report_file(const char *base, const char *token, const char *name, const char *reason,
+                                  const char *details, SeatApiReport *out);
+// DELETE /seat/v1/reports: the open report withdrawn. 204; 404 REPORT_NOT_FOUND.
+SeatApiResult seatapi_report_withdraw(const char *base, const char *token);
+
 #endif
