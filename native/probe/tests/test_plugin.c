@@ -179,7 +179,13 @@ static int setting_is(const char *key, const char *value) {
 static int v2_get(const char *key, char *out, size_t cap) { return s_get(key, out, cap); }
 static void (*g_exit_cb)(void *);
 static int g_tabs;
-static int v2_settings_tab(const char *title, void (*draw)(const struct MkwPage *)) { (void)title; assert(draw); g_tabs++; return 1; }
+static void (*g_voice_tab)(const struct MkwPage *);
+static int v2_settings_tab(const char *title, void (*draw)(const struct MkwPage *)) {
+    assert(draw);
+    if (!strcmp(title, "Voice chat")) g_voice_tab = draw;
+    g_tabs++;
+    return 1;
+}
 static int v2_on_exit(void (*cb)(void *), void *user) { (void)user; g_exit_cb = cb; return 1; }
 static int v2_set(const char *key, const char *value) { return s_set(key, value); }
 
@@ -385,6 +391,35 @@ int main(int argc, char **argv) {
         if (!WIFEXITED(st) || WEXITSTATUS(st)) fprintf(stderr, "child: status %d\n", WIFEXITED(st) ? WEXITSTATUS(st) : -1);
         assert(WIFEXITED(st) && WEXITSTATUS(st) == 0);
         printf("version 2 init with the page's settings: engaged, signing in itself as Luz\n");
+
+        // a player not signed up (Zed): the tabs are there all the same, Voice chat greyed and pointing at MKWMP
+        child = fork();
+        if (!child) {
+            char dir3[600];
+            snprintf(dir3, sizeof dir3, "%s/v2b", dir);
+            mkdir(dir3, 0755);
+            MkwPluginApi v2 = api;
+            v2.mod_dir = dir3;
+            v2.language = "en";
+            v2.profile_name = "Zed";
+            v2.setting_get = v2_get;
+            v2.setting_set = v2_set;
+            v2.on_exit = v2_on_exit;
+            v2.settings_tab = v2_settings_tab;
+            unsetenv("MKWMP_ENABLE");
+            const char *m = NULL;
+            if (init(&v2, MKW_PLUGIN_API_VERSION, &m)) _exit(20);
+            if (g_tabs != 2 || !g_voice_tab) _exit(21);   // Voice chat and MKWMP, not signed up
+            g_page_fn = (MkwModPage)g_voice_tab;
+            frame();
+            if (!strstr(g_texts, "Voice chat needs an MKWMP account")) { fputs(g_texts, stderr); _exit(22); }
+            _exit(0);
+        }
+        st = 0;
+        waitpid(child, &st, 0);
+        if (!WIFEXITED(st) || WEXITSTATUS(st)) fprintf(stderr, "child: status %d\n", WIFEXITED(st) ? WEXITSTATUS(st) : -1);
+        assert(WIFEXITED(st) && WEXITSTATUS(st) == 0);
+        printf("version 2 init, not signed up: the Voice chat and MKWMP tabs all the same, Voice chat greyed\n");
 
         // a voice-abuse report: filed, shown as waiting, withdrawn; reporting oneself is greyed out
         g_opened = 1;

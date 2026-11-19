@@ -205,10 +205,12 @@ In the game, also:
   - "X accepted your friend request".
 
   In English or Brazilian Portuguese.
-- Two tabs in mkw-recomp's in-game settings (the fork's API 2 `settings_tab`):
+- Two tabs in mkw-recomp's in-game settings (the fork's API 2 `settings_tab`), registered whatever the settings say
+  (a player not signed up still sees the mod, and can sign up in the MKWMP tab for the next start):
   - **Voice chat** (`voicetab.c`): on/off, the microphone and speakers the engine reports, their volumes, and the
     muted players with Unmute and Report (fills the MKWMP tab's report form with that gamertag). Changes apply at voice.c's next poll; the settings are `voice_input`, `voice_output`,
-    `voice_in_gain` and `voice_out_gain`.
+    `voice_in_gain` and `voice_out_gain`. Greyed with a note when the plugin does not run the seat this game: not signed
+    up (sign up in the MKWMP tab, then restart) or the MKWMP launcher in charge (its own voice settings).
   - **MKWMP**: the options page, in two columns (the settings on the left; the server's seats and the friends on the
     right).
 - Mutes are kept with their names (`id:name`).

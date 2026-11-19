@@ -13,19 +13,25 @@
 #include <string.h>
 
 enum { V_HEAD, V_ON, V_INPUT, V_OUTPUT, V_DEFAULT, V_NO_DEVICES, V_IN_GAIN, V_OUT_GAIN, V_MUTED, V_NONE_MUTED,
-       V_UNMUTE, V_PLAYER, V_HOW, V_REPORT, V_REPORT_NEXT, V_COUNT };
+       V_UNMUTE, V_PLAYER, V_HOW, V_REPORT, V_REPORT_NEXT, V_NOT_SIGNED_UP, V_LAUNCHER, V_COUNT };
 static const char *const EN[V_COUNT] = {
     "Voice chat", "Voice chat in online lobbies and races", "Microphone", "Speakers or headphones", "System default",
     "The devices show up once voice chat has started (go online once).", "Microphone volume", "Voice volume",
     "Muted players", "Nobody is muted.", "Unmute", "player %llu",
     "To mute someone: pause in an online race, pick their name with L and R, then press Y (or M on the keyboard).",
-    "Report", "%s is in the report form: finish it in the MKWMP tab (Report voice abuse)."};
+    "Report", "%s is in the report form: finish it in the MKWMP tab (Report voice abuse).",
+    ("Voice chat needs an MKWMP account: sign up in the MKWMP tab (or Mods > MKWMP > Options in the start screen), "
+     "then restart the game."),
+    "The MKWMP launcher runs voice chat this time: change it in the launcher's settings."};
 static const char *const PT[V_COUNT] = {
     "Chat de voz", "Chat de voz nos lobbies e corridas online", "Microfone", "Alto-falantes ou fones", "Padrão do sistema",
     "Os dispositivos aparecem depois que o chat de voz começa (entre online uma vez).", "Volume do microfone",
     "Volume das vozes", "Jogadores silenciados", "Ninguém está silenciado.", "Reativar", "jogador %llu",
     "Para silenciar alguém: pause numa corrida online, escolha o nome com L e R e aperte Y (ou M no teclado).",
-    "Denunciar", "%s está no formulário de denúncia: termine na aba MKWMP (Denunciar abuso no chat de voz)."};
+    "Denunciar", "%s está no formulário de denúncia: termine na aba MKWMP (Denunciar abuso no chat de voz).",
+    ("O chat de voz precisa de uma conta MKWMP: cadastre-se na aba MKWMP (ou em Mods > MKWMP > Opções na tela "
+     "inicial) e reinicie o jogo."),
+    "Desta vez o launcher do MKWMP cuida do chat de voz: mude nas configurações dele."};
 
 enum { DEVICES_MAX = 24 };
 typedef struct {
@@ -33,6 +39,12 @@ typedef struct {
     char ids[DEVICES_MAX][256], names[DEVICES_MAX][128];
     const char *values[DEVICES_MAX + 1], *labels[DEVICES_MAX + 1];
 } Devices;
+
+static volatile int g_state = VOICETAB_NOT_SIGNED_UP;   // set at the plugin's start, read by the menu's thread
+
+void voicetab_set_state(int state) {
+    g_state = state;
+}
 
 // One list ("inputs" or "outputs") of the engine's {"inputs":[{"id","name"}],"outputs":[...]}, after "System default".
 static void parse(const char *json, const char *key, const char *default_label, Devices *d) {
@@ -80,6 +92,9 @@ void voicetab_draw(const MkwPage *p) {
     }
     in.labels[0] = out.labels[0] = T[V_DEFAULT];
 
+    int state = g_state;
+    if (state != VOICETAB_LIVE) p->note(MKW_NOTE_WARN, T[state == VOICETAB_LAUNCHER ? V_LAUNCHER : V_NOT_SIGNED_UP]);
+    p->disabled_begin(state != VOICETAB_LIVE);
     p->columns_begin(2);
     p->checkbox("voice", T[V_ON], 0);   // off by default
     char v[8];
@@ -119,4 +134,5 @@ void voicetab_draw(const MkwPage *p) {
     }
     p->note(MKW_NOTE_DIM, T[V_HOW]);
     p->columns_end();
+    p->disabled_end();
 }
