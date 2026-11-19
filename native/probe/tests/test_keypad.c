@@ -7,6 +7,7 @@
 //   scratch\test_keypad.exe
 #include "../src/detour.h"
 #include "../src/keypad_logic.h"
+#include "../src/keypad_sigs.h"
 
 #include <windows.h>
 #include <stdio.h>
@@ -77,6 +78,65 @@ static void test_detour(void) {
     CHECK(((DrawFn)(void *)draw)(12.0f, 34.0f) == 11234);   // the float arguments reach the original
     // the trampolines sit within rel32 reach of the targets
     CHECK(llabs((long long)((intptr_t)(void *)g_orig_entry - (intptr_t)entry)) < 0x7fffffffLL);
+}
+
+// ---- the prologue tables keypad.c installs from (keypad_sigs.h) -----------------------------------------------------
+
+// text_entry_run as mkw-recomp 0.1.15 starts it (sub rsp,0xb30), then: mov eax,42 ; epilogue
+static const uint8_t kFnEntry15[] = {0x41, 0x57, 0x41, 0x56, 0x56, 0x57, 0x53, 0x48, 0x81, 0xEC, 0x30, 0x0B, 0x00, 0x00,
+                                     0xB8, 0x2A, 0x00, 0x00, 0x00,
+                                     0x48, 0x81, 0xC4, 0x30, 0x0B, 0x00, 0x00, 0x5B, 0x5F, 0x5E, 0x41, 0x5E, 0x41, 0x5F, 0xC3};
+static EntryFn g_orig_entry13, g_orig_entry15;
+static int hook_entry13(const void *a, void *b, size_t c, size_t *d) { return g_orig_entry13(a, b, c, d) + 100; }
+static int hook_entry15(const void *a, void *b, size_t c, size_t *d) { return g_orig_entry15(a, b, c, d) + 200; }
+
+static void test_prologues(void) {
+    uint8_t *code = (uint8_t *)VirtualAlloc(NULL, 0x1000, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+    CHECK(code != NULL);
+    if (!code) return;
+    memset(code, 0xCC, 0x1000);
+    // the 0.1.13 stand-in needs the real 14 signature bytes: "mov rsi,r9" after the frame, then as kFnEntry
+    uint8_t *e13 = code, *e15 = code + 0x100, *other = code + 0x200, *shown = code + 0x300, *draw = code + 0x400;
+    memcpy(e13, kFnEntry, 11);
+    memcpy(e13 + 11, "\x4C\x89\xCE", 3);
+    memcpy(e13 + 14, kFnEntry + 11, sizeof kFnEntry - 11);
+    memcpy(e15, kFnEntry15, sizeof kFnEntry15);
+    memcpy(other, "\x48\x89\x5C\x24\x08\x57\x48\x83\xEC\x20\x31\xC0\xC3\x90\x90\x90", 16);
+    memcpy(shown, "\x56\x48\x83\xEC\x20\x48\x8B\x35\x00\x00\x00\x00", 12);
+    memcpy(draw, "\x56\x57\x48\x81\xEC\x78\x01\x00\x00\xC5\x78\x29\x84\x24\x60\x01\x00\x00", 18);
+    CHECK(((EntryFn)(void *)e13)(NULL, NULL, 0, NULL) == 42);
+    CHECK(((EntryFn)(void *)e15)(NULL, NULL, 0, NULL) == 42);
+
+    const DetourPrologue *p13 = detour_match(e13, kEntryPrologues, KEYPAD_COUNT(kEntryPrologues));
+    const DetourPrologue *p15 = detour_match(e15, kEntryPrologues, KEYPAD_COUNT(kEntryPrologues));
+    CHECK(p13 == &kEntryPrologues[0] && p13->sig == kEntrySig);
+    CHECK(p15 == &kEntryPrologues[1] && p15->sig == kEntrySig15);
+    CHECK(!detour_match(other, kEntryPrologues, KEYPAD_COUNT(kEntryPrologues)));
+    CHECK(!detour_match(NULL, kEntryPrologues, KEYPAD_COUNT(kEntryPrologues)));
+    CHECK(!detour_match(e15, kShownPrologues, KEYPAD_COUNT(kShownPrologues)));
+    CHECK(detour_match(shown, kShownPrologues, KEYPAD_COUNT(kShownPrologues)) == &kShownPrologues[0]);
+    CHECK(detour_match(draw, kDrawPrologues, KEYPAD_COUNT(kDrawPrologues)) == &kDrawPrologues[0]);
+    // every entry: the stolen bytes are inside the signature and a jmp rel32 fits
+    const struct { const DetourPrologue *l; size_t n; } all[] = {
+        {kEntryPrologues, KEYPAD_COUNT(kEntryPrologues)}, {kShownPrologues, KEYPAD_COUNT(kShownPrologues)},
+        {kDrawPrologues, KEYPAD_COUNT(kDrawPrologues)}};
+    for (size_t t = 0; t < 3; t++)
+        for (size_t i = 0; i < all[t].n; i++)
+            CHECK(all[t].l[i].steal >= DETOUR_MIN && all[t].l[i].steal <= DETOUR_MAX && all[t].l[i].steal <= all[t].l[i].n);
+    // a frame of another size (a rebuild of 0.1.15's source) is still the 0.1.15 entry
+    uint8_t alt[sizeof kFnEntry15];
+    memcpy(alt, kFnEntry15, sizeof alt);
+    alt[10] = 0x40;
+    CHECK(detour_match(alt, kEntryPrologues, KEYPAD_COUNT(kEntryPrologues)) == &kEntryPrologues[1]);
+
+    // installed the way keypad.c does it: both functions still run, through their hooks
+    if (p13) CHECK(detour_install(e13, p13->sig, p13->steal, (void *)hook_entry13, (void **)&g_orig_entry13));
+    if (p15) CHECK(detour_install(e15, p15->sig, p15->steal, (void *)hook_entry15, (void **)&g_orig_entry15));
+    CHECK(e13[0] == 0xE9 && e13[7] == 0x48 && e13[8] == 0x83);                    // sub rsp,0x20 intact
+    CHECK(e15[0] == 0xE9 && e15[7] == 0x48 && e15[8] == 0x81 && e15[10] == 0x30);   // sub rsp,0xb30 intact
+    CHECK(((EntryFn)(void *)e13)(NULL, NULL, 0, NULL) == 142);
+    CHECK(((EntryFn)(void *)e15)(NULL, NULL, 0, NULL) == 242);
+    CHECK(g_orig_entry15 && g_orig_entry15(NULL, NULL, 0, NULL) == 42);
 }
 
 // ---- keypad --------------------------------------------------------------------------------------------------------
@@ -199,6 +259,7 @@ static void test_keypad(void) {
 
 int main(void) {
     test_detour();
+    test_prologues();
     test_keypad();
     printf("test_keypad: %s\n", failures ? "FAIL" : "PASS");
     return failures != 0;
