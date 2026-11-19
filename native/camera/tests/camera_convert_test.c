@@ -1,4 +1,4 @@
-// camera_convert.h: the centre crop, the four source formats, bottom-up rows, the mirror, and bad arguments.
+// camera_convert.h: the centre crop, the seven source formats, bottom-up rows, the mirror, and bad arguments.
 //
 //   python native/camera/build.py --test
 // or by hand:
@@ -81,6 +81,30 @@ int main(void) {
         }
     CHECK(cam_convert(nv12, sizeof nv12, CAMFMT_NV12, YW, YH, YW, 0, dst, DW, DH, 0));
     CHECK(is(AT(50, 20), 0, 0, 255) && is(AT(300, 200), 0, 255, 0));
+
+    // I420 and YV12 640x360: the same picture, the chroma in two planes (U then V; YV12 the other way round)
+    static uint8_t i420[YW * YH * 3 / 2], yv12[YW * YH * 3 / 2];
+    CHECK(cam_stride(CAMFMT_I420, YW) == YW && cam_size(CAMFMT_I420, YH, YW) == sizeof i420);
+    memcpy(i420, nv12, YW * YH), memcpy(yv12, nv12, YW * YH);
+    for (int y = 0; y < YH / 2; y++)
+        for (int x = 0; x < YW / 2; x++) {
+            int u = y < YH / 4 ? 240 : 54, v = y < YH / 4 ? 110 : 34, at = y * (YW / 2) + x, plane = YW * YH / 4;
+            i420[YW * YH + at] = yv12[YW * YH + plane + at] = (uint8_t)u;
+            i420[YW * YH + plane + at] = yv12[YW * YH + at] = (uint8_t)v;
+        }
+    CHECK(cam_convert(i420, sizeof i420, CAMFMT_I420, YW, YH, YW, 0, dst, DW, DH, 0));
+    CHECK(is(AT(50, 20), 0, 0, 255) && is(AT(300, 200), 0, 255, 0));
+    CHECK(cam_convert(yv12, sizeof yv12, CAMFMT_YV12, YW, YH, YW, 0, dst, DW, DH, 0));
+    CHECK(is(AT(50, 20), 0, 0, 255) && is(AT(300, 200), 0, 255, 0));
+    CHECK(!cam_convert(i420, sizeof i420 - 1, CAMFMT_I420, YW, YH, YW, 0, dst, DW, DH, 0));
+    // read the wrong way round, the colours are not those
+    CHECK(cam_convert(yv12, sizeof yv12, CAMFMT_I420, YW, YH, YW, 0, dst, DW, DH, 0) && !is(AT(50, 20), 0, 0, 255));
+
+    // UYVY: the YUY2 picture with the bytes of each pair swapped
+    static uint8_t uyvy[YW * YH * 2];
+    for (size_t i = 0; i < sizeof uyvy; i += 2) uyvy[i] = yuy2[i + 1], uyvy[i + 1] = yuy2[i];
+    CHECK(cam_convert(uyvy, sizeof uyvy, CAMFMT_UYVY, YW, YH, YW * 2, 0, dst, DW, DH, 0));
+    CHECK(is(AT(20, 100), 255, 255, 255) && is(AT(192, 100), 0, 0, 0) && is(AT(370, 100), 255, 0, 0));
 
     // refused: a short buffer, a stride below the row, a format unknown, a picture of nothing
     memset(dst, 7, sizeof dst);

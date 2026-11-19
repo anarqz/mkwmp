@@ -1,4 +1,4 @@
-/* A captured picture (BGRA, BGR24, YUY2 or NV12, as DirectShow and V4L2 hand them out) to the RGBA picture the game
+/* A captured picture (BGRA, BGR24, YUY2, UYVY, NV12, I420 or YV12, as DirectShow and V4L2 hand them out) to the RGBA picture the game
  * shows: cropped around the centre to the target's aspect ratio, scaled (four samples per target pixel), mirrored on
  * request. Pure functions, unit-tested (tests/camera_convert_test.c). */
 #ifndef MKWMP_CAMERA_CONVERT_H
@@ -7,22 +7,31 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum { CAMFMT_BGRA, CAMFMT_BGR24, CAMFMT_YUY2, CAMFMT_NV12 };
+enum { CAMFMT_BGRA, CAMFMT_BGR24, CAMFMT_YUY2, CAMFMT_NV12, CAMFMT_I420, CAMFMT_YV12, CAMFMT_UYVY, CAMFMT_COUNT };
+
+static inline int cam_planar(int fmt) { return fmt == CAMFMT_NV12 || fmt == CAMFMT_I420 || fmt == CAMFMT_YV12; }
+/* Bytes of a pixel in a row (the Y plane's, for the planar formats). */
+static inline int cam_bytes(int fmt) {
+    return fmt == CAMFMT_BGRA ? 4 : fmt == CAMFMT_BGR24 ? 3 : fmt == CAMFMT_YUY2 || fmt == CAMFMT_UYVY ? 2 : 1;
+}
 
 /* Bytes between rows of a w-pixel-wide picture as DirectShow lays it out (rows padded to 4 bytes). */
 static inline int cam_stride(int fmt, int w) {
     switch (fmt) {
     case CAMFMT_BGRA: return w * 4;
     case CAMFMT_BGR24: return (w * 3 + 3) & ~3;
-    case CAMFMT_YUY2: return (w * 2 + 3) & ~3;
-    default: return w; /* NV12: of the Y plane, and of the interleaved UV plane below it */
+    case CAMFMT_YUY2:
+    case CAMFMT_UYVY: return (w * 2 + 3) & ~3;
+    case CAMFMT_NV12: return w; /* of the Y plane, and of the interleaved UV plane below it */
+    default: return (w + 1) & ~1; /* I420, YV12: of the Y plane; the two chroma planes below it have rows half as long */
     }
 }
 
 /* Bytes a picture of sh rows needs. */
 static inline size_t cam_size(int fmt, int sh, int stride) {
-    size_t rows = fmt == CAMFMT_NV12 ? (size_t)sh + (size_t)(sh + 1) / 2 : (size_t)sh;
-    return rows * (size_t)stride;
+    size_t chroma = (size_t)(sh + 1) / 2;
+    if (fmt == CAMFMT_I420 || fmt == CAMFMT_YV12) return (size_t)sh * (size_t)stride + 2 * chroma * (size_t)(stride / 2);
+    return (fmt == CAMFMT_NV12 ? (size_t)sh + chroma : (size_t)sh) * (size_t)stride;
 }
 
 /* The largest rectangle of a sw x sh picture with the aspect ratio dw : dh, centred. */
@@ -57,6 +66,19 @@ static inline void cam_pixel(const uint8_t *src, int fmt, int sh, int stride, in
         cam_yuv(q[(x & 1) * 2], q[1], q[3], rgb);
         break;
     }
+    case CAMFMT_UYVY: {
+        const uint8_t *q = p + (x & ~1) * 2;   /* U Y0 V Y1 */
+        cam_yuv(q[1 + (x & 1) * 2], q[0], q[2], rgb);
+        break;
+    }
+    case CAMFMT_I420:
+    case CAMFMT_YV12: {   /* Y, then a quarter-size U plane and a quarter-size V plane (YV12: V first) */
+        size_t half = (size_t)(stride / 2), plane = half * (size_t)((sh + 1) / 2);
+        const uint8_t *first = src + (size_t)sh * (size_t)stride + (size_t)(row / 2) * half + (size_t)(x / 2);
+        if (fmt == CAMFMT_I420) cam_yuv(p[x], first[0], first[plane], rgb);
+        else cam_yuv(p[x], first[plane], first[0], rgb);
+        break;
+    }
     default: {
         const uint8_t *uv = src + (size_t)sh * (size_t)stride + (size_t)(row / 2) * (size_t)stride + (x & ~1);
         cam_yuv(p[x], uv[0], uv[1], rgb);
@@ -70,9 +92,9 @@ static inline void cam_pixel(const uint8_t *src, int fmt, int sh, int stride, in
 static inline int cam_convert(const uint8_t *src, size_t len, int fmt, int sw, int sh, int stride, int bottom_up,
                               uint8_t *dst, int dw, int dh, int mirror) {
     if (!src || !dst || sw < 2 || sh < 2 || dw < 1 || dh < 1 || sw > 8192 || sh > 8192) return 0;
-    if (fmt < CAMFMT_BGRA || fmt > CAMFMT_NV12) return 0;
-    if (stride < sw * (fmt == CAMFMT_BGRA ? 4 : fmt == CAMFMT_BGR24 ? 3 : fmt == CAMFMT_YUY2 ? 2 : 1)) return 0;
-    if (fmt == CAMFMT_NV12) bottom_up = 0;   /* planar pictures are never stored upside down */
+    if (fmt < CAMFMT_BGRA || fmt >= CAMFMT_COUNT) return 0;
+    if (stride < sw * cam_bytes(fmt)) return 0;
+    if (cam_planar(fmt)) bottom_up = 0;   /* planar pictures are never stored upside down */
     if (len < cam_size(fmt, sh, stride)) return 0;
     int x0, y0, cw, ch;
     cam_crop(sw, sh, dw, dh, &x0, &y0, &cw, &ch);

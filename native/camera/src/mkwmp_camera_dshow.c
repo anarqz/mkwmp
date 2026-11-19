@@ -1,8 +1,9 @@
 /* mkwmp_camera.h on Windows: DirectShow. Devices are the video input category's filters, so the list has the real
  * webcams (through the kernel streaming proxy) and software sources such as the OBS Virtual Camera, which Media
  * Foundation does not list. Capture is source -> Sample Grabber -> Null Renderer, the grabber asked for RGB32 first
- * (DirectShow then inserts its own decoders for MJPG and the YUV formats), then RGB24, YUY2 and NV12, which
- * camera_convert.h reads itself.
+ * (DirectShow then inserts its own decoder for a webcam that only has MJPG, and for the YUV formats it knows), then
+ * RGB24, YUY2, NV12, I420 / IYUV, YV12 and UYVY, which camera_convert.h reads itself. A device that opens with none
+ * of them is logged with the formats its pins offer and the step that failed.
  *
  * One capture at a time, on a thread of the library's own that owns the COM objects; the grabber calls back on
  * DirectShow's streaming thread, where the picture is cropped, scaled and published under a lock. */
@@ -45,11 +46,15 @@ K(K_RGB32, 0xe436eb7e, 0x524f, 0x11ce, 0x9f, 0x53, 0x00, 0x20, 0xaf, 0x0b, 0xa7,
 K(K_RGB24, 0xe436eb7d, 0x524f, 0x11ce, 0x9f, 0x53, 0x00, 0x20, 0xaf, 0x0b, 0xa7, 0x70);
 K(K_YUY2, 0x32595559, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71);
 K(K_NV12, 0x3231564e, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71);
+K(K_I420, 0x30323449, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71);
+K(K_IYUV, 0x56555949, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71);
+K(K_YV12, 0x32315659, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71);
+K(K_UYVY, 0x59565955, 0x0000, 0x0010, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71);
 K(K_FORMAT_VideoInfo, 0x05589f80, 0xc356, 0x11ce, 0xbf, 0x01, 0x00, 0xaa, 0x00, 0x55, 0x59, 0x5a);
 K(K_PIN_CATEGORY_CAPTURE, 0xfb6c4281, 0x0353, 0x11d1, 0x90, 0x5f, 0x00, 0x00, 0xc0, 0xcc, 0x16, 0xba);
 #undef K
 
-enum { DEVICES_MAX = 32, NAME_SIZE = 256 };
+enum { DEVICES_MAX = 32, NAME_SIZE = 256, RETRY_MS = 3000 };
 
 static struct {
     SRWLOCK lock;
@@ -296,41 +301,116 @@ static void pick_format(Graph *g, int want_w, int want_h) {
     IAMStreamConfig_Release(config);
 }
 
-/* 1: the graph runs and S describes its pictures. */
-static int graph_open(Graph *g, IMoniker *moniker, int fmt, int want_w, int want_h, int fps) {
-    static const GUID *const kSubtype[] = {&K_RGB32, &K_RGB24, &K_YUY2, &K_NV12};
+/* A subtype's name: the FOURCC for the GUIDs made of one, else the first word in hex. */
+static void subtype_name(const GUID *sub, char out[12]) {
+    static const unsigned char kTail[8] = {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71};
+    unsigned long a = sub->Data1;
+    int text = sub->Data2 == 0 && sub->Data3 == 0x10 && !memcmp(sub->Data4, kTail, 8);
+    for (int i = 0; i < 4 && text; i++) {
+        unsigned ch = (unsigned)(a >> (8 * i)) & 0xff;
+        text = ch >= 0x20 && ch < 0x7f;
+    }
+    if (IsEqualGUID(sub, &K_RGB32)) snprintf(out, 12, "RGB32");
+    else if (IsEqualGUID(sub, &K_RGB24)) snprintf(out, 12, "RGB24");
+    else if (text) snprintf(out, 12, "%c%c%c%c", (int)(a & 0xff), (int)(a >> 8 & 0xff), (int)(a >> 16 & 0xff), (int)(a >> 24 & 0xff));
+    else snprintf(out, 12, "%08lx", a);
+}
+
+/* What the device's output pins offer, as "NV12 1920x1080, I420 1920x1080, ..." (each once; "" when it says nothing). */
+static void describe_formats(IBaseFilter *source, char *out, int cap) {
+    int at = 0, listed = 0;
+    out[0] = 0;
+    IEnumPins *pins = NULL;
+    if (!source || FAILED(IBaseFilter_EnumPins(source, &pins)) || !pins) return;
+    IPin *pin = NULL;
+    while (IEnumPins_Next(pins, 1, &pin, NULL) == S_OK) {
+        PIN_DIRECTION dir = PINDIR_INPUT;
+        IEnumMediaTypes *types = NULL;
+        if (SUCCEEDED(IPin_QueryDirection(pin, &dir)) && dir == PINDIR_OUTPUT && SUCCEEDED(IPin_EnumMediaTypes(pin, &types)) && types) {
+            AM_MEDIA_TYPE *mt = NULL;
+            while (IEnumMediaTypes_Next(types, 1, &mt, NULL) == S_OK) {
+                char name[12], item[48];
+                subtype_name(&mt->subtype, name);
+                if (!IsEqualGUID(&mt->majortype, &K_MEDIATYPE_Video))
+                    snprintf(item, sizeof item, "%s (not video)", name);
+                else if (IsEqualGUID(&mt->formattype, &K_FORMAT_VideoInfo) && mt->cbFormat >= sizeof(VIDEOINFOHEADER) && mt->pbFormat) {
+                    const BITMAPINFOHEADER *bih = &((const VIDEOINFOHEADER *)mt->pbFormat)->bmiHeader;
+                    snprintf(item, sizeof item, "%s %ldx%ld", name, (long)bih->biWidth, (long)(bih->biHeight < 0 ? -bih->biHeight : bih->biHeight));
+                } else
+                    snprintf(item, sizeof item, "%s (a header this library does not read)", name);
+                free_media_type(mt, 1);
+                mt = NULL;
+                /* each once, and as many as fit */
+                int len = (int)strlen(item);
+                const char *seen = strstr(out, item);
+                if (seen && (seen[len] == ',' || !seen[len])) continue;
+                if (at + len + 12 >= cap) {
+                    if (listed >= 0) at += snprintf(out + at, (size_t)(cap - at), ", ...");
+                    listed = -1;
+                    break;
+                }
+                at += snprintf(out + at, (size_t)(cap - at), "%s%s", listed ? ", " : "", item);
+                listed++;
+            }
+            IEnumMediaTypes_Release(types);
+        }
+        IPin_Release(pin);
+        pin = NULL;
+    }
+    IEnumPins_Release(pins);
+}
+
+static const GUID *const kSubtype[] = {&K_RGB32, &K_RGB24, &K_YUY2, &K_NV12, &K_I420, &K_IYUV, &K_YV12, &K_UYVY};
+static const int kSubtypeFmt[] = {CAMFMT_BGRA, CAMFMT_BGR24, CAMFMT_YUY2, CAMFMT_NV12, CAMFMT_I420, CAMFMT_I420, CAMFMT_YV12, CAMFMT_UYVY};
+static const char *const kSubtypeName[] = {"RGB32", "RGB24", "YUY2", "NV12", "I420", "IYUV", "YV12", "UYVY"};
+enum { SUBTYPES = (int)(sizeof kSubtype / sizeof kSubtype[0]) };
+
+/* 1: the graph runs and S describes its pictures. 0: *why says which step failed and *code its HRESULT; when the
+ * device itself could be made, *formats (cap bytes) says what it offers. `try` indexes kSubtype. */
+#define STEP(what, call) do { *code = (call); if (FAILED(*code)) { *why = (what); return 0; } } while (0)
+static int graph_open(Graph *g, IMoniker *moniker, int try, int want_w, int want_h, int fps, const char **why, HRESULT *code,
+                      char *formats, int cap) {
+    int fmt = kSubtypeFmt[try];
     memset(g, 0, sizeof *g);
-    if (FAILED(IMoniker_BindToObject(moniker, NULL, NULL, &K_IBaseFilter, (void **)&g->source))) return 0;
-    if (FAILED(CoCreateInstance(&K_FilterGraph, NULL, CLSCTX_INPROC_SERVER, &K_IGraphBuilder, (void **)&g->graph)) ||
+    *why = "", *code = S_OK;
+    STEP("the device could not be made (its driver or program is not there)",
+         IMoniker_BindToObject(moniker, NULL, NULL, &K_IBaseFilter, (void **)&g->source));
+    if (formats && !formats[0]) describe_formats(g->source, formats, cap);
+    *why = "DirectShow's own parts are missing";
+    if (FAILED(*code = CoCreateInstance(&K_FilterGraph, NULL, CLSCTX_INPROC_SERVER, &K_IGraphBuilder, (void **)&g->graph)) ||
         FAILED(CoCreateInstance(&K_CaptureGraphBuilder2, NULL, CLSCTX_INPROC_SERVER, &K_ICaptureGraphBuilder2, (void **)&g->builder)) ||
         FAILED(CoCreateInstance(&K_SampleGrabber, NULL, CLSCTX_INPROC_SERVER, &K_IBaseFilter, (void **)&g->grabber_filter)) ||
         FAILED(CoCreateInstance(&K_NullRenderer, NULL, CLSCTX_INPROC_SERVER, &K_IBaseFilter, (void **)&g->sink)) ||
         FAILED(IBaseFilter_QueryInterface(g->grabber_filter, &K_ISampleGrabber, (void **)&g->grabber)) ||
-        FAILED(IGraphBuilder_QueryInterface(g->graph, &K_IMediaControl, (void **)&g->control)))
+        FAILED(*code = IGraphBuilder_QueryInterface(g->graph, &K_IMediaControl, (void **)&g->control)))
         return 0;
     AM_MEDIA_TYPE want;
     memset(&want, 0, sizeof want);
     want.majortype = K_MEDIATYPE_Video;
-    want.subtype = *kSubtype[fmt];
+    want.subtype = *kSubtype[try];
     want.formattype = K_FORMAT_VideoInfo;
-    if (FAILED(ICaptureGraphBuilder2_SetFiltergraph(g->builder, g->graph)) ||
-        FAILED(IGraphBuilder_AddFilter(g->graph, g->source, L"camera")) ||
-        FAILED(ISampleGrabber_SetMediaType(g->grabber, &want)) ||
-        FAILED(IGraphBuilder_AddFilter(g->graph, g->grabber_filter, L"grabber")) ||
-        FAILED(IGraphBuilder_AddFilter(g->graph, g->sink, L"sink")))
+    *why = "the capture graph could not be put together";
+    if (FAILED(*code = ICaptureGraphBuilder2_SetFiltergraph(g->builder, g->graph)) ||
+        FAILED(*code = IGraphBuilder_AddFilter(g->graph, g->source, L"camera")) ||
+        FAILED(*code = ISampleGrabber_SetMediaType(g->grabber, &want)) ||
+        FAILED(*code = IGraphBuilder_AddFilter(g->graph, g->grabber_filter, L"grabber")) ||
+        FAILED(*code = IGraphBuilder_AddFilter(g->graph, g->sink, L"sink")))
         return 0;
     pick_format(g, want_w, want_h);
+    *why = "the device gives no pictures in that format";
     HRESULT hr = ICaptureGraphBuilder2_RenderStream(g->builder, &K_PIN_CATEGORY_CAPTURE, &K_MEDIATYPE_Video,
                                                     (IUnknown *)g->source, g->grabber_filter, g->sink);
     if (FAILED(hr))   /* a source without pin categories */
         hr = ICaptureGraphBuilder2_RenderStream(g->builder, NULL, &K_MEDIATYPE_Video, (IUnknown *)g->source,
                                                 g->grabber_filter, g->sink);
+    *code = hr;
     if (FAILED(hr)) return 0;
     AM_MEDIA_TYPE got;
     memset(&got, 0, sizeof got);
-    if (FAILED(ISampleGrabber_GetConnectedMediaType(g->grabber, &got))) return 0;
+    if (FAILED(*code = ISampleGrabber_GetConnectedMediaType(g->grabber, &got))) return 0;   /* rendered, yet not connected */
+    *why = "the device connected with a picture this library does not read";
     int ok = IsEqualGUID(&got.formattype, &K_FORMAT_VideoInfo) && got.cbFormat >= sizeof(VIDEOINFOHEADER) && got.pbFormat &&
-             IsEqualGUID(&got.subtype, kSubtype[fmt]);
+             IsEqualGUID(&got.subtype, kSubtype[try]);
     if (ok) {
         const BITMAPINFOHEADER *bih = &((const VIDEOINFOHEADER *)got.pbFormat)->bmiHeader;
         S.fmt = fmt;
@@ -350,9 +430,11 @@ static int graph_open(Graph *g, IMoniker *moniker, int fmt, int want_w, int want
     if (!S.scratch) return 0;
     ISampleGrabber_SetBufferSamples(g->grabber, FALSE);
     ISampleGrabber_SetOneShot(g->grabber, FALSE);
-    if (FAILED(ISampleGrabber_SetCallback(g->grabber, &g_callback, 1))) return 0;   /* 1: BufferCB */
-    return SUCCEEDED(IMediaControl_Run(g->control));
+    STEP("the grabber took no callback", ISampleGrabber_SetCallback(g->grabber, &g_callback, 1));   /* 1: BufferCB */
+    STEP("the device did not start (in use by another program?)", IMediaControl_Run(g->control));
+    return 1;
 }
+#undef STEP
 
 static void set_status(int status) {
     AcquireSRWLockExclusive(&G.lock);
@@ -361,7 +443,6 @@ static void set_status(int status) {
 }
 
 static int open_device(Graph *g, const char *id, int w, int h, int fps) {
-    static const char *const kName[] = {"RGB32", "RGB24", "YUY2", "NV12"};
     static Device d[DEVICES_MAX];
     int n = list_devices(d, DEVICES_MAX), at = -1;
     for (int i = 0; i < n && at < 0; i++)
@@ -370,12 +451,40 @@ static int open_device(Graph *g, const char *id, int w, int h, int fps) {
     if (at < 0) {
         say("no device named \"%s\" (%d found)", id, n);
     } else {
-        for (int fmt = CAMFMT_BGRA; fmt <= CAMFMT_NV12 && !ok; fmt++) {
-            ok = graph_open(g, d[at].moniker, fmt, w, h, fps);
-            if (ok) say("\"%s\" opened: %dx%d %s -> %dx%d RGBA, at most %d fps", d[at].id, S.w, S.h, kName[fmt], w, h, fps);
-            else graph_close(g);
+        /* why the last format tried failed, and the furthest any got (a device in use fails the same way every time) */
+        char formats[320] = "", tried[160] = "";
+        const char *why = "", *worst = "";
+        HRESULT code = S_OK, worst_code = S_OK;
+        int k = 0;
+        for (int fmt = 0; fmt < SUBTYPES && !ok; fmt++) {
+            ok = graph_open(g, d[at].moniker, fmt, w, h, fps, &why, &code, formats, (int)sizeof formats);
+            if (ok) {
+                say("\"%s\" opened: %dx%d %s -> %dx%d RGBA, at most %d fps", d[at].id, S.w, S.h, kSubtypeName[fmt], w, h, fps);
+            } else {
+                graph_close(g);
+                k += snprintf(tried + k, sizeof tried - (size_t)k, "%s%s %#lx", k ? ", " : "", kSubtypeName[fmt], (unsigned long)code);
+                if (!worst[0] || strcmp(why, "the device gives no pictures in that format")) worst = why, worst_code = code;
+                if (!strncmp(why, "the device could not be made", 28)) break;   /* the same for every format */
+            }
         }
-        if (!ok) say("\"%s\" could not be opened (in use by another program, or no format this library reads)", d[at].id);
+        /* said once per reason: the capture thread tries again every few seconds while the camera is wanted */
+        static char said[800];
+        char line[800];
+        if (ok)
+            said[0] = 0;
+        else if (!formats[0] && strncmp(worst, "the device could not be made", 28))
+            snprintf(line, sizeof line, "\"%s\" could not be opened: the device offers no picture format at all right now (a virtual "
+                     "camera does that while its program is not running or its camera is not started: in OBS, Start Virtual "
+                     "Camera). Tried again every %d seconds while the camera is on. Tried: %s", d[at].id, RETRY_MS / 1000, tried);
+        else
+            snprintf(line, sizeof line, "\"%s\" could not be opened: %s (%#lx). The device offers: %s. This library reads RGB32, "
+                     "RGB24, YUY2, NV12, I420/IYUV, YV12 and UYVY, and what DirectShow decodes to RGB itself (MJPG). Tried again "
+                     "every %d seconds while the camera is on. Tried: %s", d[at].id, worst, (unsigned long)worst_code,
+                     formats[0] ? formats : "nothing", RETRY_MS / 1000, tried);
+        if (!ok && strcmp(said, line)) {
+            memcpy(said, line, sizeof said);
+            say("%s", line);
+        }
     }
     release_devices(d, n);
     memset(d, 0, sizeof d);
@@ -390,6 +499,7 @@ static DWORD WINAPI capture_thread(void *unused) {
     memset(&graph, 0, sizeof graph);
     uint32_t applied = 0;
     int open = 0;
+    ULONGLONG failed_at = 0;
     for (;;) {
         WaitForSingleObject(G.wake, 500);
         AcquireSRWLockExclusive(&G.lock);
@@ -398,7 +508,9 @@ static DWORD WINAPI capture_thread(void *unused) {
         char device[NAME_SIZE];
         memcpy(device, G.device, sizeof device);
         ReleaseSRWLockExclusive(&G.lock);
-        if (gen == applied) continue;
+        /* a device that did not open is tried again while it is wanted: a virtual camera started after the game */
+        int again = want && !open && SUCCEEDED(com) && GetTickCount64() - failed_at >= RETRY_MS;
+        if (gen == applied && !again) continue;
         applied = gen;
         if (open) {
             graph_close(&graph);
@@ -416,9 +528,10 @@ static DWORD WINAPI capture_thread(void *unused) {
             G.frame_w = w, G.frame_h = h;
         }
         int have = G.frame != NULL;
-        G.status = MKWMP_CAMERA_STARTING;
+        if (!again) G.status = MKWMP_CAMERA_STARTING;
         ReleaseSRWLockExclusive(&G.lock);
         open = have && open_device(&graph, device, w, h, fps);
+        failed_at = GetTickCount64();
         if (!open) {
             AcquireSRWLockExclusive(&G.lock);
             if (G.gen == gen) G.status = MKWMP_CAMERA_FAILED;
