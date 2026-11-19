@@ -4,7 +4,7 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 
 **Website and setup guides: <https://anarqz.github.io/mkwmp/>**
 
-> MKWMP is an unofficial community project, not affiliated with or endorsed by Nintendo. You need your own copy of the game.
+> MKWMP is an unofficial community project, not affiliated with or endorsed by Nintendo. You need your own copy of the game. MKWMP ships none of the game's code or assets and doesn't help obtain games: see [Interoperability and legal notes](docs/LEGAL.md).
 >
 > **Version 1.0.0** ([download](https://github.com/anarqz/mkwmp/releases/latest)): matchmade races and battles, friend rooms, lobby voice chat and self-hosted servers.
 
@@ -16,7 +16,8 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 - **Friends, kept on the server.** Add friends by gamertag; they accept or decline. You see who is playing, online or offline, and they're your friends in the game too.
 - **Matchmaking with any number of lobbies.** Races and battles open new lobbies as players arrive and close them when they empty. After a match you go back into your lobby.
 - **Friend rooms.** Create a room; friends join from their friend card, or by Room ID with the game's on-screen keypad.
-- **Voice chat** with the players in your lobby, with echo cancelling and noise suppression. Pick your microphone and output in SETTINGS; mute players from the game's lobby menu.
+- **Voice chat** with the players in your lobby, with echo cancelling and noise suppression. Pick your microphone and output in SETTINGS; mute players from the game's lobby menu. Report abusive players from SETTINGS; the server's host reviews reports.
+- **Privacy.** For adults (18+). The server keeps only your gamertag, a PIN hash, your friends and any report you file; voice is never recorded. Unused gamertags are deleted after a month, and DELETE MY ACCOUNT removes yours at once. See the [privacy policy](https://anarqz.github.io/mkwmp/#privacy).
 - **Seats and a queue.** Each server has a fixed number of seats. PLAY takes one, or puts you in line. Having the launcher open doesn't take a seat.
 - **Background mode.** Close the launcher and it stays in the system tray, with notifications when a friend comes online, starts playing or sends you a request.
 - **Game patch check.** The line under GAME FOLDER says whether the patch is installed and is this version, checked by content against signed checksums. SETTINGS → GAME PATCH installs or removes it.
@@ -198,15 +199,11 @@ Two tests start the real `mkwmp` binary. One plays two clients from sign-in to a
 | `docs/` | [HOSTING](docs/HOSTING.md), [ARCHITECTURE](docs/ARCHITECTURE.md), [seat API](docs/contracts/SEAT_API.md), [launcher API](docs/contracts/LAUNCHER_API.md) |
 | `site/` | the website (GitHub Pages) |
 | `tools/` | release script (`tools/release`) and a local seat server helper (`tools/host`) |
-| `resources/` | research material: reverse-engineering notes and tools, captures, the original Python lobby, handoff notes |
+| `resources/` | the original Python reference lobby, the first Rust seat prototype, ticket test vectors and test scripts |
 
 ## Reporting a bug
 
 Open an [issue](https://github.com/anarqz/mkwmp/issues/new/choose) and fill in the form. The most useful thing you can add is the logs: in the launcher, open **SETTINGS** and press **SAVE LOGS FOR A BUG REPORT** (or run `mkwmp-launcher --save-logs`), then drag the zip into the issue. It holds the launcher log, the game patch and mkw-recomp logs, with your PIN and tickets left out.
-
-## Support
-
-MKWMP is made by players, for players. If you'd like to help keep the official server running: [Ko-fi](https://ko-fi.com/anarqz).
 
 ## License
 

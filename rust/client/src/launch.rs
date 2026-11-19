@@ -123,6 +123,7 @@ mod tests {
             background: Default::default(),
             voice: Default::default(),
             patch: true,
+            adult_consent: true,
         }
     }
 

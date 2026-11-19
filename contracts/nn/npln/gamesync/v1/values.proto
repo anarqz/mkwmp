@@ -1,4 +1,4 @@
-// Value types shared by every NPLN service. Recovered from mkw-recomp main.bin.
+// Value types shared by every NPLN service. Interoperability spec (MKWMP's own): the wire format the game client speaks.
 //
 // In the binary these classes live in one common translation unit
 // (main+0xf15000..0xf1d000, vtables main+0x30b3fe8..0x30b43b8) and are used by

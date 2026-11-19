@@ -1,5 +1,5 @@
 // nn.npln.gamesync.v1: the document store behind a game session.
-// Recovered from mkw-recomp main.bin. Message classes: vtables
+// Interoperability spec (MKWMP's own): the wire format the game client speaks. Message classes: vtables
 // main+0x30f1cd0..0x30f2cd0 (33 classes, serializer = vtable slot 12);
 // stub main+0x12bae9c.
 //

@@ -6,3 +6,4 @@ native/probe/build/
 .env
 native/voice/third_party/
 native/voice/build/
+research/

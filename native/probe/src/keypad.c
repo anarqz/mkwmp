@@ -1,4 +1,4 @@
-// On-screen numeric keypad for nn::swkbd::ShowKeyboard (resources/docs/SWKBD-KEYPAD.md).
+// On-screen numeric keypad for nn::swkbd::ShowKeyboard (research/docs/SWKBD-KEYPAD.md).
 //
 // mkw-recomp's ov_show_keyboard builds a request, then (unless MKW_SWKBD_ANSWER answers it) calls its text-entry
 // stub `text_entry_run(req, out, cap, &len)`, which today only logs "no text entry window on this host yet" and
