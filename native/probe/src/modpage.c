@@ -7,12 +7,14 @@
 //   server      the seat server's URL; empty: SEATAPI_DEFAULT_SERVER
 //   pin         the PIN of the name below; pin_name the profile name it was registered or entered for (a renamed
 //               profile no longer matches, and the page asks again)
-//   voice       "0" turns voice chat off (default on)
+//   voice       "1" turns voice chat on (default off)
+//   camera, camera_view, camera_mirror, camera_device: the GameChat camera (cameratab.c; all off unless "1")
 // Transient fields: pin_entry, friend_add.
 //
 // Network calls run on one worker thread of the page's own; the page draws its state each frame.
 #include "mkw_plugin.h"
 
+#include "cameratab.h"
 #include "plat.h"
 #include "seatapi.h"
 
@@ -24,7 +26,7 @@
 // ---- texts, English and Brazilian Portuguese (the plugin translates its own: page->language)
 enum {
     T_HEAD, T_INTRO, T_CONSENT, T_CONSENT_BOX, T_CONSENT_FIRST, T_ACCOUNT, T_SERVER, T_PROFILE_BAD, T_SIGNED,
-    T_PIN_SHOW, T_FORGET, T_NOT_YET, T_REGISTER, T_HAVE_PIN, T_PIN, T_PIN_HINT, T_USE_PIN, T_VOICE_HEAD, T_VOICE,
+    T_PIN_SHOW, T_FORGET, T_NOT_YET, T_REGISTER, T_HAVE_PIN, T_PIN, T_PIN_HINT, T_USE_PIN, T_VOICE_HEAD, T_VOICE, T_CAMERA_HEAD,
     T_FRIENDS, T_NO_FRIENDS, T_ADD, T_ADD_HINT, T_SEND, T_ACCEPT, T_DECLINE, T_CANCEL, T_REMOVE, T_WANTS, T_ASKED,
     T_PLAYING, T_ONLINE, T_OFFLINE, T_BUSY_REG, T_BUSY_PIN, T_BUSY_FRIENDS, T_REG_OK, T_TAKEN, T_RESERVED,
     T_RATE, T_OFFLINE_SRV, T_PIN_WRONG, T_PIN_OK, T_NOT_FOUND, T_FRIEND_SENT, T_FRIEND_DONE, T_FRIEND_UNKNOWN,
@@ -35,7 +37,7 @@ static const char *const EN[T_COUNT] = {
     "MKWMP is a fan-run online service for mkw-recomp: races and battles with other players, friends and voice chat. "
     "It is not affiliated with Nintendo.",
     "Online, other players see your name and can hear you in voice chat; anyone can join a public race. You must be "
-    "18 or older to use it.",
+    "18 or older to use it. If you turn the camera on, they can see you too.",
     "I am 18 or older and I accept this",
     "Accept the notice above to set up online play.",
     "Account",
@@ -52,6 +54,7 @@ static const char *const EN[T_COUNT] = {
     "Use this PIN",
     "Voice chat",
     "Voice chat in online lobbies and races",
+    "Camera",
     "Friends",
     "No friends yet: send a request by name below.",
     "Add a friend",
@@ -85,14 +88,14 @@ static const char *const EN[T_COUNT] = {
     "%d of %d seats taken",
     "%d of %d seats taken, %d waiting in line",
     "The server does not answer right now.",
-    "Changes to the account and the server apply at the next start; voice chat has its own tab.",
+    "Changes to the account and the server apply at the next start; voice chat and the camera have their own tabs.",
 };
 static const char *const PT[T_COUNT] = {
     "Jogo online (MKWMP)",
     "MKWMP é um serviço online feito por fãs para o mkw-recomp: corridas e batalhas com outros jogadores, amigos e "
     "chat de voz. Não tem ligação com a Nintendo.",
     "Online, outros jogadores veem seu nome e podem ouvir você no chat de voz; qualquer um pode entrar numa corrida "
-    "pública. Você precisa ter 18 anos ou mais para usar.",
+    "pública. Você precisa ter 18 anos ou mais para usar. Se você ligar a câmera, eles também podem ver você.",
     "Tenho 18 anos ou mais e aceito",
     "Aceite o aviso acima para configurar o jogo online.",
     "Conta",
@@ -109,6 +112,7 @@ static const char *const PT[T_COUNT] = {
     "Usar este PIN",
     "Chat de voz",
     "Chat de voz nos lobbies e corridas online",
+    "Câmera",
     "Amigos",
     "Nenhum amigo ainda: envie um pedido pelo nome abaixo.",
     "Adicionar amigo",
@@ -142,7 +146,7 @@ static const char *const PT[T_COUNT] = {
     "%d de %d vagas ocupadas",
     "%d de %d vagas ocupadas, %d na fila",
     "O servidor não está respondendo agora.",
-    "Mudanças na conta e no servidor valem no próximo início; o chat de voz tem sua própria aba.",
+    "Mudanças na conta e no servidor valem no próximo início; o chat de voz e a câmera têm suas próprias abas.",
 };
 static const char *const *T = EN;
 
@@ -434,6 +438,10 @@ MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p) {
 
     p->heading(T[T_VOICE_HEAD]);
     p->checkbox("voice", T[T_VOICE], 0);   // off by default
+    if (!p->in_game) {   // in the game the camera has its own tab
+        p->heading(T[T_CAMERA_HEAD]);
+        cameratab_widgets(p);
+    }
 
     p->column_next();
     p->heading(T[T_SERVER_HEAD]);

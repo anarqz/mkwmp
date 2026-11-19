@@ -35,6 +35,10 @@ int voice_is_talking(uint64_t account);
 // Mute or unmute a player from the game's menus (`name` may be NULL). Applies at once; the launcher is told on the
 // voice thread.
 void voice_set_muted(uint64_t account, const char *name, int muted);
+// For the camera (camera.c): 1 between voice_online and voice_offline, whatever the voice settings; and the accounts
+// of the other players in the voice room, as the relay last said (none while the engine is not in a room).
+int voice_is_online(void);
+int voice_peer_accounts(uint64_t *out, int cap);
 // 1 while voice runs in a room (the engine is on and the relay has this player in a lobby).
 int voice_active(void);
 

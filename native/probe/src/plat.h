@@ -138,6 +138,12 @@ void *plat_dl_loaded(const char *base);
 #else
 #define PLAT_VOICE_LIB "libmkwmp-voice.so"
 #endif
+// The camera capture library, in the same folder (native/camera).
+#ifdef _WIN32
+#define PLAT_CAMERA_LIB "mkwmp-camera.dll"
+#else
+#define PLAT_CAMERA_LIB "libmkwmp-camera.so"
+#endif
 
 // ---- memory
 // Readable bytes from p to the end of its mapping (committed, not guard / no-access); 0 when p is not readable.

@@ -13,6 +13,9 @@
 // and the lobby CA are read from there, else from the game's folder, where the MKWMP launcher writes them
 // (config.c).
 //
+// Camera: with plugin API 3 and game 1.8.0, camera.c answers the game's GameChat calls (nn::chat) and fills the images
+// it shows above the karts; on anything older nothing of it is registered.
+//
 // Accounts: with plugin API 2, the mod's options page (modpage.c, in the start screen) stores the player's consent,
 // server, PIN and voice switch; at init they make the probe sign in itself (seatd.c answers the launcher's local API
 // in-process). A mkwmp.toml with a launcher still wins; API 1 runtimes use mkwmp.toml only.
@@ -21,7 +24,10 @@
 // pointer, so a GuestFn is handed to the runtime as an MkwGuestFn as it is. Nothing here reads past that prefix.
 #include "mkw_plugin.h"
 
+#include "camera.h"
+#include "cameratab.h"
 #include "config.h"
+#include "friends.h"
 #include "guesthook.h"
 #include "launcher.h"
 #include "log.h"
@@ -32,6 +38,7 @@
 #include "seatapi.h"
 #include "seat.h"
 #include "seatd.h"
+#include "voice.h"
 #include "voice_ui.h"
 #include "voicetab.h"
 
@@ -174,6 +181,37 @@ static void use_settings(const MkwPluginApi *api) {
         mkwmp_log("plugin: runtime without on_exit: the seat is freed by the server's timeout");
 }
 
+// ---- the GameChat camera (camera.c; plugin API 3, game 1.8.0): what it asks of the session
+static uint64_t cam_self_account(void) {
+    const char *name = mkwmp_config()->name;
+    return name[0] ? friends_account_id(name) : 0x1122334455667788ull;   // npln.c's nsa_id (FAKE_NSA_ID without a name)
+}
+static const char *cam_self_name(void) {
+    const char *name = mkwmp_config()->name;
+    return name[0] ? name : g_api->size > offsetof(MkwPluginApi, profile_name) && g_api->profile_name ? g_api->profile_name : "";
+}
+
+static void use_camera(const MkwPluginApi *api, uint32_t api_version) {
+    int v3 = api->size >= offsetof(MkwPluginApi, native_image_touch) + sizeof(void *);
+    CameraHost h = {
+        .api_version = api_version,
+        .game_version = api->game_version,
+        .native_image_create = v3 ? api->native_image_create : NULL,
+        .native_image_touch = v3 ? api->native_image_touch : NULL,
+        .setting_get = has_settings(api) ? api->setting_get : NULL,
+        .mod_dir = api->mod_dir,
+        .online = voice_is_online,
+        .peers = voice_peer_accounts,
+        .muted = voice_is_muted,
+        .self_account = cam_self_account,
+        .self_name = cam_self_name,
+        .account_of = friends_account_id,
+    };
+    if (!camera_install(&h)) return;
+    int pt = api->language && (!strcmp(api->language, "pt-BR") || !strcmp(api->language, "pt"));
+    if (api->settings_tab) api->settings_tab(pt ? "Câmera" : "Camera", cameratab_draw);
+}
+
 // ---- entry
 static int refuse(const char **message, const char *reason) {
     static char kept[256];   // the runtime reads it after we return
@@ -240,5 +278,7 @@ MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_vers
     int n = probe_register();
     if (n < 0) return refuse(message, "MKWMP does not fit this mkw-recomp (see mods/<mod>/mkwmp.log); online play is off");
     g_active = n > 0;
+    if (g_active) use_camera(api, api_version);   // the GameChat camera: 1.8.0 on plugin API 3, else off (logged)
+    else mkwmp_log("camera: off: online play is not set up");
     return 0;
 }

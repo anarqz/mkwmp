@@ -6,10 +6,10 @@ name: probe-linux
 
 on:
   push:
-    branches: [probe-plat, voice-linux, probe-plugin, plugin-v1, plugin-seat]
-    paths: ["native/probe/**", "native/voice/**", ".github/workflows/probe-linux.yml"]
+    branches: [probe-plat, voice-linux, probe-plugin, plugin-v1, plugin-seat, plugin-camera]
+    paths: ["native/probe/**", "native/voice/**", "native/camera/**", ".github/workflows/probe-linux.yml"]
   pull_request:
-    paths: ["native/probe/**", "native/voice/**", ".github/workflows/probe-linux.yml"]
+    paths: ["native/probe/**", "native/voice/**", "native/camera/**", ".github/workflows/probe-linux.yml"]
   workflow_dispatch:
 
 permissions:
@@ -40,6 +40,11 @@ jobs:
       # The native mkw-recomp plugin (src/mkw_plugin.h): mkwmp.so + mkwmp.dll, and the .so against a fake plugin API
       - name: Plugin builds (mkwmp.so, mkwmp.dll) and test_plugin
         run: python3 -I native/probe/build_plugin.py --test
+      # The camera capture library (DirectShow on Windows, no capture yet on Linux) and its picture conversion test
+      - name: Camera library (mkwmp-camera.dll, libmkwmp-camera.so)
+        run: |
+          python3 -I native/camera/build.py --target linux --test --list
+          python3 -I native/camera/build.py --target windows
 
   voice:
     runs-on: ubuntu-latest
@@ -65,6 +70,10 @@ jobs:
       - name: Windows voice library (mkwmp-voice.dll)
         run: python3 -I native/voice/build.py
       # The mod as mkw-recomp loads it (<game>/mods/mkwmp/), with both systems' libraries: a test artifact, not a release
+      - name: Camera library (mkwmp-camera.dll, libmkwmp-camera.so)
+        run: |
+          python3 -I native/camera/build.py --target linux
+          python3 -I native/camera/build.py --target windows
       - name: Plugin builds and the mod folder (mods/mkwmp/)
         run: python3 -I native/probe/build_plugin.py --test --package --version "ci-${GITHUB_SHA::7}"
       - uses: actions/upload-artifact@v7

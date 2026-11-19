@@ -6,7 +6,8 @@
 Produces build/plugin/linux/mkwmp.so (x86_64-linux-gnu) and build/plugin/windows/mkwmp.dll (x86_64-windows-gnu, a
 plain DLL, not the winmm.dll proxy): the core sources of build.py (minus the winmm loader, the COFF backend and the
 keypad detours, as build_linux.py), the plat files of the target (with its HTTP: WinHTTP, or libcurl loaded at run
-time), the plugin's seat client (seatapi.c, seatd.c), its options page (modpage.c) and src/backend_plugin.c. Both
+time), the plugin's seat client (seatapi.c, seatd.c), its options page (modpage.c), the GameChat camera (camera.c,
+camlib.c, cameratab.c; plugin API 3) and src/backend_plugin.c. Both
 export only mkw_plugin_init and mkw_mod_page (Linux: a version script, linked with --no-undefined). --test also builds tests/test_plugin.c and runs
 it against the Linux .so (on a Linux host): a fake MkwPluginApi, no runtime needed. Runs in CI
 (.github/workflows/probe-linux.yml).
@@ -19,6 +20,7 @@ it against the Linux .so (on a Linux host): a fake MkwPluginApi, no runtime need
                                                          runtime loads every one there)
     build/plugin/mod/mkwmp/mkwmp-voice.dll, libmkwmp-voice.so   (when native/voice built them; the probe's home is
                                                          the mod folder, so it loads them from there)
+    build/plugin/mod/mkwmp/mkwmp-camera.dll, libmkwmp-camera.so (when native/camera built them: the webcam capture)
     build/plugin/mkwmp-mod.zip
 """
 import argparse
@@ -38,7 +40,7 @@ SRC = HERE / "src"
 OUT = HERE / "build" / "plugin"
 BACKEND = "backend_plugin.c"
 # the plugin's own parts: its seat client (no launcher), its options page in mkw-recomp's start screen
-PLUGIN_ONLY = ["seatapi.c", "seatd.c", "modpage.c", "voicetab.c"]
+PLUGIN_ONLY = ["seatapi.c", "seatd.c", "modpage.c", "voicetab.c", "camera.c", "camlib.c", "cameratab.c"]
 WIN_PLAT = ["plat_win.c", "plat_net_win.c", "plat_http_win.c"]
 POSIX_HTTP = ["plat_http_posix.c"]
 VERSION_SCRIPT = "{ global: mkw_plugin_init; mkw_mod_page; local: *; };\n"
@@ -107,6 +109,14 @@ def test(zig, so):
             r = subprocess.run([str(exe), str(so), str(SRC / "npln.c")], env=env)
             if r.returncode:
                 sys.exit(r.returncode)
+            # the GameChat camera's gate: plugin API 3 + game 1.8.0 registers it, anything else leaves it off
+            cam = OUT / "linux" / "test_plugin_camera"
+            run([zig, "cc", "-target", "x86_64-linux-gnu", "-O1", "-Wall", "-Wextra", "-Werror", "-o", str(cam),
+                 str(HERE / "tests" / "test_plugin_camera.c"), "-ldl"])
+            for mode in ("v3", "v2", "game100"):
+                mod_dir = pathlib.Path(tmp) / f"camera-{mode}"
+                mod_dir.mkdir()
+                run([str(cam), str(so), str(mod_dir), mode])
             # seatd.c alone (not exported by the .so): with the core sources it needs
             seatd = OUT / "linux" / "test_seatd"
             run([zig, "cc", "-target", "x86_64-linux-gnu", "-O1", "-Wall", "-Wextra", "-Werror", "-o", str(seatd),
@@ -122,6 +132,7 @@ def test(zig, so):
 
 
 VOICE = HERE.parent / "voice" / "build"
+CAMERA = HERE.parent / "camera" / "build"
 
 
 def package(version):
@@ -135,7 +146,9 @@ def package(version):
     libs = [(OUT / "windows" / "mkwmp.dll", mod / "plugin" / "mkwmp.dll"),
             (OUT / "linux" / "mkwmp.so", mod / "plugin" / "mkwmp.so"),
             (VOICE / "mkwmp-voice.dll", mod / "mkwmp-voice.dll"),
-            (VOICE / "linux" / "libmkwmp-voice.so", mod / "libmkwmp-voice.so")]
+            (VOICE / "linux" / "libmkwmp-voice.so", mod / "libmkwmp-voice.so"),
+            (CAMERA / "mkwmp-camera.dll", mod / "mkwmp-camera.dll"),
+            (CAMERA / "linux" / "libmkwmp-camera.so", mod / "libmkwmp-camera.so")]
     for src, dst in libs:
         if src.exists():
             shutil.copy2(src, dst)

@@ -344,6 +344,22 @@ int voice_is_talking(uint64_t account) {
     return 0;
 }
 
+int voice_is_online(void) {
+    plat_lock_shared(&g_lock);
+    int online = g_online;
+    plat_unlock_shared(&g_lock);
+    return online;
+}
+
+int voice_peer_accounts(uint64_t *out, int cap) {
+    if (!g_dll.peers || cap <= 0) return 0;
+    mkwmp_voice_peer p[32];
+    int n = g_dll.peers(p, 32), k = 0;
+    for (int i = 0; i < n && k < cap; i++)
+        if (!p[i].self && p[i].account) out[k++] = p[i].account;
+    return k;
+}
+
 int voice_active(void) {
     return g_dll.status && (g_dll.status() & (MKWMP_VOICE_SUBSCRIBED | MKWMP_VOICE_RUNNING)) == (MKWMP_VOICE_SUBSCRIBED | MKWMP_VOICE_RUNNING);
 }
