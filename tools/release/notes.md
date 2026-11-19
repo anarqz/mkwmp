@@ -2,8 +2,8 @@
 
 - **Voice chat now works only in friend rooms** (ONLINE → FRIENDS), for everyone in the room. Matchmade lobbies have no voice chat any more. This is a server change, so it applies to every launcher version, 1.2.0 included.
 - **Camera in friend rooms.** With the MKWMP mod on game 1.8.0, turn your camera on and the mutual friends in your room (each of you on the other's friend list) see you above your kart, up to 4 faces each. It's off by default: turn it on under Mods → MKWMP → Options (or the in-game settings, Camera tab), then answer yes when the game asks at Online Play. Pictures are relayed live and never recorded. Muting a player hides their camera and stops yours going to them. Report camera abuse from the same Camera settings.
-- **The MKWMP mod.** `mkwmp-mod.zip` is MKWMP as a mod for mkw-recomp 0.1.15-mkwmp: import it from the start screen's Mods page, or unzip it into the game's `mods/` folder (you get `mods/mkwmp/`), and enable it. When the mod is enabled, the launcher takes its own game patch (`winmm.dll`) out of the game folder and says "MKWMP runs as a mod in this game": the mod wins. You can keep using the launcher for your gamertag, friends and PLAY.
-- **mkw-recomp 0.1.15** is supported, as well as 0.1.10, 0.1.12 and 0.1.13.
+- **The MKWMP mod.** `mkwmp-mod.zip` is MKWMP as a mod for mkw-recomp 0.1.15 and 0.1.15-mkwmp: unzip it into the `mods/` folder of mkw-recomp's data folder (you get `mods/mkwmp/`), then on the start screen open Mods, tick MKWMP, and in its Options confirm you're 18+ and sign in or register. When the mod is enabled, the launcher takes its own game patch (`winmm.dll`) out of the game folder and says "MKWMP runs as a mod in this game": the mod wins. You can keep using the launcher for your gamertag, friends and PLAY.
+- **mkw-recomp [0.1.15-mkwmp](https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.15-mkwmp)** is the recommended version: MKWMP's build of mkw-recomp 0.1.15, which the camera needs. The official **0.1.15** is supported too, as well as 0.1.10, 0.1.12 and 0.1.13 (without the mod or the camera). Coming from the official 0.1.15, or moving to it, open mkw-recomp once and let it finish its setup: the launcher tells you when that's needed.
 - Players on 1.2.0 and 1.3.0 play and talk together in friend rooms. Only players with the mod see cameras.
 - The [privacy policy](https://anarqz.github.io/mkwmp/#privacy) now covers the camera.
 
@@ -77,7 +77,7 @@ Files:
 
 - `mkwmp-1.3.0-windows-x64.zip` / `mkwmp-1.3.0-linux-x64.zip`: the launcher, the game patch, licenses and a README.
 - `mkwmp-launcher-x86_64-*`, `winmm.dll`, `mkwmp-voice.dll`: the same files loose, for launchers that update themselves.
-- `mkwmp-mod.zip`: MKWMP as a mod for mkw-recomp 0.1.15-mkwmp (`mkwmp/`, for the game's `mods/` folder).
+- `mkwmp-mod.zip`: MKWMP as a mod for mkw-recomp 0.1.15 / 0.1.15-mkwmp (`mkwmp/`, for the game's `mods/` folder).
 - `mkwmp-server-x86_64-windows.exe` / `mkwmp-server-x86_64-linux`: the server, for hosting your own (`mkwmp-server host --help`).
 - `SHA256SUMS` + `SHA256SUMS.sig`: checksums signed with the release key. The launcher verifies them before installing anything.
 

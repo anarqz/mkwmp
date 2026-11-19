@@ -8,8 +8,8 @@ This page describes what the project is and is not. It is not legal advice.
 
 ## What MKWMP contains
 
-- **Its own code only.** The launcher, the server, the game patch (`winmm.dll`) and the voice library
-  (`mkwmp-voice.dll`) are written by MKWMP contributors and published under GPL-3.0-or-later. The third-party
+- **Its own code only.** The launcher, the server, the game patch (`winmm.dll`), the mkw-recomp mod
+  (`mkwmp-mod.zip`) and the voice and camera libraries (`mkwmp-voice`, `mkwmp-camera`) are written by MKWMP contributors and published under GPL-3.0-or-later. The third-party
   components (all open source) are listed in [NOTICE.md](../NOTICE.md).
 - **No game content.** The current source tree and the release downloads contain no game code, decompiled code,
   game assets, art, music, fonts, game files, encryption keys or firmware.

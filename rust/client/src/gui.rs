@@ -862,7 +862,7 @@ impl App {
                 ui.label(RichText::new(p).size(12.0).color(RED_D)).on_hover_text(rc.explain());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let get = format!("GET {}", crate::recomp::RECOMMENDED);
-                    if small_button(ui, &get, 96.0, BLUE, BLUE_D, true).on_hover_text(crate::recomp::DOWNLOAD).clicked() {
+                    if small_button(ui, &get, 150.0, BLUE, BLUE_D, true).on_hover_text(crate::recomp::DOWNLOAD).clicked() {
                         let _ = open::that(crate::recomp::DOWNLOAD);
                     }
                 });
