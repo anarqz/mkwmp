@@ -60,6 +60,9 @@ int friends_page(const FriendRoster *roster, const uint64_t owner[2], int offset
 // offset 0 picks up the latest roster; later pages continue in that same snapshot.
 int friends_list(const uint64_t owner[2], int offset, int count, GFriend *out);
 
+// The account ids of the cached roster (the camera's loopback: camera.h). Returns how many were written.
+int friends_accounts(uint64_t *out, int cap);
+
 // The game went online: start the refresh thread if needed (one GET now, then one every
 // 15 s while online) and wait up to `wait_ms` for the first answer, so the list is there
 // before the game reads it. Does nothing without a launcher in mkwmp.toml.

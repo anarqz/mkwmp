@@ -20,8 +20,14 @@
 // camera shows a tile with the player's name.
 //
 // Environment (tests): MKWMP_CAMERA=0 keeps the whole feature off. MKWMP_CAMERA_LOOPBACK=1 shows the local picture as
-// every other member's too, and adds a made-up member when the lobby has none, so one PC exercises the remote path.
-// MKWMP_CAMERA_MEMBERS=name,name lists more members by name with their cameras on.
+// every other member's too (nothing is sent or received): the members are the voice room's and, since that is empty
+// while voice chat is off, the player's friends, each by the account id the lobby gives it, which is how the game
+// finds the kart to draw a picture above; with nobody at all a made-up member is added, so one PC alone exercises the
+// remote path. MKWMP_CAMERA_MEMBERS=name,name lists more members by name with their cameras on.
+// MKWMP_CAMERA_TRACE=1 logs the flow, bounded: the first calls of every override with their arguments (which game
+// object and image a handle belongs to, what was written and whether the runtime took it), a line a second with each
+// camera's polls / requests / writes when they change, and the game's own state when it changes (camera.c trace_game:
+// whether its screen guard hands cameras to the UI, which image each camera shows, the texture ids the UI draws).
 //
 // ---- For phase 4 (the relay's video/v1, not written yet) ----------------------------------------------------------
 // The transport plugs in here and nowhere else:
@@ -68,6 +74,7 @@ typedef struct {
     // the session, asked from the camera's own thread
     int (*online)(void);                             // the player is seated and online
     int (*peers)(uint64_t *accounts, int cap);       // the other members of the lobby (voice room)
+    int (*friends)(uint64_t *accounts, int cap);     // the player's friends (the roster): members too in loopback; may be NULL
     int (*muted)(uint64_t account);                  // muted by the player: the face is hidden too
     uint64_t (*self_account)(void);
     const char *(*self_name)(void);

@@ -202,6 +202,7 @@ static void use_camera(const MkwPluginApi *api, uint32_t api_version) {
         .mod_dir = api->mod_dir,
         .online = voice_is_online,
         .peers = voice_peer_accounts,
+        .friends = friends_accounts,
         .muted = voice_is_muted,
         .self_account = cam_self_account,
         .self_name = cam_self_name,

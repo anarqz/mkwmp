@@ -106,6 +106,13 @@ static int h_peers(uint64_t *out, int cap) {
     memcpy(out, g_peers, (size_t)n * 8);
     return n;
 }
+static int g_nfriends;
+static uint64_t g_friends[4];
+static int h_friends(uint64_t *out, int cap) {
+    int n = g_nfriends < cap ? g_nfriends : cap;
+    memcpy(out, g_friends, (size_t)n * 8);
+    return n;
+}
 static int h_muted(uint64_t account) { return account == g_muted; }
 static uint64_t h_self(void) { return SELF; }
 static const char *h_name(void) { return "Bia_7"; }
@@ -289,7 +296,7 @@ static uint8_t g_types[5][0x100];   // the game's Local/RemoteCameraVideoType ob
 static CameraHost host(uint32_t api) {
     CameraHost h = {.api_version = api, .game_version = "1.8.0", .native_image_create = api >= 3 ? image_create : NULL,
                     .native_image_touch = api >= 3 ? image_touch : NULL, .setting_get = setting_get, .mod_dir = "",
-                    .online = h_online, .peers = h_peers, .muted = h_muted, .self_account = h_self, .self_name = h_name,
+                    .online = h_online, .peers = h_peers, .friends = h_friends, .muted = h_muted, .self_account = h_self, .self_name = h_name,
                     .account_of = h_account_of, .no_thread = 1};
     return h;
 }
@@ -329,6 +336,7 @@ static void test_overrides(void) {
     plat_setenv("MKWMP_CAMERA_LOOPBACK", "1");
     plat_setenv("MKWMP_CAMERA_MEMBERS", NULL);
     plat_setenv("MKWMP_CAMERA_PATTERN", NULL);
+    plat_setenv("MKWMP_CAMERA_TRACE", "1");   // the trace runs through all of this (the game's memory is not there: no state lines)
     CameraHost h = host(3);
     CHECK(camera_install(&h) == CAMERA_OVERRIDES && g_nov == CAMERA_OVERRIDES);
     for (int i = 0; i < g_nov; i++) {
@@ -387,6 +395,18 @@ static void test_overrides(void) {
     CHECK(u64_at(room + 0x28) == SELF && room[0x30] == 1 && i32_at(room + 0x38) == 1 && room[0x48] == 1);
     uint64_t fake = u64_at(room + 0x40);
     CHECK(fake && fake != SELF);
+
+    // loopback with voice chat off (no voice room) and friends: they are the members, by their account ids, cameras on;
+    // the made-up member is only for a player with nobody; the player's own id and a repeat are not listed
+    g_friends[0] = 0xf1, g_friends[1] = SELF, g_friends[2] = 0xf2, g_friends[3] = 0xf1, g_nfriends = 4;
+    camera_refresh();
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1 && g_signals == 2);
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && i32_at(room + 0x38) == 2);
+    CHECK(u64_at(room + 0x40) == 0xf1 && room[0x48] == 1 && u64_at(room + 0x50) == 0xf2 && room[0x58] == 1);
+    g_nfriends = 0;
+    camera_refresh();
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1 && g_signals == 3);
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && i32_at(room + 0x38) == 1 && u64_at(room + 0x40) == fake);
 
     // the member refresh (0x2996750): the local stream, then the member's
     camera_set_frame_out(frame_out, &g_out_calls);

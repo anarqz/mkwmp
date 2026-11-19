@@ -207,6 +207,14 @@ int friends_list(const uint64_t owner[2], int offset, int count, GFriend *out) {
     return n;
 }
 
+int friends_accounts(uint64_t *out, int cap) {
+    int n = 0;
+    plat_lock(&g_lock);
+    for (int i = 0; i < g_latest.count && n < cap; i++) out[n++] = g_latest.e[i].account_id;
+    plat_unlock(&g_lock);
+    return n;
+}
+
 // Returns 1 when the launcher answered with a roster.
 static int refresh(void) {
     static char buf[16384];   // 100 names fit several times over; only this thread uses it

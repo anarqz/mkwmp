@@ -233,6 +233,134 @@ static void bump(Source *s) {
     if (!++s->serial) s->serial = 1;
 }
 
+// ---- the trace (MKWMP_CAMERA_TRACE=1): what the game asks and what it does with the answers ------------------------
+// Three parts, all bounded: the first TRACE_CALLS calls of every override with their arguments; once a second while a
+// chat runs, each camera's polls / requests / pictures written since the last line (only when the numbers changed); and
+// the game's own state, read from its memory on its thread and logged when it changes (trace_game below).
+enum { TRACE_CALLS = 12, TRACE_SUMMARIES = 90, TRACE_STATE_LINES = 240 };
+enum {
+    T_ROOM, T_SIGNAL, T_KEY, T_SIZE, T_HANDLE, T_FINALIZE, T_START, T_STOP, T_OE,
+    T_REQUEST = T_OE + 6,                // per camera from here on
+    T_POLL = T_REQUEST + CAMERA_VIDEOS,
+    T_WRITE = T_POLL + CAMERA_VIDEOS,
+    T_FOREIGN = T_WRITE + CAMERA_VIDEOS, // the game's poll of a handle that is not ours (a camera's first one is zero)
+    T_N,
+};
+typedef struct { uint32_t requests, unknown, polls, done, writes, refused; } TraceCount;
+static int g_trace;
+static uint32_t g_trace_n[T_N];             // calls logged so far (the game's threads; a lost count costs one line)
+static TraceCount g_count[CAMERA_VIDEOS];   // under g_lock: since the last summary
+
+static int tr(int what) {
+    if (!g_trace || g_trace_n[what] >= TRACE_CALLS) return 0;
+    g_trace_n[what]++;
+    return 1;
+}
+
+// The game's side of the pictures, from 1.8.0's main (research/docs/CAMERA-RE.md 1.3 and 2.1; the screen guard and the
+// texture ids were read for this trace, 19/11/2026): read-only, and only when the code the offsets were read from is
+// the code in memory. What decides whether a picture reaches the screen, in the game's order:
+//   1. the room lists the account with a camera -> the game gives it a video object and starts its stream;
+//   2. the first poll of image 0's zero sync answers done -> "shows image 0", then our syncs cycle the three images;
+//   3. mode 2 (after SetSharingKey) makes GameChat want cameras shown; the screen guard calls nn::oe::DisableScreenShot
+//      and BeginPresentPhotographedContents, waits ten frames, and from then on hands the pictures to the UI
+//      (0x1c8cd0 returns early while S+0xc or S+0x14 is set: every camera then has no picture);
+//   4. the UI's lookup by player (0x7fe880) gives a picture only for an account in T with "has one";
+//   5. what it draws is the texture id of the shown image (V's +0x68), which the game got at boot by making its own
+//      texture over the memory pool of the native image's texture (0xd31e60, 0xaa1b0: no pool, no id).
+//   V = a *VideoType object - 0xa30 (the game's video object): +0xa00 current image (-1: none shown yet), +0xa04 next,
+//       +0xa08 the last poll's answer, +0xa18 assigned to a member, +0xa19 stream started, +0xa20 the member's account;
+//       image i's texture as the UI takes it at V + 8 + i * 0x350 + 0x280: +0x10 the memory pool the game found behind
+//       the native image's texture (0: none, and then it has no texture id), +0x68 its id in the game's texture table
+//       (-1: none), which is all the UI copies (0x2fd7c0).
+//   M = the local V - 0x38 (the chat manager): +0x3828 chatting, +0x3829 the sharing key is set.
+//   S = [main+0x37b3858] + 0xd944, the screen guard (update 0x6355f0): +0 who wants cameras shown (bit 0 GameChat),
+//       +4 who forbids it, +0xc 1 while screenshots are allowed and cameras are NOT handed to the UI, +0x10 / +0x14 the
+//       ten frames it waits after nn::oe::DisableScreenShot before the first picture.
+//   T = [main+0x37b84c8] + 0x17b8, what the UI draws (filled each frame by 0x1c8cd0 when S allows): +0x278 mode
+//       (2 GameChat), +0x2b8 the local picture (+8 texture id) with +0x2d8 "has one"; four of { +0 account, +8 valid,
+//       +0x18 texture id, +0x30 has one } from +0x2e0, 0x38 apart; +0x290 the id the game puts everywhere first.
+#define GAME_MAIN(off) (0x7000000000ull + (uint64_t)(off))
+static int peek(uint64_t addr, void *out, size_t n) {
+    memset(out, 0, n);
+    if (plat_mem_readable((const void *)(uintptr_t)addr) < n) return 0;
+    memcpy(out, (const void *)(uintptr_t)addr, n);
+    return 1;
+}
+static uint64_t peek64(uint64_t addr) { uint64_t v; peek(addr, &v, 8); return v; }
+static uint32_t peek32(uint64_t addr) { uint32_t v; peek(addr, &v, 4); return v; }
+static uint8_t peek8(uint64_t addr) { uint8_t v; peek(addr, &v, 1); return v; }
+
+static int game_code_is(uint64_t off, const uint32_t *words, int n) {
+    uint32_t got[8];
+    return n <= 8 && peek(GAME_MAIN(off), got, 4u * (size_t)n) && !memcmp(got, words, 4u * (size_t)n);
+}
+
+static void trace_line(int slot, const char *text) {
+    static char last[CAMERA_VIDEOS + 2][400];   // the game's thread only
+    static int lines;
+    if (lines >= TRACE_STATE_LINES || !strcmp(last[slot], text)) return;
+    snprintf(last[slot], sizeof last[slot], "%s", text);
+    lines++;
+    mkwmp_log("camera: trace: game: %s%s", text, lines == TRACE_STATE_LINES ? " (the last line of the game's state)" : "");
+}
+
+// On the game's thread (IsChatting), types[] the *VideoType objects it gave us (0: none).
+static void trace_game(const uint64_t types[CAMERA_VIDEOS]) {
+    static const uint32_t kGetter[8] = {0x39686008, 0x7100051f, 0x540001e1, 0x39686408, 0x7100051f, 0x54000181, 0xb94a0008, 0x37f80148};
+    static const uint32_t kFill[8] = {0xf001af48, 0x91216108, 0xf9400108, 0x91403508, 0x39656109, 0x37000069, 0x39654108, 0x36000268};
+    static const uint32_t kMode[2] = {0xb9427808, 0xaa0003f4}, kGuard[4] = {0x39405008, 0x7100051f, 0x540002a0, 0xd503237f};
+    static int checked, ok;
+    if (!checked) {
+        checked = 1;
+        ok = game_code_is(0x2996b50, kGetter, 8) && game_code_is(0x1c8e0c, kFill, 8) && game_code_is(0x1c8e74, kMode, 2) &&
+             game_code_is(0x6355f0, kGuard, 4);
+        if (!ok) mkwmp_log("camera: trace: the game's own state is not read: this is not the 1.8.0 code its offsets are from");
+    }
+    if (!ok || !types[0]) return;
+    char text[400];
+    uint64_t m = types[0] - 0xa30 - 0x38, g = peek64(GAME_MAIN(0x37b3858)), t = peek64(GAME_MAIN(0x37b84c8));
+    uint64_t s = g ? g + 0xd944 : 0;
+    t = t ? t + 0x17b8 : 0;
+    snprintf(text, sizeof text, "chatting %u, sharing key %u, mode %d (2: GameChat); screen guard: wanted by %#x, forbidden by %#x, "
+             "held by %#x, cameras %s, settling %u (%d frames left)", peek8(m + 0x3828), peek8(m + 0x3829),
+             t ? (int)peek32(t + 0x278) : -1, s ? peek32(s) : 0, s ? peek32(s + 4) : 0, s ? peek32(s + 8) : 0,
+             !s ? "?" : peek8(s + 0xc) ? "NOT given to the UI (screenshots allowed)" : "given to the UI", s ? peek8(s + 0x14) : 0,
+             s ? (int)peek32(s + 0x10) : 0);
+    trace_line(0, text);
+    if (t) {
+        int k = snprintf(text, sizeof text, "the UI has: local %s texture %lld; the others", peek8(t + 0x2d8) ? "yes," : "NO,",
+                         (long long)peek64(t + 0x2b8 + 8));
+        for (int i = 0; i < CAMERA_REMOTE && k < (int)sizeof text - 80; i++) {
+            uint64_t e = t + 0x2e0 + (uint64_t)i * 0x38;
+            if (!peek8(e + 8)) continue;
+            k += snprintf(text + k, sizeof text - (size_t)k, " [account %#llx %s texture %lld]", (unsigned long long)peek64(e),
+                          peek8(e + 0x30) ? "yes," : "NO,", (long long)peek64(e + 0x18));
+        }
+        snprintf(text + k, sizeof text - (size_t)k, "; texture of a camera without a picture %lld", (long long)peek64(t + 0x290));
+        trace_line(1, text);
+    }
+    for (int i = 0; i < CAMERA_VIDEOS; i++) {
+        if (!types[i]) continue;
+        uint64_t v = types[i] - 0xa30;
+        int32_t next = (int32_t)peek32(v + 0xa04);
+        uint64_t sync = v + 8 + (uint64_t)(next >= 0 && next < 3 ? next : 0) * 0x350 + 0x340;
+        int32_t id[3];
+        uint64_t pool[3];
+        for (int k = 0; k < 3; k++) {
+            uint64_t w = v + 8 + (uint64_t)k * 0x350 + 0x280;
+            id[k] = (int32_t)peek32(w + 0x68), pool[k] = peek64(w + 0x10);
+        }
+        if (!peek8(v + 0xa18) && i) continue;   // a remote camera given to nobody: nothing to say
+        snprintf(text, sizeof text, "camera %d: given to a member %u (account %#llx), started %u, shows image %d, waits for image %d "
+                 "(last answer %u, its sync %#llx:%llu); texture ids %d %d %d, %s", i, peek8(v + 0xa18),
+                 (unsigned long long)peek64(v + 0xa20), peek8(v + 0xa19), (int)peek32(v + 0xa00), (int)next, peek8(v + 0xa08),
+                 (unsigned long long)peek64(sync), (unsigned long long)peek64(sync + 8), (int)id[0], (int)id[1], (int)id[2],
+                 pool[0] && pool[1] && pool[2] ? "each over a memory pool" : "NO memory pool behind the native images: the game made no texture of them");
+        trace_line(2 + i, text);
+    }
+}
+
 static Source *source_of(uint64_t account) {
     if (!account) return NULL;
     for (int i = 0; i < CAMERA_REMOTE; i++)
@@ -256,7 +384,14 @@ static void blit(uint8_t *dst, int dw, int dh, int drow, const uint8_t *src, int
 static void video_write(Video *v, int image, const uint8_t *rgba) {
     if (image < 0 || image >= v->made) return;
     blit(v->pixels[image], v->w, v->h, v->row, rgba, CAMERA_W, CAMERA_H);
-    H.native_image_touch(v->handle[image]);
+    int told = H.native_image_touch(v->handle[image]), i = (int)(v - g_video);
+    g_count[i].writes++, g_count[i].refused += !told;
+    if (tr(T_WRITE + i)) {
+        const uint8_t *p = v->pixels[image] + (size_t)(v->h / 2) * (size_t)v->row + (size_t)(v->w / 2) * 4;
+        mkwmp_log("camera: trace: camera %d image %d (handle %#x, pixels %p) written, the runtime %s; middle pixel %u %u %u %u", i,
+                  image, (unsigned)v->handle[image], (void *)v->pixels[image], told ? "told" : "REFUSED the handle", p[0], p[1],
+                  p[2], p[3]);
+    }
 }
 
 // Every image of a camera shows the tile: at set-up and when its stream stops, so the next member it is given to
@@ -321,10 +456,46 @@ static void ov_is_chatting(Cpu *c) {
     else g_local_kind = KIND_NONE;
     CameraFrameOut out = g_out;
     void *user = g_out_user;
+    // the trace: once a second the cameras' counts, four times a second the game's own state (logged when it changes)
+    static uint64_t counted_at, state_at;
+    static int summaries, was_chatting = -1;
+    static TraceCount last[CAMERA_VIDEOS];
+    TraceCount count[CAMERA_VIDEOS] = {{0}};
+    uint64_t types[CAMERA_VIDEOS] = {0}, now = g_trace ? plat_ms() : 0;
+    uint32_t serial = g_local.serial;
+    int count_now = g_trace && chatting && now - counted_at >= 1000, state_now = g_trace && now - state_at >= 250;
+    if (count_now) {
+        memcpy(count, g_count, sizeof count);
+        memset(g_count, 0, sizeof g_count);
+        counted_at = now;
+    }
+    for (int i = 0; state_now && i < CAMERA_VIDEOS; i++) types[i] = g_video[i].type;
     plat_unlock(&g_lock);
+    if (g_trace && chatting != was_chatting) {
+        mkwmp_log("camera: trace: IsChatting answers %d from now on (caller %#llx)", chatting, (unsigned long long)c->x[30]);
+        was_chatting = chatting;
+    }
+    if (count_now && summaries < TRACE_SUMMARIES && memcmp(count, last, sizeof count)) {
+        char text[480];
+        int k = 0;
+        for (int i = 0; i < CAMERA_VIDEOS && k < (int)sizeof text - 96; i++)
+            if (count[i].polls || count[i].requests || count[i].unknown || count[i].writes)
+                k += snprintf(text + k, sizeof text - (size_t)k, " camera %d: %u polls, %u done, %u images asked (%u of a camera "
+                              "we do not know), %u written (%u refused);", i, count[i].polls, count[i].done, count[i].requests,
+                              count[i].unknown, count[i].writes, count[i].refused);
+        mkwmp_log("camera: trace: the last second:%s local picture %u%s", k ? text : " the game polled and asked for nothing;",
+                  (unsigned)serial, ++summaries == TRACE_SUMMARIES ? " (the last of these lines)" : "");
+        memcpy(last, count, sizeof last);
+    }
+    if (state_now) {
+        state_at = now;
+        trace_game(types);
+    }
     if (event) {   // the game reads the room again (members, camera flags) when its event is signalled
         if (!signal && g_rt.guest_symbol) signal = g_rt.guest_symbol("_ZN2nn2os17SignalSystemEventEPNS0_15SystemEventTypeE");
         if (signal && g_rt.call) g_rt.call(c, signal, 1, event);
+        if (tr(T_SIGNAL)) mkwmp_log("camera: trace: the room changed: the game's event %#llx signalled%s", (unsigned long long)event,
+                                   signal && g_rt.call ? "" : " NOT (no nn::os::SignalSystemEvent)");
     }
     // g_local is written on this thread only, so it is read here without the lock (out may call camera_* back)
     if (send && out) out(g_local.rgba, CAMERA_W, CAMERA_H, plat_ms(), user);
@@ -348,6 +519,19 @@ static void ov_get_room_info(Cpu *c) {
         memcpy(out, g_room, CAMERA_ROOM_SIZE);
         plat_unlock_shared(&g_lock);
     }
+    if (out && tr(T_ROOM)) {
+        char text[400];
+        int32_t n;
+        uint64_t self;
+        memcpy(&self, out + 0x28, 8), memcpy(&n, out + 0x38, 4);
+        int k = snprintf(text, sizeof text, "local account %#llx camera %u, %d members:", (unsigned long long)self, out[0x30], (int)n);
+        for (int i = 0; i < n && i < CAMERA_ROOM_MEMBERS && k < (int)sizeof text - 40; i++) {
+            uint64_t account;
+            memcpy(&account, out + 0x40 + i * 0x10, 8);
+            k += snprintf(text + k, sizeof text - (size_t)k, " %#llx%s", (unsigned long long)account, out[0x48 + i * 0x10] ? " (camera)" : "");
+        }
+        mkwmp_log("camera: trace: GetRoomInfo (caller %#llx): %s", (unsigned long long)c->x[30], text);
+    }
     ret_x(c, 0);
 }
 
@@ -363,18 +547,38 @@ static void ov_set_sharing_key(Cpu *c) {
     if (changed) mkwmp_log("camera: sharing key \"%s\" (the game's session number: the same for players racing together)", text);
     ret_x(c, 0);
 }
-static void ov_clear_sharing_key(Cpu *c) { ret_x(c, 0); }
+static void ov_clear_sharing_key(Cpu *c) {
+    if (tr(T_KEY)) mkwmp_log("camera: trace: ClearSharingKey (the game left its GameChat mode)");
+    ret_x(c, 0);
+}
 
 // nn::oe::{Disable,Enable}{ScreenShot,Recording}, {Begin,End}PresentPhotographedContents (the 6 nn::oe imports of 1.8.0 the runtime has no handler for): the game blocks screenshots while it shows players' cameras (after SetSharingKey).
 // The SDK's versions call the applet service, which this runtime does not have: the first two-player camera run
 // crashed reading address 0 in DisableScreenShot (sdk+0x590340) right after the sharing key. Nothing to block here.
-static void ov_screenshot(Cpu *c) { ret_x(c, 0); }
+// They are also the edges of the game's screen guard (0x6355f0): Disable / Begin when it starts handing the cameras to
+// its UI (ten frames later), Enable / End when it stops; while screenshots are allowed the UI gets no camera picture.
+static void screenshot(Cpu *c, int which) {
+    static const char *const kName[6] = {"DisableScreenShot", "EnableScreenShot", "DisableRecording", "EnableRecording",
+                                         "BeginPresentPhotographedContents", "EndPresentPhotographedContents"};
+    if (tr(T_OE + which))
+        mkwmp_log("camera: trace: nn::oe::%s: the game %s the cameras to its UI", kName[which], which & 1 ? "stops giving" : "will give");
+    ret_x(c, 0);
+}
+static void ov_screenshot_off(Cpu *c) { screenshot(c, 0); }
+static void ov_screenshot_on(Cpu *c) { screenshot(c, 1); }
+static void ov_recording_off(Cpu *c) { screenshot(c, 2); }
+static void ov_recording_on(Cpu *c) { screenshot(c, 3); }
+static void ov_present_begin(Cpu *c) { screenshot(c, 4); }
+static void ov_present_end(Cpu *c) { screenshot(c, 5); }
 
 // ---- nn::chat: the pictures
 
 // The game allocates what this says and hands it to Initialize*CameraVideoStorage; the pictures live in the runtime's
 // memory (native_image_create), so one page is all we ask of the game's heap, as the runtime's own stub does.
-static void ov_buffer_size(Cpu *c) { ret_x(c, 0x1000); }
+static void ov_buffer_size(Cpu *c) {
+    if (tr(T_SIZE)) mkwmp_log("camera: trace: Calculate*CameraVideoBufferSize(%d, %d, %d) = 0x1000", (int)arg_x(c, 0), (int)arg_x(c, 1), (int)arg_x(c, 2));
+    ret_x(c, 0x1000);
+}
 
 static void storage_init(Cpu *c, int local) {
     uint64_t type = arg_x(c, 0);
@@ -405,6 +609,11 @@ static void storage_init(Cpu *c, int local) {
         video_blank(v);
         mkwmp_log("camera: %s camera %d: %d images of %dx%d (rows %d bytes apart)", local ? "local" : "remote",
                   v->cycle.index, v->made, w, h, v->row);
+        if (g_trace)
+            mkwmp_log("camera: trace: camera %d is the game's object %#llx (its buffer %#llx, %#llx bytes); handles %#x %#x %#x, "
+                      "pixels %p %p %p", v->cycle.index, (unsigned long long)type, (unsigned long long)arg_x(c, 4),
+                      (unsigned long long)arg_x(c, 5), (unsigned)v->handle[0], (unsigned)v->handle[1], (unsigned)v->handle[2],
+                      (void *)v->pixels[0], (void *)v->pixels[1], (void *)v->pixels[2]);
     } else {
         mkwmp_log("camera: no room for a %s camera of %dx%d x %d", local ? "local" : "remote", w, h, count);
     }
@@ -421,7 +630,11 @@ static void ov_image_handle(Cpu *c) {
     Video *v = video_find(type);
     // without an image of ours: the runtime's own kind of handle (width << 16 | height), a picture nobody fills
     uint32_t handle = v && i >= 0 && i < v->made ? v->handle[i] : (uint32_t)((v ? v->w : CAMERA_W) << 16 | (v ? v->h : CAMERA_H));
+    int index = v ? (int)(v - g_video) : -1;
     plat_unlock_shared(&g_lock);
+    if (g_trace && g_trace_n[T_HANDLE] < CAMERA_VIDEOS * CAMERA_IMAGES && ++g_trace_n[T_HANDLE])   // every image of the boot
+        mkwmp_log("camera: trace: Get*CameraImageHandle(%#llx, %d) = %#x (%s)", (unsigned long long)type, i, (unsigned)handle,
+                  index < 0 ? "NOT an object we know: no picture will reach it" : !(handle & 0x80000000u) ? "NOT an image of ours" : "ours");
     ret_x(c, handle);
 }
 
@@ -433,6 +646,7 @@ static void ov_finalize(Cpu *c) {
         v->type = 0;   // its images stay, for the next camera of that size
     }
     plat_unlock(&g_lock);
+    if (tr(T_FINALIZE)) mkwmp_log("camera: trace: Finalize*CameraVideoStorage(%#llx)%s", (unsigned long long)arg_x(c, 0), v ? "" : ": not ours");
     ret_x(c, 0);
 }
 
@@ -497,13 +711,23 @@ static void request_next(Cpu *c, int local) {
     uint64_t *sync = arg_p(c, 0);
     int image = (int)(int32_t)arg_x(c, 2);
     const uint64_t *id = local ? NULL : arg_p(c, 5);
+    uint64_t handle[2] = {0, 0};
     plat_lock(&g_lock);
     Video *v = video_find(arg_x(c, 1));
+    int index = v ? (int)(v - g_video) : -1;
     if (sync) {
         sync[0] = sync[1] = 0;   // not one of ours: the runtime's poll answers done, the picture stays as it is
         if (v && image >= 0 && image < v->made) camera_cycle_request(&v->cycle, image, id ? *id : 0, sync);
+        handle[0] = sync[0], handle[1] = sync[1];
     }
+    if (index >= 0 && handle[0]) g_count[index].requests++;
+    else g_count[local ? 0 : 1].unknown++;
     plat_unlock(&g_lock);
+    if (tr(T_REQUEST + (index >= 0 ? index : local ? 0 : 1)))
+        mkwmp_log("camera: trace: RequestNext%sCameraImage(sync %p, object %#llx, image %d, account %#llx): %s %d, sync %#llx:%llu",
+                  local ? "Local" : "Remote", (void *)sync, (unsigned long long)arg_x(c, 1), image, (unsigned long long)(id ? *id : 0),
+                  index < 0 ? "NOT an object we know, camera" : handle[0] ? "camera" : "REFUSED (no such image), camera", index,
+                  (unsigned long long)handle[0], (unsigned long long)handle[1]);
     ret_x(c, 0);
 }
 static void ov_request_local(Cpu *c) { request_next(c, 1); }
@@ -513,19 +737,32 @@ static void ov_request_remote(Cpu *c) { request_next(c, 0); }
 static void ov_try_wait_sync(Cpu *c) {
     const uint64_t *handle = arg_p(c, 0);
     if (!handle || !camera_sync_ours(handle)) {
+        uint64_t lr = c->x[30], h0 = handle ? handle[0] : 0, h1 = handle ? handle[1] : 0;
         if (g_stock_trywait) g_stock_trywait(c);
         else ret_x(c, 1);
+        // the game's camera poll (1.8.0: it returns to main+0x2996b24) with a handle that is not ours: a camera's first
+        // poll, of the zero handle its image 0 starts with; the movie player's polls come from elsewhere
+        if (g_trace && lr == GAME_MAIN(0x2996b24) && tr(T_FOREIGN))
+            mkwmp_log("camera: trace: TryWaitNativeSync(%p = %#llx:%llu) from the game's camera update: not a sync of ours, the "
+                      "runtime answers %llu", (void *)handle, (unsigned long long)h0, (unsigned long long)h1, (unsigned long long)c->x[0]);
         return;
     }
-    int index = camera_sync_index(handle), done = 1;
+    int index = camera_sync_index(handle), done = 1, write = -1;
+    uint32_t serial = 0, seq = 0;
     if (index < CAMERA_VIDEOS) {
         plat_lock(&g_lock);
         Video *v = &g_video[index];
         const Source *s = index ? source_of(v->cycle.account) : &g_local;
-        int write;
-        done = camera_cycle_poll(&v->cycle, handle, s ? s->serial : 0, &write);
+        serial = s ? s->serial : 0, seq = v->cycle.seq;
+        done = camera_cycle_poll(&v->cycle, handle, serial, &write);
+        g_count[index].polls++, g_count[index].done += done != 0;
         if (write >= 0) video_write(v, write, s->rgba);   // the image asked for: not the one on screen
         plat_unlock(&g_lock);
+        if ((done || g_trace_n[T_POLL + index] < 3) && tr(T_POLL + index))   // every frame polls: the answers that matter
+            mkwmp_log("camera: trace: TryWaitNativeSync(camera %d, request %llu of %u, caller %#llx): %s; the source's picture is "
+                      "number %u%s", index, (unsigned long long)handle[1], (unsigned)seq, (unsigned long long)c->x[30],
+                      !done ? "not yet" : write >= 0 ? "done, image written" : "done, nothing written (an old request)",
+                      (unsigned)serial, serial ? "" : " (none: nobody feeds this camera)");
     }
     ret_x(c, (uint64_t)done);
 }
@@ -561,6 +798,20 @@ void camera_refresh(void) {
         for (char *t = strtok(names, ", "); t && n < CAMERA_MEMBERS_MAX; t = strtok(NULL, ", "))
             m[n].account = H.account_of(t), m[n++].camera = 1;
     }
+    // Loopback: the player's friends are members too. The voice room is empty while voice chat is off (the default), and
+    // the game shows a picture only above a player whose account is a member with a camera: this puts the friends
+    // racing with the player in the room, by the account id the lobby gives them (the game matches on that alone, so a
+    // friend who is elsewhere changes nothing on screen). Their picture is the local one: nothing is sent or received.
+    int from_room = n, from_friends = 0, made_up = 0;
+    if (g_loopback && H.friends) {
+        uint64_t accounts[CAMERA_MEMBERS_MAX];
+        int k = H.friends(accounts, CAMERA_MEMBERS_MAX);
+        for (int i = 0; i < k && n < CAMERA_MEMBERS_MAX; i++) {
+            int seen = !accounts[i] || accounts[i] == self;
+            for (int j = 0; j < n && !seen; j++) seen = m[j].account == accounts[i];
+            if (!seen) m[n].account = accounts[i], m[n++].camera = 1, from_friends++;
+        }
+    }
     int others = 0;
     for (int i = 0; i < n; i++) {
         others += m[i].account && m[i].account != self;
@@ -568,7 +819,8 @@ void camera_refresh(void) {
         else if (!s.view) m[i].camera = 0;                       // the player does not want to see cameras
         if (H.muted && H.muted(m[i].account)) m[i].camera = 0;   // a muted player's face is hidden too
     }
-    if (g_loopback && !others) m[n].account = LOOPBACK_ACCOUNT, m[n++].camera = 1;
+    // nobody at all: a made-up member, so one PC alone still drives a remote camera (no kart has its account)
+    if (g_loopback && !others) m[n].account = LOOPBACK_ACCOUNT, m[n++].camera = 1, made_up = 1;
 
     uint8_t room[CAMERA_ROOM_SIZE];
     int listed = camera_room_encode(room, self, chatting && s.camera, chatting ? m : NULL, chatting ? n : 0);
@@ -589,10 +841,19 @@ void camera_refresh(void) {
         mkwmp_log("camera: chat %s (online %d, consent %d, camera %d, view %d%s)", chatting ? "on" : "off", online, s.consent,
                   s.camera, s.view, g_loopback ? ", loopback" : "");
     if (changed && chatting) {
-        int cameras = 0;
-        for (int i = 0; i < listed; i++) cameras += room[0x40 + i * 0x10 + 8];
-        mkwmp_log("camera: room: account %#llx camera %s, %d members, %d with a camera", (unsigned long long)self,
-                  s.camera ? "on" : "off", listed, cameras);
+        char list[400] = "";
+        int cameras = 0, k = 0;
+        for (int i = 0; i < listed; i++) {
+            uint64_t account;
+            memcpy(&account, room + 0x40 + i * 0x10, 8);
+            cameras += room[0x40 + i * 0x10 + 8];
+            if (k < (int)sizeof list - 40)
+                k += snprintf(list + k, sizeof list - (size_t)k, " %#llx%s", (unsigned long long)account,
+                              room[0x40 + i * 0x10 + 8] ? " (camera)" : "");
+        }
+        mkwmp_log("camera: room: account %#llx camera %s, %d members, %d with a camera (%d from the %s, %d friends, %d made up):%s",
+                  (unsigned long long)self, s.camera ? "on" : "off", listed, cameras, from_room,
+                  ext ? "relay" : "voice room and MKWMP_CAMERA_MEMBERS", from_friends, made_up, listed ? list : " nobody");
     }
 }
 
@@ -628,12 +889,12 @@ int camera_install(const CameraHost *host) {
         {"_ZN2nn4chat27RequestNextLocalCameraImageEPNS_2gs16NativeSyncHandleEPNS0_20LocalCameraVideoTypeEiS2_", ov_request_local},
         {"_ZN2nn4chat28RequestNextRemoteCameraImageEPNS_2gs16NativeSyncHandleEPNS0_21RemoteCameraVideoTypeEiS2_RKNS_7account23NetworkServiceAccountIdE",
          ov_request_remote},
-        {"_ZN2nn2oe17DisableScreenShotEv", ov_screenshot},
-        {"_ZN2nn2oe16EnableScreenShotEv", ov_screenshot},
-        {"_ZN2nn2oe16DisableRecordingEv", ov_screenshot},
-        {"_ZN2nn2oe15EnableRecordingEv", ov_screenshot},
-        {"_ZN2nn2oe32BeginPresentPhotographedContentsEv", ov_screenshot},
-        {"_ZN2nn2oe30EndPresentPhotographedContentsEv", ov_screenshot},
+        {"_ZN2nn2oe17DisableScreenShotEv", ov_screenshot_off},
+        {"_ZN2nn2oe16EnableScreenShotEv", ov_screenshot_on},
+        {"_ZN2nn2oe16DisableRecordingEv", ov_recording_off},
+        {"_ZN2nn2oe15EnableRecordingEv", ov_recording_on},
+        {"_ZN2nn2oe32BeginPresentPhotographedContentsEv", ov_present_begin},
+        {"_ZN2nn2oe30EndPresentPhotographedContentsEv", ov_present_end},
         {"_ZN2nn2gs17TryWaitNativeSyncERKNS0_16NativeSyncHandleE", ov_try_wait_sync},   // last: chained to stock
     };
     char env[8] = "";
@@ -650,6 +911,8 @@ int camera_install(const CameraHost *host) {
     char v[8] = "";
     g_loopback = plat_getenv("MKWMP_CAMERA_LOOPBACK", v, sizeof v) && !strcmp(v, "1");
     g_env_pattern = plat_getenv("MKWMP_CAMERA_PATTERN", v, sizeof v) && !strcmp(v, "1");
+    g_trace = plat_getenv("MKWMP_CAMERA_TRACE", v, sizeof v) && !strcmp(v, "1");
+    memset(g_trace_n, 0, sizeof g_trace_n);
     if (!plat_getenv("MKWMP_CAMERA_MEMBERS", g_env_members, sizeof g_env_members)) g_env_members[0] = 0;
     for (int i = 0; i < CAMERA_VIDEOS; i++) {
         memset(&g_video[i], 0, sizeof g_video[i]);
@@ -661,9 +924,9 @@ int camera_install(const CameraHost *host) {
     g_stock_trywait = g_rt.stock ? g_rt.stock(kOverrides[CAMERA_OVERRIDES - 1].name) : NULL;
     for (int i = 0; i < CAMERA_OVERRIDES; i++) g_rt.override(kOverrides[i].name, kOverrides[i].fn);
     g_installed = 1;
-    mkwmp_log("camera: %d overrides (plugin API %u)%s%s%s; off until the player turns it on in the Camera tab", CAMERA_OVERRIDES,
+    mkwmp_log("camera: %d overrides (plugin API %u)%s%s%s%s; off until the player turns it on in the Camera tab", CAMERA_OVERRIDES,
               (unsigned)host->api_version, g_loopback ? ", loopback" : "", g_env_pattern ? ", test pattern" : "",
-              g_stock_attach && g_stock_trywait ? "" : ", the runtime has no stock handler to chain to");
+              g_trace ? ", trace" : "", g_stock_attach && g_stock_trywait ? "" : ", the runtime has no stock handler to chain to");
     if (!host->no_thread && !plat_thread_start(worker, NULL)) mkwmp_log("camera: no thread: the camera stays off");
     return CAMERA_OVERRIDES;
 }
