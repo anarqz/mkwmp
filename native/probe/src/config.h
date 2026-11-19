@@ -39,6 +39,8 @@ int mkwmp_config_path(char *out, size_t cap, const char *name);
 // (the probe engages), direct, and named name; the launcher's local API is answered by seatd.c. A mkwmp.toml with a
 // `launcher` key still wins (the MKWMP launcher runs: it holds the seat).
 void mkwmp_config_use_direct(const char *name);
+// The mod, when the launcher a leftover mkwmp.toml names is not running: forget that launcher (and the file).
+void mkwmp_config_ignore_launcher(void);
 // The voice relay's port as the seat server announced it (direct mode; 0 = voice off).
 void mkwmp_config_set_voice_port(int port);
 // A seat service answers /local/v1/... : the launcher, or the plugin itself (direct).

@@ -41,6 +41,22 @@ static int request_once(const MkwmpConfig *cfg, const char *method, const char *
     return status;
 }
 
+int launcher_alive(void) {
+    const MkwmpConfig *cfg = mkwmp_config();
+    if (!cfg->launcher_port) return 0;
+    plat_net_init();
+    PlatSock s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (s == PLAT_NO_SOCK) return 0;
+    plat_sock_timeouts(s, 1000);
+    struct sockaddr_in sa = {0};
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons((unsigned short)cfg->launcher_port);
+    sa.sin_addr.s_addr = inet_addr(cfg->launcher_host);
+    int ok = !connect(s, (struct sockaddr *)&sa, sizeof sa);   // loopback: refused at once when nobody listens
+    plat_sock_close(s);
+    return ok;
+}
+
 static LauncherDirect g_direct;   // the plugin's in-process answers (seatd.c), used when the config is direct
 
 void launcher_set_direct(LauncherDirect fn) { g_direct = fn; }

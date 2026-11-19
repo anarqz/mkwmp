@@ -94,6 +94,7 @@ const MkwmpConfig *mkwmp_config_reload(void) {
 static int g_in_exe_dir;   // mkwmp.toml came from the executable's folder, not home
 static int g_direct, g_direct_voice_port;   // mkwmp_config_use_direct; the voice port is 0 until the server says
 static char g_direct_name[64];
+static int g_ignore_launcher;   // mkwmp_config_ignore_launcher: a leftover mkwmp.toml names a launcher that is not running
 
 int mkwmp_config_path(char *out, size_t cap, const char *name) {
     mkwmp_config();
@@ -117,6 +118,10 @@ const MkwmpConfig *mkwmp_config(void) {
         buf[got] = 0;
         mkwmp_config_parse(buf, &cfg);
     }
+    if (g_ignore_launcher && cfg.launcher_port) {
+        cfg.launcher_port = 0;
+        cfg.present = 0;   // nothing else of a launcher's file applies without it
+    }
     // the plugin's own sign-in (seatd.c): only when no launcher is configured, which stays the one in charge
     if (g_direct && !cfg.launcher_port) {
         cfg.present = 1;
@@ -137,6 +142,11 @@ void mkwmp_config_use_direct(const char *name) {
 void mkwmp_config_set_voice_port(int port) {
     g_direct_voice_port = port;
     if (cfg.direct) cfg.voice_port = port;
+}
+
+void mkwmp_config_ignore_launcher(void) {
+    g_ignore_launcher = 1;
+    loaded = 0;
 }
 
 int mkwmp_config_has_seat(const MkwmpConfig *c) { return c->launcher_port || c->direct; }

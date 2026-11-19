@@ -23,5 +23,7 @@ int launcher_request_json(const char *method, const char *path, const char *json
 typedef int (*LauncherDirect)(const char *method, const char *path, const char *json, char *buf, size_t cap,
                               const char **body);
 void launcher_set_direct(LauncherDirect fn);
+// 1 when the launcher mkwmp.toml names answers on its local port (a TCP connect to it), else 0.
+int launcher_alive(void);
 
 #endif

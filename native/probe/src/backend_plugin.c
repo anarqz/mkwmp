@@ -145,6 +145,14 @@ static void use_settings(const MkwPluginApi *api) {
     api->setting_get("pin_name", pin_name, sizeof pin_name);
     int voice_on = api->setting_get("voice", voice, sizeof voice) && !strcmp(voice, "1");   // off until turned on
     const char *name = api->profile_name;
+    // A mkwmp.toml the MKWMP launcher left beside mkw.exe names its local API; the launcher keeps it when it hands the
+    // game over to the mod. Started without the launcher (mkw-recomp's own start screen), nobody answers there: the
+    // mod's own settings and sign-in take over instead of waiting on a launcher that is not running.
+    if (mkwmp_config()->launcher_port && !launcher_alive()) {
+        mkwmp_log("plugin: mkwmp.toml names a launcher at port %d, but none is running: the mod's own settings apply",
+                  mkwmp_config()->launcher_port);
+        mkwmp_config_ignore_launcher();
+    }
     int lang_pt = api->language && (!strcmp(api->language, "pt-BR") || !strcmp(api->language, "pt"));
     // the game's own settings get the mod's tabs (voice chat; the account and friends, the options page) whatever
     // the settings say: without them the mod looks absent, and the MKWMP tab is where a player who is not signed up
