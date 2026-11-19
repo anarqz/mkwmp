@@ -221,13 +221,12 @@ static CameraSettings g_settings;
 static int g_chatting, g_room_dirty, g_local_streaming, g_local_kind;
 static uint8_t g_room[CAMERA_ROOM_SIZE];
 static uint64_t g_event;                   // the room-info-changed event the game attached
-static CameraMember g_ext[CAMERA_MEMBERS_MAX];
-static int g_ext_n, g_ext_set;
 static CameraFrameOut g_out;
 static void *g_out_user;
 static uint32_t g_tick, g_capture_serial;
 static uint64_t g_pattern_at, g_capture_at;
 static char g_name[64];
+static int g_key_cleared;                  // ClearSharingKey calls (the next SetSharingKey is logged again)
 
 static void bump(Source *s) {
     if (!++s->serial) s->serial = 1;
@@ -237,7 +236,7 @@ static void bump(Source *s) {
 // Three parts, all bounded: the first TRACE_CALLS calls of every override with their arguments; once a second while a
 // chat runs, each camera's polls / requests / pictures written since the last line (only when the numbers changed); and
 // the game's own state, read from its memory on its thread and logged when it changes (trace_game below).
-enum { TRACE_CALLS = 12, TRACE_SUMMARIES = 90, TRACE_STATE_LINES = 240 };
+enum { TRACE_CALLS = 12, TRACE_SUMMARIES = 90, TRACE_STATE_LINES = 400, TRACE_SLOTS = CAMERA_VIDEOS + 3 };
 enum {
     T_ROOM, T_SIGNAL, T_KEY, T_SIZE, T_HANDLE, T_FINALIZE, T_START, T_STOP, T_OE,
     T_REQUEST = T_OE + 6,                // per camera from here on
@@ -262,10 +261,16 @@ static int tr(int what) {
 // the code in memory. What decides whether a picture reaches the screen, in the game's order:
 //   1. the room lists the account with a camera -> the game gives it a video object and starts its stream;
 //   2. the first poll of image 0's zero sync answers done -> "shows image 0", then our syncs cycle the three images;
-//   3. mode 2 (after SetSharingKey) makes GameChat want cameras shown; the screen guard calls nn::oe::DisableScreenShot
-//      and BeginPresentPhotographedContents, waits ten frames, and from then on hands the pictures to the UI
+//   3. mode 2 (0x24342e0: chatting, the online manager's u32 0, a session number; it sets the sharing key) makes
+//      GameChat want cameras shown; the screen guard calls nn::oe::DisableScreenShot and
+//      BeginPresentPhotographedContents, waits ten frames, and from then on hands the pictures to the UI
 //      (0x1c8cd0 returns early while S+0xc or S+0x14 is set: every camera then has no picture);
-//   4. the UI's lookup by player (0x7fe880) gives a picture only for an account in T with "has one";
+//   4. the UI's lookup by player (0x7fe880) gives a picture only for a player index entered in T's table of 26 with
+//      kind 1 or 2, whose account is in T with "has one". The local player is entered by the scene update (0x25a090)
+//      and a remote one when its kart is made (0x11f734), which needs the sharing key set by then and the face
+//      rectangle among that player's parameters (hash 0xfe0f1639). A player sends that rectangle (0x1235c8) only with
+//      its own sharing key set and F's bit 11, which the game's camera set-up sequence alone sets (0x1d060e0,
+//      AIGlobalSeqVideoCameraSetup): a player who did not go through "use the camera?" has no face anywhere;
 //   5. what it draws is the texture id of the shown image (V's +0x68), which the game got at boot by making its own
 //      texture over the memory pool of the native image's texture (0xd31e60, 0xaa1b0: no pool, no id).
 //   V = a *VideoType object - 0xa30 (the game's video object): +0xa00 current image (-1: none shown yet), +0xa04 next,
@@ -279,7 +284,13 @@ static int tr(int what) {
 //       ten frames it waits after nn::oe::DisableScreenShot before the first picture.
 //   T = [main+0x37b84c8] + 0x17b8, what the UI draws (filled each frame by 0x1c8cd0 when S allows): +0x278 mode
 //       (2 GameChat), +0x2b8 the local picture (+8 texture id) with +0x2d8 "has one"; four of { +0 account, +8 valid,
-//       +0x18 texture id, +0x30 has one } from +0x2e0, 0x38 apart; +0x290 the id the game puts everywhere first.
+//       +0x18 texture id, +0x30 has one } from +0x2e0, 0x38 apart; +0x290 the id the game puts everywhere first;
+//       +8 the players a face may be drawn for: 26 of { 16 bytes the face rectangle, +0x10 kind (0 the console's
+//       camera, 1 GameChat whole picture, 2 GameChat with a rectangle), +0x14 entered }, 0x18 apart.
+//   F = [main+0x37b3858] + 0x12c, flags: bit 11 the player set the GameChat camera up (0x1d060e0), bit 12 the camera
+//       is wanted in this scene (0x1cb64f8); +0x120's bit 3 goes with bit 12 in the scene update (0x25a184).
+//   The inputs of mode 2: the u32 at [[main+0x37c9828]+0xd8]+8 (0xd956e0: must be 0) and the session number, the u64
+//       at [[main+0x37be190]+0x48]+0x170 (0x258f340: must not be 0; its decimal text is the sharing key).
 #define GAME_MAIN(off) (0x7000000000ull + (uint64_t)(off))
 static int peek(uint64_t addr, void *out, size_t n) {
     memset(out, 0, n);
@@ -296,13 +307,16 @@ static int game_code_is(uint64_t off, const uint32_t *words, int n) {
     return n <= 8 && peek(GAME_MAIN(off), got, 4u * (size_t)n) && !memcmp(got, words, 4u * (size_t)n);
 }
 
+// A line of the game's state, logged when it changes. Each kind of line has its own budget, so one that changes often
+// cannot use up the others' (a camera's line once did, before the sharing key was ever set).
 static void trace_line(int slot, const char *text) {
-    static char last[CAMERA_VIDEOS + 2][400];   // the game's thread only
-    static int lines;
-    if (lines >= TRACE_STATE_LINES || !strcmp(last[slot], text)) return;
+    static char last[TRACE_SLOTS][480];   // the game's thread only
+    static int lines[TRACE_SLOTS];
+    int cap = slot < 3 ? TRACE_STATE_LINES : TRACE_STATE_LINES / 10;
+    if (lines[slot] >= cap || !strcmp(last[slot], text)) return;
     snprintf(last[slot], sizeof last[slot], "%s", text);
-    lines++;
-    mkwmp_log("camera: trace: game: %s%s", text, lines == TRACE_STATE_LINES ? " (the last line of the game's state)" : "");
+    lines[slot]++;
+    mkwmp_log("camera: trace: game: %s%s", text, lines[slot] == cap ? " (the last line of this kind)" : "");
 }
 
 // On the game's thread (IsChatting), types[] the *VideoType objects it gave us (0: none).
@@ -318,15 +332,18 @@ static void trace_game(const uint64_t types[CAMERA_VIDEOS]) {
         if (!ok) mkwmp_log("camera: trace: the game's own state is not read: this is not the 1.8.0 code its offsets are from");
     }
     if (!ok || !types[0]) return;
-    char text[400];
+    char text[480];
     uint64_t m = types[0] - 0xa30 - 0x38, g = peek64(GAME_MAIN(0x37b3858)), t = peek64(GAME_MAIN(0x37b84c8));
-    uint64_t s = g ? g + 0xd944 : 0;
+    uint64_t s = g ? g + 0xd944 : 0, online = peek64(GAME_MAIN(0x37c9828)), net = peek64(GAME_MAIN(0x37be190));
     t = t ? t + 0x17b8 : 0;
-    snprintf(text, sizeof text, "chatting %u, sharing key %u, mode %d (2: GameChat); screen guard: wanted by %#x, forbidden by %#x, "
-             "held by %#x, cameras %s, settling %u (%d frames left)", peek8(m + 0x3828), peek8(m + 0x3829),
-             t ? (int)peek32(t + 0x278) : -1, s ? peek32(s) : 0, s ? peek32(s + 4) : 0, s ? peek32(s + 8) : 0,
-             !s ? "?" : peek8(s + 0xc) ? "NOT given to the UI (screenshots allowed)" : "given to the UI", s ? peek8(s + 0x14) : 0,
-             s ? (int)peek32(s + 0x10) : 0);
+    online = online ? peek64(online + 0xd8) : 0;
+    net = net ? peek64(net + 0x48) : 0;
+    snprintf(text, sizeof text, "chatting %u, sharing key %u, mode %d (2: GameChat; it waits for: chatting, online state %u to "
+             "be 0, session number %lld not 0); screen guard: wanted by %#x, forbidden by %#x, held by %#x, cameras %s, "
+             "settling %u (%d frames left)", peek8(m + 0x3828), peek8(m + 0x3829), t ? (int)peek32(t + 0x278) : -1,
+             online ? peek32(online + 8) : 0, net ? (long long)peek64(net + 0x170) : 0, s ? peek32(s) : 0, s ? peek32(s + 4) : 0,
+             s ? peek32(s + 8) : 0, !s ? "?" : peek8(s + 0xc) ? "NOT given to the UI (screenshots allowed)" : "given to the UI",
+             s ? peek8(s + 0x14) : 0, s ? (int)peek32(s + 0x10) : 0);
     trace_line(0, text);
     if (t) {
         int k = snprintf(text, sizeof text, "the UI has: local %s texture %lld; the others", peek8(t + 0x2d8) ? "yes," : "NO,",
@@ -339,6 +356,22 @@ static void trace_game(const uint64_t types[CAMERA_VIDEOS]) {
         }
         snprintf(text + k, sizeof text - (size_t)k, "; texture of a camera without a picture %lld", (long long)peek64(t + 0x290));
         trace_line(1, text);
+        // who may get a face at all: the game's own camera set-up, and the players entered for GameChat
+        uint32_t flags = g ? peek32(g + 0x12c) : 0;
+        k = snprintf(text, sizeof text, "faces: the player %s the game's GameChat camera set-up (flags %#x: bit 11 set up, bit 12 %u, "
+                     "scene bit 3 %u)%s; players a face may be drawn for (index:kind, 1 or 2 GameChat, 0 the console's camera):",
+                     flags & 0x800 ? "went through" : "did NOT go through", (unsigned)flags, (flags >> 12) & 1,
+                     g ? (peek32(g + 0x120) >> 3) & 1 : 0,
+                     flags & 0x800 ? "" : ": its face is sent to nobody and its own kart gets none");
+        int entered = 0;
+        for (int i = 0; i < 26 && k < (int)sizeof text - 12; i++) {
+            uint64_t e = t + 8 + (uint64_t)i * 0x18;
+            if (peek8(e + 0x14) != 1) continue;
+            k += snprintf(text + k, sizeof text - (size_t)k, " %d:%u", i, (unsigned)peek32(e + 0x10));
+            entered++;
+        }
+        if (!entered) snprintf(text + k, sizeof text - (size_t)k, " none");
+        trace_line(2, text);
     }
     for (int i = 0; i < CAMERA_VIDEOS; i++) {
         if (!types[i]) continue;
@@ -352,12 +385,13 @@ static void trace_game(const uint64_t types[CAMERA_VIDEOS]) {
             id[k] = (int32_t)peek32(w + 0x68), pool[k] = peek64(w + 0x10);
         }
         if (!peek8(v + 0xa18) && i) continue;   // a remote camera given to nobody: nothing to say
-        snprintf(text, sizeof text, "camera %d: given to a member %u (account %#llx), started %u, shows image %d, waits for image %d "
-                 "(last answer %u, its sync %#llx:%llu); texture ids %d %d %d, %s", i, peek8(v + 0xa18),
-                 (unsigned long long)peek64(v + 0xa20), peek8(v + 0xa19), (int)peek32(v + 0xa00), (int)next, peek8(v + 0xa08),
-                 (unsigned long long)peek64(sync), (unsigned long long)peek64(sync + 8), (int)id[0], (int)id[1], (int)id[2],
-                 pool[0] && pool[1] && pool[2] ? "each over a memory pool" : "NO memory pool behind the native images: the game made no texture of them");
-        trace_line(2 + i, text);
+        // what cycles every frame (the image shown, the sync waited for) is left out: the line is logged when it changes
+        snprintf(text, sizeof text, "camera %d: given to a member %u (account %#llx), started %u, %s, its sync is %s; texture ids "
+                 "%d %d %d, %s", i, peek8(v + 0xa18), (unsigned long long)peek64(v + 0xa20), peek8(v + 0xa19),
+                 (int32_t)peek32(v + 0xa00) >= 0 ? "shows an image" : "shows NO image yet",
+                 (peek64(sync) & ~0xffull) == CAMERA_SYNC_MAGIC ? "ours" : "not ours (the first poll)", (int)id[0], (int)id[1],
+                 (int)id[2], pool[0] && pool[1] && pool[2] ? "each over a memory pool" : "NO memory pool behind the native images: the game made no texture of them");
+        trace_line(3 + i, text);
     }
 }
 
@@ -540,14 +574,23 @@ static void ov_set_sharing_key(Cpu *c) {
     const char *key = arg_p(c, 0);
     char text[0x28] = {0};
     for (int i = 0; key && i < 0x27 && key[i]; i++) text[i] = key[i] >= 0x20 && key[i] < 0x7f ? key[i] : '?';
+    static int cleared;
     plat_lock(&g_lock);
-    int changed = strcmp(last, text) != 0;
+    int changed = strcmp(last, text) != 0 || cleared != g_key_cleared;
     memcpy(last, text, sizeof last);
+    cleared = g_key_cleared;
     plat_unlock(&g_lock);
-    if (changed) mkwmp_log("camera: sharing key \"%s\" (the game's session number: the same for players racing together)", text);
+    chatroom_set_key(text);   // what the room is asked of the server with (chatroom_request)
+    if (changed)
+        mkwmp_log("camera: sharing key \"%s\" (the game's session number: the same for players racing together); the game is "
+                  "in its GameChat mode from here", text);
     ret_x(c, 0);
 }
 static void ov_clear_sharing_key(Cpu *c) {
+    chatroom_set_key("");
+    plat_lock(&g_lock);
+    g_key_cleared++;
+    plat_unlock(&g_lock);
     if (tr(T_KEY)) mkwmp_log("camera: trace: ClearSharingKey (the game left its GameChat mode)");
     ret_x(c, 0);
 }
@@ -778,44 +821,27 @@ void camera_refresh(void) {
     const char *name = H.self_name ? H.self_name() : NULL;
     int chatting = camera_chatting(&s, online);
 
+    // The members are the chat room's (chatroom.h): the server's grant, else at most four friends in the same game
+    // session. The game matches a member to a kart by account id alone and gives its four remote cameras to the first
+    // four members with the flag, so a room larger than that would show some faces and not others.
     CameraMember m[CAMERA_MEMBERS_MAX + 1];
     int n = 0;
-    plat_lock_shared(&g_lock);
-    int ext = g_ext_set;
-    if (ext) {
-        n = g_ext_n;
-        memcpy(m, g_ext, (size_t)n * sizeof m[0]);
-    }
-    plat_unlock_shared(&g_lock);
-    if (!ext && H.peers) {   // before the relay speaks video: the voice room, cameras unknown
-        uint64_t accounts[CAMERA_MEMBERS_MAX];
-        int k = H.peers(accounts, CAMERA_MEMBERS_MAX);
-        for (int i = 0; i < k && n < CAMERA_MEMBERS_MAX; i++) m[n].account = accounts[i], m[n++].camera = 0;
-    }
+    chatroom_refresh();
+    ChatRoom chat;
+    char key[CHATROOM_KEY_SIZE];
+    chatroom_get(&chat, key);
+    for (int i = 0; i < chat.n; i++) m[n++] = chat.member[i];
+    int from_room = n, from_env = 0, made_up = 0;
     if (g_env_members[0] && H.account_of) {
         char names[sizeof g_env_members];
         memcpy(names, g_env_members, sizeof names);
         for (char *t = strtok(names, ", "); t && n < CAMERA_MEMBERS_MAX; t = strtok(NULL, ", "))
-            m[n].account = H.account_of(t), m[n++].camera = 1;
-    }
-    // Loopback: the player's friends are members too. The voice room is empty while voice chat is off (the default), and
-    // the game shows a picture only above a player whose account is a member with a camera: this puts the friends
-    // racing with the player in the room, by the account id the lobby gives them (the game matches on that alone, so a
-    // friend who is elsewhere changes nothing on screen). Their picture is the local one: nothing is sent or received.
-    int from_room = n, from_friends = 0, made_up = 0;
-    if (g_loopback && H.friends) {
-        uint64_t accounts[CAMERA_MEMBERS_MAX];
-        int k = H.friends(accounts, CAMERA_MEMBERS_MAX);
-        for (int i = 0; i < k && n < CAMERA_MEMBERS_MAX; i++) {
-            int seen = !accounts[i] || accounts[i] == self;
-            for (int j = 0; j < n && !seen; j++) seen = m[j].account == accounts[i];
-            if (!seen) m[n].account = accounts[i], m[n++].camera = 1, from_friends++;
-        }
+            m[n].account = H.account_of(t), m[n++].camera = 1, from_env++;
     }
     int others = 0;
     for (int i = 0; i < n; i++) {
         others += m[i].account && m[i].account != self;
-        if (g_loopback) m[i].camera = 1;
+        if (g_loopback) m[i].camera = 1;                         // their picture is the local one
         else if (!s.view) m[i].camera = 0;                       // the player does not want to see cameras
         if (H.muted && H.muted(m[i].account)) m[i].camera = 0;   // a muted player's face is hidden too
     }
@@ -851,9 +877,11 @@ void camera_refresh(void) {
                 k += snprintf(list + k, sizeof list - (size_t)k, " %#llx%s", (unsigned long long)account,
                               room[0x40 + i * 0x10 + 8] ? " (camera)" : "");
         }
-        mkwmp_log("camera: room: account %#llx camera %s, %d members, %d with a camera (%d from the %s, %d friends, %d made up):%s",
+        mkwmp_log("camera: room: account %#llx camera %s, %d members, %d with a camera (%d from the chat room%s, %d of them in "
+                  "the lobby's voice room, %d by MKWMP_CAMERA_MEMBERS, %d made up; sharing key \"%s\"):%s",
                   (unsigned long long)self, s.camera ? "on" : "off", listed, cameras, from_room,
-                  ext ? "relay" : "voice room and MKWMP_CAMERA_MEMBERS", from_friends, made_up, listed ? list : " nobody");
+                  chat.granted ? " the server granted" : g_loopback ? " (friends, loopback)" : " (friends in the same session)",
+                  chat.in_lobby, from_env, made_up, key, listed ? list : " nobody");
     }
 }
 
@@ -908,6 +936,8 @@ int camera_install(const CameraHost *host) {
         return 0;
     }
     H = *host;
+    ChatRoomHost room = {.self_account = host->self_account, .friends = host->friends, .peers = host->peers};
+    chatroom_install(&room);
     char v[8] = "";
     g_loopback = plat_getenv("MKWMP_CAMERA_LOOPBACK", v, sizeof v) && !strcmp(v, "1");
     g_env_pattern = plat_getenv("MKWMP_CAMERA_PATTERN", v, sizeof v) && !strcmp(v, "1");
@@ -953,13 +983,8 @@ int camera_frame_in(uint64_t account, const uint8_t *rgba, int w, int h) {
 }
 
 void camera_members_set(const CameraMember *members, int n) {
-    if (n < 0 || !members) n = 0;
-    if (n > CAMERA_MEMBERS_MAX) n = CAMERA_MEMBERS_MAX;
-    plat_lock(&g_lock);
-    memcpy(g_ext, members, (size_t)n * sizeof g_ext[0]);
-    g_ext_n = n;
-    g_ext_set = 1;
-    plat_unlock(&g_lock);
+    static const CameraMember none;
+    chatroom_grant(0, members ? members : &none, members && n > 0 ? n : 0);   // the room is the server's from here on
 }
 
 int camera_subscriptions(uint64_t *accounts, int cap) {

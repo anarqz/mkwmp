@@ -208,6 +208,9 @@ static void use_camera(const MkwPluginApi *api, uint32_t api_version) {
         .self_name = cam_self_name,
         .account_of = friends_account_id,
     };
+    // the chat room drives voice too, also where the camera cannot work (an older runtime or game)
+    ChatRoomHost room = {.self_account = cam_self_account, .friends = friends_accounts, .peers = voice_peer_accounts};
+    chatroom_install(&room);
     if (!camera_install(&h)) return;
     int pt = api->language && (!strcmp(api->language, "pt-BR") || !strcmp(api->language, "pt"));
     if (api->settings_tab) api->settings_tab(pt ? "Câmera" : "Camera", cameratab_draw);

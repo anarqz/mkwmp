@@ -1,4 +1,5 @@
-// Lobby voice chat, probe side (docs/contracts/VOICE_API.md §4, §5). The probe loads mkwmp-voice.dll (the engine and
+// Voice chat, probe side (docs/contracts/VOICE_API.md §4, §5). The relay's voice room is the lobby; with the plugin
+// backend the player hears and talks to the chat room only (chatroom.h; voice.c push_mutes). The probe loads mkwmp-voice.dll (the engine and
 // the relay client, native/voice) from the game folder the first time the game goes online, feeds it the seat ticket
 // and the relay address, and polls the launcher's voice settings (GET /local/v1/voice) every 2 s. Mutes chosen in
 // the game's menus go to the engine (and through it to the relay) and to the launcher (POST /local/v1/voice/mute).
@@ -23,6 +24,12 @@ typedef struct {
 // Pure parser of a GET /local/v1/voice answer. Returns 1 for a usable 200 (fields missing keep their defaults), 0
 // otherwise (and *out is the defaults). Unit-tested.
 int voice_parse_settings(int http_status, const char *body, VoiceSettings *out);
+
+// Pure, unit-tested: the mute list the engine is given while voice is shared with the chat room only (chatroom.h). The
+// lobby's players (peers, the player not among them) who are not in the room come first, then the player's own mutes;
+// each account once, at most cap. *heard (may be NULL): how many of the room's members are among the peers.
+int voice_room_mutes(const uint64_t *user, int nuser, const uint64_t *peers, int npeers, const uint64_t *room, int nroom,
+                     uint64_t *out, int cap, int *heard);
 
 // The game went online (seated): load the engine if needed and join the relay of `lobby_host`.
 void voice_online(const char *lobby_host);

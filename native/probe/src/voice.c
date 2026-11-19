@@ -1,5 +1,6 @@
 #include "voice.h"
 
+#include "chatroom.h"
 #include "config.h"
 #include "friends.h"
 #include "launcher.h"
@@ -68,6 +69,26 @@ static int int_field(const char *json, const char *key, int def, int lo, int hi)
     return v < lo || v > hi ? def : v;
 }
 
+static int holds(const uint64_t *list, int n, uint64_t account) {
+    for (int i = 0; i < n; i++)
+        if (list[i] == account) return 1;
+    return 0;
+}
+
+int voice_room_mutes(const uint64_t *user, int nuser, const uint64_t *peers, int npeers, const uint64_t *room, int nroom,
+                     uint64_t *out, int cap, int *heard) {
+    int n = 0, in_room = 0;
+    for (int i = 0; i < npeers; i++) {   // the lobby's players outside the room first: these must fit
+        int member = holds(room, nroom, peers[i]);
+        in_room += member;
+        if (!member && peers[i] && n < cap && !holds(out, n, peers[i])) out[n++] = peers[i];
+    }
+    for (int i = 0; i < nuser; i++)      // then the player's own mutes
+        if (user[i] && n < cap && !holds(out, n, user[i])) out[n++] = user[i];
+    if (heard) *heard = in_room;
+    return n;
+}
+
 int voice_parse_settings(int http_status, const char *body, VoiceSettings *out) {
     defaults(out);
     if (http_status != 200 || !body) return 0;
@@ -103,6 +124,7 @@ static struct {
     void (*disconnect)(void);
     void (*settings)(int, const char *, const char *, int, int);
     void (*set_mutes)(const uint64_t *, int);
+    void (*set_self)(int, int);   // optional: an engine without it keeps the microphone open
     void (*set_account)(uint64_t);
     int (*devices_json)(char *, int);
     int (*peers)(mkwmp_voice_peer *, int);
@@ -140,6 +162,7 @@ static int load_dll(void) {
     SYM(disconnect, "mkwmp_voice_disconnect");
     SYM(settings, "mkwmp_voice_settings");
     SYM(set_mutes, "mkwmp_voice_set_mutes");
+    SYM(set_self, "mkwmp_voice_set_self");
     SYM(set_account, "mkwmp_voice_set_account");
     SYM(devices_json, "mkwmp_voice_devices_json");
     SYM(peers, "mkwmp_voice_peers");
@@ -164,9 +187,34 @@ static int find_mute(uint64_t account) {
     return -1;
 }
 
-// Under g_lock.
+// Under g_lock. What the engine (and through it the relay) is told: the player's own mutes and, while voice is shared
+// with the chat room only (chatroom.h), everybody else in the lobby's voice room. The relay cannot group yet, so this
+// is the listener's half: the player hears the room's members only, and the microphone closes while none of them is
+// in the lobby. A lobby player on an older build still hears this one until the relay speaks rooms.
 static void push_mutes(void) {
-    if (g_dll.set_mutes) g_dll.set_mutes(g_mutes, g_mute_count);
+    if (!g_dll.set_mutes) return;
+    if (!chatroom_voice_filter() || !g_dll.peers) {
+        g_dll.set_mutes(g_mutes, g_mute_count);
+        return;
+    }
+    enum { WIRE_MUTES = 32 };   // what one control datagram carries (VOICE_API.md section 2)
+    mkwmp_voice_peer p[32];
+    uint64_t peers[32], room[CHATROOM_FRIENDS], out[WIRE_MUTES];
+    int np = 0, n = g_dll.peers(p, 32), heard = 0;
+    for (int i = 0; i < n; i++)
+        if (!p[i].self && p[i].account) peers[np++] = p[i].account;
+    ChatRoom chat;
+    chatroom_get(&chat, NULL);
+    for (int i = 0; i < chat.n; i++) room[i] = chat.member[i].account;
+    int count = voice_room_mutes(g_mutes, g_mute_count, peers, np, room, chat.n, out, WIRE_MUTES, &heard);
+    g_dll.set_mutes(out, count);
+    if (g_dll.set_self) g_dll.set_self(np > 0 && !heard, 0);
+    static int last_np = -1, last_heard = -1;
+    if (np != last_np || heard != last_heard) {
+        mkwmp_log("voice: shared with the chat room only: %d of its %d members among the %d other players of the lobby's voice "
+                  "room%s", heard, chat.n, np, np && !heard ? "; nobody to talk to, the microphone is closed" : "");
+        last_np = np, last_heard = heard;
+    }
 }
 
 static void post_pending(void) {
@@ -266,6 +314,9 @@ static void voice_thread(void *unused) {
             }
         }
         g_settings = s;
+        plat_unlock(&g_lock);
+        chatroom_refresh();   // it asks voice_peer_accounts and the roster: not under g_lock
+        plat_lock(&g_lock);
         push_mutes();
         plat_unlock(&g_lock);
         if (s.enabled != last_enabled) {
