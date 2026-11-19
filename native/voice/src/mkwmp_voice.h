@@ -60,45 +60,52 @@ MKWMP_VOICE_API int mkwmp_voice_devices_json(char *buf, int cap);
 MKWMP_VOICE_API int mkwmp_voice_peers(mkwmp_voice_peer *out, int cap);
 MKWMP_VOICE_API int mkwmp_voice_status(void);
 
-/* ---- Chat rooms and video (VOICE_API.md section 6, VIDEO_API.md). MKWMP_VOICE_ABI stays 1: a library without this
- * part has no mkwmp_voice_room_api, and the probe then keeps voice as it was and the camera off the network. In room
- * mode the library tells the relay so on every control up (self bit 3), asks for the room the probe wants (op 5),
- * subscribes to the members' pictures (op 6), reads the relay's room (state down ver 2) and carries the camera's
- * frames (0x3E95). It joins the relay in room mode even with voice chat off in the settings (then muted and deafened,
- * the audio engine not started): the camera needs the room. Voice is heard from the room's members only. */
-#define MKWMP_VOICE_ROOM_API 1
+/* ---- Friend rooms and video (VOICE_API.md section 6, VIDEO_API.md). MKWMP_VOICE_ABI stays 1: a library without this
+ * part has no mkwmp_voice_room_api, and the probe then keeps voice as it was and the camera off the network.
+ * Voice and the camera exist only in a private friend room (Online, Friends, create or join a room); the relay knows
+ * the room by itself and nothing is asked of it. In room mode the library says so on every control up (self bit 3),
+ * reads the relay's room (state down ver 2), subscribes to the pictures the probe chose (op 6) and carries the
+ * camera's frames (0x3E95). With a relay that speaks rooms:
+ *   - in a friend room (room_id != 0) voice is the whole room's: everyone hears everyone (mutes and deafen as ever);
+ *   - in no friend room (room_id 0: a matchmade race or battle) there is no voice at all: the audio engine is
+ *     stopped, so the microphone is closed and nothing is played, and no camera frame is sent.
+ * A relay that answers state ver 1 knows no friend rooms: voice stays voice/v1 as that relay routes it, no camera.
+ * The relay is joined in room mode even with voice chat off in the settings (then muted and deafened, the audio
+ * engine not started): the camera needs the room.
+ * Room API 2 (1 was the chat rooms asked of the relay with a sharing key and a room ticket: gone). */
+#define MKWMP_VOICE_ROOM_API 2
+#define MKWMP_VOICE_ROOM_FRIENDS 23 /* the mutual friends one state names at most (a lobby of 24) */
+#define MKWMP_VOICE_VIDEO_MAX 4     /* the pictures one player may subscribe to */
 
 typedef struct {
     uint64_t account;
-    uint8_t camera; /* the member's camera is on */
-    uint8_t voice;  /* the member is bound and in the voice room */
+    uint8_t camera; /* the friend's camera is on */
+    uint8_t bound;  /* the friend's endpoint is bound at the relay */
 } mkwmp_voice_member;
 
 typedef struct {
-    int32_t relay;       /* the relay's state version: 0 none yet, 1 a relay without rooms, 2 one with */
+    int32_t relay;       /* the relay's state version: 0 none yet, 1 a relay without friend rooms, 2 one with */
     int32_t fps_divisor; /* 1, 2 or 4: send every frame, every second or every fourth */
-    uint64_t room_id;    /* 0: in no room */
-    int32_t count;       /* members besides this player, at most 4 */
-    mkwmp_voice_member member[4];
+    uint64_t room_id;    /* the friend room; 0: in none */
+    int32_t count;       /* this player's mutual friends bound in the room, in seat order */
+    mkwmp_voice_member member[MKWMP_VOICE_ROOM_FRIENDS];
 } mkwmp_voice_room;
 
-/* A member's frame, whole (a JPEG as its sender gave it), on the library's network thread: use it and return. */
+/* A friend's frame, whole (a JPEG as its sender gave it), on the library's network thread: use it and return. */
 typedef void (*mkwmp_voice_video_fn)(uint64_t account, const uint8_t *jpeg, int len, void *user);
 
 typedef int (*mkwmp_voice_room_api_fn)(void);
 MKWMP_VOICE_API int mkwmp_voice_room_api(void); /* MKWMP_VOICE_ROOM_API */
 /* Room mode on or off (off: voice/v1 exactly as before, nothing of the rest is sent). */
 MKWMP_VOICE_API void mkwmp_voice_room_mode(int on);
-/* What is asked of the relay: the game's sharing key (at most 39 characters; "" or NULL: no room, leave the one held),
- * the accounts wanted in the room (at most 4) and the seat server's room ticket naming them. Sent when it changes and
- * with every refresh. */
-MKWMP_VOICE_API void mkwmp_voice_room_request(const char *sharing_key, const uint64_t *want, int count, const char *room_ticket);
 /* This player's camera is on (self bit 2): 0 with the camera off, or after Camera Off in the game's prompt. */
 MKWMP_VOICE_API void mkwmp_voice_room_camera(int on);
-/* The members whose pictures are wanted (at most 4). */
+/* The friends whose pictures are wanted (at most MKWMP_VOICE_VIDEO_MAX, the rest is left out). Sent when it changes
+ * and with every refresh. */
 MKWMP_VOICE_API void mkwmp_voice_video_subscribe(const uint64_t *accounts, int count);
-/* One frame of this player's camera: cut into datagrams and sent now. 1 sent; 0 not (no room, the camera bit is off, a
- * relay without rooms, or over what one sender may send: 64 KiB and 400 datagrams a second, and the relay's divisor). */
+/* One frame of this player's camera: cut into datagrams and sent now. 1 sent; 0 not (in no friend room, no mutual
+ * friend in it, the camera bit is off, a relay without rooms, or over what one sender may send: 64 KiB and 400
+ * datagrams a second, and the relay's divisor). */
 MKWMP_VOICE_API int mkwmp_voice_video_send(const uint8_t *jpeg, int len, uint32_t ts_ms);
 MKWMP_VOICE_API void mkwmp_voice_video_receiver(mkwmp_voice_video_fn fn, void *user);
 /* The room as the relay last said. Returns 1 while in room mode with a state from the relay, else 0 (*out zeroed). */

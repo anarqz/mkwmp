@@ -7,8 +7,8 @@
 build/linux/libmkwmp-voice.so (x86_64-linux-gnu, -fPIC; PulseAudio, libpulse loaded at run time, so the library
 links only libc, libdl and libpthread). --test also builds the headless tests and runs them when the host can
 (Windows tests on Windows, Linux tests on Linux): the loudness, the datagrams (voice_wire_test: the contract's vectors),
-video/v1's chunks and pacing (voice_video_test), the engine, and chat rooms end to end (voice_room_test: the library
-loaded twice against a relay inside the test; about 25 s). --smoke (Linux) builds and runs tests/voice_pulse_smoke.cpp
+video/v1's chunks and pacing (voice_video_test), the engine, and friend rooms end to end (voice_room_test: the library
+loaded twice against a relay inside the test; about a minute; its last part opens the audio devices). --smoke (Linux) builds and runs tests/voice_pulse_smoke.cpp
 against the real sound server: it opens the default devices for about 3 s and plays only silence.
 
 Third-party sources (libopus 1.5.2 with OSCE + deep PLC and no DRED, RNNoise 0.2, WebRTC AudioProcessing 2.1's AEC3
@@ -210,7 +210,7 @@ def main():
         exe = build / f"voice_engine_test{exe_suffix}"
         link(zig, flags + [str(TESTS / "voice_engine_test.cpp"), f"@{erst}"] + libs, exe)
         runs.append(exe)
-        # chat rooms and video end to end: two copies of the library just built and a relay inside the test
+        # friend rooms and video end to end: two copies of the library just built and a relay inside the test
         exe = build / f"voice_room_test{exe_suffix}"
         link(zig, flags + [str(TESTS / "voice_room_test.cpp")] + libs, exe)
         runs.append(exe)

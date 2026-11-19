@@ -6,12 +6,13 @@
 //          deafened), count <= 32, count x account u64, ticket_len u16, ticket}; at most 1200 bytes
 //   0x3E94 state down, 0xC0F6: {ver, room (bit 0 voice on), bundle (3 or 6), count <= 24, count x {seat, account u64,
 //          state (bit 0 talking)}}
-// Chat rooms (VOICE_API.md §6) and video/v1 (VIDEO_API.md); only a client in room mode sends or reads any of it:
+// Friend rooms (VOICE_API.md §6) and video/v1 (VIDEO_API.md); only a client in room mode sends or reads any of it.
+// Voice and the camera exist in a friend room only, and the relay knows the room by itself: nothing is asked of it.
 //   control up, self: bit 2 my camera is on, bit 3 room mode (on every op 1/2 of a client in room mode)
-//   control up, op 5 room request: {ver, 5, key_len 1..39, sharing key, want <= 4, want x account u64, rticket_len
-//          u16, room ticket <= 512}; op 6 video subscribe: {ver, 6, count <= 4, count x account u64}
-//   state down ver 2: the ver 1 body, then {room_id u64 (0 none), fps divisor (1, 2 or 4), members <= 4, members x
-//          {account u64, flags (bit 0 camera on, bit 1 bound and in the voice room)}}
+//   control up, op 6 video subscribe: {ver, 6, count <= 4, count x account u64} (more than 4: the relay drops it)
+//   state down ver 2: the ver 1 body, then {room_id u64 (0: not in a friend room), fps divisor (1, 2 or 4), members
+//          <= 23, members x {account u64, flags (bit 0 camera on, bit 1 bound)}}: the listener's mutual friends bound
+//          in the room, in seat order
 //   0x3E95 video: txid {ver = 1, flags (bit 0 key frame, bit 1 last chunk), frame u16, chunk u8, chunks u8 (1..64),
 //          ts u32 ms, codec (1 MJPEG), up: 1 random | down: the sender's seat}; attribute 0xC0F7 (up) / 0xC0F8 (down)
 //          = one chunk, 1-1100 bytes; at most 1124 bytes
@@ -37,11 +38,10 @@ enum : uint8_t { kEndOfSpurt = 1 };
 enum : uint8_t { kRoomVoice = 1, kSeatTalking = 1 };
 // chat rooms and video
 constexpr uint8_t kVersionRooms = 2; // the state down of a relay that speaks rooms, to a client in room mode
-constexpr size_t kMaxSharingKey = 39, kMaxRoomFriends = 4, kMaxRoomTicket = 512, kMaxVideoChunk = 1100, kMaxVideoDatagram = 1124,
-                 kMaxVideoChunks = 64;
-enum : uint8_t { kRoomRequest = 5, kVideoSubscribe = 6 };
+constexpr size_t kMaxRoomFriends = 23, kMaxVideoSubscriptions = 4, kMaxVideoChunk = 1100, kMaxVideoDatagram = 1124, kMaxVideoChunks = 64;
+enum : uint8_t { kVideoSubscribe = 6 };
 enum : uint8_t { kSelfCameraOn = 4, kSelfRoomMode = 8 };
-enum : uint8_t { kMemberCamera = 1, kMemberVoice = 2 };
+enum : uint8_t { kMemberCamera = 1, kMemberBound = 2 };
 enum : uint8_t { kVideoKeyFrame = 1, kVideoLastChunk = 2 };
 constexpr uint8_t kCodecMjpeg = 1;
 
@@ -154,28 +154,9 @@ inline std::vector<uint8_t> EncodeControlUpRoom(uint8_t op, uint8_t self, const 
     return ControlUp(op, self, kSelfMicMuted | kSelfDeafened | kSelfCameraOn | kSelfRoomMode, mutes, ticket, txid);
 }
 
-// Op 5: the room this player asks for. An empty want list leaves the room (the ticket may then be empty too).
-inline std::vector<uint8_t> EncodeRoomRequest(const std::string &key, const std::vector<uint64_t> &want, const std::string &room_ticket,
-                                              const uint8_t txid[12]) {
-    if (key.empty() || key.size() > kMaxSharingKey || want.size() > kMaxRoomFriends || room_ticket.size() > kMaxRoomTicket ||
-        (room_ticket.empty() && !want.empty()))
-        return {};
-    std::vector<uint8_t> v(3 + key.size() + 1 + want.size() * 8 + 2 + room_ticket.size(), 0);
-    v[0] = kVersion;
-    v[1] = kRoomRequest;
-    v[2] = static_cast<uint8_t>(key.size());
-    std::memcpy(v.data() + 3, key.data(), key.size());
-    size_t at = 3 + key.size();
-    v[at++] = static_cast<uint8_t>(want.size());
-    for (uint64_t a : want) { Be64(v.data() + at, a); at += 8; }
-    Be16(v.data() + at, static_cast<uint16_t>(room_ticket.size()));
-    if (!room_ticket.empty()) std::memcpy(v.data() + at + 2, room_ticket.data(), room_ticket.size());
-    return Indication(kControlKind, kControlUp, v.data(), v.size(), txid, kMaxControlDatagram);
-}
-
-// Op 6: whose pictures this player wants (members of its room with a camera).
+// Op 6: whose pictures this player wants (at most four of its mutual friends in the friend room).
 inline std::vector<uint8_t> EncodeVideoSubscribe(const std::vector<uint64_t> &accounts, const uint8_t txid[12]) {
-    if (accounts.size() > kMaxRoomFriends) return {};
+    if (accounts.size() > kMaxVideoSubscriptions) return {};
     std::vector<uint8_t> v(3 + accounts.size() * 8, 0);
     v[0] = kVersion;
     v[1] = kVideoSubscribe;
@@ -187,8 +168,8 @@ inline std::vector<uint8_t> EncodeVideoSubscribe(const std::vector<uint64_t> &ac
 // The relay's side (tests): any control up, by its op.
 struct ControlUpMessage {
     uint8_t op = 0, self = 0;
-    std::vector<uint64_t> accounts; // op 1/2 the mutes, op 5 the want list, op 6 the subscriptions
-    std::string ticket, key;        // op 1/2/3 the seat ticket; op 5 the room ticket and the sharing key
+    std::vector<uint64_t> accounts; // op 1/2 the mutes, op 6 the subscriptions
+    std::string ticket;             // op 1/2/3 the seat ticket
 };
 inline bool DecodeControlUp(const uint8_t *data, size_t size, ControlUpMessage &out) {
     const uint8_t *v = nullptr;
@@ -203,17 +184,10 @@ inline bool DecodeControlUp(const uint8_t *data, size_t size, ControlUpMessage &
         count = v[3];
         at = 4;
         if (count > kMaxMutes) return false;
-    } else if (m.op == kRoomRequest) {
-        const size_t key = v[2];
-        if (key == 0 || key > kMaxSharingKey || n < 3 + key + 1) return false;
-        m.key.assign(reinterpret_cast<const char *>(v + 3), key);
-        count = v[3 + key];
-        at = 3 + key + 1;
-        if (count > kMaxRoomFriends) return false;
     } else if (m.op == kVideoSubscribe) {
         count = v[2];
         at = 3;
-        if (count > kMaxRoomFriends || n != 3 + count * 8) return false;
+        if (count > kMaxVideoSubscriptions || n != 3 + count * 8) return false;
     } else {
         return false;
     }
@@ -235,16 +209,16 @@ struct Seat {
 };
 struct Member {
     uint64_t account = 0;
-    uint8_t flags = 0; // kMemberCamera, kMemberVoice
+    uint8_t flags = 0; // kMemberCamera, kMemberBound
 };
 struct StateDown {
     uint8_t room = 0, bundle = 3;
     std::vector<Seat> seats;
     // ver 2 (a relay that speaks rooms, to a client in room mode); ver 1 leaves these as they are here
     uint8_t version = kVersion;
-    uint64_t room_id = 0;        // 0: in no chat room
+    uint64_t room_id = 0;        // the friend room; 0: in none (a matchmade lobby: no voice, no camera)
     uint8_t fps = 1;             // the send divisor: 1, 2 or 4
-    std::vector<Member> members; // the room's members, at most 4
+    std::vector<Member> members; // the listener's mutual friends bound in the room, in seat order, at most 23
 };
 
 inline bool DecodeStateDown(const uint8_t *data, size_t size, StateDown &out) {

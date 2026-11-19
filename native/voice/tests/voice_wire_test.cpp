@@ -72,7 +72,8 @@ int main() {
         auto sd = EncodeStateDown(one, zero);
         Check(hex(sd) == "3e9400142112a442000000000000000000000000c0f6000e01010301020123456789abcdef010000", "vector: state down");
     }
-    // ---- chat rooms and video/v1: the server's five vectors (VOICE_API.md §6, VIDEO_API.md), byte for byte
+    // ---- friend rooms and video/v1: the server's four vectors (VOICE_API.md §6, VIDEO_API.md), byte for byte; the fifth,
+    // op 5 (the room request), is gone with the rooms asked of the relay
     {
         auto hex = [](const std::vector<uint8_t> &v) {
             std::string s;
@@ -93,13 +94,10 @@ int main() {
         const char *kVideoUpHex = "3e9500082112a442010300070001000003e8015ac0f70003ffd8ff00";
         const char *kVideoDownHex = "3e9500082112a442010300070001000003e80104c0f80003ffd8ff00";
 
-        // 1. op 5, the room request
-        Check(hex(EncodeRoomRequest("K1", {ana}, "mkwr1.a.b", zero)) == kOp5, "vector 1: op 5 room request encodes");
+        // 1. op 5 was the room request: nothing sends it, and a relay's decoder does not read it
         ControlUpMessage m;
         auto d = bytes(kOp5);
-        Check(DecodeControlUp(d.data(), d.size(), m) && m.op == kRoomRequest && m.key == "K1" && m.accounts == std::vector<uint64_t>{ana} &&
-                  m.ticket == "mkwr1.a.b",
-              "vector 1: op 5 room request decodes");
+        Check(!DecodeControlUp(d.data(), d.size(), m), "op 5 (the old room request) is no longer a control up");
         // 2. op 6, the video subscription
         Check(hex(EncodeVideoSubscribe({ana}, zero)) == kOp6, "vector 2: op 6 video subscribe encodes");
         d = bytes(kOp6);
@@ -110,7 +108,7 @@ int main() {
         StateDown s2;
         Check(DecodeStateDown(d.data(), d.size(), s2) && s2.version == 2 && s2.room == 1 && s2.bundle == 3 && s2.seats.size() == 1 &&
                   s2.seats[0].seat == 2 && s2.seats[0].account == ana && s2.seats[0].state == kSeatTalking && s2.room_id == 0x1122334455667788ull &&
-                  s2.fps == 1 && s2.members.size() == 1 && s2.members[0].account == ana && s2.members[0].flags == (kMemberCamera | kMemberVoice),
+                  s2.fps == 1 && s2.members.size() == 1 && s2.members[0].account == ana && s2.members[0].flags == (kMemberCamera | kMemberBound),
               "vector 3: state down ver 2 decodes");
         Check(hex(EncodeStateDown(s2, zero)) == kState2, "vector 3: state down ver 2 encodes");
         // 4. video up
@@ -141,20 +139,15 @@ int main() {
               "room mode control up: self 0x0e round trip");
         Check(hex(EncodeControlUpRoom(kSubscribe, kSelfRoomMode, {}, "mkw1.a.b", zero)).substr(48, 8) == "01010800", "room mode control up: ver 1, op 1, self 8");
 
-        // op 5 and op 6 limits
-        Check(EncodeRoomRequest("", {ana}, "t", zero).empty() && EncodeRoomRequest(std::string(40, 'k'), {ana}, "t", zero).empty() &&
-                  !EncodeRoomRequest(std::string(39, 'k'), {ana}, "t", zero).empty(),
-              "op 5: a sharing key of 1..39 characters");
-        Check(EncodeRoomRequest("K", {1, 2, 3, 4, 5}, "t", zero).empty() && !EncodeRoomRequest("K", {1, 2, 3, 4}, std::string(512, 't'), zero).empty() &&
-                  EncodeRoomRequest("K", {1}, std::string(513, 't'), zero).empty() && EncodeRoomRequest("K", {1}, "", zero).empty(),
-              "op 5: at most 4 wanted, a ticket of at most 512 bytes");
-        auto leave = EncodeRoomRequest("K1", {}, "", zero);
-        Check(DecodeControlUp(leave.data(), leave.size(), m) && m.op == kRoomRequest && m.key == "K1" && m.accounts.empty() && m.ticket.empty(),
-              "op 5: an empty want list (leave) round trip");
-        Check(EncodeRoomRequest(std::string(39, 'k'), {1, 2, 3, 4}, std::string(512, 't'), zero).size() <= kMaxControlDatagram, "op 5 within 1200 bytes");
-        Check(EncodeVideoSubscribe({1, 2, 3, 4, 5}, zero).empty() && EncodeVideoSubscribe({}, zero).size() == 28, "op 6: 0..4 accounts");
+        // op 6 limits: the relay drops a list of more than four whole, so none is ever encoded
+        Check(EncodeVideoSubscribe({1, 2, 3, 4, 5}, zero).empty() && EncodeVideoSubscribe({}, zero).size() == 28 &&
+                  !EncodeVideoSubscribe({1, 2, 3, 4}, zero).empty(),
+              "op 6: 0..4 accounts");
+        auto sub5 = EncodeVideoSubscribe({1, 2, 3, 4}, zero);
+        sub5[24 + 2] = 5; // a count of five over four accounts
+        Check(!DecodeControlUp(sub5.data(), sub5.size(), m), "op 6: a count of five refused");
 
-        // state down ver 2: none, four members, and what is refused
+        // state down ver 2: no friend room, four mutual friends, the most (23), and what is refused
         StateDown r;
         r.version = kVersionRooms;
         r.room = 1;
@@ -172,16 +165,29 @@ int main() {
         Check(DecodeStateDown(four.data(), four.size(), got2) && got2.room_id == 0x8000000000000001ull && got2.fps == 4 && got2.members.size() == 4 &&
                   got2.members[3].account == 14 && got2.members[3].flags == 2 && got2.members[0].flags == 3,
               "state down ver 2: four members, divisor 4");
-        r.members.push_back({15, 1});
-        Check(EncodeStateDown(r, zero).empty(), "state down ver 2: five members refused by the encoder");
+        // a lobby of 24 where the 23 others are all mutual friends in the room: every one is read, in the order sent
+        StateDown full = r;
+        full.seats.clear();
+        full.members.clear();
+        for (uint8_t i = 0; i < 24; i++) full.seats.push_back({i, 100u + i, 0});
+        for (uint64_t a = 101; a < 124; a++) full.members.push_back({a, static_cast<uint8_t>(a % 3 == 0 ? 3 : 2)});
+        auto most = EncodeStateDown(full, zero);
+        Check(most.size() <= kMaxControlDatagram && DecodeStateDown(most.data(), most.size(), got2) && got2.seats.size() == 24 &&
+                  got2.members.size() == 23 && got2.members[0].account == 101 && got2.members[22].account == 123 && got2.members[1].flags == 3 &&
+                  got2.members[0].flags == 2,
+              "state down ver 2: 23 mutual friends in a lobby of 24");
+        full.members.push_back({124, 1});
+        Check(EncodeStateDown(full, zero).empty(), "state down ver 2: 24 members refused by the encoder");
         auto cut = four;
         cut.resize(cut.size() - 4); // a member short: the lengths no longer agree
         Be16(cut.data() + 2, static_cast<uint16_t>(cut.size() - 20));
         Be16(cut.data() + 22, static_cast<uint16_t>(Rd16(cut.data() + 22) - 4));
         Check(!DecodeStateDown(cut.data(), cut.size(), got2), "state down ver 2: a short member list refused");
         auto five = four;
-        five[24 + 4 + 20 + 9] = 5; // the member count
-        Check(!DecodeStateDown(five.data(), five.size(), got2), "state down ver 2: a count of five refused");
+        five[24 + 4 + 20 + 9] = 5; // the member count, over four members' bytes
+        Check(!DecodeStateDown(five.data(), five.size(), got2), "state down ver 2: a count that the length does not hold refused");
+        most[24 + 4 + 240 + 9] = 24;
+        Check(!DecodeStateDown(most.data(), most.size(), got2), "state down ver 2: a count of 24 refused");
         auto v3 = four;
         v3[24] = 3;
         Check(!DecodeStateDown(v3.data(), v3.size(), got2), "state down ver 3 refused");
