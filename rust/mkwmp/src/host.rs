@@ -272,7 +272,7 @@ lobby_tokens_file = "keys/lobby-tokens.txt"
 [registry]
 file = "registry.db"
 reserved_names = []
-expire_days = 180
+expire_days = 30
 admin_token_file = "keys/admin-token.txt"
 
 [ticket]

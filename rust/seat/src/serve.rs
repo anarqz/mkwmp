@@ -83,7 +83,11 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn std::error:
             sweeper.limiter().lock().unwrap().sweep(now);
             sweeper.presence().lock().unwrap().sweep(now);
             let reg = sweeper.registry().clone();
-            let _ = tokio::task::spawn_blocking(move || reg.sweep(now / 1000)).await;
+            let _ = tokio::task::spawn_blocking(move || {
+                reg.sweep(now / 1000);
+                reg.sweep_reports(now / 1000);
+            })
+            .await;
         }
     });
 

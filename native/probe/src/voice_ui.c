@@ -1,4 +1,4 @@
-// Voice in the game's own menus (no overlay; resources/docs/VOICE-RE.md §3, §6). The game has no voice UI and no
+// Voice in the game's own menus (no overlay; research/docs/VOICE-RE.md §3, §6). The game has no voice UI and no
 // per-player menu, so the online pause menu's player list (UIPageOnlinePauseMenu, 24 name plates in 1.0.0 and 26 in 1.8.0, display only) gets
 // one: every frame while it is open, each plate's name is relabelled with the player's voice state, and a cursor over
 // the list toggles the mute of the highlighted player.

@@ -1,4 +1,4 @@
-// Recovered from mkw-recomp main.bin. Field numbers verified; names inferred.
+// Interoperability spec (MKWMP's own): the wire format the game client speaks. Field numbers verified; names inferred.
 syntax = "proto3";
 
 package nn.npln.auth.v1;

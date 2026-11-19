@@ -380,3 +380,67 @@ async fn owner_deletes_profile_with_pin_and_its_session_ends() {
     let (st, _) = h.call("POST", "/seat/v1/profiles", None, Some(json!({"name": "ana"}))).await;
     assert_eq!(st, StatusCode::CREATED, "the name is free again");
 }
+
+#[tokio::test]
+async fn voice_reports_one_open_per_player_rate_limited_and_admin_reviewed() {
+    let h = harness_at("127.0.0.1:40000"); // local: the admin calls work too
+    let ta = h.presence("ana").await;
+    let _ = h.presence("bia").await;
+    let _ = h.presence("cid").await;
+    let file = |name: &str| json!({"name": name, "reason": "harassment", "details": "shouting slurs"});
+
+    let (st, _) = h.call("POST", "/seat/v1/reports", None, Some(file("bia"))).await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED, "needs the launcher's sign-in");
+    let (st, v) = h.call("GET", "/seat/v1/reports", Some(&ta), None).await;
+    assert_eq!((st, &v["report"]), (StatusCode::OK, &Value::Null));
+
+    let (st, v) = h.call("POST", "/seat/v1/reports", Some(&ta), Some(file("BIA"))).await;
+    assert_eq!(st, StatusCode::CREATED, "{v}");
+    assert_eq!(v["report"]["reported"], "bia");
+    let (st, v) = h.call("POST", "/seat/v1/reports", Some(&ta), Some(file("cid"))).await;
+    assert_eq!((st, v["error"]["code"].as_str()), (StatusCode::CONFLICT, Some("REPORT_ACTIVE")));
+    let (_, v) = h.call("GET", "/seat/v1/reports", Some(&ta), None).await;
+    assert_eq!(v["report"]["reported"], "bia");
+
+    // The host sees it, then closes it; Ana may report again.
+    let (st, v) = h.call("GET", "/seat/v1/admin/reports", Some("admin-secret"), None).await;
+    assert_eq!(st, StatusCode::OK);
+    let id = v["reports"][0]["id"].as_i64().unwrap();
+    assert_eq!(v["reports"][0]["details"], "shouting slurs");
+    let (st, _) = h.call("GET", "/seat/v1/admin/reports", Some("wrong"), None).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, _) = h
+        .call("POST", "/seat/v1/admin/reports", Some("admin-secret"), Some(json!({"action": "close", "id": id, "outcome": "warned"})))
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    let (_, v) = h.call("GET", "/seat/v1/reports", Some(&ta), None).await;
+    assert_eq!(v["report"], Value::Null);
+
+    // Withdraw and refile: 5 tries per profile per day (2 so far, the refused
+    // one included), then 429.
+    let (st, _) = h.call("DELETE", "/seat/v1/reports", Some(&ta), None).await;
+    assert_eq!(st, StatusCode::NOT_FOUND, "nothing open");
+    for i in 0..3 {
+        let (st, v) = h.call("POST", "/seat/v1/reports", Some(&ta), Some(file("cid"))).await;
+        assert_eq!(st, StatusCode::CREATED, "{i} {v}");
+        let (st, _) = h.call("DELETE", "/seat/v1/reports", Some(&ta), None).await;
+        assert_eq!(st, StatusCode::NO_CONTENT);
+    }
+    let (st, _) = h.call("POST", "/seat/v1/reports", Some(&ta), Some(file("cid"))).await;
+    assert_eq!(st, StatusCode::TOO_MANY_REQUESTS);
+    h.advance(86_400_000 + 1);
+    let ta = h.presence("ana").await;
+    let (st, v) = h.call("POST", "/seat/v1/reports", Some(&ta), Some(file("cid"))).await;
+    assert_eq!(st, StatusCode::CREATED, "a day later: {v}");
+}
+
+#[tokio::test]
+async fn an_expired_profile_comes_back_with_its_old_pin() {
+    let h = Harness::new(5);
+    let (st, v) = h.call("POST", "/seat/v1/profiles", None, Some(json!({"name": "Ana", "pin": "482913"}))).await;
+    assert_eq!((st, v["pin"].as_str()), (StatusCode::CREATED, Some("482913")));
+    let (st, _) = h.call("POST", "/seat/v1/presence", None, Some(json!({"name": "ana", "pin": "482913"}))).await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _) = h.call("POST", "/seat/v1/profiles", None, Some(json!({"name": "Bia", "pin": "12"}))).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+}

@@ -1,5 +1,5 @@
 // Every game-version-specific guest address and struct offset of the probe, one row per game build
-// (resources/docs/GAME-1.8.0-ADDRESSES.md; the values are that report's, §3 functional and §4 diagnostic).
+// (research/docs/GAME-1.8.0-ADDRESSES.md; the values are that report's, §3 functional and §4 diagnostic).
 //
 // Rules:
 //   - game_addrs() is NULL for an unknown build and while main is not mapped: every version-specific hook stays off.

@@ -5,7 +5,7 @@
 //! The boundary is bytes: each [`Out::Message`] is one protobuf message, unframed; each
 //! client message handed to [`Core::message`] is one unframed protobuf message.
 //! Behaviour is ported from the verified Python reference (`resources/python-lobby/mkwmp_server.py`) and
-//! the RE maps (`resources/docs/RE-MAP.md`, `resources/docs/MULTI-LOBBY.md`).
+//! the RE maps (`research/docs/RE-MAP.md`, `research/docs/MULTI-LOBBY.md`).
 
 use std::net::SocketAddr;
 

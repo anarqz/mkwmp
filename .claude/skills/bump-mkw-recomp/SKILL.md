@@ -1,6 +1,6 @@
 ---
 name: bump-mkw-recomp
-description: Move MKWMP to a new mkw-recomp release (0.1.14, 0.1.15, ...). Use when the user says mkw-recomp/recomp released or updated a version, asks to support/migrate/bump to recomp vX, or asks whether a recomp release breaks the probe or launcher. Produces resources/docs/RECOMP-<v>.md, the launcher hash/gate change list, and probe fixes if needed.
+description: Move MKWMP to a new mkw-recomp release (0.1.14, 0.1.15, ...). Use when the user says mkw-recomp/recomp released or updated a version, asks to support/migrate/bump to recomp vX, or asks whether a recomp release breaks the probe or launcher. Produces research/docs/RECOMP-<v>.md, the launcher hash/gate change list, and probe fixes if needed.
 ---
 
 # Bump mkw-recomp to a new release
@@ -11,7 +11,7 @@ prologues (`keypad.c`), `rt_dispatch` / `g_host` / `Cpu` layout (`guesthook.c`, 
 (`winmm.def`) and some `MKW_*` keys. The launcher only accepts runtimes whose mkw.exe SHA-256 is listed in
 `rust/client/src/recomp.rs` (KNOWN / SUPPORTED / RECOMMENDED / DOWNLOAD).
 
-Previous reports, which are also your templates: `resources/docs/RECOMP-0.1.12.md` and `resources/docs/RECOMP-0.1.13.md`.
+Reports live in the private research repo (anarqz/mkwmp-research, cloned at `research/`; commit and push them there, never in mkwmp). Previous reports, which are also your templates: `research/docs/RECOMP-0.1.12.md` and `research/docs/RECOMP-0.1.13.md`.
 
 Below, `OLD` = the newest release that is SUPPORTED in recomp.rs, `NEW` = the target, `$T` = `$env:CLAUDE_JOB_DIR\tmp`
 (or another scratch dir outside the repo).
@@ -57,9 +57,9 @@ delete `winmm.dll`, `winmm_host.dll` or `mkwmp*`. Also check behaviour changes t
 
 For a big diff, spawn ONE `general-purpose` agent with `model: fable`. Give it: the template report, the probe
 paths above, the extracted zips, the clone, these rules (read-only on the user's game folders, never launch the
-game, no commits), and the instruction to write `resources/docs/RECOMP-NEW.md`.
+game, no commits), and the instruction to write `research/docs/RECOMP-NEW.md`.
 
-## 4. Write `resources/docs/RECOMP-NEW.md`
+## 4. Write `research/docs/RECOMP-NEW.md`
 
 Use the same structure as the previous reports: bottom line, BREAKING (with file:line in our repo), NEEDS LIVE TEST
 (T1..Tn: what to do, what to grep in `mkwmp.log` / `logs/mkw.log`), SAFE (symbol RVA table, detour table, `.ovr`
@@ -101,6 +101,6 @@ Report to the user: verdict, the new hash, the items sent to MACBOOK-MKWMP, and 
 
 ## Notes
 - The game version (1.0.0 vs 1.8.0) is a separate axis: guest addresses in the probe are per game build, not per
-  recomp release. See `resources/docs/GAME-1.8.0-ADDRESSES.md`. A recomp bump that changes `recomp/versions.py`
+  recomp release. See `research/docs/GAME-1.8.0-ADDRESSES.md`. A recomp bump that changes `recomp/versions.py`
   or `layout.py` (main base 0x7000000000) affects every `0x70...` constant; flag that as BREAKING.
 - mkw-recomp writes the game version into `<data dir>/setup-state.json` → `done.generate` = `"<RT_GAME_ID> <game version> <hash>"`.

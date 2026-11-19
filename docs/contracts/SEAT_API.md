@@ -18,14 +18,14 @@ Rules for a player's name and for every friend entry:
 
 ## 1a. Profiles (registered names)
 
-A name must be registered before it can join. Registering returns a 6-digit **PIN**, shown once; the launcher saves it in `client.toml`. Joining needs the name's PIN. Profiles are the only state kept across restarts: `[registry] file`, JSON, PINs as Argon2id hashes. Names unused for `expire_days` (180) become free; `reserved_names` can only be registered by the admin (`mkwmp admin register <name>`, loopback + admin token).
+A name must be registered before it can join. Registering returns a 6-digit **PIN**, shown once; the launcher saves it in `client.toml`. Joining needs the name's PIN. Profiles, friendships and voice-chat reports are the only state kept across restarts: `[registry] file`, SQLite, PINs as Argon2id hashes. Names unused for `expire_days` (default 30) are deleted with their friendships; a launcher that still has the name's PIN registers it again with that PIN (`POST /seat/v1/profiles` with `pin`) if the name is still free; `reserved_names` can only be registered by the admin (`mkwmp admin register <name>`, loopback + admin token).
 
 Rate limits (client IP = `CF-Connecting-IP` when the request comes through the local tunnel, else the peer): 3 registrations per IP per hour; 10 wrong PINs per IP per 15 min; 10 wrong PINs per name per hour (then that name is locked until the window passes); 30 joins per IP per minute. Over a limit: `429 RATE_LIMITED` with `Retry-After`.
 
 | Route | Body → answer |
 | --- | --- |
 | `GET /seat/v1/profiles/{name}` | → `{name, registered, reserved}` |
-| `POST /seat/v1/profiles` | `{name}` → `201 {name, pin}`; `409 NAME_REGISTERED`, `403 NAME_RESERVED`, `400 NAME_INVALID`, `429` |
+| `POST /seat/v1/profiles` | `{name, pin?}` → `201 {name, pin}`; `409 NAME_REGISTERED`, `403 NAME_RESERVED`, `400 NAME_INVALID` (also a `pin` that isn't 6 digits), `429`. Without `pin` the server picks one. |
 | `GET/POST /seat/v1/admin/profiles` | admin only (loopback without CF headers + `Authorization: Bearer <admin token>`): list; `{action: register\|reset-pin\|release, name}` |
 
 ## 2. Routes
@@ -87,6 +87,20 @@ A launcher signs in with its PIN to a **presence**. A presence never takes a sea
 | `POST /seat/v1/friends` | bearer, `{name}` → `{name, state: "pending" \| "accepted"}` | A request; if they had asked you, it accepts instead. Errors: `404 FRIEND_UNKNOWN`, `400 FRIEND_SELF`, `409 FRIEND_EXISTS`, `409 FRIEND_PENDING`, `409 FRIEND_LIMIT` (100 friends, 50 requests waiting). 20 per hour per profile. |
 | `POST /seat/v1/friends/{name}/accept` | bearer → `204` | `404 REQUEST_NOT_FOUND`. |
 | `DELETE /seat/v1/friends/{name}` | bearer → `204` | Rejects their request, cancels yours, or ends the friendship. Accept and delete share 120 per hour per profile. |
+
+## 2b. Voice-chat abuse reports
+
+A player reports another player's voice chat from the launcher (SETTINGS → REPORT VOICE ABUSE); the server's host reviews reports with `mkwmp admin reports`. Reports are stored in `registry.db`. A profile has **one open report at a time**. Reports are not tied to profiles: one about a player stays when that player's profile goes (it records the reported profile's registration time, so a later owner of the gamertag is told apart). The reporter deleting their profile (or an admin release) deletes the reports they filed. Every report is deleted 90 days after it was filed.
+
+| Route | Body → answer | Notes |
+| --- | --- | --- |
+| `GET /seat/v1/reports` | bearer → `{report: Report \| null}` | The caller's open report. 60 per minute per token. |
+| `POST /seat/v1/reports` | bearer, `{name, reason, details?}` → `201 {report: Report}` | `reason`: `harassment`, `hate`, `sexual`, `threats`, `disruption` or `other`. `details`: free text, control characters dropped, cut to 500 characters. Errors: `409 REPORT_ACTIVE` (withdraw the open one first), `404 REPORT_UNKNOWN` (no such live gamertag), `400 REPORT_SELF`, `400 REPORT_INVALID`. Tries, refused ones included: 5 per profile and 10 per IP per day. |
+| `DELETE /seat/v1/reports` | bearer → `204` | Withdraws (deletes) the open report. `404 REPORT_NOT_FOUND`. 5 per profile per day. |
+| `GET /seat/v1/admin/reports[?status=open\|closed\|all]` | admin → `{reports: Report[]}` | Oldest first; default `open`. |
+| `POST /seat/v1/admin/reports` | admin, `{action: close\|delete, id, outcome?}` → `{id, done}` | `close` marks it reviewed with a note of what was done (the reporter may then file again); `delete` removes it. |
+
+`Report` = `{id, reporter, reported, reportedCreated, reason, details, created, status: "open"|"closed", closed, outcome}`; times in seconds since 1970. Ids are never reused.
 
 A missing, expired or outdated token answers `401 PRESENCE_NOT_FOUND`: sign in again. Every `429` carries `Retry-After`.
 

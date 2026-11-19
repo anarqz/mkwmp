@@ -1,4 +1,17 @@
-**mkwmp 1.1.1**: launcher fix. No game or lobby change.
+**mkwmp 1.2.0**: privacy, 18+, voice-chat reports. No game change.
+
+- **For adults (18+).** The launcher asks you to confirm you're 18 or older and accept the [privacy policy](https://anarqz.github.io/mkwmp/#privacy) before it registers a gamertag, signs in or plays. Until you do, it doesn't contact the server. The box stays in SETTINGS > PRIVACY.
+- **Report voice-chat abuse.** SETTINGS > REPORT VOICE ABUSE (or REPORT next to a player you muted): pick what happened, add a few words, send. The server's host reviews it. You can have one report waiting at a time, and withdraw it while it waits.
+- **DELETE MY ACCOUNT** in SETTINGS > PRIVACY deletes your gamertag, PIN, friends and the reports you filed from the server.
+- **Unused gamertags are deleted after a month** (was 6 months), with their friends. If yours was and the name is still free, the launcher registers it again with your PIN the next time you open it.
+- Ctrl+V pastes into the launcher's text fields (gamertag, PIN, server, friends). Thanks, Fraustiz (#12).
+- The DONATE button is gone.
+
+For people hosting a server: `mkwmp admin reports`, `close-report` and `delete-report` review voice-chat reports ([HOSTING](https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md)). Update your server before your players update their launchers.
+
+---
+
+**From 1.1.1** (**mkwmp 1.1.1**: launcher fix.)
 
 - If another MKWMP launcher is still running (for example the old one right after an update), the new launcher waits for it to close instead of running beside it. Until the old one is gone, PLAY says "Another MKWMP launcher is running: close it". Before this fix, Online Play could bounce back to the menu until you restarted.
 
@@ -24,8 +37,8 @@
 
 Download one zip and unzip it anywhere:
 
-- **Windows:** `mkwmp-1.1.1-windows-x64.zip`. Open `mkwmp/mkwmp-launcher.exe`.
-- **Steam Deck / SteamOS / Linux:** `mkwmp-1.1.1-linux-x64.zip`. On a Steam Deck, one command in Desktop Mode installs it and adds it to Steam: `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`.
+- **Windows:** `mkwmp-1.2.0-windows-x64.zip`. Open `mkwmp/mkwmp-launcher.exe`.
+- **Steam Deck / SteamOS / Linux:** `mkwmp-1.2.0-linux-x64.zip`. On a Steam Deck, one command in Desktop Mode installs it and adds it to Steam: `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`.
 
 `README.txt` inside each zip has the steps.
 
@@ -49,7 +62,7 @@ Since rc.3:
 
 Files:
 
-- `mkwmp-1.1.1-windows-x64.zip` / `mkwmp-1.1.1-linux-x64.zip`: the launcher, the game patch, licenses and a README.
+- `mkwmp-1.2.0-windows-x64.zip` / `mkwmp-1.2.0-linux-x64.zip`: the launcher, the game patch, licenses and a README.
 - `mkwmp-launcher-x86_64-*`, `winmm.dll`, `mkwmp-voice.dll`: the same files loose, for launchers that update themselves.
 - `mkwmp-server-x86_64-windows.exe` / `mkwmp-server-x86_64-linux`: the server, for hosting your own (`mkwmp-server host --help`).
 - `SHA256SUMS` + `SHA256SUMS.sig`: checksums signed with the release key. The launcher verifies them before installing anything.

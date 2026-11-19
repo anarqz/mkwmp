@@ -6,13 +6,14 @@
 //!                                       on first run (also: no arguments)
 //!   mkwmp keygen [kid]                  print a new ticket signing key
 //!   mkwmp admin <list|register|reset-pin|release> [name] [--config config.toml]
+//!   mkwmp admin reports [open|closed|all] | close-report <id> [outcome...] | delete-report <id>
 //!                                       manage registered profiles on the
 //!                                       running server (same machine)
 
 mod host;
 mod lobby;
 
-const USAGE: &str = "usage: mkwmp host [options] (see mkwmp host --help) | mkwmp <server|lobby> [config.toml] | mkwmp keygen [kid] | mkwmp admin <list|register|reset-pin|release> [name] [--config file]";
+const USAGE: &str = "usage: mkwmp host [options] (see mkwmp host --help) | mkwmp <server|lobby> [config.toml] | mkwmp keygen [kid] | mkwmp admin <list|register|reset-pin|release> [name] [--config file] | mkwmp admin <reports [open|closed|all]|close-report <id> [outcome...]|delete-report <id>> [--config file]";
 
 #[tokio::main]
 async fn main() {
@@ -74,9 +75,20 @@ async fn admin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         addr.set_ip(std::net::Ipv4Addr::LOCALHOST.into());
     }
     let base = format!("http://{addr}/seat/v1/admin/profiles");
+    let reports = format!("http://{addr}/seat/v1/admin/reports");
     let http = reqwest::Client::new();
+    let id = |s: &str| s.parse::<i64>().map_err(|_| format!("not a report id: {s}"));
     let res = match rest.as_slice() {
         ["list"] => http.get(&base).bearer_auth(&token).send().await?,
+        ["reports"] => http.get(&reports).bearer_auth(&token).send().await?,
+        ["reports", status] => http.get(&reports).query(&[("status", status)]).bearer_auth(&token).send().await?,
+        ["close-report", n, outcome @ ..] => {
+            let body = serde_json::json!({"action": "close", "id": id(n)?, "outcome": outcome.join(" ")});
+            http.post(&reports).bearer_auth(&token).json(&body).send().await?
+        }
+        ["delete-report", n] => {
+            http.post(&reports).bearer_auth(&token).json(&serde_json::json!({"action": "delete", "id": id(n)?})).send().await?
+        }
         [action @ ("register" | "reset-pin" | "release"), name] => {
             http.post(&base).bearer_auth(&token).json(&serde_json::json!({"action": action, "name": name})).send().await?
         }
@@ -87,7 +99,30 @@ async fn admin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if !status.is_success() {
         return Err(format!("{status}: {}", body["error"]["message"].as_str().unwrap_or("error")).into());
     }
-    if let Some(list) = body["profiles"].as_array() {
+    if let Some(list) = body["reports"].as_array() {
+        if list.is_empty() {
+            println!("no reports");
+        }
+        for r in list {
+            let when = |k: &str| r[k].as_u64().map(utc).unwrap_or_default();
+            println!(
+                "#{} {} [{}] {} reported {} (registered {}) for {}",
+                r["id"],
+                when("created"),
+                r["status"].as_str().unwrap_or(""),
+                r["reporter"].as_str().unwrap_or(""),
+                r["reported"].as_str().unwrap_or(""),
+                when("reportedCreated"),
+                r["reason"].as_str().unwrap_or(""),
+            );
+            if let Some(d) = r["details"].as_str().filter(|d| !d.is_empty()) {
+                println!("    \"{}\"", d.replace('\n', "\n    "));
+            }
+            if let Some(o) = r["outcome"].as_str() {
+                println!("    closed {}: {o}", when("closed"));
+            }
+        }
+    } else if let Some(list) = body["profiles"].as_array() {
         for p in list {
             println!(
                 "{:<16} last seen {}{}",
@@ -102,6 +137,31 @@ async fn admin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         println!("done");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn utc_dates() {
+        assert_eq!(super::utc(0), "1970-01-01 00:00 UTC");
+        assert_eq!(super::utc(1_795_478_400 + 3_660), "2026-11-24 01:01 UTC");
+    }
+}
+
+/// Seconds since 1970 as `YYYY-MM-DD HH:MM UTC`.
+fn utc(secs: u64) -> String {
+    let (days, rem) = (secs / 86_400, secs % 86_400);
+    // Civil from days (Howard Hinnant's algorithm).
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02} {:02}:{:02} UTC", rem / 3600, rem % 3600 / 60)
 }
 
 /// The lobby Core logs through `tracing`; RUST_LOG overrides (e.g. lobby=debug).

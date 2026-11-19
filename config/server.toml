@@ -26,7 +26,7 @@ lobby_endpoint = "127.0.0.1:8905"   # NPLN host:port handed to seated players
 # restarts; PINs are stored hashed. Players register in the launcher.
 file = "../scratch/registry.db"
 reserved_names = []            # names only `mkwmp admin register <name>` can take
-expire_days = 180              # unused names become free again (0 = never)
+expire_days = 30               # unused gamertags (and their friends) are deleted after this (0 = never)
 # admin_token_file = "../scratch/keys/admin-token.txt"  # enables `mkwmp admin` (loopback only)
 
 [ticket]

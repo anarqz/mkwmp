@@ -27,7 +27,7 @@ There is **one server binary, `mkwmp`, with two parts**. Both run on one machine
 
 ## The seat server (`mkwmp server`, crate `rust/seat`)
 
-- **Gamertags.** A player registers a gamertag and gets a 6-digit PIN. Gamertags, PIN hashes (Argon2) and friendships are stored in SQLite (`[registry] file`). Unused gamertags expire after `expire_days`.
+- **Gamertags.** A player registers a gamertag and gets a 6-digit PIN. Gamertags, PIN hashes (Argon2), friendships and voice-chat reports are stored in SQLite (`[registry] file`). Unused gamertags are deleted after `expire_days` (30); the launcher registers a deleted one again with its saved PIN.
 - **Friends.** Requests are accepted or declined, then stored on the server. Removing a friend, or deleting a gamertag, removes the friendship on both sides.
   - A friend is **playing** (seated), **online** (launcher running: a *presence* signed in with the PIN) or **offline**.
   - The launcher long-polls `GET /seat/v1/friends` for changes.

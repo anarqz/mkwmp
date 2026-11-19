@@ -1,4 +1,4 @@
-// On-screen numeric keypad for the game's Room ID keyboard (resources/docs/SWKBD-KEYPAD.md).
+// On-screen numeric keypad for the game's Room ID keyboard (research/docs/SWKBD-KEYPAD.md).
 #ifndef MKWMP_KEYPAD_H
 #define MKWMP_KEYPAD_H
 

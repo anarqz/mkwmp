@@ -34,6 +34,8 @@ fn reason(e: &ApiError) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerView {
     Checking,
+    /// Not asked: the player hasn't confirmed they're 18+ yet.
+    NotAsked,
     Online { name: String, seats_total: usize, seated: usize, queued: usize },
     Offline(String),
 }
@@ -69,6 +71,15 @@ pub struct FriendsUi {
     pub working: bool,
 }
 
+/// SETTINGS → REPORT VOICE ABUSE: this profile's report waiting for review
+/// (None until asked), the last action's outcome, an action on its way.
+#[derive(Debug, Clone, Default)]
+pub struct ReportUi {
+    pub mine: Option<Option<crate::api::Report>>,
+    pub note: Option<(String, bool)>, // (text, is_error)
+    pub working: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct Ui {
     pub cfg: ClientConfig,
@@ -78,6 +89,7 @@ pub struct Ui {
     pub server: ServerView,
     pub session: SessionView,
     pub friends: FriendsUi,
+    pub report: ReportUi,
     pub update: String,
 }
 
@@ -119,6 +131,7 @@ impl Core {
                 server: ServerView::Checking,
                 session: SessionView::Idle,
                 friends: FriendsUi::default(),
+                report: ReportUi::default(),
                 update: String::new(),
             }),
             stop: Notify::new(),
@@ -254,6 +267,10 @@ impl Core {
     /// REGISTER: ask the server for the configured name. Success saves the
     /// PIN to client.toml; a taken name asks for its PIN instead.
     pub fn register(self: &Arc<Self>) {
+        if !self.ui().cfg.adult_consent {
+            self.set(|u| u.register = RegisterView::Failed(crate::api::NO_CONSENT.into()));
+            return;
+        }
         self.set(|u| u.register = RegisterView::Working);
         let core = self.clone();
         tokio::spawn(async move {
@@ -322,11 +339,29 @@ impl Core {
             self.set(|u| {
                 u.cfg = cfg;
                 u.friends = FriendsUi::default();
+                u.report = ReportUi::default();
             });
         }
         *self.presence.lock().unwrap() = None;
         self.friends_wake.notify_one();
         Ok(())
+    }
+
+    /// The 18+ consent changed: sign in again (or stop being signed in).
+    pub fn consent_changed(&self) {
+        let t = self.presence.lock().unwrap().take();
+        if let Some((_, token)) = t {
+            let api = self.api();
+            tokio::spawn(async move { api.presence_end(&token).await });
+        }
+        self.set(|u| {
+            u.friends = FriendsUi::default();
+            u.report = ReportUi::default();
+            if matches!(&u.register, RegisterView::Failed(m) if m == crate::api::NO_CONSENT) {
+                u.register = RegisterView::Idle;
+            }
+        });
+        self.friends_wake.notify_one();
     }
 
     /// Forget the last REGISTER outcome (the name changed).
@@ -409,6 +444,9 @@ impl Core {
             launch::write_probe_toml(&cfg.game, &toml).map_err(|e| format!("writing mkwmp.toml: {e}"))
         };
         write(None, &lobby)?; // never a stale ticket
+        // Consent, and a profile the server deleted (a month unused) comes back
+        // here, before the seat server is asked for a seat.
+        self.presence_token().await.map_err(|e| reason(&e))?;
         *self.seat.write().await = Some(seat.clone());
         match cfg.seat {
             SeatMode::Start => {
@@ -514,16 +552,105 @@ impl Core {
     }
 
     /// The presence token for the current name + PIN, signing in if needed.
+    /// A profile the server deleted (a month unused) is registered again with
+    /// the saved PIN first. Nothing reaches the server before the player's
+    /// consent (18+, privacy policy).
     async fn presence_token(&self) -> Result<String, ApiError> {
-        let id = Self::ident(&self.ui().cfg).ok_or_else(|| ApiError::Refused("register your gamertag first".into()))?;
+        let cfg = self.ui().cfg;
+        if !cfg.adult_consent {
+            return Err(ApiError::Refused(crate::api::NO_CONSENT.into()));
+        }
+        let id = Self::ident(&cfg).ok_or_else(|| ApiError::Refused("register your gamertag first".into()))?;
         if let Some((who, t)) = self.presence.lock().unwrap().clone() {
             if who == id {
                 return Ok(t);
             }
         }
-        let t = self.api().presence(&id.1, &id.2).await?;
+        let api = self.api();
+        let mut id = id;
+        let t = match api.presence(&id.1, &id.2).await {
+            Err(ApiError::Refused(m)) if m == crate::api::NOT_REGISTERED => {
+                match api.restore(&cfg.name, &id.2).await {
+                    Ok(pin) if pin == id.2 => {
+                        note(format!("{} had expired on the server; registered it again with your PIN", cfg.name))
+                    }
+                    Ok(pin) => {
+                        // An older server picked its own PIN: keep that one, or nobody has it.
+                        let mut c = self.ui().cfg;
+                        c.pin = pin.clone();
+                        self.set_config(c).map_err(ApiError::Refused)?;
+                        note(format!("{} had expired on the server; registered it again (new PIN)", cfg.name));
+                        id.2 = pin;
+                    }
+                    Err(ApiError::Taken) => {
+                        return Err(ApiError::Refused(format!(
+                            "{} expired on the server and someone else registered it: pick another gamertag",
+                            cfg.name
+                        )))
+                    }
+                    Err(e) => return Err(e),
+                }
+                api.presence(&id.1, &id.2).await?
+            }
+            other => other?,
+        };
         *self.presence.lock().unwrap() = Some((id, t.clone()));
         Ok(t)
+    }
+
+    /// Ask the server for this profile's open report (SETTINGS opened).
+    pub fn refresh_report(self: &Arc<Self>) {
+        self.report_action(|api, t| async move { api.report(&t).await.map(|r| (Some(r), None)) });
+    }
+
+    /// Report `name`'s voice chat.
+    pub fn file_report(self: &Arc<Self>, name: String, reason: &'static str, details: String) {
+        self.report_action(move |api, t| async move {
+            let r = api.report_file(&t, &name, reason, &details).await?;
+            let msg = format!("Report about {} sent. The server's host will review it.", r.reported);
+            Ok((Some(Some(r)), Some(msg)))
+        });
+    }
+
+    /// Take back the report waiting for review.
+    pub fn withdraw_report(self: &Arc<Self>) {
+        self.report_action(|api, t| async move {
+            api.report_withdraw(&t).await?;
+            Ok((Some(None), Some("Report withdrawn.".to_string())))
+        });
+    }
+
+    /// One report call; `run` returns the new open report (if it knows) and a note.
+    fn report_action<F, Fut>(self: &Arc<Self>, run: F)
+    where
+        F: FnOnce(Api, String) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<(Option<Option<crate::api::Report>>, Option<String>), ApiError>> + Send,
+    {
+        self.set(|u| u.report.working = true);
+        let core = self.clone();
+        tokio::spawn(async move {
+            let mut outcome = match core.presence_token().await {
+                Ok(t) => run(core.api(), t).await,
+                Err(e) => Err(e),
+            };
+            if matches!(outcome, Err(ApiError::SignedOut)) {
+                *core.presence.lock().unwrap() = None;
+                outcome = Err(ApiError::Transient("signed out; try again".into()));
+            }
+            core.set(|u| {
+                u.report.working = false;
+                match outcome {
+                    Ok((mine, msg)) => {
+                        if let Some(m) = mine {
+                            u.report.mine = Some(m);
+                        }
+                        u.report.note = msg.map(|m| (m, false));
+                    }
+                    Err(ApiError::Transient(_)) => u.report.note = Some(("can't reach the server right now".into(), true)),
+                    Err(e) => u.report.note = Some((e.to_string(), true)),
+                }
+            });
+        });
     }
 
     /// Keeps the FRIENDS card current while the launcher runs (window,
@@ -668,6 +795,11 @@ impl Core {
     /// The server's public status, every 5 s, for whatever server is set.
     pub async fn status_loop(self: Arc<Self>) {
         loop {
+            if !self.ui().cfg.adult_consent {
+                self.set(|u| u.server = ServerView::NotAsked);
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            }
             let server = self.ui().cfg.server.clone();
             let base = if server.contains("://") { server } else { format!("http://{server}") };
             let view = match Api::new(base.trim_end_matches('/')).status().await {

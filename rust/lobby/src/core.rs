@@ -161,7 +161,7 @@ struct State {
     pending_social: bool,
     /// SubscribeFriendUsers streams whose first answer waits for the caller's roster entry, with
     /// their deadline. The game matches that first message to its system friend list once per
-    /// sign-in and never reads a later one (resources/docs/FRIEND-ROOMS-RE.md).
+    /// sign-in and never reads a later one (research/docs/FRIEND-ROOMS-RE.md).
     friend_wait: HashMap<StreamKey, f64>,
     /// Pushes produced where no send list is at hand (stream ends); sent at the next flush.
     deferred_sends: Sends,
@@ -708,7 +708,7 @@ impl State {
         for (name, count) in &summary {
             if *count > 0 {
                 // upcsid = join order inside the lobby (the real server's `__upcsidn` counter): the
-                // game makes the lowest one the mesh host (resources/docs/LOBBY-RUST-PY-AUDIT.md 2).
+                // game makes the lowest one the mesh host (research/docs/LOBBY-RUST-PY-AUDIT.md 2).
                 let id = users::tail(name);
                 let seq = self.mm.lobby_of(id).and_then(|l| self.mm.lobbies.get(&l)).and_then(|l| l.seat(id)).map(|s| s.join_seq as i64);
                 let n = match seq {
@@ -1062,7 +1062,7 @@ impl State {
         }
     }
 
-    // ---- friend rooms (resources/docs/RE-MAP.md 3.2-3.4, 6a) -----------------------------------------
+    // ---- friend rooms (research/docs/RE-MAP.md 3.2-3.4, 6a) -----------------------------------------
 
     fn session_view_msg(&self, lobby: &Lobby, tenant: &str, now: f64) -> crate::wire::Msg {
         let members: Vec<(String, Vec<u8>)> = lobby
@@ -1425,7 +1425,7 @@ fn apply_verdict(lobby: &mut Lobby, v: Verdict, sends: &mut Sends) {
 
 /// Every member with a lower user-session number (`upcsid` = ussid) than `uid` (and still here) has
 /// its document in `collection`, so the newcomer's snapshot contains them. The game makes the lowest
-/// `upcsid` among the `__pus` documents it holds the mesh host (FUN_0162a360, resources/docs/
+/// `upcsid` among the `__pus` documents it holds the mesh host (FUN_0162a360, research/docs/
 /// MESH-RUST-DIFF.md): ordering by join order instead let two players both see themselves as the
 /// lowest and both host (deadlock: "waiting for other players"). Same rule as the Python reference
 /// (`lower_members_present`). A late joiner with a lower number than the host would still elect
@@ -1510,7 +1510,7 @@ fn user_session_document(name: &str, uid: &str, ussid: u32, upcsid: u64, pgn: &s
 /// (`rom_id`, `course_id`, `user_name`) plus the integer `rule` = 3 (group / course-vote lobby).
 /// The game never writes `rule`; without it a joiner reads rule 0 = a public Race lobby, sets
 /// `RandomMatchSession`, stalls in GroupPlayModeSelector and the host's SyncState times out
-/// (0x46b96f91; resources/docs/SYNCSTATE-RE.md 9). Attributes = `{1: entry{1 key, 2 Value}}`.
+/// (0x46b96f91; research/docs/SYNCSTATE-RE.md 9). Attributes = `{1: entry{1 key, 2 Value}}`.
 fn with_room_rule(mut attributes: Vec<u8>) -> Vec<u8> {
     let has = crate::wire::repeated_bytes(&attributes, 1)
         .is_ok_and(|es| es.iter().any(|e| crate::wire::str_field(e, 1).ok().flatten().as_deref() == Some("rule")));
