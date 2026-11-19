@@ -136,8 +136,17 @@ static void use_settings(const MkwPluginApi *api) {
     api->setting_get("pin_name", pin_name, sizeof pin_name);
     int voice_on = api->setting_get("voice", voice, sizeof voice) && !strcmp(voice, "1");   // off until turned on
     const char *name = api->profile_name;
+    int lang_pt = api->language && (!strcmp(api->language, "pt-BR") || !strcmp(api->language, "pt"));
+    // the game's own settings get the mod's tabs (voice chat; the account and friends, the options page) whatever
+    // the settings say: without them the mod looks absent, and the MKWMP tab is where a player who is not signed up
+    // signs up. The Voice chat tab stays greyed, telling why, until the plugin runs the seat itself (below).
+    if (api->size >= offsetof(MkwPluginApi, settings_tab) + sizeof api->settings_tab && api->settings_tab) {
+        api->settings_tab(lang_pt ? "Chat de voz" : "Voice chat", voicetab_draw);
+        api->settings_tab("MKWMP", mkw_mod_page);
+    }
     if (strcmp(consent, "1") || !seatapi_name_ok(name) || !seatapi_pin_ok(pin) || strcmp(pin_name, name)) {
         g_needs_setup = !mkwmp_config()->present;   // a mkwmp.toml (the launcher's) still works without the page
+        voicetab_set_state(g_needs_setup ? VOICETAB_NOT_SIGNED_UP : VOICETAB_LAUNCHER);
         mkwmp_log("plugin: options page not completed for player %s (consent %s, %s): %s", name,
                   strcmp(consent, "1") ? "no" : "yes", seatapi_pin_ok(pin) && !strcmp(pin_name, name) ? "signed up" : "not signed up",
                   g_needs_setup ? "online play stays off" : "using mkwmp.toml");
@@ -146,6 +155,7 @@ static void use_settings(const MkwPluginApi *api) {
     mkwmp_config_use_direct(name);
     if (!mkwmp_config()->direct) {
         mkwmp_log("plugin: mkwmp.toml names a launcher: it holds the seat, the mod's settings wait");
+        voicetab_set_state(VOICETAB_LAUNCHER);
         return;
     }
     SeatdConfig c = {0};
@@ -156,17 +166,13 @@ static void use_settings(const MkwPluginApi *api) {
     c.setting_get = api->setting_get;
     c.setting_set = api->setting_set;
     c.watch_friends = 1;   // friends' notices in game, as the launcher's tray gave
-    c.lang_pt = api->language && (!strcmp(api->language, "pt-BR") || !strcmp(api->language, "pt"));
+    c.lang_pt = lang_pt;
     seatd_start(&c);
     launcher_set_direct(seatd_request);
     char mode[16] = "";
     api->setting_get("seat_mode", mode, sizeof mode);
     g_seat_early = strcmp(mode, "online") != 0;   // "start" (default, as the launcher's): the seat when the game loads
-    // the game's own settings get the mod's tabs: voice chat, and the account and friends (the options page)
-    if (api->size >= offsetof(MkwPluginApi, settings_tab) + sizeof api->settings_tab && api->settings_tab) {
-        api->settings_tab(c.lang_pt ? "Chat de voz" : "Voice chat", voicetab_draw);
-        api->settings_tab("MKWMP", mkw_mod_page);
-    }
+    voicetab_set_state(VOICETAB_LIVE);
     // the seat given back when the game ends (else the server frees it after 60 s)
     if (api->size >= offsetof(MkwPluginApi, on_exit) + sizeof api->on_exit && api->on_exit)
         api->on_exit(game_exiting, NULL);
