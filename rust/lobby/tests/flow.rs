@@ -212,10 +212,8 @@ fn two_players_match_play_and_leave() {
     assert_eq!(members, vec![a.user.clone(), b.user.clone()]);
     assert_eq!(w.core.counts()["Battle24"].players, 2);
 
-    // Voice (VOICE_API.md §1): both share one room, listed in seat order.
-    let room = w.core.voice_room(&a.uid).expect("a is in a voice room");
-    assert_eq!(room.members, vec![a.uid.clone(), b.uid.clone()]);
-    assert_eq!(w.core.voice_room(&b.uid), Some(room));
+    // Voice (VOICE_API.md §1): none in a matchmade lobby, only in friend rooms.
+    assert!(w.core.voice_room(&a.uid).is_none(), "no voice in matchmaking");
     assert!(w.core.voice_room("00000000-0000-4000-8000-000000000099").is_none());
     assert!(w.core.voice_user("not-a-ticket").is_none());
 
@@ -472,6 +470,13 @@ fn friend_room_create_room_id_and_join() {
     // The guest's Gamesync session is the room's.
     join_session(&w, &mut guest);
     assert_eq!(get(&w, &guest, "docs/__gs/f").unwrap().get("gsid"), get(&w, &host, "docs/__gs/f").unwrap().get("gsid"));
+    // Voice (VOICE_API.md §1): a friend room is one voice room, members in seat order.
+    let room = w.core.voice_room(&host.uid).expect("the host is in a voice room");
+    assert_eq!(room.members, vec![host.uid.clone(), guest.uid.clone()]);
+    assert_eq!(w.core.voice_room(&guest.uid), Some(room));
+    // A dev lobby has no roster: everyone counts as a friend.
+    assert!(w.core.voice_friends(&host.uid, &guest.uid));
+    assert!(!w.core.voice_friends(&host.uid, &host.uid));
 }
 
 #[test]

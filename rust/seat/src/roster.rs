@@ -174,6 +174,8 @@ pub struct Status {
     /// (empty when it hasn't, or stopped reporting). Lobbies have no cap:
     /// they open and close with the players.
     pub lobbies: BTreeMap<String, usize>,
+    /// What a report can be about (VIDEO_API.md §4). Absent on servers older than chat rooms.
+    pub report_kinds: &'static [&'static str],
 }
 
 /// A lobby report older than this no longer shows in the status.
@@ -471,6 +473,7 @@ impl Roster {
             seated: self.seated,
             queued: self.queue.len(),
             lobbies: if now.saturating_sub(self.lobbies_at) < LOBBIES_STALE_MS { self.lobbies.clone() } else { BTreeMap::new() },
+            report_kinds: &crate::registry::REPORT_KINDS,
         }
     }
 

@@ -3,7 +3,8 @@
 Lobby voice chat, modelled on ForzaInfinity's voice (its `docs/launcher/VOICE_CHAT.md`): the same
 engine (WASAPI, WebRTC AEC3 echo cancellation, AGC, RNNoise noise suppression and gate, Opus 6
 kbit/s SILK wideband, 3 x 20 ms per datagram) and the same STUN-shaped side channel, adapted to
-mkwmp. **Every game lobby is one voice room.** No overlay: settings live in the launcher, mutes in
+mkwmp. **Every friend room is one voice room** (ONLINE → FRIENDS → a room you create or join);
+matchmade lobbies have no voice (§6). No overlay: settings live in the launcher, mutes in
 the game's own menus.
 
 Owners:
@@ -17,7 +18,8 @@ Owners:
 
 - A player's **account id** is the u64 the probe already uses for friends: the first 8 bytes of
   the uuid5 user id (`uuid5(lower(name))`), big-endian, top bit cleared.
-- A player's **room** is the lobby the Core has them in (`Matchmaker::lobby_of(uid)`); the relay
+- A player's **room** is the friend room the Core has them in (`Matchmaker::lobby_of(uid)`, a
+  lobby made with CreateGameSessionCreationTicket; a matchmade lobby is no room); the relay
   asks `Core::voice_room(uid) -> Option<VoiceRoom { lobby: LobbyId, members: Vec<String /*uid*/> }>`
   each time it routes (cheap; no copy of lobby state in the relay). Not in a lobby, or the lobby is
   still gathering (no assignment sent yet: the players are not in one world): no room, no voice.
@@ -98,3 +100,52 @@ the first game run only "System default"), mic and voice volume sliders 1-100 (d
   pumping), per-talker gain, mix, **mix limiter** (hard ceiling -3 dBFS, soft knee): nobody sounds
   louder than anyone else and no scream reaches the ears at full scale.
 - Mutes from the game's menus go to the relay (op 2) and to the launcher (`POST /voice/mute`).
+
+## 6. Friend rooms: voice and camera (draft, branch `chat-rooms`; not deployed)
+
+Voice and camera work only in **friend rooms**, the private rooms players create or join under
+ONLINE → FRIENDS. Joining one is the player's choice to talk to the people in it. Matchmade races
+and battles have no voice and no camera.
+
+- **Voice: everyone in the room hears everyone** (rule 3.3: mutes and deafen as before). The
+  room is the friend room the lobby has the player in (§1), nothing else. A released client
+  (lobby-wide, v1) in a friend room hears and is heard like everyone else; in a matchmade lobby
+  it gets "no room" in state down and no voice.
+- **Camera: only between mutual friends in the same room**, as the seat roster names them (the
+  lobby already holds each player's mutual friends; a dev lobby without a roster counts everyone
+  as a friend). A player sees at most **4 faces** at once: the client picks which (friends it
+  asked for first), the relay enforces mutual friendship and the limit.
+- The relay looks the room and the friends up again at least every second, so someone who leaves
+  the room or is unfriended stops getting pictures within a second.
+
+### 6.1 Room mode (control up)
+
+- **op 1/2, `self` bit3 (`0x08`) = room mode**: this client speaks state down v2 and video.
+  Send it on every op 1/2. Clearing it drops the client's video subscriptions. An old relay ignores
+  the bit and keeps sending `ver=1` state down, which tells the client there is no video.
+- **`self` bit2 (`0x04`) = camera on** (VIDEO_API.md §2).
+- **op 6, video subscribe**: VIDEO_API.md §2.
+
+Released clients never set bits 2 or 3 (their voice library builds `self` from mic-muted and
+deafened only and refuses any other bit), so they always get v1.
+
+### 6.2 State down v2 (to room-mode subscribers only)
+
+`ver=2`, `room`, `bundle`, `count`, `count x {seat, account, state}` as in v1 (every subscriber of
+the room, talking as heard), then `room_id u64` (the room, non-zero; 0 = no room), `fps u8` (video
+frame-rate divisor, 1, 2 or 4; VIDEO_API.md §3), `members u8` (0..=23), `members x {account u64,
+flags u8}`: the listener's **mutual friends** bound in the room, in seat order. Flags: bit0 camera
+on, bit1 bound. `account` is the account id of §1, the id the game knows that player by
+(`lobby::account_id(ticket_user_id(name))`: the first 8 bytes of the user id
+`uuid5(URL, "mkwmp-user/" + lower(name))`, big-endian, top bit cleared; the game patch's
+`friends_account_id` is the same function). Sent with v1's rules (§3.5) and whenever a friend's
+camera flag or the friends in the room change.
+
+### 6.3 Test vectors (hex, `rust/gateway/src/voice/tests.rs` `room_wire_round_trips_and_vectors`)
+
+- Op 6, txid zero, one account `0x0123456789abcdef`:
+  `3e9400102112a442000000000000000000000000c0f5000b0106010123456789abcdef00`
+- State down v2, txid zero, in a room, bundle 3, seat 2 = `0x0123456789abcdef` talking, room
+  `0x1122334455667788`, fps 1, one member `0x0123456789abcdef` bound with its camera on:
+  `3e9400282112a442000000000000000000000000c0f6002102010301020123456789abcdef0111223344556677880101`
+  `0123456789abcdef03000000`

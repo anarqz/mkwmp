@@ -454,13 +454,19 @@ impl Core {
         })
     }
 
-    /// Voice relay (VOICE_API.md §1): the lobby `uid` is seated in and every member's user id
-    /// (seat order). `None`: not in a lobby, or the lobby is still gathering (nobody has been
-    /// sent into it yet), no voice.
+    /// Voice relay (VOICE_API.md §6): may `a` see `b`'s camera? Mutual friends, as the seat
+    /// roster last named them (everyone in a dev lobby without a roster).
+    pub fn voice_friends(&self, a: &str, b: &str) -> bool {
+        self.run(|s, _| s.are_friends(a, b))
+    }
+
+    /// Voice relay (VOICE_API.md §1): the friend room `uid` is seated in and every member's
+    /// user id (seat order). `None`: not in a lobby, in a matchmade lobby (no voice there), or
+    /// the lobby is still gathering (nobody has been sent into it yet).
     pub fn voice_room(&self, uid: &str) -> Option<VoiceRoom> {
         self.run(|s, _| {
             let lobby = s.mm.lobbies.values().find(|l| l.seat(uid).is_some())?;
-            if lobby.state == LobbyState::Gathering {
+            if lobby.state == LobbyState::Gathering || lobby.room.is_none() {
                 return None;
             }
             Some(VoiceRoom { lobby: lobby.id, members: lobby.seats.iter().map(|x| x.uid().to_owned()).collect() })

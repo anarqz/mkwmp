@@ -368,7 +368,7 @@ async fn roster_sync_ends_a_dropped_seat() {
 
 /// Voice relay end to end: real seat tickets, a real lobby, UDP in and out.
 #[tokio::test(flavor = "multi_thread")]
-async fn voice_relay_carries_a_lobby_room() {
+async fn voice_relay_gives_matchmade_lobbies_no_voice() {
     use gateway::voice;
     let (lobby, cert) = start_with(true);
     let p = lobby.seat_port;
@@ -403,43 +403,15 @@ async fn voice_relay_carries_a_lobby_room() {
     ta.next(Duration::from_secs(5)).await.expect("assignment for A");
     tb.next(Duration::from_secs(5)).await.expect("assignment for B");
 
-    // Both in one lobby: B subscribes, both learn the two seats (A, bound before its lobby
-    // opened, joins the room on the relay's next 1 s reconcile).
+    // Both in one matchmade lobby: voice is only for friend rooms (VOICE_API.md §6), so the
+    // relay still says "no room" and A's voice reaches nobody.
     let b = udp(&tickets[1]);
-    let mut seats = vec![];
-    for _ in 0..4 {
-        let (room, _, s) = voice::parse_state(&recv(&b).expect("state for B")).unwrap();
-        assert!(room);
-        seats = s;
-        if seats.len() == 2 {
-            break;
-        }
-    }
-    let mut want = vec![lobby::account_id(&pa.uid), lobby::account_id(&pb.uid)];
-    want.sort();
-    let mut got: Vec<u64> = seats.iter().map(|s| s.account).collect();
-    got.sort();
-    assert_eq!(got, want);
-    let a_seat = seats.iter().find(|s| s.account == lobby::account_id(&pa.uid)).unwrap().seat;
-    // A refreshes (its room is looked up again) and talks; B hears it with A's seat.
-    let c = voice::Control { op: voice::OP_SUBSCRIBE, self_flags: 0, mutes: vec![], ticket: tickets[0].clone() };
-    a.send_to(&voice::write_control(&c, &[7; 12]), ("127.0.0.1", lobby.voice)).unwrap();
-    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(voice::parse_state(&recv(&b).expect("state for B")), Some((false, voice::BUNDLE, vec![])));
     let up = voice::write(voice::KIND_VOICE, &[1, 0, 0, 9, 0, 0, 0, 27, 1, 2, 3, 4], voice::ATTR_VOICE_UP, &[0xF8, 1, 2]);
     a.send_to(&up, ("127.0.0.1", lobby.voice)).unwrap();
-    let mut heard = None;
     while let Some(d) = recv(&b) {
-        if voice::kind_of(&d) == Some(voice::KIND_VOICE) {
-            heard = Some(d);
-            break;
-        }
-    }
-    let d = heard.expect("voice down at B");
-    assert_eq!((d[8 + 8], &d[24..27]), (a_seat, &[0xF8, 1, 2][..]));
-    // Never echoed to the talker.
-    while let Some(d) = recv(&a) {
-        assert_ne!(voice::kind_of(&d), Some(voice::KIND_VOICE));
-        if voice::parse_state(&d).is_some_and(|s| s.0 && s.2.iter().all(|x| x.state == 0)) {
+        assert_ne!(voice::kind_of(&d), Some(voice::KIND_VOICE), "no voice in matchmaking");
+        if voice::parse_state(&d).is_some() {
             break;
         }
     }

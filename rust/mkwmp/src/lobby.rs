@@ -67,6 +67,9 @@ impl gateway::voice::Rooms for VoiceRooms {
     fn account(&self, uid: &str) -> u64 {
         lobby::account_id(uid)
     }
+    fn friends(&self, a: &str, b: &str) -> bool {
+        self.0.voice_friends(a, b)
+    }
 }
 
 fn policy(p: &config::LobbyPolicy) -> lobby::Policy {
@@ -172,9 +175,10 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn Error>> {
         None
     };
     let rooms = Arc::new(VoiceRooms(core.clone()));
+    let video = gateway::voice::Options { video: l.video, video_budget: l.video_budget };
     let voice = async move {
         match voice {
-            Some(sock) => gateway::voice::run(sock, rooms).await,
+            Some(sock) => gateway::voice::run(sock, rooms, video).await,
             None => std::future::pending().await,
         }
     };

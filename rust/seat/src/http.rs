@@ -706,6 +706,8 @@ struct ReportBody {
     reason: String,
     #[serde(default)]
     details: String,
+    #[serde(default)]
+    kind: Option<String>,
 }
 
 /// File a report about a player's voice chat. One open report per profile;
@@ -733,7 +735,8 @@ async fn report_file(
         l.record(&format!("report:{}", who.key), limits::REPORT_PER_NAME, now);
         l.record(&format!("reportip:{ip}"), limits::REPORT_PER_IP, now);
     }
-    match s.registry.file_report(&who.name, b.name.trim(), b.reason.trim(), &b.details, now / 1000) {
+    let kind = b.kind.as_deref().map(str::trim).unwrap_or("voice");
+    match s.registry.file_report_kind(&who.name, b.name.trim(), kind, b.reason.trim(), &b.details, now / 1000) {
         Ok(r) => (StatusCode::CREATED, [(header::CACHE_CONTROL, "no-store")], Json(json!({"report": r}))).into_response(),
         Err(RegistryError::NotFound) => error(StatusCode::UNAUTHORIZED, "PRESENCE_NOT_FOUND", "sign in again"),
         Err(e) => registry_error(e),

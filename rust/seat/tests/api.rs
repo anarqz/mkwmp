@@ -270,6 +270,7 @@ async fn status_is_public() {
     assert_eq!(st, StatusCode::OK);
     assert_eq!((s["seatsTotal"].as_u64(), s["seated"].as_u64(), s["queued"].as_u64()), (Some(2), Some(1), Some(0)));
     assert_eq!(s["lobbyEndpoint"], "203.0.113.5:8905");
+    assert_eq!(s["reportKinds"], json!(["voice", "camera"]));
 }
 
 fn harness_at(peer: &str) -> Harness {
@@ -443,4 +444,23 @@ async fn an_expired_profile_comes_back_with_its_old_pin() {
     assert_eq!(st, StatusCode::OK);
     let (st, _) = h.call("POST", "/seat/v1/profiles", None, Some(json!({"name": "Bia", "pin": "12"}))).await;
     assert_eq!(st, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn reports_take_a_kind() {
+    let h = harness_at("127.0.0.1:40000");
+    let ta = h.presence("ana").await;
+    let tb = h.presence("bia").await;
+    // Reports: kind defaults to voice, takes camera, refuses anything else.
+    let (st, v) = h
+        .call("POST", "/seat/v1/reports", Some(&ta), Some(json!({"name": "bia", "reason": "sexual", "kind": "camera"})))
+        .await;
+    assert_eq!((st, v["report"]["kind"].as_str()), (StatusCode::CREATED, Some("camera")), "{v}");
+    let (st, v) =
+        h.call("POST", "/seat/v1/reports", Some(&tb), Some(json!({"name": "ana", "reason": "other", "kind": "smell"}))).await;
+    assert_eq!((st, v["error"]["code"].as_str()), (StatusCode::BAD_REQUEST, Some("REPORT_INVALID")));
+    let (st, v) = h.call("POST", "/seat/v1/reports", Some(&tb), Some(json!({"name": "ana", "reason": "other"}))).await;
+    assert_eq!((st, v["report"]["kind"].as_str()), (StatusCode::CREATED, Some("voice")));
+    let (_, v) = h.call("GET", "/seat/v1/admin/reports", Some("admin-secret"), None).await;
+    assert_eq!(v["reports"].as_array().unwrap().len(), 2);
 }

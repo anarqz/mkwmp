@@ -165,6 +165,8 @@ const SCHEMA: &str = "
 
 /// Why a player is reported (the launcher offers these).
 pub const REPORT_REASONS: [&str; 6] = ["harassment", "hate", "sexual", "threats", "disruption", "other"];
+/// What a report is about (VIDEO_API.md §4); `voice` when the client doesn't say.
+pub const REPORT_KINDS: [&str; 2] = ["voice", "camera"];
 /// Longest free-text part of a report, in characters.
 pub const REPORT_DETAILS_MAX: usize = 500;
 /// Every report (open or closed) is deleted this long after it was filed.
@@ -185,6 +187,7 @@ pub struct Report {
     pub status: String,
     pub closed: Option<u64>,
     pub outcome: Option<String>,
+    pub kind: String,
 }
 
 fn report_err(code: &'static str, msg: impl Into<String>) -> RegistryError {
@@ -243,6 +246,12 @@ impl Registry {
         // Per connection, and a no-op inside a transaction: set it first.
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         conn.execute_batch(SCHEMA)?;
+        // Databases made before reports had a kind (1.2.0) get the column, every row a voice report.
+        let has_kind: bool =
+            conn.query_row("SELECT COUNT(*) FROM pragma_table_info('reports') WHERE name = 'kind'", [], |r| r.get::<_, i64>(0))? > 0;
+        if !has_kind {
+            conn.execute_batch("ALTER TABLE reports ADD COLUMN kind TEXT NOT NULL DEFAULT 'voice';")?;
+        }
         let r = Self {
             db: Mutex::new(conn),
             path: db_path,
@@ -626,7 +635,7 @@ impl Registry {
 const MINE: &str = "reporter = ?1 AND reporter_created = (SELECT created FROM profiles WHERE key = ?1)";
 
 const REPORT_COLS: &str =
-    "id, reporter_name, reported_name, reported_created, reason, details, created, status, closed, outcome";
+    "id, reporter_name, reported_name, reported_created, reason, details, created, status, closed, outcome, kind";
 
 fn report_row(r: &rusqlite::Row) -> rusqlite::Result<Report> {
     Ok(Report {
@@ -640,6 +649,7 @@ fn report_row(r: &rusqlite::Row) -> rusqlite::Result<Report> {
         status: r.get(7)?,
         closed: r.get::<_, Option<i64>>(8)?.map(|v| v as u64),
         outcome: r.get(9)?,
+        kind: r.get(10)?,
     })
 }
 
@@ -647,6 +657,22 @@ impl Registry {
     /// `me` reports `other` for voice-chat abuse. One open report per
     /// reporter; `other` must be a live profile.
     pub fn file_report(&self, me: &str, other: &str, reason: &str, details: &str, now: u64) -> Result<Report, RegistryError> {
+        self.file_report_kind(me, other, "voice", reason, details, now)
+    }
+
+    /// The same, naming what the report is about (`voice` or `camera`).
+    pub fn file_report_kind(
+        &self,
+        me: &str,
+        other: &str,
+        kind: &str,
+        reason: &str,
+        details: &str,
+        now: u64,
+    ) -> Result<Report, RegistryError> {
+        if !REPORT_KINDS.contains(&kind) {
+            return Err(report_err("REPORT_INVALID", format!("kind: one of {}", REPORT_KINDS.join(", "))));
+        }
         let (mk, ok) = (names::key(me), names::key(other));
         if mk == ok {
             return Err(report_err("REPORT_SELF", "you can't report yourself"));
@@ -681,9 +707,9 @@ impl Registry {
             ));
         }
         tx.execute(
-            "INSERT INTO reports (reporter, reporter_created, reporter_name, reported, reported_name, reported_created, reason, details, created, status)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'open')",
-            params![mk, me_created, me_name, ok, other_name, other_created, reason, details, now as i64],
+            "INSERT INTO reports (reporter, reporter_created, reporter_name, reported, reported_name, reported_created, reason, details, created, status, kind)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'open', ?10)",
+            params![mk, me_created, me_name, ok, other_name, other_created, reason, details, now as i64, kind],
         )?;
         let id = tx.last_insert_rowid();
         tx.commit()?;
@@ -698,6 +724,7 @@ impl Registry {
             status: "open".into(),
             closed: None,
             outcome: None,
+            kind: kind.to_string(),
         })
     }
 
@@ -1052,5 +1079,31 @@ mod tests {
         let r = setup();
         r.db.lock().unwrap().execute("UPDATE profiles SET last_seen = ?1 WHERE key != 'ana'", [later as i64]).unwrap();
         clean(&r, later);
+    }
+
+    #[test]
+    fn a_1_2_0_database_gets_the_report_kind_column() {
+        let dir = std::env::temp_dir().join(format!("mkwmp-kind-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("registry.db");
+        {
+            // The 1.2.0 reports table, with one report in it.
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch(SCHEMA).unwrap(); // SCHEMA has no kind: that is the ALTER below
+            c.execute(
+                "INSERT INTO reports (reporter, reporter_created, reporter_name, reported, reported_name, reported_created, reason, details, created, status)
+                 VALUES ('ana', 1, 'ana', 'bia', 'bia', 1, 'hate', '', 1, 'open')",
+                [],
+            )
+            .unwrap();
+        }
+        let r = Registry::open(Some(&path), &[], 30).unwrap();
+        let all = r.reports("all").unwrap();
+        assert_eq!((all.len(), all[0].kind.as_str()), (1, "voice"));
+        drop(r);
+        // Opening again is a no-op.
+        Registry::open(Some(&path), &[], 30).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

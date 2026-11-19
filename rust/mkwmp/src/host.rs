@@ -285,6 +285,7 @@ host = "0.0.0.0"
 public_host = "{ip}"
 turn_port = {turn_port}
 voice_port = 8907
+video = true
 relay_ports = "49152:49407"
 require_ticket = true
 roster_url = "http://{roster}"

@@ -106,7 +106,7 @@ async fn admin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         for r in list {
             let when = |k: &str| r[k].as_u64().map(utc).unwrap_or_default();
             println!(
-                "#{} {} [{}] {} reported {} (registered {}) for {}",
+                "#{} {} [{}] {} reported {} (registered {}) for {} ({})",
                 r["id"],
                 when("created"),
                 r["status"].as_str().unwrap_or(""),
@@ -114,6 +114,7 @@ async fn admin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 r["reported"].as_str().unwrap_or(""),
                 when("reportedCreated"),
                 r["reason"].as_str().unwrap_or(""),
+                r["kind"].as_str().unwrap_or("voice"),
             );
             if let Some(d) = r["details"].as_str().filter(|d| !d.is_empty()) {
                 println!("    \"{}\"", d.replace('\n', "\n    "));

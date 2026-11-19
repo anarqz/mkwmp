@@ -5,6 +5,7 @@ use std::sync::Mutex;
 #[derive(Default)]
 struct Fake {
     rooms: Mutex<HashMap<String, (u128, Vec<String>)>>,
+    friends: Mutex<HashSet<(String, String)>>,
 }
 
 impl Fake {
@@ -14,6 +15,16 @@ impl Fake {
         r.retain(|_, (id, _)| *id != room);
         for u in members {
             r.insert(u.to_string(), (room, m.clone()));
+        }
+    }
+    fn befriend(&self, a: &str, b: &str, yes: bool) {
+        let mut f = self.friends.lock().unwrap();
+        for k in [(a.to_string(), b.to_string()), (b.to_string(), a.to_string())] {
+            if yes {
+                f.insert(k);
+            } else {
+                f.remove(&k);
+            }
         }
     }
     fn remove(&self, uid: &str) {
@@ -29,8 +40,15 @@ impl Rooms for Fake {
         self.rooms.lock().unwrap().get(uid).cloned()
     }
     fn account(&self, uid: &str) -> u64 {
-        uid.bytes().fold(7u64, |a, b| a * 31 + b as u64)
+        acct(uid)
     }
+    fn friends(&self, a: &str, b: &str) -> bool {
+        self.friends.lock().unwrap().contains(&(a.to_string(), b.to_string()))
+    }
+}
+
+fn acct(uid: &str) -> u64 {
+    uid.bytes().fold(7u64, |a, b| a * 31 + b as u64)
 }
 
 fn ep(n: u16) -> SocketAddr {
@@ -269,4 +287,188 @@ fn leaving_the_lobby_frees_the_seat_within_a_second() {
     let out = r.handle(1.2, ep(5), &sub("e", OP_SUBSCRIBE, 0, vec![]));
     let seats: Vec<u8> = states_to(&out, ep(5))[0].2.iter().map(|x| x.seat).collect();
     assert_eq!(seats, vec![0, 1, 2]);
+}
+
+// ---- friend rooms: state v2 and video (VOICE_API.md §6, VIDEO_API.md) ----------------------
+
+const RM: u8 = SELF_ROOM_MODE;
+const CAM: u8 = SELF_ROOM_MODE | SELF_CAMERA;
+
+fn video(frame: u16, chunk: u8, chunks: u8) -> Vec<u8> {
+    let mut txid = [0u8; 12];
+    txid[0] = VERSION;
+    txid[1] = VIDEO_FLAG_KEY | if chunk + 1 == chunks { VIDEO_FLAG_LAST } else { 0 };
+    txid[2..4].copy_from_slice(&frame.to_be_bytes());
+    txid[4] = chunk;
+    txid[5] = chunks;
+    txid[10] = 1; // MJPEG
+    write(KIND_VIDEO, &txid, ATTR_VIDEO_UP, &[0xD8; 1000])
+}
+
+fn video_to(out: &Datagrams) -> Vec<SocketAddr> {
+    let mut v: Vec<_> = out.iter().filter(|(_, d)| parse(d, KIND_VIDEO, ATTR_VIDEO_DOWN).is_some()).map(|(to, _)| *to).collect();
+    v.sort();
+    v
+}
+
+fn v2_to(out: &Datagrams, who: SocketAddr) -> Option<StateV2> {
+    out.iter().filter(|(to, _)| *to == who).filter_map(|(_, d)| parse_state_v2(d)).next_back()
+}
+
+fn want(accounts: &[&str]) -> Vec<u8> {
+    write_video_subscribe(&accounts.iter().map(|a| acct(a)).collect::<Vec<_>>(), &[9; 12])
+}
+
+/// Room 1 holds `users` (ep 1, 2, ...), subscribed with `flags`.
+fn room(f: &Arc<Fake>, users: &[(&str, u8)]) -> Relay<Fake> {
+    f.put(1, &users.iter().map(|u| u.0).collect::<Vec<_>>());
+    let mut r = Relay::new(f.clone());
+    for (i, (u, flags)) in users.iter().enumerate() {
+        r.handle(0.0, ep(i as u16 + 1), &sub(u, OP_SUBSCRIBE, *flags, vec![]));
+    }
+    r
+}
+
+#[test]
+fn room_wire_round_trips_and_vectors() {
+    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+    let v = write_video_subscribe(&[0x0123456789ABCDEF], &[0; 12]);
+    assert_eq!(parse_video_subscribe(&v), Some(vec![0x0123456789ABCDEF]));
+    assert_eq!(hex(&v), "3e9400102112a442000000000000000000000000c0f5000b0106010123456789abcdef00");
+    assert!(parse_video_subscribe(&write_video_subscribe(&[1, 2, 3, 4, 5], &[0; 12])).is_none(), "at most 4 faces");
+    assert!(parse_control(&v).is_none(), "op 6 is no seat-ticket op");
+    let st = StateV2 {
+        in_room: true,
+        bundle: 3,
+        seats: vec![SeatState { seat: 2, account: 0x0123456789ABCDEF, state: 1 }],
+        room_id: 0x1122334455667788,
+        fps: 1,
+        members: vec![(0x0123456789ABCDEF, MEMBER_BOUND | MEMBER_CAMERA)],
+    };
+    let sd = write_state_v2(&st, &[0; 12]);
+    assert_eq!(parse_state_v2(&sd), Some(st));
+    assert!(parse_state(&sd).is_none(), "a v1 client never takes a v2 state");
+    assert_eq!(
+        hex(&sd),
+        "3e9400282112a442000000000000000000000000c0f6002102010301020123456789abcdef0111223344556677880101\
+0123456789abcdef03000000"
+    );
+    let txid = [1, 3, 0x00, 0x07, 0, 1, 0, 0, 0x03, 0xE8, 1, 0x5A];
+    let up = write(KIND_VIDEO, &txid, ATTR_VIDEO_UP, &[0xFF, 0xD8, 0xFF]);
+    assert_eq!(parse_video_up(&up).map(|(t, c)| (t, c.len())), Some((txid, 3)));
+    assert_eq!(hex(&up), "3e9500082112a442010300070001000003e8015ac0f70003ffd8ff00");
+    let down = write_video_down(&txid, 4, &[0xFF, 0xD8, 0xFF]);
+    assert_eq!(hex(&down), "3e9500082112a442010300070001000003e80104c0f80003ffd8ff00");
+    let mut bad = txid;
+    bad[4] = 1;
+    assert!(parse_video_up(&write(KIND_VIDEO, &bad, ATTR_VIDEO_UP, &[1])).is_none(), "chunk past chunks");
+    bad[4] = 0;
+    bad[5] = 0;
+    assert!(parse_video_up(&write(KIND_VIDEO, &bad, ATTR_VIDEO_UP, &[1])).is_none(), "no chunks");
+    assert!(parse_video_up(&write(KIND_VIDEO, &txid, ATTR_VIDEO_UP, &[0; 1101])).is_none());
+}
+
+#[test]
+fn everyone_in_the_room_hears_everyone_and_v2_lists_mutual_friends() {
+    let f = Arc::new(Fake::default());
+    f.befriend("a", "b", true);
+    let mut r = room(&f, &[("a", CAM), ("b", RM), ("c", RM), ("x", 0)]);
+    let heard: Vec<SocketAddr> = voice_to(&r.handle(0.1, ep(1), &voice(1, 0))).into_iter().map(|x| x.0).collect();
+    assert_eq!(heard, vec![ep(2), ep(3), ep(4)]);
+    let out = r.tick(1.0);
+    let sa = v2_to(&out, ep(1)).expect("a room client gets state v2");
+    assert_eq!(sa.members, vec![(acct("b"), MEMBER_BOUND)]);
+    assert_eq!(sa.seats.len(), 4);
+    assert_ne!(sa.room_id, 0);
+    assert_eq!(v2_to(&out, ep(2)).unwrap().members, vec![(acct("a"), MEMBER_BOUND | MEMBER_CAMERA)]);
+    assert!(v2_to(&out, ep(3)).unwrap().members.is_empty(), "c is nobody's friend");
+    // The released client gets v1 only, with every seat.
+    assert!(v2_to(&out, ep(4)).is_none());
+    assert_eq!(states_to(&out, ep(4)).pop().unwrap().2.len(), 4);
+}
+
+#[test]
+fn no_room_no_voice_no_pictures() {
+    let f = Arc::new(Fake::default());
+    f.befriend("a", "b", true);
+    let mut r = Relay::new(f.clone());
+    // Not in a friend room (the lobby gives matchmade lobbies no room): nothing at all.
+    r.handle(0.0, ep(1), &sub("a", OP_SUBSCRIBE, CAM, vec![]));
+    let out = r.handle(0.0, ep(2), &sub("b", OP_SUBSCRIBE, RM, vec![]));
+    let st = v2_to(&out, ep(2)).unwrap();
+    assert!(!st.in_room && st.room_id == 0 && st.members.is_empty());
+    r.handle(0.1, ep(2), &want(&["a"]));
+    assert!(voice_to(&r.handle(0.2, ep(1), &voice(1, 0))).is_empty());
+    assert!(video_to(&r.handle(0.2, ep(1), &video(1, 0, 1))).is_empty());
+}
+
+#[test]
+fn pictures_go_to_mutual_friends_who_asked_for_them() {
+    let f = Arc::new(Fake::default());
+    for o in ["b", "c", "d"] {
+        f.befriend("a", o, true);
+    }
+    // e asked too but isn't a's friend; x runs a released client.
+    let mut r = room(&f, &[("a", CAM), ("b", RM), ("c", RM), ("d", RM), ("e", RM), ("x", 0)]);
+    assert!(video_to(&r.handle(0.1, ep(1), &video(1, 0, 2))).is_empty(), "nobody asked yet");
+    for i in 2..=5 {
+        r.handle(0.2, ep(i), &want(&["a"]));
+    }
+    assert_eq!(video_to(&r.handle(0.3, ep(1), &video(2, 0, 2))), vec![ep(2), ep(3), ep(4)]);
+    // A mute hides the face too.
+    r.handle(0.4, ep(3), &sub("c", OP_REPLACE_MUTES, RM, vec![acct("a")]));
+    assert_eq!(video_to(&r.handle(0.5, ep(1), &video(3, 0, 2))), vec![ep(2), ep(4)]);
+    // Unfriended: gone once the room is looked up again (within a second).
+    f.befriend("a", "d", false);
+    r.tick(1.5);
+    assert_eq!(video_to(&r.handle(1.6, ep(1), &video(4, 0, 2))), vec![ep(2)]);
+    // Camera off: nothing goes out, and the friends' state shows it.
+    let out = r.handle(1.7, ep(1), &sub("a", OP_SUBSCRIBE, RM, vec![]));
+    assert_eq!(v2_to(&out, ep(2)).unwrap().members, vec![(acct("a"), MEMBER_BOUND)]);
+    assert!(video_to(&r.handle(1.8, ep(1), &video(5, 0, 2))).is_empty());
+    // Leaving room mode drops the subscriptions; a released client's pictures go nowhere.
+    r.handle(1.9, ep(2), &sub("b", OP_SUBSCRIBE, 0, vec![]));
+    assert!(r.subs["b"].video_want.is_empty());
+    f.befriend("x", "b", true);
+    r.handle(2.0, ep(6), &sub("x", OP_SUBSCRIBE, SELF_CAMERA, vec![]));
+    assert!(video_to(&r.handle(2.1, ep(6), &video(1, 0, 1))).is_empty());
+}
+
+#[test]
+fn video_off_rate_limit_and_frame_rate_divisor() {
+    let mk = |opts: Options| {
+        let f = Arc::new(Fake::default());
+        f.befriend("a", "b", true);
+        f.put(1, &["a", "b"]);
+        let mut r = Relay::with_options(f, opts);
+        r.handle(0.0, ep(1), &sub("a", OP_SUBSCRIBE, CAM, vec![]));
+        r.handle(0.0, ep(2), &sub("b", OP_SUBSCRIBE, CAM, vec![]));
+        r.handle(0.0, ep(2), &want(&["a"]));
+        r
+    };
+    let mut off = mk(Options { video: false, ..Options::default() });
+    assert!(video_to(&off.handle(0.1, ep(1), &video(1, 0, 1))).is_empty());
+    assert_eq!(v2_to(&off.tick(1.0), ep(2)).unwrap().members, vec![(acct("a"), MEMBER_BOUND)], "no camera flag");
+    // 64 KiB/s per sender: about 63 datagrams of 1024 bytes in one second.
+    let mut r = mk(Options::default());
+    let sent: usize = (0..200).map(|i| video_to(&r.handle(0.5, ep(1), &video(i, 0, 1))).len()).sum();
+    assert!((60..=64).contains(&sent), "{sent}");
+    // A tiny budget: one second over it halves the frame rate, five calm seconds restore it.
+    let mut r = mk(Options { video: true, video_budget: 10_000 });
+    for i in 0..20 {
+        r.handle(0.5, ep(1), &video(i, 0, 1));
+    }
+    r.tick(1.0);
+    assert_eq!(v2_to(&r.tick(2.0), ep(2)).unwrap().fps, 2);
+    let mut fps = 2;
+    let mut t = 2.0;
+    while t < 9.0 {
+        t += 1.0;
+        r.handle(t, ep(1), &sub("a", OP_SUBSCRIBE, CAM, vec![]));
+        r.handle(t, ep(2), &sub("b", OP_SUBSCRIBE, CAM, vec![]));
+        if let Some(s) = v2_to(&r.tick(t), ep(2)) {
+            fps = s.fps;
+        }
+    }
+    assert_eq!(fps, 1);
 }

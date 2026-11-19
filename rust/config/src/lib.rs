@@ -146,6 +146,13 @@ pub struct Lobby {
     /// Voice chat relay (UDP, docs/contracts/VOICE_API.md). 0 = voice off.
     #[serde(default = "d_voice")]
     pub voice_port: u16,
+    /// Chat-room video on the voice relay (docs/contracts/VIDEO_API.md). false = the relay
+    /// drops every picture.
+    #[serde(default = "d_true")]
+    pub video: bool,
+    /// Video egress per second before senders are told to lower their frame rate (bytes).
+    #[serde(default = "d_video_budget")]
+    pub video_budget: usize,
     /// "lo:hi" UDP range for TURN relay sockets (open it in the firewall).
     #[serde(default)]
     pub relay_ports: Option<String>,
@@ -207,6 +214,8 @@ fn d_gamesync() -> u16 { 8906 }
 fn d_turn() -> u16 { 3478 }
 fn d_nat() -> u16 { 10025 }
 fn d_voice() -> u16 { 8907 }
+fn d_true() -> bool { true }
+fn d_video_budget() -> usize { 8 << 20 }
 
 impl Lobby {
     /// `relay_ports` parsed; Err on a malformed range.
