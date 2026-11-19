@@ -184,11 +184,23 @@ SeatApiResult seatapi_status(const char *base, SeatApiStatus *s) {
     if (seatapi_json_int(out, "seatsTotal", &v)) s->seats_total = (int)v;
     if (seatapi_json_int(out, "seated", &v)) s->seated = (int)v;
     if (seatapi_json_int(out, "queued", &v)) s->queued = (int)v;
+    s->report_kinds = seatapi_report_kinds(out);
     char *ca = malloc(16384 + 1);
     if (ca && seatapi_json_str(out, "lobbyCa", ca, 16384 + 1) && strstr(ca, "-----BEGIN CERTIFICATE-----")) s->lobby_ca = ca;
     else free(ca);
     free(out);
     return r;
+}
+
+int seatapi_report_kinds(const char *status_body) {
+    const char *b, *e;
+    if (!status_body || !seatapi_json_span(status_body, "reportKinds", &b, &e) || *b != '[') return 0;
+    int kinds = 0;
+    for (const char *p = b; p < e; p++) {
+        if ((size_t)(e - p) >= 7 && !memcmp(p, "\"voice\"", 7)) kinds |= SEATAPI_KIND_VOICE;
+        if ((size_t)(e - p) >= 8 && !memcmp(p, "\"camera\"", 8)) kinds |= SEATAPI_KIND_CAMERA;
+    }
+    return kinds;
 }
 
 static void parse_view(const char *out, SeatApiView *v) {
@@ -358,6 +370,7 @@ static void parse_report(const char *body, SeatApiReport *r) {
     seatapi_json_str(body, "reported", r->reported, sizeof r->reported);
     seatapi_json_str(body, "reason", r->reason, sizeof r->reason);
     seatapi_json_str(body, "status", r->status, sizeof r->status);
+    if (!seatapi_json_str(body, "kind", r->kind, sizeof r->kind) || !r->kind[0]) snprintf(r->kind, sizeof r->kind, "voice");
     seatapi_json_int(body, "created", &r->created);
 }
 
@@ -395,18 +408,26 @@ static void json_escape(const char *s, size_t max, char *out, size_t cap) {
     out[k] = 0;
 }
 
-SeatApiResult seatapi_report_file(const char *base, const char *token, const char *name, const char *reason,
-                                  const char *details, SeatApiReport *out) {
+int seatapi_report_body(char *json, size_t cap, const char *name, const char *reason, const char *details, const char *kind) {
     static const char *const reasons[] = {SEATAPI_REPORT_REASONS};
     int known = 0;
     for (size_t i = 0; i < sizeof reasons / sizeof *reasons; i++) known |= reason && !strcmp(reason, reasons[i]);
-    if (!seatapi_name_ok(name) || !known) {
+    if (kind && !kind[0]) kind = NULL;
+    if (!json || !seatapi_name_ok(name) || !known || (kind && strcmp(kind, "voice") && strcmp(kind, "camera"))) return 0;
+    char esc[2 * SEATAPI_REPORT_DETAILS_MAX + 1];
+    json_escape(details ? details : "", SEATAPI_REPORT_DETAILS_MAX, esc, sizeof esc);
+    int n = snprintf(json, cap, "{\"name\":\"%s\",\"reason\":\"%s\",\"details\":\"%s\"%s%s%s}", name, reason, esc,
+                     kind ? ",\"kind\":\"" : "", kind ? kind : "", kind ? "\"" : "");
+    return n > 0 && (size_t)n < cap;
+}
+
+SeatApiResult seatapi_report_file(const char *base, const char *token, const char *name, const char *reason,
+                                  const char *details, const char *kind, SeatApiReport *out) {
+    char json[2 * SEATAPI_REPORT_DETAILS_MAX + 160], body[2048];
+    if (!seatapi_report_body(json, sizeof json, name, reason, details, kind)) {
         SeatApiResult r = {400, 0, "REPORT_INVALID", "a player's name and one of the reasons"};
         return r;
     }
-    char esc[2 * SEATAPI_REPORT_DETAILS_MAX + 1], json[2 * SEATAPI_REPORT_DETAILS_MAX + 128], body[2048];
-    json_escape(details ? details : "", SEATAPI_REPORT_DETAILS_MAX, esc, sizeof esc);
-    snprintf(json, sizeof json, "{\"name\":\"%s\",\"reason\":\"%s\",\"details\":\"%s\"}", name, reason, esc);
     SeatApiResult r = call("POST", base, "/seat/v1/reports", token, json, body, sizeof body);
     if (r.status == 201 && out) report_of(body, out);
     return r;

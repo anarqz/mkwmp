@@ -50,8 +50,13 @@ typedef struct {
     int voice_port;        // 0: the server has voice off
     char *lobby_ca;        // PEM, malloc'd (free it), NULL when the server has none
     int seats_total, seated, queued;
+    int report_kinds;      // SEATAPI_KIND_* bits: the kinds of report the server takes a `kind` for (0: an older server)
 } SeatApiStatus;
 SeatApiResult seatapi_status(const char *base, SeatApiStatus *out);
+// The kinds a status body lists in `reportKinds` (["voice","camera"]), as SEATAPI_KIND_* bits; 0 without the field.
+// Pure (tests/test_seatapi.c).
+enum { SEATAPI_KIND_VOICE = 1, SEATAPI_KIND_CAMERA = 2 };
+int seatapi_report_kinds(const char *status_body);
 
 // ---- sessions (a seat). The view of a session after a join or a poll.
 typedef struct {
@@ -100,14 +105,20 @@ typedef struct {
     char reported[SEATAPI_NAME_MAX + 1];
     char reason[16];
     char status[8];   // "open" or "closed"
+    char kind[8];     // "voice" or "camera" ("voice" when the server does not say: its default)
     long long created;
 } SeatApiReport;
 // GET /seat/v1/reports (presence bearer): the caller's open report; *has 0 when none. 200 on success.
 SeatApiResult seatapi_report_get(const char *base, const char *token, SeatApiReport *out, int *has);
-// POST /seat/v1/reports {name, reason, details}: 201 filed. 409 REPORT_ACTIVE (one open at a time), 404
+// POST /seat/v1/reports {name, reason, details, kind?}: 201 filed. 409 REPORT_ACTIVE (one open at a time), 404
 // REPORT_UNKNOWN (no such player), 400 REPORT_SELF / REPORT_INVALID, 429 (5 tries a day). details may be "" (cut at 500).
+// kind: "voice" or "camera", sent as the body's optional `kind`; NULL or "": the field is left out, which is what a
+// server that does not list the kind in its status must get (seatapi_report_kinds; it files a voice report).
 SeatApiResult seatapi_report_file(const char *base, const char *token, const char *name, const char *reason,
-                                  const char *details, SeatApiReport *out);
+                                  const char *details, const char *kind, SeatApiReport *out);
+// The body of that call into json. 0 when the name, the reason or the kind is not one the server takes, or it does
+// not fit. Pure (tests/test_seatapi.c).
+int seatapi_report_body(char *json, size_t cap, const char *name, const char *reason, const char *details, const char *kind);
 // DELETE /seat/v1/reports: the open report withdrawn. 204; 404 REPORT_NOT_FOUND.
 SeatApiResult seatapi_report_withdraw(const char *base, const char *token);
 

@@ -9,8 +9,10 @@
 //               profile no longer matches, and the page asks again)
 //   voice       "1" turns voice chat on (default off)
 //   camera, camera_view, camera_mirror, camera_device: the GameChat camera (cameratab.c; all off unless "1")
-//   report_name, report_reason, report_details   the voice-abuse report being written (the Voice chat tab's Report
-//               next to a muted player fills report_name)
+//   report_name, report_reason, report_details   the abuse report being written (the Voice chat tab's Report next to
+//               a muted player and the Camera tab's Report next to a member of the camera room fill report_name).
+//               A server whose status lists the kind "camera" (reportKinds) gets the report's kind, by the button
+//               pressed: "Report voice abuse" or "Report camera abuse"; any other server gets no kind (a voice report)
 // Transient fields: pin_entry, friend_add.
 //
 // Network calls run on one worker thread of the page's own; the page draws its state each frame.
@@ -37,7 +39,8 @@ enum {
     T_REPORT_HEAD, T_REPORT_NAME, T_REPORT_NAME_HINT, T_REPORT_REASON, T_REPORT_DETAILS, T_REPORT_DETAILS_HINT,
     T_REPORT_WARN, T_REPORT_SEND, T_REPORT_OPEN, T_REPORT_WITHDRAW, T_BUSY_REPORT, T_REPORT_SENT, T_REPORT_DONE,
     T_REPORT_UNKNOWN, T_REPORT_SELF, T_REPORT_ACTIVE, T_REPORT_CHECKING,
-    T_R_HARASSMENT, T_R_HATE, T_R_SEXUAL, T_R_THREATS, T_R_DISRUPTION, T_R_OTHER, T_COUNT
+    T_R_HARASSMENT, T_R_HATE, T_R_SEXUAL, T_R_THREATS, T_R_DISRUPTION, T_R_OTHER,
+    T_REPORT_HEAD_BOTH, T_REPORT_CAMERA, T_KIND_CAMERA, T_COUNT
 };
 static const char *const EN[T_COUNT] = {
     "Online play (MKWMP)",
@@ -128,6 +131,9 @@ static const char *const EN[T_COUNT] = {
     "Threats or doxxing",
     "Loud noise, music or spam",
     "Something else",
+    "Report voice or camera abuse",
+    "Report camera abuse",
+    "camera",
 };
 static const char *const PT[T_COUNT] = {
     "Jogo online (MKWMP)",
@@ -218,6 +224,9 @@ static const char *const PT[T_COUNT] = {
     "Ameaças ou exposição de dados",
     "Barulho, música ou spam",
     "Outra coisa",
+    "Denunciar abuso no chat de voz ou na câmera",
+    "Denunciar abuso na câmera",
+    "câmera",
 };
 static const char *const *T = EN;
 
@@ -240,7 +249,8 @@ static struct {
     int status_ok, seats_total, seated, queued;   // the server's last /status (status_ok -1: no answer)
     char status_base[256];
     char token[160], token_for[SEATAPI_NAME_MAX + SEATAPI_PIN_LEN + 260];
-    char reason[16], details[SEATAPI_REPORT_DETAILS_MAX + 1];   // JOB_REPORT_FILE's
+    char reason[16], details[SEATAPI_REPORT_DETAILS_MAX + 1], kind[8];   // JOB_REPORT_FILE's (kind "": none sent)
+    int report_kinds;          // SEATAPI_KIND_* of the server's last status: the kinds it takes
     int report_state;          // 0 not known yet, 1 none open, 2 one open (report)
     SeatApiReport report;
     uint64_t report_at;
@@ -358,7 +368,8 @@ static void worker(void *unused) {
         plat_lock(&g_lock);
         int job = W.job;
         char base[sizeof W.base], name[sizeof W.name], pin[sizeof W.pin], target[sizeof W.target];
-        char reason[sizeof W.reason], details[sizeof W.details];
+        char reason[sizeof W.reason], details[sizeof W.details], kind[sizeof W.kind];
+        memcpy(kind, W.kind, sizeof kind);
         memcpy(reason, W.reason, sizeof reason);
         memcpy(details, W.details, sizeof details);
         memcpy(base, W.base, sizeof base);
@@ -433,7 +444,7 @@ static void worker(void *unused) {
             SeatApiResult r = {0};
             char token[160];
             if (token_for(base, name, pin, token, sizeof token))
-                r = job == JOB_REPORT_FILE ? seatapi_report_file(base, token, target, reason, details, NULL)
+                r = job == JOB_REPORT_FILE ? seatapi_report_file(base, token, target, reason, details, kind, NULL)
                                            : seatapi_report_withdraw(base, token);
             plat_lock(&g_lock);
             if (r.status == 201 || r.status == 204) {
@@ -458,6 +469,7 @@ static void worker(void *unused) {
             plat_lock(&g_lock);
             W.status_ok = r.status == 200 ? 1 : -1;
             W.seats_total = st.seats_total, W.seated = st.seated, W.queued = st.queued;
+            W.report_kinds = r.status == 200 ? st.report_kinds : 0;
             W.status_at = plat_ms();
             snprintf(W.status_base, sizeof W.status_base, "%s", base);
         } else {   // add, accept, remove
@@ -504,11 +516,13 @@ static void start_job(int job, const char *base, const char *name, const char *p
     plat_unlock(&g_lock);
 }
 
+// kind: "voice" or "camera" for a server that takes kinds, "" for one that does not.
 static void start_report(const char *base, const char *name, const char *pin, const char *who, const char *reason,
-                         const char *details) {
+                         const char *details, const char *kind) {
     plat_lock(&g_lock);
     int idle = !W.busy && !W.job;
     if (idle) {
+        snprintf(W.kind, sizeof W.kind, "%s", kind);
         snprintf(W.reason, sizeof W.reason, "%s", reason);
         snprintf(W.details, sizeof W.details, "%s", details);
     }
@@ -572,6 +586,8 @@ MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p) {
     int busy = W.busy || W.job;
     int busy_text = W.busy;
     int report_state = W.report_state;
+    // the camera's kind of report only for the server whose status listed it
+    int camera_kind = consented && !strcmp(W.status_base, base) && (W.report_kinds & SEATAPI_KIND_CAMERA);
     SeatApiReport report = W.report;
     int note_kind = W.note_kind;
     char note[sizeof W.note], revealed[sizeof W.revealed_pin];
@@ -705,9 +721,12 @@ MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p) {
         if (p->button(T[T_SEND])) start_job(JOB_ADD, base, name, pin, add);
         p->disabled_end();
 
-        p->heading(T[T_REPORT_HEAD]);
+        p->heading(T[camera_kind ? T_REPORT_HEAD_BOTH : T_REPORT_HEAD]);
         if (report_state == 2) {
-            snprintf(line, sizeof line, T[T_REPORT_OPEN], report.reported, reason_label(report.reason));
+            char what[96];
+            snprintf(what, sizeof what, "%s%s%s", reason_label(report.reason), !strcmp(report.kind, "camera") ? ", " : "",
+                     !strcmp(report.kind, "camera") ? T[T_KIND_CAMERA] : "");
+            snprintf(line, sizeof line, T[T_REPORT_OPEN], report.reported, what);
             p->note(MKW_NOTE_INFO, line);
             p->disabled_begin(busy);
             if (p->button(T[T_REPORT_WITHDRAW])) start_job(JOB_REPORT_WITHDRAW, base, name, pin, NULL);
@@ -726,7 +745,13 @@ MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p) {
             p->setting_get("report_details", details, sizeof details);
             int self = same_name(who, name);
             p->disabled_begin(busy || !seatapi_name_ok(who) || self);
-            if (p->button(T[T_REPORT_SEND])) start_report(base, name, pin, who, reason, details);
+            if (!camera_kind) {
+                if (p->button(T[T_REPORT_SEND])) start_report(base, name, pin, who, reason, details, "");
+            } else {   // the same form, sent as one kind or the other
+                if (p->button(T[T_REPORT_HEAD])) start_report(base, name, pin, who, reason, details, "voice");
+                p->same_line();
+                if (p->button(T[T_REPORT_CAMERA])) start_report(base, name, pin, who, reason, details, "camera");
+            }
             p->disabled_end();
         } else {
             p->busy(T[T_REPORT_CHECKING]);

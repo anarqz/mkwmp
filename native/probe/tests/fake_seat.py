@@ -137,11 +137,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.error(404, "REPORT_UNKNOWN")
                 if other == me:
                     return self.error(400, "REPORT_SELF")
-                if b.get("reason") not in REASONS:
+                if b.get("reason") not in REASONS or b.get("kind", "voice") not in ("voice", "camera"):
                     return self.error(400, "REPORT_INVALID")
                 REPORTS[me] = {"id": len(REPORTS) + 1, "reporter": me, "reported": other, "reportedCreated": 0,
                                "reason": b["reason"], "details": str(b.get("details", ""))[:500], "created": 1,
-                               "status": "open", "closed": None, "outcome": None}
+                               "status": "open", "closed": None, "outcome": None, "kind": b.get("kind", "voice")}
                 return self.send(201, {"report": REPORTS[me]})
             if p == "/seat/v1/friends":
                 if not me:

@@ -7,6 +7,8 @@
 
 #include "camera.h"
 #include "camlib.h"
+#include "chatroom.h"
+#include "friends.h"
 #include "plat.h"
 #include "seatapi.h"
 
@@ -14,7 +16,7 @@
 #include <string.h>
 
 enum { C_ON, C_DEVICE, C_FIRST, C_TEST, C_MIRROR, C_VIEW, C_WHAT, C_NOT_SENT, C_NEED_CONSENT, C_OLD_RUNTIME, C_NO_LIBRARY,
-       C_FAILED, C_RUNNING, C_STARTING, C_GAME, C_COUNT };
+       C_FAILED, C_RUNNING, C_STARTING, C_GAME, C_DECLINED, C_ROOM, C_ROOM_EMPTY, C_MEMBER_ON, C_REPORT, C_REPORT_NEXT, C_COUNT };
 static const char *const EN[C_COUNT] = {
     "Show my camera above my kart",
     "Camera",
@@ -32,6 +34,12 @@ static const char *const EN[C_COUNT] = {
     "The camera is running.",
     "Opening the camera...",
     "The camera works in Mario Kart World 1.8.0 only, in online lobbies and races.",
+    "You chose Camera Off when the game asked: your camera is off until you choose Online Play again.",
+    "Players in your camera room",
+    "Nobody: the room is made of your friends racing with you.",
+    "camera on",
+    "Report",
+    "%s is in the report form: finish it in the MKWMP tab (Report camera abuse).",
 };
 static const char *const PT[C_COUNT] = {
     "Mostrar minha câmera em cima do meu kart",
@@ -50,6 +58,12 @@ static const char *const PT[C_COUNT] = {
     "A câmera está funcionando.",
     "Abrindo a câmera...",
     "A câmera funciona só no Mario Kart World 1.8.0, em lobbies e corridas online.",
+    "Você escolheu Câmera desligada quando o jogo perguntou: sua câmera fica desligada até você escolher Jogo Online de novo.",
+    "Jogadores na sua sala de câmera",
+    "Ninguém: a sala é formada pelos seus amigos correndo com você.",
+    "câmera ligada",
+    "Denunciar",
+    "%s está no formulário de denúncia: termine na aba MKWMP (Denunciar abuso na câmera).",
 };
 
 enum { DEVICES_MAX = 24 };
@@ -110,6 +124,7 @@ void cameratab_widgets(const MkwPage *p) {
     p->choice("camera_device", T[C_DEVICE], D.values, D.labels, D.n + 2);
     p->checkbox("camera_mirror", T[C_MIRROR], 0);
     p->disabled_end();
+    if (on && consent && camera_declined_now()) p->note(MKW_NOTE_WARN, T[C_DECLINED]);
     if (on && consent) {
         char device[256] = "";
         p->setting_get("camera_device", device, sizeof device);
@@ -123,6 +138,29 @@ void cameratab_widgets(const MkwPage *p) {
     }
     p->checkbox("camera_view", T[C_VIEW], 0);   // off by default too
     p->disabled_end();
+    // In the game: who is in the camera room (friends in the same session, or the server's grant), each with a Report
+    // that fills the MKWMP tab's form, as the Voice chat tab's does for a muted player.
+    ChatRoom room;
+    if (p->in_game && consent && (on || is_on(p, "camera_view")) && chatroom_get(&room, NULL)) {
+        static char reported[64];   // the menu's thread only
+        if (p->opened) reported[0] = 0;
+        p->heading(T[C_ROOM]);
+        p->list_begin("camera_room", 5);
+        p->list_empty(T[C_ROOM_EMPTY]);
+        const char *const buttons[] = {T[C_REPORT]};
+        for (int i = 0; i < room.n; i++) {
+            char name[FRIEND_NAME_SIZE];
+            if (!friends_name_of(room.member[i].account, name, sizeof name)) continue;   // the form needs the name
+            int b = p->list_row(name, room.member[i].camera ? T[C_MEMBER_ON] : NULL, buttons, seatapi_name_ok(name) ? 1 : 0);
+            if (b == 1 && p->setting_set("report_name", name)) snprintf(reported, sizeof reported, "%s", name);
+        }
+        p->list_end();
+        if (reported[0]) {
+            char line[240];
+            snprintf(line, sizeof line, T[C_REPORT_NEXT], reported);
+            p->note(MKW_NOTE_INFO, line);
+        }
+    }
     p->note(MKW_NOTE_DIM, T[C_WHAT]);
     p->note(MKW_NOTE_WARN, T[C_NOT_SENT]);
     p->note(MKW_NOTE_DIM, T[C_GAME]);

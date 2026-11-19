@@ -7,6 +7,7 @@
 
 
 #include "plat.h"
+#include <stdio.h>
 #include <string.h>
 
 _Static_assert(sizeof(GFriend) == 0x200, "nn::friends::Friend size");
@@ -205,6 +206,15 @@ int friends_list(const uint64_t owner[2], int offset, int count, GFriend *out) {
     int n = friends_page(&g_serving, owner, offset, count, out);
     plat_unlock(&g_lock);
     return n;
+}
+
+int friends_name_of(uint64_t account, char *out, size_t cap) {
+    int found = 0;
+    plat_lock(&g_lock);
+    for (int i = 0; i < g_latest.count && !found; i++)
+        if (g_latest.e[i].account_id == account) snprintf(out, cap, "%s", g_latest.e[i].name), found = 1;
+    plat_unlock(&g_lock);
+    return found;
 }
 
 int friends_accounts(uint64_t *out, int cap) {
