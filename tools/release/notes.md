@@ -4,6 +4,7 @@
 - **Report voice-chat abuse.** SETTINGS > REPORT VOICE ABUSE (or REPORT next to a player you muted): pick what happened, add a few words, send. The server's host reviews it. You can have one report waiting at a time, and withdraw it while it waits.
 - **DELETE MY ACCOUNT** in SETTINGS > PRIVACY deletes your gamertag, PIN, friends and the reports you filed from the server.
 - **Unused gamertags are deleted after a month** (was 6 months), with their friends. If yours was and the name is still free, the launcher registers it again with your PIN the next time you open it.
+- Ctrl+V pastes into the launcher's text fields (gamertag, PIN, server, friends). Thanks, Fraustiz (#12).
 - The DONATE button is gone.
 
 For people hosting a server: `mkwmp admin reports`, `close-report` and `delete-report` review voice-chat reports ([HOSTING](https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md)). Update your server before your players update their launchers.
