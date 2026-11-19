@@ -72,7 +72,7 @@ int main() {
         auto sd = EncodeStateDown(one, zero);
         Check(hex(sd) == "3e9400142112a442000000000000000000000000c0f6000e01010301020123456789abcdef010000", "vector: state down");
     }
-    // ---- chat rooms and video/v1: the server's five vectors (VOICE_API.md ง6, VIDEO_API.md), byte for byte
+    // ---- chat rooms and video/v1: the server's five vectors (VOICE_API.md ยง6, VIDEO_API.md), byte for byte
     {
         auto hex = [](const std::vector<uint8_t> &v) {
             std::string s;

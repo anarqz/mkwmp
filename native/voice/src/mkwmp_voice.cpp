@@ -2,7 +2,7 @@
 // thread: a UDP socket connected to the relay, control up on change and every 5 s, voice and state down handed to the
 // engine (voice_audio.h). The engine runs only while the launcher's setting is on and the relay says this player is in
 // a voice room; mutes and deafen are applied by the relay first and here again (the engine's second gate).
-// Chat rooms and video (VOICE_API.md ง6, VIDEO_API.md; mkwmp_voice.h's second part): in room mode the same thread says
+// Chat rooms and video (VOICE_API.md ยง6, VIDEO_API.md; mkwmp_voice.h's second part): in room mode the same thread says
 // so on every control up, asks for the room and the members' pictures after it (op 5, op 6), keeps the relay's room
 // (state down ver 2) and puts the members' frames together; the camera's own frames leave from the caller's thread.
 #define MKWMP_VOICE_BUILD

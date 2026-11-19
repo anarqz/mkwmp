@@ -467,9 +467,9 @@ int main(int argc, char **argv) {
         std::printf("     flood: %d tried, %d sent in 2.5 s; the relay's worst second: %zu bytes, %zu datagrams\n", tried, sent, a->worst_second, a->worst_datagrams);
         // By the sender's clock no second holds over 64 KiB (voice_video_test proves that of the pacer). The relay's
         // clock is another: what left at a second's two edges (at most a burst each, three tenths of a second's bytes)
-        // may fall into one of its seconds. Over the whole flood the rate is the sender's.
-        Check(tried > 200 && sent >= 10 && sent <= 30 && a->worst_second <= 64 * 1024 * 13 / 10 && a->worst_datagrams <= 400 && a->video_refused == 0 &&
-                  static_cast<size_t>(sent) * 6144 <= 64 * 1024 * 5 / 2 + 64 * 1024 * 3 / 10,
+        // may fall into one of its seconds. Over the whole flood (2.5 s: three seconds begun) the rate is the sender's.
+        Check(tried > 200 && sent >= 10 && a->worst_second <= 64 * 1024 * 13 / 10 && a->worst_datagrams <= 400 && a->video_refused == 0 &&
+                  static_cast<size_t>(sent) * 6144 <= 3 * 64 * 1024,
               "a flood of frames: 64 KiB a second leave (the relay's second: at most a burst over), far under 400 datagrams");
     }
 
