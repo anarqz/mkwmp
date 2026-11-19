@@ -132,7 +132,8 @@ int main(int argc, char **argv) {
         fclose(f);
     }
     CHECK(strstr(text, "overrides registered") != NULL);
-    if (!strcmp(mode, "v3")) CHECK(strstr(text, "camera: 20 overrides (plugin API 3)") != NULL);
+    // 26: the 19 nn::chat ones, TryWaitNativeSync and the 6 nn::oe screenshot / recording calls (counted in g_other)
+    if (!strcmp(mode, "v3")) CHECK(strstr(text, "camera: 26 overrides (plugin API 3)") != NULL);
     else if (!strcmp(mode, "v2")) CHECK(strstr(text, "camera: off: this mkw-recomp's plugin API is older than version 3") != NULL);
     else CHECK(strstr(text, "camera: off: the game is not 1.8.0") != NULL);
     printf("test_plugin_camera %s: %s (%d nn::chat overrides, TryWaitNativeSync %d, Camera tab %d)\n", mode,
