@@ -433,7 +433,7 @@ MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p) {
     if (note[0]) p->note(note_kind, note);
 
     p->heading(T[T_VOICE_HEAD]);
-    p->checkbox("voice", T[T_VOICE], 1);
+    p->checkbox("voice", T[T_VOICE], 0);   // off by default
 
     p->column_next();
     p->heading(T[T_SERVER_HEAD]);

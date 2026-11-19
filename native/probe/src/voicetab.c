@@ -79,9 +79,9 @@ void voicetab_draw(const MkwPage *p) {
     in.labels[0] = out.labels[0] = T[V_DEFAULT];
 
     p->columns_begin(2);
-    p->checkbox("voice", T[V_ON], 1);
+    p->checkbox("voice", T[V_ON], 0);   // off by default
     char v[8];
-    int on = !p->setting_get("voice", v, sizeof v) || strcmp(v, "0");
+    int on = p->setting_get("voice", v, sizeof v) && !strcmp(v, "1");
     p->disabled_begin(!on);
     p->choice("voice_input", T[V_INPUT], in.values, in.labels, in.n + 1);
     p->slider("voice_in_gain", T[V_IN_GAIN], 1, 100, 100);

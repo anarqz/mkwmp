@@ -134,7 +134,7 @@ static void use_settings(const MkwPluginApi *api) {
     api->setting_get("server", server, sizeof server);
     api->setting_get("pin", pin, sizeof pin);
     api->setting_get("pin_name", pin_name, sizeof pin_name);
-    int voice_on = !api->setting_get("voice", voice, sizeof voice) || strcmp(voice, "0");
+    int voice_on = api->setting_get("voice", voice, sizeof voice) && !strcmp(voice, "1");   // off until turned on
     const char *name = api->profile_name;
     if (strcmp(consent, "1") || !seatapi_name_ok(name) || !seatapi_pin_ok(pin) || strcmp(pin_name, name)) {
         g_needs_setup = !mkwmp_config()->present;   // a mkwmp.toml (the launcher's) still works without the page
