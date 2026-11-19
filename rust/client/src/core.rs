@@ -42,7 +42,7 @@ pub enum ServerView {
 pub enum SessionView {
     Idle,
     Starting,
-    Running { phase: Phase, game_running: bool, steam: bool },
+    Running { phase: Phase, game_running: bool, self_launch: bool },
     Failed(String),
 }
 
@@ -431,9 +431,9 @@ impl Core {
         let mut game: Option<Child> = None;
         if cfg.launch {
             note("starting the game");
-            game = Some(launch::spawn_game(&cfg.game, &cfg.launch_command).map_err(|e| format!("starting mkw.exe: {e}"))?);
+            game = Some(launch::spawn_game(&cfg.game).map_err(|e| format!("starting mkw.exe: {e}"))?);
         } else {
-            note("ready: start the game from Steam");
+            note("ready: start the game yourself");
         }
 
         loop {
@@ -454,7 +454,7 @@ impl Core {
                 None => probe::game_running(),
             };
             self.set(|u| {
-                u.session = SessionView::Running { phase: snap.phase.clone(), game_running, steam: !cfg.launch };
+                u.session = SessionView::Running { phase: snap.phase.clone(), game_running, self_launch: !cfg.launch };
             });
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(1)) => {}
@@ -496,7 +496,7 @@ impl Core {
                 }
                 _ => {}
             }
-            self.set(|u| u.session = SessionView::Running { phase: snap.phase, game_running: false, steam: !cfg.launch });
+            self.set(|u| u.session = SessionView::Running { phase: snap.phase, game_running: false, self_launch: !cfg.launch });
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(1)) => {}
                 _ = self.stop.notified() => {

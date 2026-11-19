@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MKWMP: online play for mkw-recomp</title>
-<meta name="description" content="Community online play for the mkw-recomp PC runtime: gamertags, friends, race and battle lobbies. Install guides for Windows and SteamOS, the official server, and your own server with Docker Compose.">
+<meta name="description" content="Community online play for the mkw-recomp PC runtime: gamertags, friends, race and battle lobbies. Install guide for Windows, the official server, and your own server with Docker Compose.">
 <link rel="preload" href="fonts/press-start-2p.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -19,7 +19,6 @@
     <nav class="buttons">
       <a class="btn red" href="#play">▶ Play online</a>
       <a class="btn blue" href="#install">⬇ Install</a>
-      <a class="btn green" href="#steamos">◆ Steam Deck</a>
       <a class="btn yellow" href="#host">★ Host a server</a>
     </nav>
     <div class="server" id="server" aria-live="polite">
@@ -36,7 +35,7 @@
 
   <section class="panel note">
     <h2><span class="coin">!</span> STATUS</h2>
-    <p><b>Version 1.0.0</b> (<a href="https://github.com/anarqz/mkwmp/releases/latest">download</a>). Matchmade <b>races and battles</b> start to finish, <b>friend rooms</b> (join from the friend card or by Room ID), <b>voice chat</b> in your lobby, and <b>self-hosted servers</b>. On a Steam Deck, one command installs it: <a href="#steamos">see below</a>.</p>
+    <p><b>Version 1.0.0</b> (<a href="https://github.com/anarqz/mkwmp/releases/latest">download</a>). Matchmade <b>races and battles</b> start to finish, <b>friend rooms</b> (join from the friend card or by Room ID), <b>voice chat</b> in your lobby, and <b>self-hosted servers</b>.</p>
   </section>
 
   <section id="launcher" class="panel">
@@ -56,8 +55,8 @@
     <h2><span class="coin red">1</span> PLAY ON THE OFFICIAL SERVER</h2>
     <p>The official server has <b>50 seats</b>. You only take a seat while you play; when it's full you wait in a queue and the launcher shows your place in line.</p>
     <ol class="steps">
-      <li><b>Install</b> the game and the MKWMP patch: <a href="#install">Windows</a> or <a href="#steamos">Steam Deck / SteamOS</a>.</li>
-      <li><b>Open the launcher.</b> Type a <b>gamertag</b> and press <b>REGISTER</b>: you get a 6-digit <b>PIN</b>. Keep it: it's how you use the same gamertag on another PC or your Deck. Pick the <b>game folder</b>. The server is already set to the official one (<code>https://mkw.anarqz.dev</code>).</li>
+      <li><b>Install</b> the game and the MKWMP patch: <a href="#install">on Windows</a>.</li>
+      <li><b>Open the launcher.</b> Type a <b>gamertag</b> and press <b>REGISTER</b>: you get a 6-digit <b>PIN</b>. Keep it: it's how you use the same gamertag on another PC. Pick the <b>game folder</b>. The server is already set to the official one (<code>https://mkw.anarqz.dev</code>).</li>
       <li><b>Add friends</b> by gamertag. They accept (or decline) in their launcher, and then you see each other as <b>playing</b>, <b>online</b> or <b>offline</b>, and you're friends in the game too.</li>
       <li><b>Press PLAY.</b> The launcher updates itself and the game patch, takes a seat (or queues), and starts the game. Your seat is held until you close the game or press <b>STOP</b>.</li>
       <li><b>In the game</b>, choose <b>Online Play → Race</b> or <b>Online Play → Battle</b> (1P). Players who pick the same mode are matched together, and new lobbies open as more players arrive. Until you click Online Play, the game behaves exactly like the normal offline game.</li>
@@ -81,15 +80,8 @@
   </section>
 
   <section id="steamos" class="panel">
-    <h2><span class="coin green">3</span> STEAM DECK &amp; STEAMOS</h2>
-    <p>The game runs as the <b>Windows</b> build of mkw-recomp under <b>Proton</b>. The native Linux build can't load the patch. Do the setup in <b>Desktop Mode</b>.</p>
-    <p><b>One command</b> (Desktop Mode, in Konsole) installs the newest release to <code>~/mkwmp</code>, finds your game and Proton 10.0, and adds <b>Mario Kart World (MKWMP)</b> to Steam. Steam closes and opens again while it works:</p>
-<pre><code>curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash</code></pre>
-    <p>Then, in Game Mode, open <b>Mario Kart World (MKWMP)</b>: register your gamertag (or enter the PIN of the one you have), press <b>INSTALL</b> under GAME FOLDER if the patch isn't installed yet, and press <b>PLAY</b>. The launcher starts the game through Proton.</p>
-    <p class="hint">Before you run it: put the Windows mkw-recomp 0.1.13 build (or 0.1.10 / 0.1.12) with your own game files (version 1.0.0 or 1.8.0) in a folder (for example on the SD card), and install <b>Proton 10.0</b> from Steam. Proton 11 can't see the controller. The installer backs up <code>shortcuts.vdf</code> first and keeps your <code>client.toml</code>. Options: <code>curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash -s -- --game /path/to/game</code>.</p>
-    <p><b>By hand:</b> download <code>mkwmp-&lt;version&gt;-linux-x64.zip</code> from the <a href="https://github.com/anarqz/mkwmp/releases/latest">latest release</a>, unzip it to <code>~/mkwmp</code> and open <code>mkwmp-launcher</code>. Then add <code>mkw.exe</code> to Steam as a non-Steam game with <b>Proton 10.0</b> forced (Properties → Compatibility) and these launch options, and tick <b>"I start the game from Steam"</b> in the launcher:</p>
-<pre><code>WINEDLLOVERRIDES="winmm=n,b" GRPC_DNS_RESOLVER=native MKW_MESH_COMPUTE=1 MKW_ASSUME_FOCUS=1 %command% --play</code></pre>
-    <p class="hint">The controller wakes up 20–50 seconds after the game starts; MKWMP fixes up Steam Input under Proton by itself. Both a Steam Deck and a ROG Ally X running SteamOS have been tested.</p>
+    <h2><span class="coin green">3</span> STEAM DECK &amp; LINUX</h2>
+    <p>Running the game <b>through Proton</b> is <b>no longer supported</b>. Steam Deck and Linux will return <b>natively</b> through mkw-recomp's planned plugin / mod-loader API. For now, MKWMP runs on <b>Windows</b>.</p>
   </section>
 
   <section id="host" class="panel">

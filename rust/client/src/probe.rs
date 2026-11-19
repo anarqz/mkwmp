@@ -1,6 +1,6 @@
 //! Keep the game patch in place: `<game>/winmm.dll` is this release's probe,
 //! and `<game>/winmm_host.dll` is the real winmm.dll the probe forwards to
-//! (the system's on Windows, Proton's under SteamOS; never shipped by us).
+//! (the system's on Windows; never shipped by us).
 
 use std::path::{Path, PathBuf};
 
@@ -373,33 +373,14 @@ fn bundled_in(dir: &Path, version: &str, keys: &[&str]) -> Option<Bundle> {
     Some(Bundle { expected, probe, voice })
 }
 
-/// Where the real winmm.dll can be copied from on this machine.
+/// Where the real winmm.dll can be copied from on this machine (Windows).
 pub fn host_source() -> Option<PathBuf> {
     if cfg!(windows) {
         let root = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| "C:\\Windows".into());
         let p = root.join("System32").join("winmm.dll");
         return p.exists().then_some(p);
     }
-    // SteamOS / Linux: Proton 10.0's own winmm.dll, in any Steam library.
-    let home = PathBuf::from(std::env::var_os("HOME")?);
-    let rel = Path::new("steamapps/common/Proton 10.0/files/lib/wine/x86_64-windows/winmm.dll");
-    let mut libraries = vec![home.join(".steam/steam"), home.join(".local/share/Steam")];
-    for vdf in [home.join(".steam/steam/steamapps/libraryfolders.vdf"), home.join(".local/share/Steam/steamapps/libraryfolders.vdf")] {
-        if let Ok(text) = std::fs::read_to_string(vdf) {
-            libraries.extend(library_paths(&text));
-        }
-    }
-    libraries.into_iter().map(|l| l.join(rel)).find(|p| p.exists())
-}
-
-/// `"path"  "/run/media/deck/SD"` lines of Steam's libraryfolders.vdf.
-fn library_paths(vdf: &str) -> Vec<PathBuf> {
-    vdf.lines()
-        .filter_map(|l| {
-            let mut parts = l.split('"').filter(|s| !s.trim().is_empty());
-            (parts.next()? == "path").then(|| parts.next().map(PathBuf::from)).flatten()
-        })
-        .collect()
+    None
 }
 
 /// Make sure winmm_host.dll exists. Returns a message when it had to act or
@@ -414,15 +395,11 @@ pub fn ensure_host(game: &Path) -> Option<String> {
             Ok(_) => Some(format!("copied {} to {}", src.display(), dest.display())),
             Err(e) => Some(format!("could not copy {} to {}: {e}", src.display(), dest.display())),
         },
-        None if cfg!(windows) => Some(format!("copy C:\\Windows\\System32\\winmm.dll to {}", dest.display())),
-        None => Some(format!(
-            "copy Proton 10.0's files/lib/wine/x86_64-windows/winmm.dll to {} (install Proton 10.0 in Steam first)",
-            dest.display()
-        )),
+        None => Some(format!("copy C:\\Windows\\System32\\winmm.dll to {}", dest.display())),
     }
 }
 
-/// Is mkw.exe running (natively or under Proton)?
+/// Is mkw.exe running?
 pub fn game_running() -> bool {
     #[cfg(windows)]
     {
@@ -622,11 +599,5 @@ mod tests {
         assert_eq!(pe_exports(&b).unwrap(), ["timeBeginPeriod", "timeEndPeriod"]);
         assert!(looks_like_winmm(&b));
         assert!(!looks_like_winmm(b"MZ timeBeginPeriod timeEndPeriod"), "names in the bytes are not exports");
-    }
-
-    #[test]
-    fn parses_steam_library_folders() {
-        let vdf = "\"libraryfolders\"\n{\n\t\"0\"\n\t{\n\t\t\"path\"\t\t\"/home/deck/.local/share/Steam\"\n\t}\n\t\"1\"\n\t{\n\t\t\"path\"\t\t\"/run/media/deck/SN01T\"\n\t\t\"label\"\t\t\"\"\n\t}\n}\n";
-        assert_eq!(library_paths(vdf), vec![PathBuf::from("/home/deck/.local/share/Steam"), PathBuf::from("/run/media/deck/SN01T")]);
     }
 }

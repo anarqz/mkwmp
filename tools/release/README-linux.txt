@@ -1,21 +1,16 @@
-mkwmp {version} for SteamOS and Linux: online play for Mario Kart World on community servers
+mkwmp {version} for Linux: online play for Mario Kart World on community servers
 https://github.com/anarqz/mkwmp
 
-Steam Deck, one command (Desktop Mode, in Konsole): it installs this release to ~/mkwmp and adds
-"Mario Kart World (MKWMP)" to Steam:
+Running the game through Proton is no longer supported. Steam Deck and Linux will come back
+natively through mkw-recomp's planned plugin / mod-loader API; until then, play on Windows.
 
-    curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash
-
-By hand:
+This Linux build of the launcher still runs (gamertags, friends, lobby voice chat, and hosting
+your own server with mkwmp-server), and is ready for the native game build when it lands.
 
 1. Put this "mkwmp" folder in your home folder (~/mkwmp). The launcher keeps its settings
    (client.toml) and logs (logs/) here.
 2. Run ./mkwmp-launcher (if your file manager lost the permission: chmod +x mkwmp-launcher).
 3. GAMERTAG: type one and press REGISTER. Write the 6-digit PIN down: it is shown only once.
-4. GAME FOLDER: pick the folder that has mkw.exe. Press INSTALL under it; the line turns green:
-   "Patches installed". The launcher also copies Proton 10.0's winmm.dll in as winmm_host.dll
-   (install Proton 10.0 in Steam first).
-5. Tick "I start the game from Steam" if Steam starts your game, then press PLAY.
 
 SETTINGS > GAME PATCH > UNINSTALL removes every mkwmp file from the game folder.
 

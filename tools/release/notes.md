@@ -25,7 +25,7 @@
 Download one zip and unzip it anywhere:
 
 - **Windows:** `mkwmp-1.1.1-windows-x64.zip`. Open `mkwmp/mkwmp-launcher.exe`.
-- **Steam Deck / SteamOS / Linux:** `mkwmp-1.1.1-linux-x64.zip`. On a Steam Deck, one command in Desktop Mode installs it and adds it to Steam: `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`.
+- **Linux:** `mkwmp-1.1.1-linux-x64.zip`. Running the game through Proton is no longer supported; Steam Deck and Linux will come back natively through mkw-recomp's planned plugin / mod-loader API. The Linux launcher still runs for gamertags, friends, voice and hosting.
 
 `README.txt` inside each zip has the steps.
 
@@ -45,7 +45,7 @@ Since rc.3:
 - Friends' rooms show on the friend card, even when your friend came online after you.
 - You go back into your lobby after a match.
 - The Room ID field in the launcher is gone; type the Room ID in the game.
-- The Steam Deck runs smoothly: the game patch logs much less.
+- The game patch logs much less.
 
 Files:
 

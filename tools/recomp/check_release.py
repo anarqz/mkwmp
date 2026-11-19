@@ -364,7 +364,7 @@ class Probe:
             self.sdl_names.update(re.findall(r'"(SDL_[A-Za-z0-9_]+)"', strip_comments(t)))
             self.mkw_keys.update(re.findall(r'"(MKW_[A-Z0-9_]+)"', strip_comments(t)))
         tools = sorted(p for p in (repo / "resources/tools").glob("*") if p.suffix in (".ps1", ".sh", ".py"))
-        for extra in [*sorted((repo / "rust/client/src").glob("*.rs")), repo / "site/install.sh", *tools]:
+        for extra in [*sorted((repo / "rust/client/src").glob("*.rs")), *tools]:
             if extra.is_file():
                 self.mkw_keys.update(re.findall(r"\b(MKW_[A-Z0-9_]{3,})\b", extra.read_text("utf-8", "replace")))
         self.sdl_names = {n for n in self.sdl_names if not n.isupper()}  # hints (SDL_HINT_...) are not exports
