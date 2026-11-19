@@ -5,8 +5,6 @@
 #ifndef MKWMP_SEATD_H
 #define MKWMP_SEATD_H
 
-#include "seatapi.h"
-
 #include <stddef.h>
 
 typedef struct {
@@ -38,15 +36,6 @@ int seatd_request(const char *method, const char *path, const char *json, char *
 int seatd_devices_json(char *out, size_t cap);
 int seatd_mutes(SeatdMute *out, int max);
 void seatd_unmute(unsigned long long account);
-
-// For the chat room on the network (roomnet.c). 1 once seatd_start ran: the plugin signs in itself, so it can ask the
-// seat server for room tickets (a launcher has no route for them).
-int seatd_started(void);
-// The room ticket naming these friends (one to four registered names), by the friends' presence token: asked of the
-// server when the names change and again two minutes before the ticket ends, kept in between. Blocking, at most one
-// HTTP call. 1: *out is a ticket that is still good (its friends: those the server granted, maybe fewer); 0: none now
-// (not signed in yet, the server refused or has no such route: asked again after 20 s, 5 minutes for a 404).
-int seatd_room_ticket(const char *const *names, int n, SeatApiRoomTicket *out);
 
 // The game ends (MkwPluginApi.on_exit): free the seat and end the presence at once, so friends see the player leave
 // and the seat goes to the next in line now, not after the server's 60 s timeout. Short timeouts; best effort.

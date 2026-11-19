@@ -11,7 +11,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 enum { MUTES_MAX = SEATD_MUTES_MAX };
 
@@ -409,74 +408,6 @@ int seatd_request(const char *method, const char *path, const char *json, char *
     else st = reply(buf, cap, body, 404, "{}");   // /local/v1/room is gone: the runtime's number pad asks
     plat_unlock(&g_lock);
     return st;
-}
-
-int seatd_started(void) {
-    plat_lock(&g_lock);
-    int started = g_started;
-    plat_unlock(&g_lock);
-    return started;
-}
-
-// ---- the room ticket (one caller: roomnet.c's thread; g_rlock keeps a second one out anyway)
-static int by_name(const void *a, const void *b) { return strcmp((const char *)a, (const char *)b); }
-
-int seatd_room_ticket(const char *const *names, int n, SeatApiRoomTicket *out) {
-    static PlatLock g_rlock = PLAT_LOCK_INIT;
-    static SeatApiRoomTicket held;
-    static char held_for[SEATAPI_ROOM_FRIENDS * (SEATAPI_NAME_MAX + 2)], failed_for[sizeof held_for];
-    static uint64_t fresh_until, retry_at;   // plat_ms()
-    static int logged_status = -1;
-    memset(out, 0, sizeof *out);
-    if (!seatd_started() || !names || n < 1 || n > SEATAPI_ROOM_FRIENDS) return 0;
-    // the names as one key, whatever their order
-    char sorted[SEATAPI_ROOM_FRIENDS][SEATAPI_NAME_MAX + 1] = {{0}}, key[sizeof held_for] = "";
-    for (int i = 0; i < n; i++) {
-        if (!seatapi_name_ok(names[i])) return 0;
-        snprintf(sorted[i], sizeof sorted[i], "%s", names[i]);
-    }
-    qsort(sorted, (size_t)n, sizeof sorted[0], by_name);
-    for (int i = 0; i < n; i++) snprintf(key + strlen(key), sizeof key - strlen(key), "%s,", sorted[i]);
-    char token[sizeof g_presence];
-    plat_lock(&g_flock);
-    memcpy(token, g_presence, sizeof token);
-    plat_unlock(&g_flock);
-
-    plat_lock(&g_rlock);
-    uint64_t now = plat_ms();
-    int have = held.ticket[0] && !strcmp(key, held_for) && now < fresh_until;
-    if (!have && token[0] && !(now < retry_at && !strcmp(key, failed_for))) {
-        const char *list[SEATAPI_ROOM_FRIENDS];
-        for (int i = 0; i < n; i++) list[i] = sorted[i];
-        SeatApiRoomTicket t;
-        SeatApiResult r = seatapi_room_ticket(C.server, token, list, n, &t);
-        now = plat_ms();
-        if (r.status == 200) {
-            int life = seatapi_room_ticket_life(t.expires, (long long)time(NULL));
-            held = t;
-            snprintf(held_for, sizeof held_for, "%s", key);
-            fresh_until = now + (uint64_t)(life > 150 ? life - 120 : life / 2) * 1000;   // a new one two minutes before the end
-            retry_at = 0;
-            have = life > 0;
-            char granted[SEATAPI_ROOM_FRIENDS * (SEATAPI_NAME_MAX + 2)] = "";
-            for (int i = 0; i < t.nfriends; i++) snprintf(granted + strlen(granted), sizeof granted - strlen(granted), " %s", t.friends[i]);
-            mkwmp_log("seat: room ticket for %s good for %d s (%d bytes); the server named %d of them:%s", key, life,
-                      (int)strlen(t.ticket), t.nfriends, t.nfriends ? granted : " nobody");
-        } else {
-            // 404: a server without chat rooms; 401: the presence ended (the friends watcher signs in again)
-            snprintf(failed_for, sizeof failed_for, "%s", key);
-            retry_at = now + (r.status == 404 ? 300000 : r.retry_after > 0 ? (uint64_t)r.retry_after * 1000 : 20000);
-            if (r.status != logged_status)
-                mkwmp_log("seat: room ticket for %s: %d %s %s%s", key, r.status, r.code, r.message,
-                          r.status == 404 ? " (a seat server without chat rooms: no room is asked for)" : "");
-            if (strcmp(key, held_for)) held.ticket[0] = 0;   // the one held names other friends
-            else have = held.ticket[0] && now < fresh_until + 110000;   // the same friends: good until it really ends
-        }
-        logged_status = r.status;
-    }
-    if (have) *out = held;
-    plat_unlock(&g_rlock);
-    return have;
 }
 
 int seatd_devices_json(char *out, size_t cap) {
