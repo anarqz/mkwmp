@@ -6,7 +6,7 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 
 > MKWMP is an unofficial community project, not affiliated with or endorsed by Nintendo. You need your own copy of the game. MKWMP ships none of the game's code or assets and doesn't help obtain games: see [Interoperability and legal notes](docs/LEGAL.md).
 >
-> **Version 1.0.0** ([download](https://github.com/anarqz/mkwmp/releases/latest)): matchmade races and battles, friend rooms, lobby voice chat and self-hosted servers.
+> **Version 1.0.0** ([download](https://github.com/anarqz/mkwmp/releases/latest)): matchmade races and battles, friend rooms with voice chat and camera, and self-hosted servers.
 
 ![The MKWMP launcher: gamertag and PIN, server, game folder with the game patch check, friends with requests and who is playing, and the PLAY button](site/img/launcher-main.png)
 
@@ -16,8 +16,9 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 - **Friends, kept on the server.** Add friends by gamertag; they accept or decline. You see who is playing, online or offline, and they're your friends in the game too.
 - **Matchmaking with any number of lobbies.** Races and battles open new lobbies as players arrive and close them when they empty. After a match you go back into your lobby.
 - **Friend rooms.** Create a room; friends join from their friend card, or by Room ID with the game's on-screen keypad.
-- **Voice chat** with the players in your lobby, with echo cancelling and noise suppression. Pick your microphone and output in SETTINGS; mute players from the game's lobby menu. Report abusive players from SETTINGS; the server's host reviews reports.
-- **Privacy.** For adults (18+). The server keeps only your gamertag, a PIN hash, your friends and any report you file; voice is never recorded. Unused gamertags are deleted after a month, and DELETE MY ACCOUNT removes yours at once. See the [privacy policy](https://anarqz.github.io/mkwmp/#privacy).
+- **Voice chat in friend rooms**, with echo cancelling and noise suppression. Pick your microphone and output in SETTINGS; mute players from the game's lobby menu. Report abusive players from SETTINGS; the server's host reviews reports. Matchmade lobbies have no voice chat.
+- **Camera in friend rooms** (the MKWMP mod, game 1.8.0): turn it on and mutual friends in the room see you above your kart, at most 4 faces each. Off by default.
+- **Privacy.** For adults (18+). The server keeps only your gamertag, a PIN hash, your friends and any report you file; voice and camera are never recorded. Unused gamertags are deleted after a month, and DELETE MY ACCOUNT removes yours at once. See the [privacy policy](https://anarqz.github.io/mkwmp/#privacy).
 - **Seats and a queue.** Each server has a fixed number of seats. PLAY takes one, or puts you in line. Having the launcher open doesn't take a seat.
 - **Background mode.** Close the launcher and it stays in the system tray, with notifications when a friend comes online, starts playing or sends you a request.
 - **Game patch check.** The line under GAME FOLDER says whether the patch is installed and is this version, checked by content against signed checksums. SETTINGS → GAME PATCH installs or removes it.

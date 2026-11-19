@@ -418,6 +418,10 @@ fn pictures_go_to_mutual_friends_who_asked_for_them() {
     // A mute hides the face too.
     r.handle(0.4, ep(3), &sub("c", OP_REPLACE_MUTES, RM, vec![acct("a")]));
     assert_eq!(video_to(&r.handle(0.5, ep(1), &video(3, 0, 2))), vec![ep(2), ep(4)]);
+    // ...and a sender's mute stops their face going to the muted player.
+    r.handle(0.51, ep(1), &sub("a", OP_REPLACE_MUTES, CAM, vec![acct("b")]));
+    assert_eq!(video_to(&r.handle(0.52, ep(1), &video(3, 1, 2))), vec![ep(4)]);
+    r.handle(0.53, ep(1), &sub("a", OP_REPLACE_MUTES, CAM, vec![]));
     // Unfriended: gone once the room is looked up again (within a second).
     f.befriend("a", "d", false);
     r.tick(1.5);

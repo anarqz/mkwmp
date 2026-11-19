@@ -690,7 +690,7 @@ impl App {
                 "MKWMP's online play, friends and voice chat are for adults: you must be 18 or older.",
                 "The server keeps your gamertag, a hash of your PIN, your friends and any report you file. \
                  Unused gamertags are deleted after a month; you can delete yours any time (SETTINGS > PRIVACY).",
-                "Voice chat is relayed live to the players in your lobby and never recorded.",
+                "Voice chat works only in friend rooms, relayed live to the players in your room; a camera you turn on is shown only to mutual friends there. Neither is ever recorded.",
             ] {
                 ui.label(RichText::new(line).size(13.0).color(MUTED));
                 ui.add_space(4.0);
@@ -933,7 +933,7 @@ impl App {
         let mut changed = false;
         let v = &mut self.draft.voice;
         section(ui, "VOICE CHAT");
-        changed |= ui.checkbox(&mut v.enabled, "Talk with the players in my lobby").changed();
+        changed |= ui.checkbox(&mut v.enabled, "Talk with the players in my friend room").changed();
         let (inputs, outputs) = (v.inputs.clone(), v.outputs.clone());
         ui.add_enabled_ui(v.enabled, |ui| {
             field_label(ui, "MICROPHONE");

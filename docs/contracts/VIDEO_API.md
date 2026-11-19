@@ -43,7 +43,7 @@ STUN-shaped, as in VOICE_API.md 2.
    bit2 set. Everything else is dropped.
 2. It is forwarded, seat stamped, to each other room-mode subscriber of the **same room** who is
    the sender's **mutual friend** and subscribed to the sender's account (op 6), and whose mute
-   set doesn't hold the sender. **A mute hides the face too.** Deafen doesn't affect video.
+   set doesn't hold the sender, and who isn't in the sender's mute set. **A mute hides the face too, both ways.** Deafen doesn't affect video.
    Nothing goes back to the sender.
 3. Per sender: at most 64 KiB/s and 400 datagrams/s up; the excess is dropped.
 4. Video egress budget, separate from voice: 8 MiB/s by default (`[lobby] video_budget`). When

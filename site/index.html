@@ -36,7 +36,7 @@
 
   <section class="panel note">
     <h2><span class="coin">!</span> STATUS</h2>
-    <p><b>Version 1.0.0</b> (<a href="https://github.com/anarqz/mkwmp/releases/latest">download</a>). Matchmade <b>races and battles</b> start to finish, <b>friend rooms</b> (join from the friend card or by Room ID), <b>voice chat</b> in your lobby, and <b>self-hosted servers</b>. On a Steam Deck, one command installs it: <a href="#steamos">see below</a>.</p>
+    <p><b>Version 1.0.0</b> (<a href="https://github.com/anarqz/mkwmp/releases/latest">download</a>). Matchmade <b>races and battles</b> start to finish, <b>friend rooms</b> (join from the friend card or by Room ID), <b>voice chat and camera</b> in friend rooms, and <b>self-hosted servers</b>. On a Steam Deck, one command installs it: <a href="#steamos">see below</a>.</p>
   </section>
 
   <section id="launcher" class="panel">
@@ -131,26 +131,28 @@ docker compose up -d --build</code></pre>
   </section>
   <section id="privacy" class="panel">
     <h2><span class="coin blue">§</span> PRIVACY POLICY</h2>
-    <p>This policy is for the <b>official server</b> (<code>mkw.anarqz.dev</code>), run as a hobby by the MKWMP maintainer. It is not run by Nintendo. A server someone else hosts is run by that person, and their own rules apply. Last updated: 18 November 2026.</p>
+    <p>This policy is for the <b>official server</b> (<code>mkw.anarqz.dev</code>), run as a hobby by the MKWMP maintainer. It is not run by Nintendo. A server someone else hosts is run by that person, and their own rules apply. Last updated: 19 November 2026.</p>
     <dl class="faq">
       <dt>Who can use it</dt>
-      <dd>Only people <b>18 or older</b>. The launcher asks you to confirm it before it registers a gamertag, signs in or plays. If you're under 18, please don't use the official server.</dd>
+      <dd>Only people <b>18 or older</b>. The launcher (or the MKWMP mod) asks you to confirm it before it registers a gamertag, signs in or plays. If you're under 18, please don't use the official server.</dd>
       <dt>What the server keeps</dt>
-      <dd>In its database: your <b>gamertag</b>, a <b>hash of your PIN</b> (Argon2id; the PIN itself is never stored), when you registered and when you last used it, your <b>friends and friend requests</b>, and any <b>voice-chat report</b> you file (who you reported, the reason, what you wrote, when, and the host's note once it's reviewed). We don't ask for your email, real name, age or any payment details, and there are no ads, trackers or analytics.</dd>
+      <dd>In its database: your <b>gamertag</b>, a <b>hash of your PIN</b> (Argon2id; the PIN itself is never stored), when you registered and when you last used it, your <b>friends and friend requests</b>, and any <b>voice-chat or camera report</b> you file (who you reported, the reason, what you wrote, when, and the host's note once it's reviewed). We don't ask for your email, real name, age or any payment details, and there are no ads, trackers or analytics.</dd>
       <dt>What it only holds while it runs</dt>
       <dd>Seats and the queue, who's online, the game lobbies, and rate-limit counters keyed by your IP address. These live in memory and are gone when the server restarts.</dd>
       <dt>Logs</dt>
       <dd>The server's logs can contain your gamertag, the game's user id and sometimes your IP address. They're used to fix problems and look into reports, and are deleted after <b>7 days</b>.</dd>
       <dt>Voice chat</dt>
-      <dd>Your voice is relayed live to the players in your lobby, only while voice chat is on. The server forwards the audio packets without decoding them and <b>never records or stores</b> them. Your mute list stays in your launcher.</dd>
+      <dd>Voice chat works only in <b>friend rooms</b> (ONLINE → FRIENDS), not in matchmade lobbies. Your voice is relayed live to the players in your room, only while voice chat is on. The server forwards the audio packets without decoding them and <b>never records or stores</b> them. Your mute list stays on your computer.</dd>
+      <dt>Camera</dt>
+      <dd>The camera needs the MKWMP mod and is <b>off</b> until you turn it on in its settings and say yes when the game asks. It works only in a friend room: a small picture (256×144, up to 10 frames a second) is relayed live to the players in that room who are your <b>mutual friends</b> (each of you is on the other's friend list) and who chose to see cameras; each player sees at most 4. Muting a player hides their camera and stops yours going to them. The server forwards the pictures without decoding them and <b>never records or stores</b> them.</dd>
       <dt>Who sees what</dt>
-      <dd>Your friends see whether you're playing, online or offline. Players in your lobby see your gamertag and hear you. The game connects the players in a lobby to each other, directly or through the server's relay, so they may also see your IP address, as in any online game. Players can look up whether a gamertag is registered. Only the server's host sees reports.</dd>
+      <dd>Your friends see whether you're playing, online or offline. Players in your lobby see your gamertag. In a friend room they hear you, and your mutual friends there can see your camera if it's on. The game connects the players in a lobby to each other, directly or through the server's relay, so they may also see your IP address, as in any online game. Players can look up whether a gamertag is registered. Only the server's host sees reports.</dd>
       <dt>How long it's kept</dt>
       <dd>A gamertag unused for <b>30 days</b> is deleted, with its friends and requests. Reports are deleted <b>90 days</b> after they're filed, reviewed or not. Logs are kept 7 days. The copy of the database made when the server is updated (a backup) is deleted after 7 days.</dd>
       <dt>Your choices</dt>
       <dd><b>SETTINGS → PRIVACY → DELETE MY ACCOUNT</b> (or the X next to your PIN) deletes your gamertag, PIN, friends and the reports you filed, right away (a backup copy may hold them for up to 7 more days). It needs your PIN, so nobody else can do it for you. You can withdraw a report while it waits for review, and untick the 18+ box to stop the launcher signing in or contacting the server. Reports other players filed about you are kept until they expire, so the host can review them.</dd>
       <dt>Who else is involved</dt>
-      <dd>The server is a virtual machine at <b>Vultr</b> in São Paulo, Brazil. The launcher reaches it through <b>Cloudflare</b>, which handles that connection. Game lobbies and voice connect to the machine directly. Updates, this website and bug reports are on <b>GitHub</b>. Each of these companies has its own privacy policy.</dd>
+      <dd>The server is a virtual machine at <b>Vultr</b> in São Paulo, Brazil. The launcher reaches it through <b>Cloudflare</b>, which handles that connection. Game lobbies, voice and camera connect to the machine directly. Updates, this website and bug reports are on <b>GitHub</b>. Each of these companies has its own privacy policy.</dd>
       <dt>Bug reports</dt>
       <dd>SAVE LOGS FOR A BUG REPORT makes a zip on your computer (your PIN and tickets are left out). It's only shared if you attach it to a GitHub issue yourself, and issues are public.</dd>
       <dt>Changes and questions</dt>

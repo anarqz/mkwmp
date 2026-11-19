@@ -5,7 +5,7 @@ An mkwmp server is one binary, `mkwmp`, with two parts. `mkwmp host` runs both i
 | Part | What it does | Reached by | Ports |
 | --- | --- | --- | --- |
 | `mkwmp server` | gamertags + PINs, friends, seats, queue, signed seat tickets | the launcher, over HTTP(S) | TCP 7000 |
-| `mkwmp lobby` | the game's online services: matchmaking, sessions, Gamesync, TURN relay, NAT check, voice chat relay | the game, directly | TCP 8905, 8906; UDP 3478, 8907, 10025, 49152–49407 |
+| `mkwmp lobby` | the game's online services: matchmaking, sessions, Gamesync, TURN relay, NAT check, voice chat and camera relay (friend rooms only) | the game, directly | TCP 8905, 8906; UDP 3478, 8907, 10025, 49152–49407 |
 
 How the parts fit together: [ARCHITECTURE.md](ARCHITECTURE.md). Seat API and ticket format: [contracts/SEAT_API.md](contracts/SEAT_API.md).
 
@@ -24,7 +24,7 @@ Download `mkwmp-server-x86_64-windows.exe` or `mkwmp-server-x86_64-linux` from t
    - `keys/`: the ticket signing key, the lobby's tokens, and the lobby's TLS certificate (self-signed, for the host names the game asks for);
    - `host.toml`: your settings;
    - `server.toml`: the config written from them;
-   - `registry.db`: gamertags, PIN hashes, friends and voice-chat reports.
+   - `registry.db`: gamertags, PIN hashes, friends and voice-chat and camera reports.
 3. It runs the seat server and the lobby together until you close it. Later runs reuse `host.toml`; flags change it:
 
        mkwmp-server host --public-ip 203.0.113.7 --name "Friday kart" --capacity 12
@@ -61,13 +61,15 @@ Docker runs the same `mkwmp host`. Use any Linux machine with Docker, for exampl
     docker compose exec server mkwmp admin reset-pin <name> --config /data/server.toml
     docker compose exec server mkwmp admin release <name> --config /data/server.toml
 
-**Voice-chat reports.** Players report abuse from the launcher (SETTINGS → REPORT VOICE ABUSE); each player has at most one waiting. Review them from the same machine:
+**Voice-chat and camera reports.** Players report abuse from the launcher (SETTINGS → REPORT VOICE ABUSE) or the MKWMP mod's options (voice or camera); each player has at most one waiting, and `admin reports` shows which kind. Review them from the same machine:
 
     docker compose exec server mkwmp admin reports --config /data/server.toml          # open ones (or: closed, all)
     docker compose exec server mkwmp admin close-report <id> warned in DM --config /data/server.toml
     docker compose exec server mkwmp admin delete-report <id> --config /data/server.toml
 
 To lock an abusive player out, `reset-pin` their gamertag (their launcher's PIN stops working; don't hand out the new one) and add it to `[registry] reserved_names` (then restart the server), so it never expires and nobody registers it. Don't `release` it: a free gamertag is registered again by the launcher that still has its PIN. They can still register a new gamertag. Reports are deleted 90 days after they were filed.
+
+**Voice and camera.** Voice chat and camera pictures are relayed only inside friend rooms; matchmade lobbies get none. A camera picture goes only to mutual friends in the room who asked for it (at most 4 each). The relay forwards both without decoding or storing them. `[lobby] video = false` turns cameras off on your server; `voice_port = 0` turns off both.
 
 **Your players' data.** As the host you hold their gamertags, PIN hashes, friends and reports, and your logs can hold their IP addresses. The official server's [privacy policy](https://anarqz.github.io/mkwmp/#privacy) is a starting point for your own: tell your players what you keep and for how long. Unused gamertags are deleted after `[registry] expire_days` (30). Backups you make hold the same data.
 

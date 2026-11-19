@@ -415,3 +415,47 @@ async fn online_mode_does_not_cache_a_gamertag_in_use() {
     tokio::time::sleep(crate::seat::BUSY_RETRY).await;
     assert!(matches!(seat.want().await, Answer::Seated { .. }));
 }
+
+fn enable_mod(game: &Path) {
+    std::fs::write(game.join("mkw.ini"), "[launcher]\nmods = mkwmp\n").unwrap();
+    std::fs::create_dir_all(game.join("mods/mkwmp/plugin")).unwrap();
+    std::fs::write(game.join("mods/mkwmp/plugin/mkwmp.dll"), b"mod").unwrap();
+}
+
+#[tokio::test]
+async fn the_mod_wins_only_on_a_runtime_that_loads_it() {
+    if std::env::var_os("MKW_MODS").is_some() || crate::probe::dev_probe() {
+        return; // the environment would decide instead
+    }
+    // 0.1.10 with a leftover mods/mkwmp: the launcher's patch stays.
+    let (core, game) = setup("http://127.0.0.1:9");
+    enable_mod(&game);
+    let _ = core.sync_patch(false).await;
+    assert!(game.join(crate::probe::PROBE).exists());
+    assert_ne!(core.patch_report().state, crate::probe::PatchState::Mod);
+
+    // 0.1.15 with the patch off in settings: nothing is removed, but PLAY may go (the mod carries it).
+    let (core, game) = setup("http://127.0.0.1:9");
+    std::fs::write(game.join("mkw.exe"), crate::recomp::TEST_MOD_EXE).unwrap();
+    enable_mod(&game);
+    let mut cfg = core.ui().cfg;
+    cfg.patch = false;
+    core.set_config(cfg).unwrap();
+    let _ = core.sync_patch(false).await;
+    assert!(game.join(crate::probe::PROBE).exists());
+    let r = core.patch_report();
+    assert!(r.state == crate::probe::PatchState::Mod && r.ok(), "{r:?}");
+    assert!(r.files.iter().any(|f| f.contains("still beside mkw.exe")), "{:?}", r.files);
+
+    // 0.1.15 with the patch on: the launcher's game patch goes, mkwmp.toml stays.
+    let mut cfg = core.ui().cfg;
+    cfg.patch = true;
+    core.set_config(cfg).unwrap();
+    core.sync_patch(false).await.unwrap();
+    assert!(!game.join(crate::probe::PROBE).exists() && !game.join(crate::probe::VOICE).exists());
+    assert!(game.join("mkwmp.toml").exists());
+    let r = core.patch_report();
+    assert_eq!(r.state, crate::probe::PatchState::Mod);
+    assert_eq!(r.summary("1.3.0"), "MKWMP runs as a mod in this game");
+    assert_eq!(r.files.len(), 1, "{:?}", r.files);
+}

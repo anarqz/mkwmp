@@ -3,9 +3,11 @@
 #
 #   tools/release/release.sh draft    build both launchers and both servers, create the DRAFT
 #                                     release v<version> and upload them
-#   (Windows then builds the game patch and voice chat and uploads them to the draft:
+#   (Windows then builds the game patch, voice chat and the mkw-recomp mod and uploads
+#   them to the draft:
 #      python native/probe/build.py --version <version>; python native/voice/build.py
-#      gh release upload v<version> winmm.dll mkwmp-voice.dll)
+#      python native/probe/build_plugin.py --target all --package --version <version>
+#      gh release upload v<version> winmm.dll mkwmp-voice.dll mkwmp-mod.zip)
 #   tools/release/release.sh publish  download every asset, build the two zips
 #                                     (make_zips.py), write and sign SHA256SUMS,
 #                                     upload, publish (a prerelease when the
@@ -20,7 +22,8 @@ tag="v$version"
 out="rust/target/release-assets/$tag"
 # The loose files: rc.1-rc.3 launchers update themselves from the launcher
 # asset, and a 1.0.0+ launcher with no zip copy fetches the DLLs by name.
-assets="mkwmp-launcher-x86_64-windows.exe mkwmp-launcher-x86_64-linux mkwmp-server-x86_64-windows.exe mkwmp-server-x86_64-linux winmm.dll mkwmp-voice.dll"
+# mkwmp-mod.zip (1.3.0+) is the mkw-recomp mod: mkwmp/ to drop into <game>/mods/.
+assets="mkwmp-launcher-x86_64-windows.exe mkwmp-launcher-x86_64-linux mkwmp-server-x86_64-windows.exe mkwmp-server-x86_64-linux winmm.dll mkwmp-voice.dll mkwmp-mod.zip"
 zips="mkwmp-$version-windows-x64.zip mkwmp-$version-linux-x64.zip"
 case "$version" in *-*) pre="--prerelease" ;; *) pre="--latest" ;; esac
 
@@ -42,7 +45,7 @@ draft)
     --target "$(git rev-parse HEAD)" --title "mkwmp $version" --notes-file tools/release/notes.md
   gh release upload "$tag" --clobber "$out/mkwmp-launcher-x86_64-windows.exe" "$out/mkwmp-launcher-x86_64-linux" \
     "$out/mkwmp-server-x86_64-windows.exe" "$out/mkwmp-server-x86_64-linux"
-  echo "draft $tag ready; Windows uploads winmm.dll and mkwmp-voice.dll next"
+  echo "draft $tag ready; Windows uploads winmm.dll, mkwmp-voice.dll and mkwmp-mod.zip next"
   ;;
 publish)
   : "${MKWMP_RELEASE_KEY:?set MKWMP_RELEASE_KEY to the release seed file}"

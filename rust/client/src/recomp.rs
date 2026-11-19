@@ -15,7 +15,7 @@ use std::time::SystemTime;
 use crate::update::sha256_hex;
 
 /// The runtimes the game patch supports (KNOWN names their mkw.exe).
-pub const SUPPORTED: &[&str] = &["0.1.10", "0.1.12", "0.1.13"];
+pub const SUPPORTED: &[&str] = &["0.1.10", "0.1.12", "0.1.13", "0.1.15"];
 /// What the window recommends installing.
 pub const RECOMMENDED: &str = "0.1.13";
 pub const DOWNLOAD: &str = "https://github.com/adriadam10/mkw-recomp/releases/tag/v0.1.13";
@@ -26,6 +26,7 @@ const KNOWN: &[(&str, &str)] = &[
     ("0.1.11", "8d65b3e3beae4411ea0bf195da8841dc2f23414bc85eedfa593c9f39f54d2a43"),
     ("0.1.12", "fbd215a5f232e9fc786bb4a7e5823d0d7a64ad04e09f50ed37b1cb2d5d66d1b1"),
     ("0.1.13", "1c47ffa2502a1ee92c2d01da0791802c18bf6c3365040c2b4fa1c91dacbc8695"),
+    ("0.1.15", "511148040eac4f71cc3f003ace2d100fef784f1756339d88ca939896016d86e9"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,11 +78,18 @@ fn supported() -> String {
 /// Tests' stand-in for a supported mkw.exe.
 #[cfg(test)]
 pub const TEST_EXE: &[u8] = b"mkwmp test mkw.exe";
+/// Tests' stand-in for a supported mkw.exe that loads mods.
+#[cfg(test)]
+pub const TEST_MOD_EXE: &[u8] = b"mkwmp test mkw.exe with mods";
 
 pub fn identify_bytes(exe: &[u8]) -> Recomp {
     #[cfg(test)]
     if exe == TEST_EXE {
         return Recomp::Supported(SUPPORTED[0]);
+    }
+    #[cfg(test)]
+    if exe == TEST_MOD_EXE {
+        return Recomp::Supported(MOD_RUNTIMES[0]);
     }
     let h = sha256_hex(exe);
     match KNOWN.iter().find(|(_, k)| *k == h) {
@@ -136,6 +144,66 @@ pub fn data_dir(game: &Path) -> PathBuf {
     game.to_path_buf()
 }
 
+/// MKWMP's mod folder name, under mkw-recomp's `mods/`.
+pub const MOD: &str = "mkwmp";
+/// The supported releases that load mods (MKW_MODS, plugin API 3).
+pub const MOD_RUNTIMES: &[&str] = &["0.1.15"];
+
+/// The MKWMP mod runs in this game: a runtime that loads mods, and the mod
+/// enabled there ([`mod_dir`]). A leftover `mods = mkwmp` on an older
+/// runtime doesn't count: nothing would load it.
+pub fn active_mod(game: &Path) -> Option<PathBuf> {
+    match identify(game) {
+        Recomp::Supported(v) if MOD_RUNTIMES.contains(&v) => mod_dir(game),
+        _ => None,
+    }
+}
+
+/// The MKWMP mod's folder when mkw-recomp (0.1.15+) loads it, by the same rule
+/// as the probe: `mkwmp` is in MKW_MODS (the environment wins, else `mods`
+/// under `[launcher]` in the installation's mkw.ini, the data dir's when
+/// game_dir is set) and `<data dir>/mods/mkwmp/plugin/mkwmp.dll` (or the
+/// Linux .so) exists. The mod then carries the game patch, so the launcher
+/// keeps no winmm.dll of its own beside mkw.exe (the mod wins).
+pub fn mod_dir(game: &Path) -> Option<PathBuf> {
+    let data = data_dir(game);
+    let mods = match std::env::var("MKW_MODS") {
+        Ok(v) => v,
+        Err(_) => mods_in(&std::fs::read_to_string(data.join("mkw.ini")).ok()?)?,
+    };
+    if !mods_list_has(&mods, MOD) {
+        return None;
+    }
+    let dir = data.join("mods").join(MOD);
+    ["mkwmp.dll", "libmkwmp.so", "mkwmp.so"].iter().any(|f| dir.join("plugin").join(f).is_file()).then_some(dir)
+}
+
+/// The `mods` value under `[launcher]`.
+fn mods_in(ini: &str) -> Option<String> {
+    let mut launcher = false;
+    for line in ini.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            launcher = line.trim_start_matches('[').trim_end_matches(']').trim().eq_ignore_ascii_case("launcher");
+            continue;
+        }
+        let Some((k, v)) = line.split_once('=') else { continue };
+        if launcher && k.trim() == "mods" {
+            return Some(v.trim().to_owned());
+        }
+    }
+    None
+}
+
+/// mkw-recomp's list: names between commas, leading spaces skipped. Compared
+/// in any case, as the probe does (Windows opens the folder in any case).
+/// Quotes around the whole value are accepted.
+fn mods_list_has(list: &str, name: &str) -> bool {
+    let list = list.trim();
+    let list = list.strip_prefix('"').and_then(|l| l.strip_suffix('"')).unwrap_or(list);
+    list.split(',').any(|m| m.trim().eq_ignore_ascii_case(name))
+}
+
 /// Game versions the game patch has guest-address tables for. On any other
 /// version its hooks would write into unrelated game memory. Players only meet
 /// others on the same version (the lobby keeps them apart).
@@ -176,9 +244,59 @@ fn game_version_in(json: &str) -> Option<String> {
     dotted.then(|| word.to_owned())
 }
 
-/// Why PLAY is refused for this game version; None when supported or unknown.
+/// The game build id each runtime compiles the game for (`<data dir>/mkwgame.id`,
+/// also the first word of setup-state.json's `generate`). A runtime refuses a
+/// game set up by another one until its start screen has set it up again.
+const GAME_IDS: &[(&str, &str)] = &[
+    ("0.1.12", "c0dd6cf12c07c23a"),
+    ("0.1.13", "c0dd6cf12c07c23a"),
+    ("0.1.15", "c9bbcb75a9ac9a49"),
+];
+
+/// The id the game in this folder was set up for: mkwgame.id, else the
+/// first word of `generate`. Cached by the file's path, size and time.
+fn game_id(game: &Path) -> Option<String> {
+    type Cached = (PathBuf, u64, Option<SystemTime>, Option<String>);
+    static ID_CACHE: Mutex<Option<Cached>> = Mutex::new(None);
+    let data = data_dir(game);
+    let file = [data.join("mkwgame.id"), data.join("setup-state.json")].into_iter().find(|f| f.is_file())?;
+    let meta = std::fs::metadata(&file).ok()?;
+    let key = (file, meta.len(), meta.modified().ok());
+    let mut c = ID_CACHE.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some((p, len, at, v)) = c.as_ref() {
+        if (p, *len, *at) == (&key.0, key.1, key.2) {
+            return v.clone();
+        }
+    }
+    let text = std::fs::read_to_string(&key.0).ok();
+    let v = text.and_then(|t| if key.0.ends_with("mkwgame.id") { id_word(&t) } else { game_id_in(&t) });
+    *c = Some((key.0, key.1, key.2, v.clone()));
+    v
+}
+
+fn id_word(t: &str) -> Option<String> {
+    // The id starts the file (or the word): 16 hex digits.
+    let w = t.trim_start().get(..16)?;
+    w.bytes().all(|b| b.is_ascii_hexdigit()).then(|| w.to_ascii_lowercase())
+}
+
+fn game_id_in(json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let generate = v.pointer("/done/generate").or_else(|| v.get("generate")).and_then(|g| g.as_str())?;
+    id_word(generate)
+}
+
+/// The game was set up by another runtime: PLAY would stop at once.
+fn rebuild_problem(runtime: &Recomp, id: Option<&str>) -> Option<String> {
+    let Recomp::Supported(v) = runtime else { return None };
+    let (_, want) = GAME_IDS.iter().find(|(r, _)| r == v)?;
+    (id? != *want).then(|| "mkw-recomp was updated: open mkw-recomp once and let it finish its setup, then press PLAY again".into())
+}
+
+/// Why PLAY is refused for this game version, or because the game must be
+/// set up again for this runtime; None when fine or unknown.
 pub fn game_problem(game: &Path) -> Option<String> {
-    game_problem_for(game_version(game).as_deref())
+    game_problem_for(game_version(game).as_deref()).or_else(|| rebuild_problem(&identify(game), game_id(game).as_deref()))
 }
 
 fn game_problem_for(version: Option<&str>) -> Option<String> {
@@ -203,7 +321,7 @@ mod tests {
     fn only_supported_releases_pass() {
         assert_eq!(identify_bytes(b"not mkw.exe"), Recomp::Unknown);
         assert!(!Recomp::Unknown.ok() && Recomp::Unknown.problem().unwrap().contains("0.1.13"));
-        assert!(Recomp::Other("0.1.11").problem().unwrap().contains("0.1.11: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13"));
+        assert!(Recomp::Other("0.1.11").problem().unwrap().contains("0.1.11: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15"));
         assert_eq!(identify_bytes(&[]), Recomp::Unknown);
         assert!(Recomp::Supported("0.1.10").ok() && Recomp::Supported("0.1.10").problem().is_none());
         assert!(SUPPORTED.iter().all(|v| KNOWN.iter().any(|(k, _)| k == v)), "every supported release has a known hash");
@@ -235,6 +353,63 @@ mod tests {
         assert_eq!(data_dir(&d), PathBuf::from("D:\\\\MKW"));
         std::fs::write(d.join("mkw.ini"), "game_dir = \"install\"\n").unwrap();
         assert_eq!(data_dir(&d), d.join("install"));
+    }
+
+    #[test]
+    fn the_mod_is_found_only_when_enabled() {
+        assert!(mods_list_has("mkwmp", "mkwmp"));
+        assert!(mods_list_has("other,mkwmp", "mkwmp") && mods_list_has("other, mkwmp", "mkwmp"));
+        assert!(mods_list_has("\"other,mkwmp\"", "mkwmp"));
+        assert!(mods_list_has("MKWMP", "mkwmp"), "any case, like the probe");
+        assert!(!mods_list_has("mkwmp2,other", "mkwmp") && !mods_list_has("", "mkwmp"));
+        assert_eq!(mods_in("[launcher]\r\nmods = other,mkwmp\r\n").as_deref(), Some("other,mkwmp"));
+        assert_eq!(mods_in("[video]\nmods = mkwmp\n"), None, "only under [launcher]");
+
+        if std::env::var_os("MKW_MODS").is_some() {
+            return; // the environment would win over the files below
+        }
+        let d = std::env::temp_dir().join(format!("mkwmp_recomp_mod_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("mods/mkwmp/plugin")).unwrap();
+        assert_eq!(mod_dir(&d), None);
+        std::fs::write(d.join("mkw.ini"), "[launcher]\nmods = mkwmp\n").unwrap();
+        assert_eq!(mod_dir(&d), None, "enabled, but no plugin/mkwmp.dll");
+        std::fs::write(d.join("mods/mkwmp/plugin/mkwmp.dll"), b"mod").unwrap();
+        assert_eq!(mod_dir(&d), Some(d.join("mods/mkwmp")));
+        std::fs::write(d.join("mkw.ini"), "[launcher]\nmods = other\n").unwrap();
+        assert_eq!(mod_dir(&d), None, "installed but not enabled");
+        // 0.1.12+ "choose game folder": mods/ and the mods key live in the data dir.
+        std::fs::create_dir_all(d.join("data/mods/mkwmp/plugin")).unwrap();
+        std::fs::write(d.join("data/mods/mkwmp/plugin/mkwmp.dll"), b"mod").unwrap();
+        std::fs::write(d.join("mkw.ini"), "[launcher]\ngame_dir = \"data\"\nmods = mkwmp\n").unwrap();
+        assert_eq!(mod_dir(&d), None, "the data dir's mkw.ini decides");
+        std::fs::write(d.join("data/mkw.ini"), "[launcher]\nmods = mkwmp\n").unwrap();
+        assert_eq!(mod_dir(&d), Some(d.join("data/mods/mkwmp")));
+    }
+
+    #[test]
+    fn a_game_set_up_by_another_runtime_needs_a_rebuild() {
+        let s15 = Recomp::Supported("0.1.15");
+        assert!(rebuild_problem(&s15, Some("c0dd6cf12c07c23a")).unwrap().contains("open mkw-recomp once"));
+        assert_eq!(rebuild_problem(&s15, Some("c9bbcb75a9ac9a49")), None);
+        assert_eq!(rebuild_problem(&Recomp::Supported("0.1.13"), Some("c0dd6cf12c07c23a")), None);
+        assert!(rebuild_problem(&Recomp::Supported("0.1.13"), Some("c9bbcb75a9ac9a49")).is_some());
+        assert_eq!(rebuild_problem(&s15, None), None, "unknown is allowed");
+        assert_eq!(rebuild_problem(&Recomp::Supported("0.1.10"), Some("anything")), None, "no id known for 0.1.10");
+        assert_eq!(rebuild_problem(&Recomp::Unknown, Some("c0dd6cf12c07c23a")), None);
+        assert_eq!(id_word("C9BBCB75A9AC9A49\n").as_deref(), Some("c9bbcb75a9ac9a49"));
+        assert_eq!(id_word("not an id at all"), None);
+        assert_eq!(id_word("c9bbcb75a9ac9a49 1.8.0 windows").as_deref(), Some("c9bbcb75a9ac9a49"));
+        assert_eq!(game_id_in(r#"{"done":{"generate":"c9bbcb75a9ac9a49 1.8.0 ab"}}"#).as_deref(), Some("c9bbcb75a9ac9a49"));
+
+        let d = std::env::temp_dir().join(format!("mkwmp_recomp_id_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        assert_eq!(game_id(&d), None);
+        std::fs::write(d.join("setup-state.json"), r#"{"done":{"generate":"c0dd6cf12c07c23a 1.8.0 ab"}}"#).unwrap();
+        assert_eq!(game_id(&d).as_deref(), Some("c0dd6cf12c07c23a"));
+        std::fs::write(d.join("mkwgame.id"), "c9bbcb75a9ac9a49\n").unwrap();
+        assert_eq!(game_id(&d).as_deref(), Some("c9bbcb75a9ac9a49"), "mkwgame.id first");
     }
 
     #[test]

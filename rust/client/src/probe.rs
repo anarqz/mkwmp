@@ -105,6 +105,9 @@ pub enum PatchState {
     HostMissing,
     /// A local probe build kept by [`DEV_PROBE_ENV`]`=1` (live tests).
     Dev,
+    /// mkw-recomp loads the MKWMP mod (`mods/mkwmp/`), which carries the
+    /// game patch: the launcher keeps no winmm.dll of its own there.
+    Mod,
 }
 
 /// `MKWMP_DEV_PROBE=1`: keep the game folder's own probe (a local build):
@@ -125,7 +128,7 @@ pub struct PatchReport {
 impl PatchReport {
     /// PLAY may start the game.
     pub fn ok(&self) -> bool {
-        matches!(self.state, PatchState::Installed | PatchState::Unverified | PatchState::Dev)
+        matches!(self.state, PatchState::Installed | PatchState::Unverified | PatchState::Dev | PatchState::Mod)
     }
 
     pub fn summary(&self, version: &str) -> String {
@@ -137,6 +140,7 @@ impl PatchReport {
             PatchState::Damaged => "Modified or damaged: press INSTALL to repair".into(),
             PatchState::HostMissing => "winmm_host.dll missing: press INSTALL".into(),
             PatchState::Dev => format!("Dev probe kept ({DEV_PROBE_ENV}=1)"),
+            PatchState::Mod => "MKWMP runs as a mod in this game".into(),
         }
     }
 }
@@ -334,6 +338,45 @@ pub fn uninstall(game: &Path, running: bool) -> Result<Vec<String>, String> {
         done.push("left winmm.dll alone (not mkwmp's)".into());
     }
     for f in OURS {
+        rm(f, &mut done)?;
+    }
+    Ok(done)
+}
+
+/// The MKWMP mod is loaded: take out the launcher's game patch beside mkw.exe
+/// so the two never run together. Only our winmm.dll goes (a winmm.dll.bak we
+/// saved is put back), with the files that serve it: the voice library and
+/// winmm_host.dll. mkwmp.toml, the lobby CA and mkwmp.log stay: the mod reads
+/// the launcher's mkwmp.toml. Nothing to do: an empty list.
+pub fn remove_for_mod(game: &Path, running: bool) -> Result<Vec<String>, String> {
+    let ours = probe_is_ours(game) || std::fs::read(game.join(PROBE)).ok().as_deref().is_some_and(looks_like_probe);
+    let extra = [VOICE, HOST, ".mkwmp-probe", "winmm.dll.mkwmp-new", "mkwmp-voice.dll.mkwmp-new"];
+    if !ours && !extra.iter().any(|f| game.join(f).exists()) {
+        return Ok(vec![]);
+    }
+    if running {
+        return Err("close the game first: MKWMP runs as a mod, and the launcher's game patch must go".into());
+    }
+    let mut done = vec![];
+    let rm = |name: &str, done: &mut Vec<String>| -> Result<(), String> {
+        match std::fs::remove_file(game.join(name)) {
+            Ok(()) => {
+                done.push(format!("removed {name}"));
+                Ok(())
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("remove {}: {e}", game.join(name).display())),
+        }
+    };
+    if ours {
+        rm(PROBE, &mut done)?;
+        let bak = game.join("winmm.dll.bak");
+        if bak.exists() {
+            std::fs::rename(&bak, game.join(PROBE)).map_err(|e| format!("restore {}: {e}", bak.display()))?;
+            done.push("put your previous winmm.dll back".into());
+        }
+    }
+    for f in extra {
         rm(f, &mut done)?;
     }
     Ok(done)
@@ -544,6 +587,26 @@ mod tests {
         assert_eq!(std::fs::read(d.join(PROBE)).unwrap(), b"not ours");
         assert!(!d.join(VOICE).exists());
         assert_eq!(check(&d, None).state, PatchState::Damaged);
+    }
+
+    #[test]
+    fn the_mod_takes_the_launchers_patch_out() {
+        let d = dir("mod");
+        std::fs::write(d.join("mkw.exe"), b"exe").unwrap();
+        assert_eq!(remove_for_mod(&d, true).unwrap(), Vec::<String>::new(), "nothing of ours: nothing to do");
+        std::fs::write(d.join(PROBE), b"someone else's dll").unwrap();
+        install_probe(&d, b"probe v1", false).unwrap();
+        install_file(&d, VOICE, b"voice", false).unwrap();
+        std::fs::write(d.join(HOST), fake_winmm()).unwrap();
+        std::fs::write(d.join("mkwmp.toml"), b"server").unwrap();
+        assert!(remove_for_mod(&d, true).is_err(), "never while the game runs");
+        let done = remove_for_mod(&d, false).unwrap();
+        assert!(done.iter().any(|l| l.contains("previous winmm.dll back")), "{done:?}");
+        assert_eq!(std::fs::read(d.join(PROBE)).unwrap(), b"someone else's dll");
+        assert!(!d.join(VOICE).exists() && !d.join(HOST).exists() && !d.join(".mkwmp-probe").exists());
+        assert!(d.join("mkwmp.toml").exists(), "the mod reads the launcher's mkwmp.toml");
+        assert_eq!(remove_for_mod(&d, false).unwrap(), Vec::<String>::new());
+        assert!(PatchReport { state: PatchState::Mod, files: vec![] }.ok());
     }
 
     #[test]

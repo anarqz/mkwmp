@@ -159,7 +159,15 @@ impl Core {
         if let Ok(b) = &b {
             *self.expected.lock().unwrap_or_else(|p| p.into_inner()) = Some(b.expected.clone());
         }
-        let r = if probe::dev_probe() && !force {
+        let r = if let Some(dir) = crate::recomp::active_mod(&cfg.game).filter(|_| (cfg.patch || force) && !probe::dev_probe()) {
+            // The mod wins: no launcher game patch beside mkw.exe.
+            note(format!("game patch: MKWMP runs as a mod ({})", dir.display()));
+            probe::remove_for_mod(&cfg.game, probe::game_running()).map(|done| {
+                for d in done {
+                    note(format!("game patch: {d} (the mod carries it)"));
+                }
+            })
+        } else if probe::dev_probe() && !force {
             note(format!("game patch: {}=1, keeping the game folder's winmm.dll", probe::DEV_PROBE_ENV));
             Ok(())
         } else if cfg.patch || force {
@@ -180,6 +188,13 @@ impl Core {
     /// launcher's signed hashes.
     pub fn patch_report(&self) -> probe::PatchReport {
         let game = self.ui().cfg.game;
+        if let Some(dir) = crate::recomp::active_mod(&game).filter(|_| !probe::dev_probe()) {
+            let mut files = vec![format!("mods/{}: enabled ({})", crate::recomp::MOD, dir.display())];
+            if game.join(".mkwmp-probe").exists() || game.join(probe::VOICE).exists() {
+                files.push("the launcher's game patch is still beside mkw.exe: close the game, it goes on the next PLAY".into());
+            }
+            return probe::PatchReport { state: probe::PatchState::Mod, files };
+        }
         let expected = self.expected.lock().unwrap_or_else(|p| p.into_inner()).clone();
         probe::check(&game, expected.as_ref())
     }

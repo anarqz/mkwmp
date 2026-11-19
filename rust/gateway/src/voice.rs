@@ -666,6 +666,7 @@ impl<R: Rooms> Relay<R> {
                 || !l.friends.contains(&uid)
                 || !l.video_want.contains(&account)
                 || l.mutes.contains(&account)
+                || s.mutes.contains(&l.account)
             {
                 continue;
             }
