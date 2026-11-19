@@ -46,7 +46,7 @@ enum {
     CAMERA_ROOM_SIZE = 0xf0,     // nn::chat::RoomInfo as the game reads it
     CAMERA_ROOM_MEMBERS = 11,    // remote members that fit; the game does not check the count
     CAMERA_MEMBERS_MAX = 32,
-    CAMERA_OVERRIDES = 20,
+    CAMERA_OVERRIDES = 22,
     CAMERA_API_VERSION = 3,      // the plugin API version with native_image_create / native_image_touch
 };
 #define CAMERA_DEVICE_TEST "test"   // camera_device: the test pattern instead of a capture device
