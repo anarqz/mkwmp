@@ -12,9 +12,11 @@ What it prints, for OLD and NEW side by side:
    4. PE exports (mkwgame.dll imports rt_dispatch from mkw.exe: npln.c install_profile_dispatch_trace)
    5. the .ovr table (what npln.c stock_handler reads): names added/removed, and for each npln.c kRegs name
       whether it has a stock handler (that decides which probe overrides are gated)
-   6. the detoured functions' first bytes against keypad.c's k*Sig arrays and *_STEAL counts
+   6. the detoured functions' first bytes against keypad_sigs.h: each function has a k*Prologues table of accepted
+      prologues (a k*Sig array and its *_STEAL count per mkw-recomp release that changed it); one must match
    7. rt_dispatch's first bytes (mov rax,[rcx+0x138]: Cpu.thread at 312, recomp.h)
-   8. spans of g_host / added[] (distance to the next symbol of the section)
+   8. the span of g_host (distance to the next symbol of the section) and the layout of hostfn.c's added[]: the
+      fixed array of RUNTIME_OVERRIDE_MAX entries (up to 0.1.13) or the pointer grown with realloc (from 0.1.15)
    9. WINMM imports of mkw.exe and SDL3.dll against native/probe/src/winmm.def; the SDL3 exports the probe
       resolves with GetProcAddress
   10. RT_GAME_ID (the 16-hex id of the game code mkw.exe accepts; a change means mkwgame.dll must be rebuilt
@@ -57,6 +59,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve()
 DEFAULT_REPO = HERE.parents[2]
+
+# coff.c kNames entries the probe only tests for presence: absent from older releases by design
+VERSION_MARKERS = {"plugins_load": "a runtime with the native plugin loader, 0.1.15 on: dllmain.c's mod-wins rule"}
 
 FAILS: list[str] = []
 WARNS: list[str] = []
@@ -326,19 +331,32 @@ class Probe:
         if not self.names:
             raise ValueError("could not parse kNames from coff.c")
 
+        # keypad.c detours three functions; keypad_sigs.h lists, per function, every accepted prologue (one per
+        # mkw-recomp release that changed it) as {k*Sig, sizeof k*Sig, *_STEAL} rows of a k*Prologues table
         keypad = strip_comments(rd("keypad.c"))
+        sigs_h = strip_comments(rd("keypad_sigs.h")) if (src / "keypad_sigs.h").is_file() else keypad
         self.sigs = {}  # sig array name -> bytes
-        for m in re.finditer(r"static const uint8_t (k\w+Sig)\[\]\s*=\s*\{([^}]*)\}", keypad):
+        for m in re.finditer(r"static const uint8_t (k\w+Sig\w*)\[\]\s*=\s*\{([^}]*)\}", sigs_h):
             self.sigs[m.group(1)] = bytes(int(x, 16) for x in re.findall(r"0x([0-9A-Fa-f]{2})", m.group(2)))
-        steal = dict(re.findall(r"\b(\w+_STEAL)\s*=\s*(\d+)", keypad))
+        steal = dict(re.findall(r"\b(\w+_STEAL)\s*=\s*(\d+)", sigs_h))
+        tables = {}  # table name -> [(sig name, sig bytes, steal)]
+        for m in re.finditer(r"static const DetourPrologue (k\w+Prologues)\[\]\s*=\s*\{(.*?)\};", sigs_h, flags=re.S):
+            rows = re.findall(r"\{\s*(k\w+)\s*,\s*sizeof\s*\(?\s*(k\w+)\s*\)?\s*,\s*(\w+_STEAL)\s*\}", m.group(2))
+            tables[m.group(1)] = [(a, self.sigs[a], int(steal[st])) for a, b, st in rows
+                                  if a == b and a in self.sigs and st in steal]
+            if len(tables[m.group(1)]) != len(rows) or not rows:
+                raise ValueError(f"could not parse {m.group(1)} in keypad_sigs.h")
         var_sym = dict(re.findall(r'void \*(\w+)\s*=\s*coff_symbol\("([^"]+)"\)', keypad))
-        self.detours = []  # (symbol, sig name, sig bytes, steal)
-        for m in re.finditer(r"detour_install\(\s*(\w+)\s*,\s*(k\w+Sig)\s*,\s*(\w+_STEAL)", keypad):
-            var, sig, st = m.groups()
-            if var in var_sym and sig in self.sigs and st in steal:
-                self.detours.append((var_sym[var], sig, self.sigs[sig], int(steal[st])))
-        if not self.detours:
-            raise ValueError("could not parse the detours from keypad.c")
+        # const DetourPrologue *pe = detour_match(entry, kEntryPrologues, ...);  ->  pe: (entry, kEntryPrologues)
+        var_table = {pv: (fv, tb) for pv, fv, tb in
+                     re.findall(r"\*(\w+)\s*=\s*detour_match\(\s*(\w+)\s*,\s*(k\w+Prologues)", keypad)}
+        self.detours = []  # (symbol, [(sig name, sig bytes, steal)]): any one prologue of the list may match
+        for m in re.finditer(r"\binstall\(\s*(\w+)\s*,\s*(\w+)\s*,", keypad):
+            fn_var, p_var = m.groups()
+            if p_var in var_table and var_table[p_var][0] == fn_var and fn_var in var_sym:
+                self.detours.append((var_sym[fn_var], tables.get(var_table[p_var][1], [])))
+        if not self.detours or any(not rows for _s, rows in self.detours):
+            raise ValueError("could not parse the detours from keypad.c / keypad_sigs.h")
 
         npln = strip_comments(rd("npln.c"))
         self.regs = re.findall(r'\{\s*"([^"]+)"\s*,', c_block(npln, r"kRegs\s*\[\s*\]\s*="))
@@ -561,7 +579,9 @@ def main() -> int:
         tag = "" if in_probe else " (not in kNames)"
         out(f"  {name[:58]:<58} {ra:>10} {rb:>10}  {cls}  {cmpres}{tag}")
         if in_probe:
-            if not b:
+            if not b and name in VERSION_MARKERS:
+                note(f"{name}: absent from NEW (it only marks {VERSION_MARKERS[name]}; coff.c does not need it)")
+            elif not b:
                 fail(f"{name}: absent from NEW's symbol table" + (" (required: the probe stays off)" if required else ""))
             elif len(b) > 1:
                 fail(f"{name}: {len(b)} symbols of that name in NEW; coff.c takes the first one in table order")
@@ -634,34 +654,45 @@ def main() -> int:
         out(f"  names written to {args.ovr_dump}")
 
     # 6 ---------------------------------------------------------------------------------------------------------
-    out("\n[6] detours (keypad.c signatures)")
-    for sym, signame, sig, steal in probe.detours:
+    out("\n[6] detours (keypad.c, signatures of keypad_sigs.h)")
+    for sym, rows in probe.detours:
+        accepted = ", ".join(f"{nm}({len(sg)}, steal {st})" for nm, sg, st in rows)
         for tag, pe in (("old", o), ("new", n)):
             f = pe.find(sym)
             if len(f) != 1:
                 (fail if tag == "new" else note)(f"{sym}: {len(f)} symbols in {tag.upper()}")
                 continue
             code = pe.read(f[0][1], 32)
-            match = code[: len(sig)] == sig
-            out(f"  {tag}  {sym} @ {f[0][1]:#x}: {hexs(code[: len(sig)])}  {signame}({len(sig)}, steal {steal}) "
-                f"{'match' if match else 'MISMATCH'}")
-            if tag == "new":
-                if not match:
-                    fail(f"{sym}: first bytes differ from {signame} ({hexs(sig)}): keypad.c will not install its hooks")
-                ins = disasm(cs, code, f[0][1], 8)
-                if ins:
-                    out("       " + "; ".join(t for _s, t, _d in ins[:5]))
-                    total = 0
-                    for size, text, dep in ins:
-                        if total >= steal:
-                            break
-                        if dep:
-                            fail(f"{sym}: the stolen instruction '{text}' is position-dependent")
-                        total += size
-                    if total != steal:
-                        fail(f"{sym}: {steal} stolen bytes do not end on an instruction boundary ({total})")
-                    elif match:
-                        ok(f"{sym}: {steal} stolen bytes are whole position-independent instructions")
+            # as detour_match: the first accepted prologue the function starts with
+            hit = next(((nm, sg, st) for nm, sg, st in rows if code[: len(sg)] == sg), None)
+            shown = len(hit[1]) if hit else max(len(sg) for _n, sg, _s in rows)
+            out(f"  {tag}  {sym} @ {f[0][1]:#x}: {hexs(code[:shown])}  "
+                + (f"{hit[0]}({len(hit[1])}, steal {hit[2]}) match" if hit else f"MISMATCH (accepted: {accepted})"))
+            if not hit:
+                if tag == "new":
+                    fail(f"{sym}: first bytes match none of {accepted}: keypad.c will not install its hooks")
+                else:
+                    note(f"{sym}: OLD matches none of the accepted prologues either")
+                continue
+            # the stolen bytes of the matching prologue, in this very build
+            signame, sig, steal = hit
+            ins = disasm(cs, code, f[0][1], 8)
+            if ins:
+                if tag == "new":
+                    out("       " + "; ".join(t for _s, t, _d in ins[:6]))
+                total, bad = 0, False
+                for size, text, dep in ins:
+                    if total >= steal:
+                        break
+                    if dep:
+                        bad = True
+                        fail(f"{sym} ({tag.upper()}): the stolen instruction '{text}' is position-dependent")
+                    total += size
+                if total != steal:
+                    fail(f"{sym} ({tag.upper()}): {steal} stolen bytes of {signame} do not end on an instruction "
+                         f"boundary ({total})")
+                elif not bad and tag == "new":
+                    ok(f"{sym}: {signame}, {steal} stolen bytes are whole position-independent instructions")
     for nm in probe.names:
         if "ImGui" in nm or "ImDrawList" in nm:
             if len(n.find(nm)) != 1:
@@ -685,8 +716,8 @@ def main() -> int:
                      "in runtime/cpu/cpu.h against recomp.h")
 
     # 8 ---------------------------------------------------------------------------------------------------------
-    out("\n[8] table spans (distance to the next symbol of the section)")
-    expect = {"g_host": probe.host_cap * 16, "added": probe.override_max * 16}
+    out("\n[8] g_host span and hostfn.c added[] layout")
+    expect = {"g_host": probe.host_cap * 16}
     for name, want_span in expect.items():
         a, b = o.find(name), n.find(name)
         sa = [o.span(s[1]) for s in a]
@@ -705,6 +736,55 @@ def main() -> int:
             fail(f"{name}: {len(b)} symbols of that name")
         else:
             ok(f"{name}: {want_span:#x}")
+
+    # hostfn.c's table of added overrides (hostfn_add_override: what g_rt.override calls). Two layouts are fine:
+    #   up to 0.1.13   static RtHostEntry added[MAX_ADDED];   a fixed array, 16 bytes an entry: more is fatal, so
+    #                  the probe keeps to RUNTIME_OVERRIDE_MAX (npln.c) and the span must be exactly that many
+    #   from 0.1.15    static RtHostEntry *added; static int nadded, cap_added;   grown with realloc: no limit
+    # Several files have a static `added`; hostfn.c's is the one beside `nadded` (and `cap_added` when dynamic).
+    def added_layout(pe: PE):
+        """('array', entries) | ('dynamic', None) | (None, why) for hostfn.c's added[]."""
+        cands = pe.find("added")
+        if not cands:
+            return None, "no symbol named added"
+        near = lambda nm, rva: any(s[2] == ".data" and abs(s[1] - rva) <= 0x20 for s in pe.find(nm))  # noqa: E731
+        seen = []
+        for s in cands:
+            span = pe.span(s[1])
+            seen.append(f"{span:#x}" if span is not None else "?")
+            if span == 8 and near("nadded", s[1]) and near("cap_added", s[1]):
+                return "dynamic", None
+            if span and span >= 0x100 and span % 16 == 0 and near("nadded", s[1]) and not pe.find("cap_added"):
+                return "array", span // 16
+        return None, f"spans {'/'.join(seen)}, no nadded/cap_added neighbour that fits either layout"
+
+    for tag, pe in (("old", o), ("new", n)):
+        kind, info = added_layout(pe)
+        desc = (f"fixed array of {info} entries" if kind == "array"
+                else "pointer + nadded + cap_added (grown with realloc)" if kind == "dynamic" else f"unknown: {info}")
+        out(f"  added      {tag}  {desc}")
+        if tag != "new":
+            continue
+        fn = pe.find("hostfn_add_override")
+        body = pe.read(fn[0][1], 0xA0) if len(fn) == 1 else b""
+        texts = [t for _s, t, _d in disasm(cs, body, fn[0][1] if fn else 0, 40)]
+        if kind == "array":
+            if info < probe.override_max:
+                fail(f"added[]: {info} entries, the probe registers up to {probe.override_max} "
+                     "(npln.c RUNTIME_OVERRIDE_MAX): hostfn_add_override would end the process")
+            elif info > probe.override_max:
+                note(f"added[]: {info} entries, more than the probe's budget of {probe.override_max}")
+                ok("added[]: the probe's override budget fits")
+            else:
+                ok(f"added[]: {info} entries = npln.c RUNTIME_OVERRIDE_MAX")
+        elif kind == "dynamic":
+            if texts and any(re.search(r"cmp \w+, 0x40$", t) for t in texts):
+                warn("added is a pointer, but hostfn_add_override still compares a count with 0x40: read hostfn.c")
+            else:
+                ok(f"added: dynamic, no fixed limit (the probe's budget of {probe.override_max} is for the older "
+                   "runtimes); hostfn_override searches it newest first, so a later registration of a name wins")
+        else:
+            fail(f"added: {info}: hostfn.c's override table has a layout this check does not know")
 
     # 9 ---------------------------------------------------------------------------------------------------------
     out("\n[9] WINMM imports against winmm.def; SDL3 exports the probe resolves")

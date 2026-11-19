@@ -1810,10 +1810,14 @@ static const Reg kRegs[] = {
     {"__errno_location", ov_errno_location},
     {"nnsocketGetAddrInfo", ov_sock_getaddrinfo},
 };
-// The runtime keeps overrides in a fixed table of 64: its hostfn_add_override ends the
+// Up to mkw-recomp 0.1.13 the runtime keeps overrides in a fixed table of 64: its hostfn_add_override ends the
 // process past that ("hostfn_add_override: more than 64"; cmp rax, 0x40 in mkw.exe 1.0.8 and
-// 0.1.10). Every hostfn_add_override call of npln_register counts: kRegs and the core-mask pair,
-// and each kRegs entry needs its own gate.
+// 0.1.10 - 0.1.13). Every hostfn_add_override call of npln_register counts: kRegs and the core-mask pair,
+// and each kRegs entry needs its own gate. From 0.1.15 the table grows with realloc (no limit; 64 entries are its
+// first allocation) and is searched newest first, so a native plugin's override of a name, added after ours, wins.
+// The budget stays 64 while 0.1.10 - 0.1.13 are supported: one probe binary serves them all.
+// Unchanged in 0.1.15: an override added once the game is loaded is still fatal ("after ldr_load"), hence the
+// TOO LATE check in npln_register.
 // The table is full: 62 kRegs entries + the core-mask pair. A new override needs the slot of an old one (game
 // 1.8.0's GetCurrentIpConfigInfo(InAddr *) took FreeAddrInfo(AddrInfo *)'s). The SwitchToFiber / InitializeFiber
 // workaround for runtime 1.0.8 (research/docs/FINDINGS.md) was removed: every supported runtime fixed it.
