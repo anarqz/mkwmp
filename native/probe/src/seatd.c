@@ -155,6 +155,21 @@ static void first_notice(const SeatApiFriends *now) {
     }
 }
 
+// A call with name and PIN answered 404 PROFILE_NOT_FOUND: the server purged the profile (30 days unused) and the
+// player gets it back with the PIN saved in the mod's settings, as the launcher's presence_token() does. 1: restored,
+// call again; 0: *r says why not (409 NAME_REGISTERED: someone else has the name now).
+static int restored(SeatApiResult *r) {
+    if (r->status != 404 || strcmp(r->code, "PROFILE_NOT_FOUND")) return 0;
+    SeatApiResult q = seatapi_restore(C.server, C.name, C.pin);
+    if (q.status == 201) {
+        mkwmp_log("seat: profile %s was purged by the server: restored with the saved PIN", C.name);
+        return 1;
+    }
+    mkwmp_log("seat: restoring profile %s: %d %s %s", C.name, q.status, q.code, q.message);
+    if (q.status == 409 || q.status == 403 || q.status == 400) *r = q;
+    return 0;
+}
+
 static void watcher(void *unused) {
     (void)unused;
     static SeatApiFriends now, was;
@@ -163,6 +178,7 @@ static void watcher(void *unused) {
     for (;;) {
         if (!token[0]) {
             SeatApiResult r = seatapi_presence(C.server, C.name, C.pin, token, sizeof token);
+            if (!token[0] && restored(&r)) r = seatapi_presence(C.server, C.name, C.pin, token, sizeof token);
             if (!token[0]) {
                 mkwmp_log("friends: sign-in: %d %s", r.status, r.message);
                 plat_sleep_ms((uint32_t)(r.retry_after > 0 ? r.retry_after : backoff) * 1000);
@@ -251,6 +267,7 @@ static int refused(const SeatApiResult *r, char *buf, size_t cap, const char **b
     const char *why = !strcmp(r->code, "PIN_WRONG")           ? "Wrong PIN: open Mods > MKWMP > Options and enter it again"
                       : !strcmp(r->code, "PROFILE_NOT_FOUND") ? "This name is not registered: register it in Mods > MKWMP > Options"
                       : !strcmp(r->code, "NAME_TAKEN")        ? "This name is already online (the MKWMP launcher, or another PC)"
+                      : !strcmp(r->code, "NAME_REGISTERED")   ? "Your name expired and someone else took it: register another in Mods > MKWMP > Options"
                                                               : r->message;
     mkwmp_log("seat: refused: %s (%s)", r->code, r->message);
     return reply(buf, cap, body, 409, "{\"state\":\"refused\",\"message\":\"%s\"}", clean(why));
@@ -271,13 +288,15 @@ static int seat(char *buf, size_t cap, const char **body) {
         g_sid[0] = g_skey[0] = 0;
     }
     r = seatapi_join(C.server, C.name, C.pin, &v);
+    if (restored(&r)) r = seatapi_join(C.server, C.name, C.pin, &v);
     if (r.status == 201 || r.status == 200) {
         snprintf(g_sid, sizeof g_sid, "%s", v.session_id);
         snprintf(g_skey, sizeof g_skey, "%s", v.session_key);
         mkwmp_log("seat: joined as %s: %s%s", C.name, v.state, v.ticket[0] ? " with a ticket" : "");
         return view_reply(&v, buf, cap, body);
     }
-    if (r.status == 401 || r.status == 404 || (r.status == 409 && !strcmp(r.code, "NAME_TAKEN")) || r.status == 400)
+    if (r.status == 401 || r.status == 403 || r.status == 404 || r.status == 400 ||
+        (r.status == 409 && (!strcmp(r.code, "NAME_TAKEN") || !strcmp(r.code, "NAME_REGISTERED"))))
         return refused(&r, buf, cap, body);
     mkwmp_log("seat: join: %d %s %s (retry after %d s)", r.status, r.code, r.message, r.retry_after);
     return reply(buf, cap, body, 503, "{\"state\":\"unavailable\",\"message\":\"%s\"}", clean(r.message));
@@ -293,6 +312,7 @@ static int friends(char *buf, size_t cap, const char **body) {
     if (!have) {
         char token[160] = "";
         SeatApiResult r = seatapi_presence(C.server, C.name, C.pin, token, sizeof token);
+        if (!token[0] && restored(&r)) r = seatapi_presence(C.server, C.name, C.pin, token, sizeof token);
         if (token[0]) r = seatapi_friends(C.server, token, &f);
         if (r.status != 200) return reply(buf, cap, body, 503, "{\"state\":\"unavailable\",\"message\":\"%s\"}", clean(r.message));
         if (!C.watch_friends) seatapi_presence_end(C.server, token);

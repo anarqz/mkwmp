@@ -100,7 +100,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self.error(403, "NAME_RESERVED")
                 if canon(name):
                     return self.error(409, "NAME_REGISTERED")
-                pin = "%06d" % random.randrange(10**6)
+                pin = b.get("pin")   # 1.2.0: a purged profile restored with the PIN its player has
+                if pin is not None and not re.match(r"^[0-9]{6}$", str(pin)):
+                    return self.error(400, "NAME_INVALID")
+                pin = pin or "%06d" % random.randrange(10**6)
                 PROFILES[name] = pin
                 return self.send(201, {"name": name, "pin": pin})
             if p in ("/seat/v1/sessions", "/seat/v1/presence"):

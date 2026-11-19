@@ -39,6 +39,10 @@ int seatapi_json_span(const char *body, const char *key, const char **begin, con
 // ---- profiles
 // POST /seat/v1/profiles {name}: registers name; its PIN (shown once) into pin. 201 on success.
 SeatApiResult seatapi_register(const char *base, const char *name, char pin[SEATAPI_PIN_LEN + 1]);
+// POST /seat/v1/profiles {name, pin}: the profile again, with the PIN the player already has, after the server purged
+// it (unused for 30 days: a call with name and PIN answers 404 PROFILE_NOT_FOUND). 201 restored; 409 NAME_REGISTERED:
+// someone else took the name meanwhile.
+SeatApiResult seatapi_restore(const char *base, const char *name, const char *pin);
 
 // ---- status: the lobby the seats lead to
 typedef struct {
