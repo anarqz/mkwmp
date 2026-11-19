@@ -157,11 +157,16 @@ plugin: it then uses `mkwmp.toml` and the launcher only.
     elsewhere (checked by a presence sign-in);
   - voice on or off;
   - the friends list: incoming requests (Accept / Decline), friends with their state (Remove), requests sent (Cancel),
-    and a request by name.
+    and a request by name;
+  - privacy (seat server 1.2.0): the policy's address, and Delete my account after a confirmation
+    (`DELETE /seat/v1/profiles/{name}`; the PIN is forgotten). Only in the start screen: in the game the seat client
+    holds the account and would restore it with the saved PIN;
+  - Report voice abuse: who, the reason (the server's six) and details (up to 255 bytes, the page's input limit;
+    the server keeps 500). An open report shows as waiting, with Withdraw. One at a time, as the server allows.
 
   Network calls run on a worker thread of the page.
 - Settings (`<player>/mod-settings/mkwmp.ini`): `consent18`, `server`, `pin` + `pin_name` (the profile name it is
-  for), `voice`.
+  for), `voice`, and the report form's `report_name`, `report_reason`, `report_details`.
 - In the game, `backend_plugin.c` reads them. With consent and a PIN for this profile's name, and no `mkwmp.toml`
   naming a launcher, the config becomes direct (`mkwmp_config_use_direct`), and `launcher.c` hands `/local/v1/...`
   to `seatd.c`, which calls the seat server (`seatapi.c`) and answers as the launcher does. So `seat.c`, `friends.c`
@@ -179,8 +184,9 @@ plugin: it then uses `mkwmp.toml` and the launcher only.
   - `test_plugin.c` drives the page through a fake `MkwPage`: the consent gate, sign-up, a friend request, a taken
     name with a wrong and then the right PIN, a profile name the server refuses, and a version 2 init signing in by
     itself.
+    Also a report filed, shown and withdrawn (oneself greyed out), and the account deleted after its confirmation.
   - `test_seatd.c` covers the in-game local API: refusals, ticket, lobby and CA, heartbeat, rejoin, friends, voice
-    and mutes.
+    and mutes, and a profile the server purged (30 days unused) restored with the saved PIN.
 
 In the game, also:
 - The seat is taken when the game loads (setting `seat_mode`: `start`, the default, as the launcher's; `online`: at
@@ -201,7 +207,7 @@ In the game, also:
   In English or Brazilian Portuguese.
 - Two tabs in mkw-recomp's in-game settings (the fork's API 2 `settings_tab`):
   - **Voice chat** (`voicetab.c`): on/off, the microphone and speakers the engine reports, their volumes, and the
-    muted players with Unmute. Changes apply at voice.c's next poll; the settings are `voice_input`, `voice_output`,
+    muted players with Unmute and Report (fills the MKWMP tab's report form with that gamertag). Changes apply at voice.c's next poll; the settings are `voice_input`, `voice_output`,
     `voice_in_gain` and `voice_out_gain`.
   - **MKWMP**: the options page, in two columns (the settings on the left; the server's seats and the friends on the
     right).
