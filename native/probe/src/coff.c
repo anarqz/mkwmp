@@ -37,8 +37,11 @@ static const char *const kNames[] = {
     "_ZN5ImGui12CalcTextSizeEPKcS1_bf",
     "_ZN5ImGui11GetFontSizeEv",
     "_ZN5ImGui5GetIOEv",
+    // optional, last, never called: its presence says this mkw.exe loads native plugins (runtime/plugin/plugin.c,
+    // mkw-recomp 0.1.15 on), which dllmain.c needs for the "mod wins" rule (modmode.h). Absent before: not logged.
+    "plugins_load",
 };
-enum { N_RT = 6, N_SYMS = sizeof(kNames) / sizeof(kNames[0]) };
+enum { N_RT = 6, N_SYMS = sizeof(kNames) / sizeof(kNames[0]), K_PLUGINS_LOAD = N_SYMS - 1 };
 static void *g_slots[N_SYMS];
 
 // Any resolved name of kNames (NULL if absent or not resolved yet).
@@ -263,7 +266,7 @@ int coff_resolve_runtime(void) {
         for (int k = 0; k < N_RT; k++) req += slots[k] != NULL;
         ok = (req == N_RT);
         for (int k = 0; k < N_SYMS; k++)
-            if (!slots[k]) log_line2("coff: unresolved symbol:", kNames[k]);
+            if (!slots[k] && k != K_PLUGINS_LOAD) log_line2("coff: unresolved symbol:", kNames[k]);
     } while (0);
 
     HeapFree(GetProcessHeap(), 0, d);
