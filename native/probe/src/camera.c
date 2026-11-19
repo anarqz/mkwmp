@@ -1,6 +1,8 @@
 #include "camera.h"
 
 #include "camlib.h"
+#include "gameaddrs.h"
+#include "guesthook.h"
 #include "log.h"
 #include "plat.h"
 #include "rtapi.h"
@@ -36,6 +38,19 @@ void camera_settings_read(int (*setting_get)(const char *key, char *out, size_t 
 }
 
 int camera_chatting(const CameraSettings *s, int online) { return online && s->consent && (s->camera || s->view); }
+
+int camera_hold(CameraHold *h, int online, uint64_t now) {
+    if (!h->at) return 0;
+    if (online) {
+        h->was_online = 1;
+        return 1;
+    }
+    if (h->was_online || now - h->at > CAMERA_HOLD_MS) {   // left online play, or never got there
+        h->at = 0, h->was_online = 0;
+        return 0;
+    }
+    return 1;
+}
 
 int camera_room_encode(uint8_t out[CAMERA_ROOM_SIZE], uint64_t self, int self_camera, const CameraMember *members, int n) {
     memset(out, 0, CAMERA_ROOM_SIZE);
@@ -227,6 +242,9 @@ static uint32_t g_tick, g_capture_serial;
 static uint64_t g_pattern_at, g_capture_at;
 static char g_name[64];
 static int g_key_cleared;                  // ClearSharingKey calls (the next SetSharingKey is logged again)
+static CameraHold g_hold;                  // the chat held on for the game's camera prompt (camera_hold)
+static const struct game_addrs *g_setup;   // the build's row once the game's camera set-up is hooked (set once)
+static uint64_t g_setup_original;          // the update the hook stands in front of
 
 static void bump(Source *s) {
     if (!++s->serial) s->serial = 1;
@@ -243,6 +261,7 @@ enum {
     T_POLL = T_REQUEST + CAMERA_VIDEOS,
     T_WRITE = T_POLL + CAMERA_VIDEOS,
     T_FOREIGN = T_WRITE + CAMERA_VIDEOS, // the game's poll of a handle that is not ours (a camera's first one is zero)
+    T_SETUP,                             // the game's camera set-up node, every update the hook sees
     T_N,
 };
 typedef struct { uint32_t requests, unknown, polls, done, writes, refused; } TraceCount;
@@ -269,8 +288,9 @@ static int tr(int what) {
 //      kind 1 or 2, whose account is in T with "has one". The local player is entered by the scene update (0x25a090)
 //      and a remote one when its kart is made (0x11f734), which needs the sharing key set by then and the face
 //      rectangle among that player's parameters (hash 0xfe0f1639). A player sends that rectangle (0x1235c8) only with
-//      its own sharing key set and F's bit 11, which the game's camera set-up sequence alone sets (0x1d060e0,
-//      AIGlobalSeqVideoCameraSetup): a player who did not go through "use the camera?" has no face anywhere;
+//      its own sharing key set and F's bit 11, which is set when the player answers the game's "Use the camera?" prompt
+//      with Camera On (OnlineCameraSetup.module's AIGlobalSeqSetSequenceFlag2, flag 11 DisplayFaceIconMyself; see "the
+//      game's own camera set-up" below): a player who did not go through the prompt has no face anywhere;
 //   5. what it draws is the texture id of the shown image (V's +0x68), which the game got at boot by making its own
 //      texture over the memory pool of the native image's texture (0xd31e60, 0xaa1b0: no pool, no id).
 //   V = a *VideoType object - 0xa30 (the game's video object): +0xa00 current image (-1: none shown yet), +0xa04 next,
@@ -287,7 +307,7 @@ static int tr(int what) {
 //       +0x18 texture id, +0x30 has one } from +0x2e0, 0x38 apart; +0x290 the id the game puts everywhere first;
 //       +8 the players a face may be drawn for: 26 of { 16 bytes the face rectangle, +0x10 kind (0 the console's
 //       camera, 1 GameChat whole picture, 2 GameChat with a rectangle), +0x14 entered }, 0x18 apart.
-//   F = [main+0x37b3858] + 0x12c, flags: bit 11 the player set the GameChat camera up (0x1d060e0), bit 12 the camera
+//   F = [main+0x37b3858] + 0x12c, flags: bit 11 the player chose Camera On in the game's prompt, bit 12 the camera
 //       is wanted in this scene (0x1cb64f8); +0x120's bit 3 goes with bit 12 in the scene update (0x25a184).
 //   The inputs of mode 2: the u32 at [[main+0x37c9828]+0xd8]+8 (0xd956e0: must be 0) and the session number, the u64
 //       at [[main+0x37be190]+0x48]+0x170 (0x258f340: must not be 0; its decimal text is the sharing key).
@@ -474,6 +494,132 @@ static int local_picture(void) {
     return 1;
 }
 
+// ---- the game's own camera set-up ("Use the camera?"; research/docs/CAMERA-RE.md 9) --------------------------------
+// Choosing Online Play on the main menu runs OnlineCameraSetup.module before the lobby: its first node,
+// AIGlobalSeqCheckVideoCameraConnection (is_online 1), asks the console's camera service whether a camera with one of
+// four 640x480 formats is attached (main+0x2994fa0 -> main+0x25a680: request 29, slot 0xd8 of the object at
+// [main+0x378ecb8]; 0 = yes). "Invalid" ends the module: no prompt. "Valid" opens the game's dialog (Camera On /
+// Camera Off); Camera On, accepted only while IsChatting is 1, sets flag 11 of F (4. above) and, with two players on
+// the console, opens the face position page. The flag is dropped when the chat ends or the player returns to the
+// title screen. The runtime has no camera service: its stand-in (mkw-recomp patches.c host_camera_event, an object
+// followed by its own table) answers 0x7c4, "no camera", so the prompt never came.
+// The hook stands in front of that node's update and, when the node is the online one and the Camera tab has the
+// camera on, puts a game function that returns 0 in the stand-in's slot for the length of the call. Local play's
+// node (is_online 0, the console's own camera, which MKWMP does not feed) and every other asker keep "no camera".
+static void hook_camera_check(Cpu *c) {
+    const struct game_addrs *a = g_setup;
+    uint64_t node = c->x[0], input = peek64(node + a->cam_check_online);
+    int online = input && peek8(input) == 1, before = (int)(peek32(node + a->cam_check_result) >> 30);
+    plat_lock_shared(&g_lock);
+    int want = g_settings.consent && g_settings.camera;
+    plat_unlock_shared(&g_lock);
+    uint64_t service = peek64(a->cam_service), table = service ? peek64(service) : 0, old = 0;
+    uint64_t *slot = NULL;
+    int stand_in = service && table == service + 16;   // the runtime's: a real service object's table is the game's
+    if (online && want && stand_in) {
+        slot = (uint64_t *)(uintptr_t)(table + 8ull * a->cam_query_slot);
+        old = plat_mem_readable(slot) >= 8 ? *slot : 0;
+        if (!old || old == a->cam_ret0 || !plat_mem_write_u64(slot, a->cam_ret0)) slot = NULL;
+    }
+    guesthook_original(c, g_setup_original);
+    uint64_t ret = c->x[0];
+    if (slot) plat_mem_write_u64(slot, old);   // everybody else is still told there is no camera
+    int after = (int)(peek32(node + a->cam_check_result) >> 30), answered = after >= 2 && before < 2;
+    if (answered && after == 2 && slot) {
+        // the prompt is about to open: the game takes Camera On only while a chat runs, and the player is not online yet
+        plat_lock(&g_lock);
+        g_hold.at = plat_ms() | 1, g_hold.was_online = 0;
+        if (camera_chatting(&g_settings, 1)) g_chatting = 1;   // from the next IsChatting, not the thread's next pass
+        plat_unlock(&g_lock);
+    }
+    if (tr(T_SETUP))
+        mkwmp_log("camera: trace: set-up: the game's camera check ran (node %#llx, %s, state %d -> %d; the Camera tab %s; "
+                  "the camera service %#llx is %s; answer %s)", (unsigned long long)node, online ? "online" : "local play",
+                  before, after, want ? "has the camera on" : "has the camera off", (unsigned long long)service,
+                  stand_in ? "the runtime's stand-in" : "not the runtime's stand-in", slot ? "a camera is attached" : "left alone");
+    if (answered && online) {
+        if (after == 2)
+            mkwmp_log("camera: set-up: Online Play chosen: the game asked whether a camera is attached and was told yes; its "
+                      "\"Use the camera?\" prompt opens now (Camera On puts the face above the kart)%s", slot ? "" :
+                      " (not by MKWMP's answer)");
+        else
+            mkwmp_log("camera: set-up: Online Play chosen: the game asked whether a camera is attached and was told no (%s): "
+                      "no \"Use the camera?\" prompt, so no face above this player's kart, here or for the others",
+                      !want ? "the camera is off in the Camera tab, or the 18+ consent is missing" :
+                      !stand_in ? "the camera service is not the runtime's stand-in" : "the stand-in could not be changed");
+    }
+    c->x[0] = ret;
+}
+
+int camera_setup_install(const struct game_addrs *a) {
+    if (!g_installed) return 0;
+    if (g_setup) return 1;
+    char v[8] = "";
+    if (plat_getenv("MKWMP_CAMERA_SETUP", v, sizeof v) && !strcmp(v, "0")) {
+        mkwmp_log("camera: set-up: off (MKWMP_CAMERA_SETUP=0): the game will not ask \"Use the camera?\" and draws no face");
+        return 0;
+    }
+    if (!a || !a->cam_check_slot) {
+        mkwmp_log("camera: set-up: off: no addresses of the game's camera prompt for this build (the game will not ask "
+                  "\"Use the camera?\" and draws no face)");
+        return 0;
+    }
+    if (!game_guard_slot("camera set-up check", a->cam_check_slot, 0, a->cam_check_fn) ||
+        !game_guard_words("camera set-up check", a->cam_check_fn + a->cam_check_at, a->cam_check_words, 4) ||
+        !game_guard_words("camera set-up query", a->cam_query_at, a->cam_query_words, 3) ||
+        !game_guard_words("camera set-up answer", a->cam_ret0, a->cam_ret0_words, 2)) {
+        mkwmp_log("camera: set-up: off: guard mismatch, the game's camera check is NOT hooked (no \"Use the camera?\" prompt)");
+        return 0;
+    }
+    g_setup = a;   // before the hook goes in: it may run at once
+    if (!guesthook_vtable(a->cam_check_slot, 0, hook_camera_check, &g_setup_original)) {
+        g_setup = NULL;
+        mkwmp_log("camera: set-up: off: the game's camera check could not be hooked (no \"Use the camera?\" prompt)");
+        return 0;
+    }
+    mkwmp_log("camera: set-up: the game's camera check is hooked: with the camera on in the Camera tab, choosing Online Play "
+              "opens the game's \"Use the camera?\" prompt");
+    return 1;
+}
+
+void camera_game_loaded(void) {
+    if (g_installed) camera_setup_install(game_addrs());
+}
+
+// The flag the prompt's answer sets, read four times a second on the game's thread and logged when it changes.
+static void setup_watch(void) {
+    static uint64_t at;
+    static int was = -1;
+    const struct game_addrs *a = g_setup;
+    if (!a || !a->game_global) return;
+    uint64_t now = plat_ms();
+    if (now - at < 250) return;
+    at = now;
+    uint64_t global = peek64(a->game_global);
+    if (!global) return;
+    int on = (int)(peek32(global + a->g_flags4) >> a->cam_setup_bit) & 1, changed = on != was && (on || was >= 0);
+    was = on;
+    if (!changed) return;
+    if (on)
+        mkwmp_log("camera: set-up: done: the player chose Camera On in the game's prompt: its face goes above its kart, "
+                  "here and for the chat room's members, in the races from now on");
+    else
+        mkwmp_log("camera: set-up: undone (Camera Off, the title screen, or the chat ended): no face until the prompt is "
+                  "answered again (choose Online Play)");
+}
+
+// nn::chat::ShowChatStart / ShowCameraSharingGuide: the system's pages the game opens from its prompt (on the console;
+// nothing to show here). The game waits for the call to return and does not read the guide's answer.
+static void ov_show_chat_start(Cpu *c) {
+    mkwmp_log("camera: set-up: the game asked the system to start a GameChat (the player chose the camera with no chat "
+              "running): nothing to show, the prompt comes back");
+    ret_x(c, 0);
+}
+static void ov_show_sharing_guide(Cpu *c) {
+    mkwmp_log("camera: set-up: Camera On chosen: the game opened the system's camera sharing guide (nothing to show here)");
+    ret_x(c, 0);
+}
+
 // ---- nn::chat: the session
 
 static void ov_is_chatting(Cpu *c) {
@@ -525,6 +671,7 @@ static void ov_is_chatting(Cpu *c) {
         state_at = now;
         trace_game(types);
     }
+    setup_watch();
     if (event) {   // the game reads the room again (members, camera flags) when its event is signalled
         if (!signal && g_rt.guest_symbol) signal = g_rt.guest_symbol("_ZN2nn2os17SignalSystemEventEPNS0_15SystemEventTypeE");
         if (signal && g_rt.call) g_rt.call(c, signal, 1, event);
@@ -819,7 +966,10 @@ void camera_refresh(void) {
     int online = H.online ? H.online() : 0;
     uint64_t self = H.self_account ? H.self_account() : 0;
     const char *name = H.self_name ? H.self_name() : NULL;
-    int chatting = camera_chatting(&s, online);
+    plat_lock(&g_lock);
+    int held = camera_hold(&g_hold, online, plat_ms());   // the game's camera prompt, before the sign-in
+    plat_unlock(&g_lock);
+    int chatting = camera_chatting(&s, online || held);
 
     // The members are the chat room's (chatroom.h): the server's grant, else at most four friends in the same game
     // session. The game matches a member to a kart by account id alone and gives its four remote cameras to the first
@@ -864,8 +1014,9 @@ void camera_refresh(void) {
     camlib_want(capture, s.device, s.mirror, CAMERA_W, CAMERA_H, CAPTURE_FPS);
 
     if (was != chatting)
-        mkwmp_log("camera: chat %s (online %d, consent %d, camera %d, view %d%s)", chatting ? "on" : "off", online, s.consent,
-                  s.camera, s.view, g_loopback ? ", loopback" : "");
+        mkwmp_log("camera: chat %s (online %d, consent %d, camera %d, view %d%s%s)", chatting ? "on" : "off", online, s.consent,
+                  s.camera, s.view, g_loopback ? ", loopback" : "",
+                  held && !online ? ", held on for the game's camera prompt until the player is online" : "");
     if (changed && chatting) {
         char list[400] = "";
         int cameras = 0, k = 0;
@@ -923,6 +1074,8 @@ int camera_install(const CameraHost *host) {
         {"_ZN2nn2oe15EnableRecordingEv", ov_recording_on},
         {"_ZN2nn2oe32BeginPresentPhotographedContentsEv", ov_present_begin},
         {"_ZN2nn2oe30EndPresentPhotographedContentsEv", ov_present_end},
+        {"_ZN2nn4chat13ShowChatStartERKNS_7account3UidE", ov_show_chat_start},
+        {"_ZN2nn4chat22ShowCameraSharingGuideEv", ov_show_sharing_guide},
         {"_ZN2nn2gs17TryWaitNativeSyncERKNS0_16NativeSyncHandleE", ov_try_wait_sync},   // last: chained to stock
     };
     char env[8] = "";

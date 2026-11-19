@@ -1,13 +1,15 @@
 // The GameChat camera (camera.h): the gate (plugin API below 3, another game: nothing registered), the settings
-// (everything off unless "1"), the chat room's pick (chatroom.h), GetRoomInfo's bytes, the frame cycle, the test pattern, and the 26 overrides driven as
-// the game drives them (boot, the per-frame poll and request of 1.8.0's video update) against fake native images.
+// (everything off unless "1"), the chat room's pick (chatroom.h), GetRoomInfo's bytes, the frame cycle, the test pattern, the 28 overrides driven as
+// the game drives them (boot, the per-frame poll and request of 1.8.0's video update) against fake native images, and
+// the game's own camera set-up (the hooked "is a camera attached" node and the chat held on for its prompt).
 //
 //   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"; $s = "native\probe\src"
 //   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_camera.exe `
-//       native\probe\tests\test_camera.c $s\camera.c $s\chatroom.c $s\camlib.c $s\log.c $s\plat_win.c
+//       native\probe\tests\test_camera.c $s\camera.c $s\chatroom.c $s\camlib.c $s\gameaddrs.c $s\guesthook.c $s\log.c $s\plat_win.c
 //   scratch\test_camera.exe            (the camera installed, with MKWMP_CAMERA_LOOPBACK=1)
 //   scratch\test_camera.exe api2       (a plugin API 2 runtime: the feature stays off)
 #include "../src/camera.h"
+#include "../src/gameaddrs.h"
 #include "../src/plat.h"
 #include "../src/rtapi.h"
 
@@ -570,6 +572,140 @@ static void test_overrides(void) {
     CHECK(call("GetRemoteCameraImageHandle", P(g_types[4]), 1, 0, 0, 0, 0) == handles[4][1]);
 }
 
+// ---- the game's own camera set-up -----------------------------------------------------------------------------------
+// The game's side, in this process's memory: the node that asks whether a camera is attached (its is_online input, its
+// result bits), the runtime's stand-in camera service (an object followed by its table) and the game's flags.
+enum { ABSENT = 0xab5e, QUERY_SLOT = 27 };
+static uint32_t g_code_check[0x60 / 4], g_code_query[3], g_code_ret0[2];
+static uint64_t g_vtable_slot, g_service[2 + 64], g_service_at, g_global_at;
+static uint8_t g_node[0x40], g_node_online, g_global[0x200];
+static struct game_addrs g_row;
+static GuestFn g_hook;
+static uint64_t g_hook_addr;
+static int g_queries;
+
+static int rt_override_address(uint64_t addr, GuestFn fn) {
+    g_hook_addr = addr, g_hook = fn;
+    return 1;
+}
+// main+0x1ca0390 as far as the hook can tell: the request through the service's slot, then the result bits.
+static uint64_t rt_call_original(Cpu *c) {
+    uint8_t *node = (uint8_t *)(uintptr_t)c->x[0];
+    uint32_t state;
+    memcpy(&state, node + 0x18, 4);
+    if (state >> 30 < 2) {
+        g_queries++;
+        int attached = g_service[2 + QUERY_SLOT] == P(g_code_ret0);   // the slot's function returns 0
+        state = (state & 0x3fffffffu) | (attached ? 0x80000000u : 0xc0000000u);
+        memcpy(node + 0x18, &state, 4);
+    }
+    return c->x[0] = 0x77;
+}
+static uint64_t run_check(int online) {
+    Cpu c;
+    memset(&c, 0, sizeof c);
+    memset(g_node + 0x18, 0, 4);
+    g_node_online = (uint8_t)online;
+    c.x[0] = P(g_node);
+    g_hook(&c);
+    CHECK(c.x[0] == 0x77);                               // the update's own result
+    CHECK(g_service[2 + QUERY_SLOT] == ABSENT);          // nobody else is ever told a camera is attached
+    uint32_t state;
+    memcpy(&state, g_node + 0x18, 4);
+    return state >> 30;
+}
+
+static void test_hold(void) {
+    CameraHold h = {0};
+    CHECK(!camera_hold(&h, 0, 1000) && !camera_hold(&h, 1, 1000) && !h.was_online);   // no hold: nothing
+    h.at = 1000;
+    CHECK(camera_hold(&h, 0, 1000) && camera_hold(&h, 0, 1000 + CAMERA_HOLD_MS));      // the prompt is open
+    CHECK(!camera_hold(&h, 0, 1001 + CAMERA_HOLD_MS) && !h.at);                        // never went online
+    h.at = 5000;
+    CHECK(camera_hold(&h, 1, 6000) && camera_hold(&h, 1, 6000 + 10 * CAMERA_HOLD_MS)); // online: no clock
+    CHECK(!camera_hold(&h, 0, 7000) && !h.at && !h.was_online);                        // left online play
+    CHECK(!camera_hold(&h, 0, 8000) && !camera_hold(&h, 1, 8000));
+}
+
+// After test_overrides: the camera installed, the player online, consent given, camera and camera_view off.
+static void test_setup(void) {
+    static const uint32_t check[4] = {0xf9401668, 0xb000d169, 0x39400108, 0xf9460129};
+    static const uint32_t query[3] = {0xf9400008, 0xf9406d08, 0xd63f0100}, ret0[2] = {0x2a1f03e0, 0xd65f03c0};
+    uint64_t online_at = P(&g_node_online);
+    memcpy(g_node + 0x28, &online_at, 8);
+    g_service[0] = P(&g_service[2]);
+    for (int i = 0; i < 64; i++) g_service[2 + i] = 0x5c4;
+    g_service[2 + QUERY_SLOT] = ABSENT;
+    g_service_at = P(g_service), g_global_at = P(g_global);
+    g_vtable_slot = P(g_code_check);
+    memcpy(g_code_query, query, sizeof query), memcpy(g_code_ret0, ret0, sizeof ret0);
+    g_row = (struct game_addrs){
+        .build = 180, .cam_check_slot = P(&g_vtable_slot), .cam_check_fn = P(g_code_check), .cam_check_at = 0x50,
+        .cam_check_online = 0x28, .cam_check_result = 0x18, .cam_service = P(&g_service_at), .cam_query_at = P(g_code_query),
+        .cam_query_slot = QUERY_SLOT, .cam_ret0 = P(g_code_ret0), .game_global = P(&g_global_at), .g_flags4 = 0x12c,
+        .cam_setup_bit = 11};
+    memcpy(g_row.cam_check_words, check, sizeof check);
+    memcpy(g_row.cam_query_words, query, sizeof query);
+    memcpy(g_row.cam_ret0_words, ret0, sizeof ret0);
+    g_rt.override_address = rt_override_address;
+    g_rt.call_original = rt_call_original;
+
+    // no row, a build without the prompt, a guard that fails, the switch: not hooked
+    struct game_addrs none = {.build = 100};
+    CHECK(!camera_setup_install(NULL) && !camera_setup_install(&none) && !g_hook);
+    CHECK(!camera_setup_install(&g_row) && !g_hook);            // the node's code is not the code the row is for
+    memcpy(g_code_check + 0x50 / 4, check, sizeof check);
+    g_code_ret0[0] = 0x52800020;                                // "mov w0, #1": not a function that returns 0
+    CHECK(!camera_setup_install(&g_row) && !g_hook);
+    g_code_ret0[0] = ret0[0];
+    plat_setenv("MKWMP_CAMERA_SETUP", "0");
+    CHECK(!camera_setup_install(&g_row) && !g_hook);
+    plat_setenv("MKWMP_CAMERA_SETUP", NULL);
+    CHECK(camera_setup_install(&g_row) && g_hook && g_hook_addr == P(g_code_check));   // the function the slot holds
+    CHECK(camera_setup_install(&g_row));                        // once
+
+    // the camera off in the Camera tab: the game is told what the runtime tells it, no camera, and no chat is held on
+    g_online = 0;
+    camera_refresh();
+    CHECK(run_check(1) == 3 && g_queries == 1);
+    camera_refresh();
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 0);
+    set("camera_view", "1");                                    // watching alone: no face of the player's to set up
+    camera_refresh();
+    CHECK(run_check(1) == 3 && call("IsChatting", 0, 0, 0, 0, 0, 0) == 0);
+    // the camera on: local play's node (the console's own camera) still gets "no camera"
+    set("camera", "1"), set("camera_view", "0");
+    camera_refresh();
+    CHECK(run_check(0) == 3 && call("IsChatting", 0, 0, 0, 0, 0, 0) == 0);
+    // Online Play chosen: a camera is attached, and the chat runs at once, before the sign-in, for the prompt
+    CHECK(run_check(1) == 2 && g_queries == 4);
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1);
+    camera_refresh();
+    uint8_t room[CAMERA_ROOM_SIZE];
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1);
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && room[0x30] == 1);
+    // the prompt's pages, and its answer in the game's flags (logged; nothing to answer)
+    CHECK(call("ShowCameraSharingGuide", 0, 0, 0, 0, 0, 0) == 0 && call("ShowChatStart", P(room), 0, 0, 0, 0, 0) == 0);
+    g_global[0x12d] = 0x08;                                     // bit 11
+    plat_sleep_ms(260);
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1);
+    // signed in, then left online play: the chat ends with it (and the game drops the answer)
+    g_online = 1;
+    camera_refresh();
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1);
+    g_online = 0;
+    camera_refresh();
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 0);
+    // a service object that is not the runtime's stand-in (its table elsewhere) is left alone
+    static uint64_t table[64];
+    table[QUERY_SLOT] = ABSENT;
+    g_service[0] = P(table);
+    CHECK(run_check(1) == 3 && table[QUERY_SLOT] == ABSENT && call("IsChatting", 0, 0, 0, 0, 0, 0) == 0);
+    g_service[0] = P(&g_service[2]);
+    set("camera", "0");
+    camera_refresh();
+}
+
 int main(int argc, char **argv) {
     g_rt.override = rt_override;
     g_rt.guest_modules = rt_guest_modules;
@@ -583,8 +719,15 @@ int main(int argc, char **argv) {
     test_chatroom();
     test_cycle();
     test_pattern();
-    if (argc > 1 && !strcmp(argv[1], "api2")) test_api2();
-    else test_overrides();
+    test_hold();
+    if (argc > 1 && !strcmp(argv[1], "api2")) {
+        test_api2();
+        CHECK(!camera_setup_install(NULL));   // not installed: no hook either
+        camera_game_loaded();
+    } else {
+        test_overrides();
+        test_setup();
+    }
     printf("test_camera%s: %s\n", argc > 1 ? " api2" : "", failures ? "FAIL" : "PASS");
     return failures != 0;
 }

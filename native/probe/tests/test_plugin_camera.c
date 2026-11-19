@@ -1,5 +1,5 @@
 // The built plugin (mkwmp.dll / mkwmp.so) against a fake MkwPluginApi, for the GameChat camera's gate: on plugin API
-// 3 with game 1.8.0 the 19 nn::chat overrides and nn::gs::TryWaitNativeSync are registered and the Camera tab is
+// 3 with game 1.8.0 the 21 nn::chat overrides and nn::gs::TryWaitNativeSync are registered and the Camera tab is
 // added; on plugin API 2, or game 1.0.0, none is, the plugin still loads, and mkwmp.log says why. One mode per run
 // (the probe's state is the process's). Windows and Linux.
 //
@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
     CHECK(init(&api, version, &message) == 0 && !message);   // the plugin loads on every one of them
     CHECK(g_other > 40);                                       // online play's own overrides, as ever
     if (!strcmp(mode, "v3")) {
-        CHECK(g_chat == 19 && g_trywait == 1 && g_camera_tab == 1);
+        CHECK(g_chat == 21 && g_trywait == 1 && g_camera_tab == 1);
     } else {
         CHECK(g_chat == 0 && g_trywait == 0 && g_camera_tab == 0 && g_images == 0);
     }
@@ -132,8 +132,8 @@ int main(int argc, char **argv) {
         fclose(f);
     }
     CHECK(strstr(text, "overrides registered") != NULL);
-    // 26: the 19 nn::chat ones, TryWaitNativeSync and the 6 nn::oe screenshot / recording calls (counted in g_other)
-    if (!strcmp(mode, "v3")) CHECK(strstr(text, "camera: 26 overrides (plugin API 3)") != NULL);
+    // 28: the 21 nn::chat ones, TryWaitNativeSync and the 6 nn::oe screenshot / recording calls (counted in g_other)
+    if (!strcmp(mode, "v3")) CHECK(strstr(text, "camera: 28 overrides (plugin API 3)") != NULL);
     else if (!strcmp(mode, "v2")) CHECK(strstr(text, "camera: off: this mkw-recomp's plugin API is older than version 3") != NULL);
     else CHECK(strstr(text, "camera: off: the game is not 1.8.0") != NULL);
     printf("test_plugin_camera %s: %s (%d nn::chat overrides, TryWaitNativeSync %d, Camera tab %d)\n", mode,

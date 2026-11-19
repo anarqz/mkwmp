@@ -54,6 +54,27 @@ struct game_addrs {
     // declines; 0 = this build makes none (1.8.0: none in a whole offline session), so the first request is the
     // player opening Online Play.
     uint8_t boot_signin;
+    // camera.c camera_setup_install: the game's own "Use the camera?" set-up (research CAMERA-RE.md 9). Choosing
+    // Online Play runs OnlineCameraSetup.module, whose first node, AIGlobalSeqCheckVideoCameraConnection, asks the
+    // console's camera service whether a camera is attached and skips the prompt when it is not. 0 cam_check_slot:
+    // the build has no such set-up (1.0.0) or it is not mapped.
+    //   cam_check_slot / cam_check_fn: the one vtable slot that holds the node's update, and that function. Guards:
+    //     the slot holds it, and cam_check_words are at fn + cam_check_at (it reads its is_online input, a pointer
+    //     to a byte at node + cam_check_online); node + cam_check_result's top two bits are 2 once it answered
+    //     "Valid", 3 "Invalid".
+    //   cam_service: the global with the camera service object, whose vtable slot cam_query_slot is the "is a camera
+    //     with this picture format attached" request (0: yes). Guard: cam_query_words at cam_query_at, the call.
+    //   cam_ret0: a game function that only returns 0, put in that slot while the node asks. Guard: its two words.
+    //   g_flags4 / cam_setup_bit: game_global's flag word and the bit "the player chose Camera On" (read, logged).
+    uint64_t cam_check_slot, cam_check_fn;
+    uint32_t cam_check_words[4];
+    uint16_t cam_check_at, cam_check_online, cam_check_result;
+    uint64_t cam_service, cam_query_at;
+    uint32_t cam_query_words[3];
+    uint16_t cam_query_slot;
+    uint64_t cam_ret0;
+    uint32_t cam_ret0_words[2];
+    uint16_t g_flags4, cam_setup_bit;
 
     // ---------------------------------------------------------------- diagnostic (0 address = off)
     uint64_t pia_join_step[GAME_PIA_STEPS];         // JoinRandomSessionJob step functions

@@ -93,6 +93,18 @@ static const struct game_addrs kRows[] = {
         .page_count = 0x4628, .page_entries = 0x4630,
         .stock_lo = 0x7003800000ull, .stock_hi = 0x7003800000ull + 0xe0000,   // subsdk0 "movie"
         .boot_signin = 0,   // no boot sign-in in a whole offline session (mkwmp.log 2026-11-18, mkw-recomp 0.1.13)
+        // The camera set-up (CAMERA-RE.md 9, static RE of 2026-11-19; not proven live yet). The node's update
+        // main+0x1ca0390 is held by the slot main+0x3535718 alone; at +0x50 it loads its is_online input
+        // (ldr x8, [x19, #0x28]; adrp; ldrb w8, [x8]; ldr x9, [x9, #0xc00]). main+0x25a680 asks the service at
+        // [main+0x378ecb8] through slot 0xd8 (ldr x8, [x0]; ldr x8, [x8, #0xd8]; blr x8 at +0x2c). main+0x1c868a0
+        // is "mov w0, wzr; ret", a virtual of the sequence nodes (in 491 vtables).
+        .cam_check_slot = M(0x3535718), .cam_check_fn = M(0x1ca0390),
+        .cam_check_words = {0xf9401668, 0xb000d169, 0x39400108, 0xf9460129},
+        .cam_check_at = 0x50, .cam_check_online = 0x28, .cam_check_result = 0x18,
+        .cam_service = M(0x378ecb8), .cam_query_at = M(0x25a6ac),
+        .cam_query_words = {0xf9400008, 0xf9406d08, 0xd63f0100}, .cam_query_slot = 0xd8 / 8,
+        .cam_ret0 = M(0x1c868a0), .cam_ret0_words = {0x2a1f03e0, 0xd65f03c0},
+        .g_flags4 = 0x12c, .cam_setup_bit = 11,
         // ---- diagnostic (§4; "high" or better only)
         .pia_join_step = {M(0x16a9230), M(0x16a9390), M(0x16a94b0), M(0x16a9cf0), M(0x16aa010), M(0x16aa0f0),
                           M(0x16aa800)},

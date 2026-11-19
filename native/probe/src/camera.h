@@ -3,16 +3,21 @@
 // and only on a runtime with plugin API 3 (native_image_create / native_image_touch): anything less and nothing is
 // overridden, so the runtime's own "no chat is ever started" stubs stay.
 //
-// How it works. The game talks to GameChat through nn::chat; 19 of those functions and nn::gs::TryWaitNativeSync are
+// How it works. The game talks to GameChat through nn::chat; 21 of those functions and nn::gs::TryWaitNativeSync are
 // overridden here (CAMERA_OVERRIDES):
-//   - the chat session: IsChatting is 1 while the player is online and has `camera` or `camera_view` on (and gave the
-//     18+ consent); GetRoomInfo lists the chat room's members with their camera flags (chatroom.h: at most four
+//   - the chat session: IsChatting is 1 while the player is online (or answering the game's camera prompt on the way
+//     there, camera_hold) and has `camera` or `camera_view` on (and gave the 18+ consent); GetRoomInfo lists the chat room's members with their camera flags (chatroom.h: at most four
 //     friends in the same game session; camera_room_encode); a change signals the room event the game attached;
 //   - the pictures: per camera the game makes three native images. Ours come from the plugin API (RGBA8, the runtime's
 //     memory). The game cycles them: it asks for the next image (RequestNext*CameraImage gives it a sync handle of
 //     ours), polls the handle each frame (TryWaitNativeSync) and shows the image once the poll says done. We answer
 //     done only when a newer picture exists, and write it into the image right then, on the game's thread, before
-//     answering: the image being written is never the one shown (CameraCycle).
+//     answering: the image being written is never the one shown (CameraCycle);
+//   - the game's own set-up (camera_setup_install; research/docs/CAMERA-RE.md 9): a player's face is drawn and sent
+//     only after the player answered the game's "Use the camera?" prompt with Camera On, and the game shows that
+//     prompt, when Online Play is chosen, only if the console's camera service says a camera is attached. The
+//     runtime's stand-in for that service says none is; while the game's node asks, and the Camera tab has the
+//     camera on, ours says yes. MKWMP_CAMERA_SETUP=0 leaves the runtime's answer alone (no prompt, no faces).
 //
 // Settings (the mod's, per player; all off unless "1", as voice): `camera` (show my camera), `camera_view` (see the
 // others'), `camera_mirror`, `camera_device` (a capture device's name; "" the first one; CAMERA_DEVICE_TEST the test
@@ -56,7 +61,7 @@ enum {
     CAMERA_ROOM_SIZE = 0xf0,     // nn::chat::RoomInfo as the game reads it
     CAMERA_ROOM_MEMBERS = 11,    // remote members that fit; the game does not check the count
     CAMERA_MEMBERS_MAX = 32,
-    CAMERA_OVERRIDES = 26,
+    CAMERA_OVERRIDES = 28,
     CAMERA_API_VERSION = 3,      // the plugin API version with native_image_create / native_image_touch
 };
 #define CAMERA_DEVICE_TEST "test"   // camera_device: the test pattern instead of a capture device
@@ -99,6 +104,15 @@ void camera_settings_read(int (*setting_get)(const char *key, char *out, size_t 
 // 1 while the game is told a chat runs.
 int camera_chatting(const CameraSettings *s, int online);
 
+// The chat held on before the player is online: the game's "Use the camera?" prompt comes when Online Play is chosen,
+// before the sign-in, accepts Camera On only with a chat running, and forgets the answer when the chat ends. at:
+// plat_ms() when the game asked whether a camera is attached and was told yes (0: no hold). Returns 1 while held:
+// until the player went online and left again, or CAMERA_HOLD_MS passed without going online (the prompt cancelled,
+// the sign-in failed).
+enum { CAMERA_HOLD_MS = 5 * 60 * 1000 };
+typedef struct { uint64_t at; int was_online; } CameraHold;
+int camera_hold(CameraHold *h, int online, uint64_t now);
+
 // nn::chat::RoomInfo: zeroes, the player's account at +0x28 and camera flag at +0x30, the member count at +0x38 and
 // { u64 account; u8 camera } at +0x40 + i * 0x10. Members with a camera come first and at most CAMERA_REMOTE keep the
 // flag (the game has that many remote cameras); the player's own account, account 0 and repeats are left out; at most
@@ -139,6 +153,14 @@ void camera_tile(uint8_t *rgba, int w, int h, const char *name);
 int camera_install(const CameraHost *host);
 // What the camera's thread does twice a second: settings, members, the room, the capture wanted. Tests call it.
 void camera_refresh(void);
+// The game is loaded and has run nothing yet (the plugin API's address overrides are still open): hooks the game's
+// camera set-up by the running build's row, camera_setup_install(game_addrs()). Nothing when the camera is not
+// installed.
+void camera_game_loaded(void);
+// The hook itself, by a row (tests: one over their own memory): the guards, then the update of the node that asks
+// whether a camera is attached. 1 hooked; 0 with the reason logged (no row, a guard, MKWMP_CAMERA_SETUP=0).
+struct game_addrs;
+int camera_setup_install(const struct game_addrs *row);
 
 // ---- phase 4's side (see the top of this file); any thread unless said ---------------------------------------------
 // fn runs on the game's thread, once per new local picture (CAMERA_W x CAMERA_H RGBA, rows CAMERA_W * 4 apart, valid

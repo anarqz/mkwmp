@@ -109,6 +109,7 @@ static void on_game_loaded(void *user) {
     else if (g_active) {
         npln_address_hooks();   // error skips, idle-kick guard, BulkGet / Pia / matchmake traces (by game build)
         voice_ui_install();     // the online pause menu's voice labels
+        camera_game_loaded();   // the game's "Use the camera?" prompt (nothing unless the camera is installed)
     }
     g_rt.override_address = NULL;   // closed from here on: a later install attempt sees no means and stays off
 }
