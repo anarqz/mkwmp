@@ -6,7 +6,9 @@
 --target windows (the default): build/mkwmp-voice.dll (x86_64-windows-gnu; WASAPI). --target linux:
 build/linux/libmkwmp-voice.so (x86_64-linux-gnu, -fPIC; PulseAudio, libpulse loaded at run time, so the library
 links only libc, libdl and libpthread). --test also builds the headless tests and runs them when the host can
-(Windows tests on Windows, Linux tests on Linux). --smoke (Linux) builds and runs tests/voice_pulse_smoke.cpp
+(Windows tests on Windows, Linux tests on Linux): the loudness, the datagrams (voice_wire_test: the contract's vectors),
+video/v1's chunks and pacing (voice_video_test), the engine, and chat rooms end to end (voice_room_test: the library
+loaded twice against a relay inside the test; about 25 s). --smoke (Linux) builds and runs tests/voice_pulse_smoke.cpp
 against the real sound server: it opens the default devices for about 3 s and plays only silence.
 
 Third-party sources (libopus 1.5.2 with OSCE + deep PLC and no DRED, RNNoise 0.2, WebRTC AudioProcessing 2.1's AEC3
@@ -201,12 +203,16 @@ def main():
     flags = ["-std=c++20", "-O2", "-Wall", "-Wextra", f"-I{SRC}", f"-I{OPUS / 'include'}"] + TARGETS[args.target][3]
     runs = []
     if args.test:
-        for name in ["voice_loudness_test", "voice_wire_test"]:
+        for name in ["voice_loudness_test", "voice_wire_test", "voice_video_test"]:
             exe = build / f"{name}{exe_suffix}"
             link(zig, flags + [str(TESTS / f"{name}.cpp")], exe)
             runs.append(exe)
         exe = build / f"voice_engine_test{exe_suffix}"
         link(zig, flags + [str(TESTS / "voice_engine_test.cpp"), f"@{erst}"] + libs, exe)
+        runs.append(exe)
+        # chat rooms and video end to end: two copies of the library just built and a relay inside the test
+        exe = build / f"voice_room_test{exe_suffix}"
+        link(zig, flags + [str(TESTS / "voice_room_test.cpp")] + libs, exe)
         runs.append(exe)
     if args.smoke:
         if args.target != "linux":
@@ -219,6 +225,8 @@ def main():
         return
     for exe in runs:
         args_ = [str(exe)] + ([str(out)] if exe.name == "voice_pulse_smoke" else [])
+        if exe.stem == "voice_room_test":
+            args_ += [str(out), str(build)]
         r = subprocess.run(args_)
         if r.returncode != 0:
             sys.exit(f"{exe.name} failed")
