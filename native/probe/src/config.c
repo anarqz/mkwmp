@@ -1,6 +1,7 @@
 #include "config.h"
 
-#include <windows.h>
+#include "plat.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -90,27 +91,52 @@ const MkwmpConfig *mkwmp_config_reload(void) {
     return mkwmp_config();
 }
 
+static int g_in_exe_dir;   // mkwmp.toml came from the executable's folder, not home
+static int g_direct, g_direct_voice_port;   // mkwmp_config_use_direct; the voice port is 0 until the server says
+static char g_direct_name[64];
+
+int mkwmp_config_path(char *out, size_t cap, const char *name) {
+    mkwmp_config();
+    return g_in_exe_dir ? plat_exe_path(out, cap, name) : plat_home_path(out, cap, name);
+}
+
 const MkwmpConfig *mkwmp_config(void) {
     if (loaded) return &cfg;
     loaded = 1;
     defaults(&cfg);
 
-    wchar_t path[MAX_PATH];
-    DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
-    if (!n || n >= MAX_PATH) return &cfg;
-    for (DWORD i = n; i > 0; i--) {
-        if (path[i - 1] == L'\\' || path[i - 1] == L'/') { path[i] = 0; break; }
-    }
-    wcsncat(path, L"mkwmp.toml", MAX_PATH - wcslen(path) - 1);
-
-    HANDLE fh = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
-                            FILE_ATTRIBUTE_NORMAL, NULL);
-    if (fh == INVALID_HANDLE_VALUE) return &cfg;   // absent -> present=0, stock launch
+    char path[1024];
     char buf[4096];
-    DWORD got = 0;
-    ReadFile(fh, buf, sizeof buf - 1, &got, NULL);
-    CloseHandle(fh);
-    buf[got] = 0;
-    mkwmp_config_parse(buf, &cfg);
-    return &cfg;
+    long got = -1;
+    // home first (the plugin: its mod folder), then the game executable's folder, where the MKWMP launcher writes it
+    if (plat_home_path(path, sizeof path, "mkwmp.toml")) got = plat_read_file(path, buf, sizeof buf - 1);
+    g_in_exe_dir = 0;
+    if (got < 0 && plat_exe_path(path, sizeof path, "mkwmp.toml") && (got = plat_read_file(path, buf, sizeof buf - 1)) >= 0)
+        g_in_exe_dir = 1;
+    if (got >= 0) {
+        buf[got] = 0;
+        mkwmp_config_parse(buf, &cfg);
+    }
+    // the plugin's own sign-in (seatd.c): only when no launcher is configured, which stays the one in charge
+    if (g_direct && !cfg.launcher_port) {
+        cfg.present = 1;
+        cfg.direct = 1;
+        snprintf(cfg.name, sizeof cfg.name, "%s", g_direct_name);
+        cfg.voice_port = g_direct_voice_port;
+        g_in_exe_dir = 0;   // the lobby CA seatd.c saves: home
+    }
+    return &cfg;   // nothing found: present=0, stock launch
 }
+
+void mkwmp_config_use_direct(const char *name) {
+    snprintf(g_direct_name, sizeof g_direct_name, "%s", name ? name : "");
+    g_direct = 1;
+    loaded = 0;
+}
+
+void mkwmp_config_set_voice_port(int port) {
+    g_direct_voice_port = port;
+    if (cfg.direct) cfg.voice_port = port;
+}
+
+int mkwmp_config_has_seat(const MkwmpConfig *c) { return c->launcher_port || c->direct; }

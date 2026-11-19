@@ -1,10 +1,11 @@
-// voice_parse_settings (voice.h): the launcher's GET /local/v1/voice answer.
+// voice_parse_settings (voice.h): the launcher's GET /local/v1/voice answer. (Who is heard is the relay's business:
+// everyone in the friend room, nobody in a matchmade lobby; the probe filters nothing. native/voice's voice_room_test.)
 // (voice.c installs the menu hooks, so voice_ui.c and what it needs come along; coff.c defines g_rt.)
 //
 //   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"; $s = "native\probe\src"
 //   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_voice.exe `
 //       native\probe\tests\test_voice.c $s\voice.c $s\voice_ui.c $s\guesthook.c $s\gameaddrs.c $s\coff.c $s\log.c `
-//       $s\config.c $s\launcher.c $s\seat.c $s\friends.c $s\uuid5.c $s\notify.c -lws2_32
+//       $s\config.c $s\launcher.c $s\seat.c $s\friends.c $s\uuid5.c $s\notify.c $s\plat_win.c $s\plat_net_win.c -lws2_32
 //   scratch\test_voice.exe
 #include "../src/voice.h"
 
@@ -28,6 +29,7 @@ int main(void) {
     CHECK(voice_parse_settings(200, "{}", &s) && s.enabled == 1 && s.input_gain == 100 && s.mute_count == 0);
     CHECK(!voice_parse_settings(404, "{}", &s) && s.enabled == 1);
     CHECK(voice_parse_settings(200, "{\"enabled\": true, \"mutes\": []}", &s) && s.enabled == 1 && s.mute_count == 0);
+
     printf("test_voice: %s\n", failures ? "FAIL" : "PASS");
     return failures != 0;
 }

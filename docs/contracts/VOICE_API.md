@@ -12,7 +12,7 @@ Owners:
 - voice relay (UDP, inside `mkwmp lobby` / `mkwmp host`), launcher settings and the local API
   endpoints below: MACBOOK-MKWMP (`rust/gateway`, `rust/mkwmp`, `rust/client`);
 - room membership (`lobby::Core::voice_room`), the probe and the voice engine
-  (`native/voice`, `mkwmp-voice.dll`): WINDOWS-MKWMP.
+  (`native/voice`, `mkwmp-voice.dll`; on Linux `libmkwmp-voice.so`): WINDOWS-MKWMP.
 
 ## 1. Rooms and identities
 
@@ -81,7 +81,7 @@ a seat for it and none of its voice is forwarded.
 | Call | Body / answer |
 | --- | --- |
 | `GET /local/v1/voice` | `200 {"enabled":true,"input":"<device id or empty>","output":"<device id or empty>","inputGain":100,"outputGain":100,"mutes":[{"account":"<u64 decimal>","name":"..."}]}`. Polled by the probe every 2 s; a change applies live. |
-| `POST /local/v1/voice/devices` | `{"inputs":[{"id","name"}],"outputs":[{"id","name"}]}` as the game process sees them (under Proton these are Wine's ids, which a native launcher cannot enumerate). The launcher keeps the last list (persisted) for its settings pane. `204`. |
+| `POST /local/v1/voice/devices` | `{"inputs":[{"id","name"}],"outputs":[{"id","name"}]}` as the game process sees them: on Windows WASAPI endpoint ids and friendly names; on Linux (PulseAudio, or PipeWire through pipewire-pulse) the PulseAudio source and sink names as ids and their descriptions as names (inputs: every source that is not a monitor; outputs: every sink; see §5.1). The launcher keeps the last list (persisted) for its settings pane. `204`. |
 | `POST /local/v1/voice/mute` | `{"account":"<u64 decimal>","name":"...","muted":true}`: a mute from the game's menus. The launcher persists the list (by account id) and returns it in the next GET. `204`. |
 
 Settings pane (launcher SETTINGS): **Voice chat** on/off (default **on**), **Microphone** and
@@ -100,6 +100,30 @@ the first game run only "System default"), mic and voice volume sliders 1-100 (d
   pumping), per-talker gain, mix, **mix limiter** (hard ceiling -3 dBFS, soft knee): nobody sounds
   louder than anyone else and no scream reaches the ears at full scale.
 - Mutes from the game's menus go to the relay (op 2) and to the launcher (`POST /voice/mute`).
+
+### 5.1 Linux (PulseAudio / PipeWire)
+
+Running the Windows build through Proton/Wine is no longer supported. Linux and the Steam Deck get
+voice natively, through mkw-recomp's plugin API: the probe loads `libmkwmp-voice.so`, built from the
+same engine with a PulseAudio device layer (`native/voice/src/voice_audio_pulse.cpp`; PipeWire
+systems such as the Deck serve the same protocol through `pipewire-pulse`). The C ABI (`mkwmp_voice.h`)
+is the same on both platforms.
+
+- `libpulse.so.0` is loaded at run time; without it the engine does not start (logged once) and
+  the game goes on with voice off. The library itself needs only libc, libdl and libpthread.
+- Devices: ids are PulseAudio names (UTF-8), names their descriptions. "System default" (empty
+  id) is the server's default source / sink. Inputs never include a monitor (a source with
+  `monitor_of_sink` set, or one named like one): with no microphone the server's default source is
+  usually the output's monitor, and voice then runs listen-only, rechecking every 2 s.
+- Capture is a float32 48 kHz mono record stream on the chosen source (else the default, else the
+  first non-monitor source); playback a float32 48 kHz stereo stream on the chosen sink (else the
+  default sink, by name), kept 60 ms full. The echo reference is a record stream on
+  `<sink in use>.monitor` (the game and the voice mix together), switched against the voice mix with
+  the same hysteresis as WASAPI's loopback.
+- Streams do not follow the server's moves: a device that goes away fails the stream and it is
+  reopened on the chosen device or the default; the default source and sink are polled every 3 s.
+  Every server call runs on the engine's device workers with a timeout (the 8 s watchdog and the
+  1.5 s Stop hold as on Windows); `mkwmp_voice_devices_json` waits at most 3 s for the list.
 
 ## 6. Friend rooms: voice and camera (draft, branch `chat-rooms`; not deployed)
 

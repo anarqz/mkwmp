@@ -28,4 +28,8 @@ void notify_push(NotifyLevel level, const char *text);
 // queue. Returns the count. A renderer calls this each frame/tick.
 int notify_drain(Notification *out, int max);
 
+// Also hand every pushed notification to fn (the plugin backend: the runtime's on-screen notice). Set once, before
+// the first push; NULL by default (the winmm.dll proxy: queue only).
+void notify_set_sink(void (*fn)(NotifyLevel level, const char *text));
+
 #endif

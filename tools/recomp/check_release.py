@@ -14,7 +14,7 @@ What it prints, for OLD and NEW side by side:
       whether it has a stock handler (that decides which probe overrides are gated)
    6. the detoured functions' first bytes against keypad.c's k*Sig arrays and *_STEAL counts
    7. rt_dispatch's first bytes (mov rax,[rcx+0x138]: Cpu.thread at 312, recomp.h)
-   8. spans of g_host / g_fibers / added[] (distance to the next symbol of the section)
+   8. spans of g_host / added[] (distance to the next symbol of the section)
    9. WINMM imports of mkw.exe and SDL3.dll against native/probe/src/winmm.def; the SDL3 exports the probe
       resolves with GetProcAddress
   10. RT_GAME_ID (the 16-hex id of the game code mkw.exe accepts; a change means mkwgame.dll must be rebuilt
@@ -342,12 +342,12 @@ class Probe:
 
         npln = strip_comments(rd("npln.c"))
         self.regs = re.findall(r'\{\s*"([^"]+)"\s*,', c_block(npln, r"kRegs\s*\[\s*\]\s*="))
-        self.extra_regs = re.findall(r'hostfn_add_override\(\s*"([^"]+)"', npln)
+        self.extra_regs = re.findall(r'(?:hostfn_add_override|g_rt\.override)\(\s*"([^"]+)"', npln)
         # names the probe leaves to the runtime and whose stock handler it relies on (static const char kStock...[])
         self.stock_needed = re.findall(r'\bkStock\w+\[\]\s*=\s*"([^"]+)"', npln)
         m = re.search(r"RUNTIME_OVERRIDE_MAX\s*=\s*(\d+)", npln)
         self.override_max = int(m.group(1)) if m else 64
-        m = re.search(r"HOST_CAP\s*=\s*(\d+)", strip_comments(rd("guesthook.c")))
+        m = re.search(r"HOST_CAP\s*=\s*(\d+)", coff)
         self.host_cap = int(m.group(1)) if m else 8192
         m = re.search(r"//\s*Offsets:.*thread at (\d+)", rd("recomp.h"))
         self.thread_off = int(m.group(1)) if m else 312
@@ -686,7 +686,7 @@ def main() -> int:
 
     # 8 ---------------------------------------------------------------------------------------------------------
     out("\n[8] table spans (distance to the next symbol of the section)")
-    expect = {"g_host": probe.host_cap * 16, "g_fibers": 0x2000, "added": probe.override_max * 16}
+    expect = {"g_host": probe.host_cap * 16, "added": probe.override_max * 16}
     for name, want_span in expect.items():
         a, b = o.find(name), n.find(name)
         sa = [o.span(s[1]) for s in a]

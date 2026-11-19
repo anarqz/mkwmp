@@ -2,8 +2,10 @@
 #include "launcher.h"
 #include "log.h"
 #include "notify.h"
+#include "config.h"
 
-#include <windows.h>
+
+#include "plat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,22 +61,22 @@ void seat_parse(int http_status, const char *body, SeatReply *out) {
 }
 
 static int seat_post_once(SeatReply *out);
-static SRWLOCK g_ticket_lock = SRWLOCK_INIT;
+static PlatLock g_ticket_lock = PLAT_LOCK_INIT;
 static char g_ticket[520];
 
 int seat_ticket(char *dst, size_t n) {
-    AcquireSRWLockShared(&g_ticket_lock);
+    plat_lock_shared(&g_ticket_lock);
     snprintf(dst, n, "%s", g_ticket);
-    ReleaseSRWLockShared(&g_ticket_lock);
+    plat_unlock_shared(&g_ticket_lock);
     return dst[0] != 0;
 }
 
 int seat_post(SeatReply *out) {
     int rc = seat_post_once(out);
     if (rc == 0 && out->state == SEAT_SEATED) {
-        AcquireSRWLockExclusive(&g_ticket_lock);
+        plat_lock(&g_ticket_lock);
         snprintf(g_ticket, sizeof g_ticket, "%s", out->ticket);   // renewed tickets replace the old
-        ReleaseSRWLockExclusive(&g_ticket_lock);
+        plat_unlock(&g_ticket_lock);
     }
     return rc;
 }
@@ -88,6 +90,12 @@ static int seat_post_once(SeatReply *out) {
     return 0;
 }
 
+// The seat's notices (the launcher's tray said the same): each once per change of state, so the game's Online Play
+// after a seat taken at start (seat_take_early) does not say "connected" again.
+static volatile int32_t g_said;   // the SeatState last told the player, + 1 (0: none yet)
+
+static int tell(SeatState st) { return plat_xchg(&g_said, (int32_t)st + 1) != (int32_t)st + 1; }
+
 SeatState seat_acquire(SeatReply *out, int max_wait_ms) {
     int waited = 0, last_pos = -1;
     for (;;) {
@@ -95,55 +103,71 @@ SeatState seat_acquire(SeatReply *out, int max_wait_ms) {
         if (out->state == SEAT_SEATED) {
             mkwmp_log("seat: seated, lobby %s, ticket %u bytes", out->lobby[0] ? out->lobby : "(config)",
                       (unsigned)strlen(out->ticket));
-            notify_push(NOTIFY_SUCCESS, "Connected to MKWMP");
+            if (tell(SEAT_SEATED)) notify_push(NOTIFY_SUCCESS, "Connected to MKWMP: you have a seat");
             return out->state;
         }
         if (out->state == SEAT_REFUSED) {
             mkwmp_log("seat: refused: %s", out->message);
-            notify_push(NOTIFY_ERROR, out->message);
+            if (tell(SEAT_REFUSED)) notify_push(NOTIFY_ERROR, out->message);
             return out->state;
         }
         if (out->state == SEAT_UNAVAILABLE) {
-            mkwmp_log("seat: launcher or seat server unavailable");
-            notify_push(NOTIFY_WARN, "MKWMP launcher not reachable");
+            int direct = mkwmp_config()->direct;
+            mkwmp_log("seat: %s unavailable", direct ? "seat server" : "launcher or seat server");
+            if (tell(SEAT_UNAVAILABLE))
+                notify_push(NOTIFY_WARN, direct ? "MKWMP server not reachable: playing offline"
+                                                : "MKWMP launcher not reachable");
             return out->state;
         }
         if (out->position != last_pos) {
-            char msg[96];
-            snprintf(msg, sizeof msg, "Queue: %d of %d", out->position, out->total);
-            mkwmp_log("seat: %s", msg);
+            char msg[128];
+            snprintf(msg, sizeof msg, "All seats are taken: you are #%d in line (%d seats)", out->position, out->total);
+            mkwmp_log("seat: queued %d of %d", out->position, out->total);
+            plat_xchg(&g_said, (int32_t)SEAT_QUEUED + 1);
             notify_push(NOTIFY_INFO, msg);
             last_pos = out->position;
         }
         if (waited >= max_wait_ms) return out->state;
-        Sleep(2000);
+        plat_sleep_ms(2000);
         waited += 2000;
     }
 }
 
-static volatile LONG g_ka_started, g_ka_paused;
+static volatile int32_t g_ka_started, g_ka_paused;
 
 int seat_keepalive_pause(void) {
-    return g_ka_started && !InterlockedExchange(&g_ka_paused, 1);
+    return g_ka_started && !plat_xchg(&g_ka_paused, 1);
 }
-void seat_keepalive_resume(void) { InterlockedExchange(&g_ka_paused, 0); }
+void seat_keepalive_resume(void) { plat_xchg(&g_ka_paused, 0); }
 int seat_keepalive_paused(void) { return g_ka_started && g_ka_paused; }
 
-static DWORD WINAPI keepalive(LPVOID unused) {
+static void keepalive(void *unused) {
     (void)unused;
     for (;;) {
-        Sleep(15000);
+        plat_sleep_ms(15000);
         if (g_ka_paused) continue;
         SeatReply r;
         if (seat_post(&r) == 0 && r.state != SEAT_SEATED)
             mkwmp_log("seat keepalive: state %d (position %d)", (int)r.state, r.position);
     }
-    return 0;
 }
 
 void seat_keepalive_start(void) {
-    InterlockedExchange(&g_ka_paused, 0);
-    if (InterlockedExchange(&g_ka_started, 1)) return;
-    HANDLE h = CreateThread(NULL, 0, keepalive, NULL, 0, NULL);
-    if (h) CloseHandle(h);
+    plat_xchg(&g_ka_paused, 0);
+    if (plat_xchg(&g_ka_started, 1)) return;
+    plat_thread_start(keepalive, NULL);
+}
+
+// The plugin without a launcher (seat mode "start", as the launcher's default): a seat taken when the game starts,
+// not at Online Play, so the queue is waited out in the menus. A thread: the game goes on meanwhile.
+static void take_early(void *unused) {
+    (void)unused;
+    notify_push(NOTIFY_INFO, "Connecting to MKWMP...");
+    SeatReply r;
+    if (seat_acquire(&r, 60 * 60 * 1000) == SEAT_SEATED) seat_keepalive_start();
+}
+
+void seat_take_early(void) {
+    static volatile int32_t started;
+    if (!plat_xchg(&started, 1)) plat_thread_start(take_early, NULL);
 }

@@ -3,7 +3,7 @@
 #include "guesthook.h"
 #include "log.h"
 
-#include <windows.h>
+#include "plat.h"
 #include <string.h>
 
 #define M(off) (0x7000000000ull + (uint64_t)(off))   // main-module offset -> guest address
@@ -15,7 +15,6 @@ static const struct game_addrs kRows[] = {
         .grpc_timedwait_lr = M(0x104a8bc), .grpc_timedwait_bl = 0x945f879a,
         .errsvc_post = M(0x222d78c), .errsvc_vtable = M(0x325bc30), .errsvc_words = {0xd503237f, 0xa9bd7bfd},
         .err_referee_timeout = 0x606314c9,
-        .proton_skip_error = 0x9b928162,   // end-of-battle idle kick (user decision for 1.0.0, 2026-11-15)
         .vt_online_pause = M(0x3248970), .fn_pause_open = M(0x21b22ec), .fn_pause_frame = M(0x21b384c),
         .fn_plate_text = M(0x21deb68),     // FUN_021deb68(ctl, char16*): writes the plate's two name panes
         .plate_text_words = {0xd503237f, 0xd10143ff, 0xa9017bfd, 0xf90013f7},
@@ -85,8 +84,7 @@ static const struct game_addrs kRows[] = {
         .errsvc_post = M(0x2564cd0), .errsvc_vtable = M(0x3636ad0), .errsvc_words = {0xd503237f, 0xa9be7bfd},
         .err_referee_timeout = 0x606314c9,
         // The error-post row is proven live (T2, 2026-11-18: 0x884b839c, 0x660ac5da and 0x9b928162 posted with the
-        // right ids), and the Deck got 0x9b928162 at the end of a friend-room battle exactly as on 1.0.0.
-        .proton_skip_error = 0x9b928162,
+        // right ids).
         .vt_online_pause = M(0x3622528), .fn_pause_open = M(0x24ca550), .fn_pause_frame = M(0x24cc010),
         .fn_plate_text = M(0x2505f10),
         .plate_text_words = {0xd503237f, 0xd10143ff, 0xa9017bfd, 0xf90013f7},
@@ -95,6 +93,18 @@ static const struct game_addrs kRows[] = {
         .page_count = 0x4628, .page_entries = 0x4630,
         .stock_lo = 0x7003800000ull, .stock_hi = 0x7003800000ull + 0xe0000,   // subsdk0 "movie"
         .boot_signin = 0,   // no boot sign-in in a whole offline session (mkwmp.log 2026-11-18, mkw-recomp 0.1.13)
+        // The camera set-up (CAMERA-RE.md 9, static RE of 2026-11-19; not proven live yet). The node's update
+        // main+0x1ca0390 is held by the slot main+0x3535718 alone; at +0x50 it loads its is_online input
+        // (ldr x8, [x19, #0x28]; adrp; ldrb w8, [x8]; ldr x9, [x9, #0xc00]). main+0x25a680 asks the service at
+        // [main+0x378ecb8] through slot 0xd8 (ldr x8, [x0]; ldr x8, [x8, #0xd8]; blr x8 at +0x2c). main+0x1c868a0
+        // is "mov w0, wzr; ret", a virtual of the sequence nodes (in 491 vtables).
+        .cam_check_slot = M(0x3535718), .cam_check_fn = M(0x1ca0390),
+        .cam_check_words = {0xf9401668, 0xb000d169, 0x39400108, 0xf9460129},
+        .cam_check_at = 0x50, .cam_check_online = 0x28, .cam_check_result = 0x18,
+        .cam_service = M(0x378ecb8), .cam_query_at = M(0x25a6ac),
+        .cam_query_words = {0xf9400008, 0xf9406d08, 0xd63f0100}, .cam_query_slot = 0xd8 / 8,
+        .cam_ret0 = M(0x1c868a0), .cam_ret0_words = {0x2a1f03e0, 0xd65f03c0},
+        .g_flags4 = 0x12c, .cam_setup_bit = 11,
         // ---- diagnostic (§4; "high" or better only)
         .pia_join_step = {M(0x16a9230), M(0x16a9390), M(0x16a94b0), M(0x16a9cf0), M(0x16aa010), M(0x16aa0f0),
                           M(0x16aa800)},
@@ -135,13 +145,7 @@ const struct game_addrs *game_addrs_for(int build) {
 
 const struct game_addrs *game_addrs(void) { return game_addrs_for(game_build()); }
 
-static int readable(uint64_t addr, size_t n) {
-    MEMORY_BASIC_INFORMATION mi;
-    if (addr < 0x10000 || !VirtualQuery((const void *)(uintptr_t)addr, &mi, sizeof mi) || mi.State != MEM_COMMIT ||
-        (mi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
-        return 0;
-    return addr + n <= (uint64_t)(uintptr_t)mi.BaseAddress + mi.RegionSize;
-}
+static int readable(uint64_t addr, size_t n) { return plat_mem_readable((const void *)(uintptr_t)addr) >= n; }
 
 int game_guard_words(const char *what, uint64_t addr, const uint32_t *words, int n) {
     if (!readable(addr, 4u * (size_t)n)) {

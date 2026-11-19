@@ -5,6 +5,8 @@
 #ifndef MKWMP_CONFIG_H
 #define MKWMP_CONFIG_H
 
+#include <stddef.h>
+
 typedef struct {
     int present;             // a config file was found and parsed
     char host[128];          // lobby host: IP literal or hostname (default 127.0.0.1)
@@ -18,6 +20,7 @@ typedef struct {
     char lobby_ca[96];       // file (in the game dir) with the lobby's TLS CA, PEM or DER;
                              // default "mkwmp-lobby-ca.pem" (see lobby_ca.h)
     int voice_port;          // lobby voice relay UDP port (default 8907, 0 = voice off; VOICE_API.md)
+    int direct;              // no launcher: the plugin signs in itself (seatd.c, mkwmp_config_use_direct)
 } MkwmpConfig;
 
 // Parse the minimal `key = "value"` / `key = N` format. Pure; unit-tested.
@@ -27,6 +30,19 @@ void mkwmp_config_parse(const char *text, MkwmpConfig *out);
 // Load <exe dir>\mkwmp.toml once (cached). Returns a struct with present=0 if
 // the file is absent or unreadable, defaults otherwise.
 const MkwmpConfig *mkwmp_config(void);
+
+// <the folder mkwmp.toml was read from>/name (home, or the executable's folder; home when there is none): the files
+// the launcher writes beside it (the lobby CA). 1 on success.
+int mkwmp_config_path(char *out, size_t cap, const char *name);
+
+// The plugin build without a launcher: the player's own account from the mod's settings. The config is then present
+// (the probe engages), direct, and named name; the launcher's local API is answered by seatd.c. A mkwmp.toml with a
+// `launcher` key still wins (the MKWMP launcher runs: it holds the seat).
+void mkwmp_config_use_direct(const char *name);
+// The voice relay's port as the seat server announced it (direct mode; 0 = voice off).
+void mkwmp_config_set_voice_port(int port);
+// A seat service answers /local/v1/... : the launcher, or the plugin itself (direct).
+int mkwmp_config_has_seat(const MkwmpConfig *c);
 
 // Re-read mkwmp.toml (e.g. the launcher restarted with a new token). Returns the same cache.
 const MkwmpConfig *mkwmp_config_reload(void);

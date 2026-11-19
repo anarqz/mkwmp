@@ -15,7 +15,7 @@
 #include "log.h"
 #include "voice.h"
 
-#include <windows.h>
+#include "plat.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,7 +30,7 @@ static int g_trace;
 
 static struct {
     int open;            // the menu is open (set by the open hook, cleared when frames stop)
-    ULONGLONG last_frame;
+    uint64_t last_frame;
     int cursor;          // row index, -1 = none
     uint16_t shown[ROWS_MAX][LABEL];
     int shown_valid[ROWS_MAX];
@@ -50,12 +50,12 @@ static int read_buttons(void) {
     static int resolved;
     if (!resolved) {
         resolved = 1;
-        HMODULE sdl = GetModuleHandleA("SDL3.dll");
+        void *sdl = plat_dl_loaded("SDL3");
         if (sdl) {
-            *(FARPROC *)&get_pads = GetProcAddress(sdl, "SDL_GetGamepads");
-            *(FARPROC *)&from_id = GetProcAddress(sdl, "SDL_GetGamepadFromID");
-            *(FARPROC *)&button = GetProcAddress(sdl, "SDL_GetGamepadButton");
-            *(FARPROC *)&sdl_free = GetProcAddress(sdl, "SDL_free");
+            *(void **)&get_pads = plat_dl_sym(sdl, "SDL_GetGamepads");
+            *(void **)&from_id = plat_dl_sym(sdl, "SDL_GetGamepadFromID");
+            *(void **)&button = plat_dl_sym(sdl, "SDL_GetGamepadButton");
+            *(void **)&sdl_free = plat_dl_sym(sdl, "SDL_free");
         }
     }
     if (get_pads && from_id && button) {
@@ -70,13 +70,10 @@ static int read_buttons(void) {
         }
         if (ids && sdl_free) sdl_free(ids);
     }
-    HWND fg = GetForegroundWindow();
-    DWORD pid = 0;
-    if (fg) GetWindowThreadProcessId(fg, &pid);
-    if (pid == GetCurrentProcessId()) {
-        if (GetAsyncKeyState(VK_PRIOR) & 0x8000) b |= BTN_PREV;
-        if (GetAsyncKeyState(VK_NEXT) & 0x8000) b |= BTN_NEXT;
-        if (GetAsyncKeyState('M') & 0x8000) b |= BTN_TOGGLE;
+    if (plat_game_focused()) {
+        if (plat_key_down(PLAT_KEY_PAGE_UP)) b |= BTN_PREV;
+        if (plat_key_down(PLAT_KEY_PAGE_DOWN)) b |= BTN_NEXT;
+        if (plat_key_down(PLAT_KEY_M)) b |= BTN_TOGGLE;
     }
     return b;
 }
@@ -161,25 +158,34 @@ static void apply(Cpu *c, uint64_t page) {
 
 // ---- hooks ---------------------------------------------------------------------------------------
 
+// The hooked functions may be shared with other pages' vtables (the plugin API overrides the function, not the slot):
+// only the online pause menu is ours.
+static int is_pause_page(uint64_t page) {
+    return page && plat_mem_readable((const void *)(uintptr_t)page) >= 8 &&
+           *(const uint64_t *)(uintptr_t)page == ga->vt_online_pause;
+}
+
 static void hook_open(Cpu *c) {
     uint64_t page = c->x[0];
-    g_rt.rt_call(c, g_orig_open, 0);   // the game fills the plates
+    if (!is_pause_page(page)) { guesthook_original(c, g_orig_open); return; }
+    guesthook_original(c, g_orig_open);   // the game fills the plates
     uint64_t ret = c->x[0];
     memset(g.shown_valid, 0, sizeof g.shown_valid);   // the game rewrote every plate
     g.cursor = -1;
     g.prev_buttons = read_buttons();                  // a button held while opening is not a press
-    if (g_trace) mkwmp_log("voice-ui: online pause menu open (thread %lu)", GetCurrentThreadId());
+    if (g_trace) mkwmp_log("voice-ui: online pause menu open (thread %lu)", plat_thread_id());
     (void)page;
     c->x[0] = ret;
 }
 
 static void hook_frame(Cpu *c) {
     uint64_t page = c->x[0];
+    if (!is_pause_page(page)) { guesthook_original(c, g_orig_frame); return; }
     uint64_t saved[8];
     memcpy(saved, c->x, sizeof saved);
-    g_rt.rt_call(c, g_orig_frame, 0);
+    guesthook_original(c, g_orig_frame);
     uint64_t ret = c->x[0];
-    ULONGLONG now = GetTickCount64();
+    uint64_t now = plat_ms();
     if (now - g.last_frame > 1000) memset(g.shown_valid, 0, sizeof g.shown_valid);   // reopened, or refilled
     g.last_frame = now;
     // the game refills the plates when its list changes (info+0xe12): our cache must not hide the new text
@@ -195,11 +201,10 @@ void voice_ui_install(void) {
     static int done;
     if (done) return;
     done = 1;
-    g_trace = GetEnvironmentVariableA("MKWMP_VOICE_UI_TRACE", NULL, 0) != 0;
+    g_trace = plat_getenv("MKWMP_VOICE_UI_TRACE", NULL, 0);
     g.cursor = -1;
-    if (GetEnvironmentVariableA("MKWMP_VOICE_UI", NULL, 0)) {
-        char v[8] = {0};
-        GetEnvironmentVariableA("MKWMP_VOICE_UI", v, sizeof v);
+    char v[8] = {0};
+    if (plat_getenv("MKWMP_VOICE_UI", v, sizeof v)) {
         if (v[0] == '0') { mkwmp_log("voice-ui: off (MKWMP_VOICE_UI=0)"); return; }
     }
     int build = game_build();

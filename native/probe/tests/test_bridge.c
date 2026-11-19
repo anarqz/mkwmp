@@ -5,7 +5,7 @@
 //   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_bridge.exe `
 //       native\probe\tests\test_bridge.c native\probe\tests\stub_coff.c $s\log.c $s\config.c $s\notify.c `
 //       $s\friends.c $s\lobby_ca.c $s\seat.c $s\voice.c $s\voice_ui.c $s\guesthook.c $s\gameaddrs.c `
-//       $s\launcher.c $s\uuid5.c -lws2_32
+//       $s\launcher.c $s\uuid5.c $s\plat_win.c $s\plat_net_win.c -lws2_32
 //   scratch\test_bridge.exe
 #undef NDEBUG
 #include <assert.h>
@@ -17,8 +17,7 @@
 #include "../src/notify.h"
 
 static void quiet_log(const char *fmt, ...) { (void)fmt; }
-Runtime g_rt = {.rt_log = quiet_log};
-Delegates g_dele;
+RtApi g_rt = {.log = quiet_log};
 static int released, restored;
 static int release_core(void) { released++; return 1; }
 static void restore_core(int *away) { assert(*away == 1); restored++; *away = 0; }
@@ -65,8 +64,8 @@ static int readable(int fd) {
     return (p.revents & G_POLLIN) != 0;
 }
 int main(void) {
-    g_dele.core_away = release_core;
-    g_dele.core_back = restore_core;
+    g_rt.core_away = release_core;
+    g_rt.core_back = restore_core;
     Cpu poll_cpu = {0}; poll_cpu.thread = (void *)1; poll_cpu.x[2] = 1;
     ov_sock_poll(&poll_cpu);
     assert(poll_cpu.x[0] == 0 && released == 1 && restored == 1);
@@ -75,7 +74,7 @@ int main(void) {
     ov_sock_poll(&poll_cpu);
     assert(poll_cpu.x[0] == 1 && invalid_poll.revents == G_POLLNVAL);
     assert(released == 1 && restored == 1);
-    g_dele.core_away = NULL; g_dele.core_back = NULL;
+    g_rt.core_away = NULL; g_rt.core_back = NULL;
     int64_t clock[2] = {-1, -1};
     assert(call2(ov_clock_gettime, 0, (uintptr_t)clock) == 0);
     assert(clock[0] > 1700000000 && clock[1] >= 0 && clock[1] < 1000000000);
@@ -85,8 +84,8 @@ int main(void) {
     assert(clock[1] >= 0 && clock[1] < 1000000000);
     assert(clock[0] * 1000000000ll + clock[1] >= previous);
     assert(call2(ov_clock_gettime, 999, (uintptr_t)clock) == UINT64_MAX && g_errno == G_EINVAL);
-    g_rt.ldr_symbol = clock_symbol;
-    g_rt.rt_call = sdk_clock;
+    g_rt.guest_symbol = clock_symbol;
+    g_rt.call = sdk_clock;
     assert(call2(ov_clock_gettime, 1, (uintptr_t)clock) == 0 && clock[0] == 123 && clock[1] == 456);
     assert(call2(ov_clock_gettime, 0, (uintptr_t)clock) == 0 && clock[0] > 1700000000);
     // Game 1.8.0: the SDK's monotonic clock fails too. No repair without a known build (main is not mapped here), so
@@ -130,8 +129,8 @@ int main(void) {
         deadline_on_clock((int64_t[]){INT64_MAX, 999999999}, (int64_t[]){0, 0}, (int64_t[]){7, 999999999}, out);
         assert(out[0] > 9000000000ll && out[1] >= 0 && out[1] < 1000000000);      // clamped, still a timespec
     }
-    g_rt.ldr_symbol = NULL;
-    g_rt.rt_call = NULL;
+    g_rt.guest_symbol = NULL;
+    g_rt.call = NULL;
     int fd = (int)call2(ov_eventfd, 0, 6);
     assert(fd >= 0 && !readable(fd));
     uint64_t value = 123;

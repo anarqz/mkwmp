@@ -1,42 +1,30 @@
 #include "log.h"
 
-#include <windows.h>
+#include "plat.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
-static HANDLE g_fh = INVALID_HANDLE_VALUE;
-static CRITICAL_SECTION g_cs;
+static PlatFile *g_fh;
+static PlatLock g_cs = PLAT_LOCK_INIT;
 static int g_ready;
 static uint64_t g_start_ms;
 
 static void write_raw(const char *s, size_t n) {
-    if (g_fh == INVALID_HANDLE_VALUE || !n) return;
-    DWORD wrote;
-    WriteFile(g_fh, s, (DWORD)n, &wrote, NULL);
+    if (!g_fh || !n) return;
+    plat_file_write(g_fh, s, n);
 }
 
 void log_init(void) {
     if (g_ready) return;
-    InitializeCriticalSection(&g_cs);
-    g_start_ms = GetTickCount64();
-    wchar_t path[MAX_PATH];
-    DWORD n = GetModuleFileNameW(NULL, path, MAX_PATH);
-    if (n && n < MAX_PATH) {
-        for (DWORD i = n; i > 0; i--) {
-            if (path[i - 1] == L'\\' || path[i - 1] == L'/') { path[i] = 0; break; }
-        }
-        wcsncat(path, L"mkwmp.log", MAX_PATH - wcslen(path) - 1);
-        // CREATE_ALWAYS truncates: each session starts a fresh log.
-        g_fh = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
-                           FILE_ATTRIBUTE_NORMAL, NULL);
+    g_start_ms = plat_ms();
+    char path[1024];
+    if (plat_home_path(path, sizeof path, "mkwmp.log")) {
+        int in_use;
+        g_fh = plat_log_create(path, &in_use);   // truncated: each session starts a fresh log
         // mkw-recomp 0.1.12+: started without --play, mkw.exe is first the start screen, which stays open and holds
         // mkwmp.log while it starts the game as a second mkw.exe: that one writes mkwmp-game.log instead.
-        if (g_fh == INVALID_HANDLE_VALUE && GetLastError() == ERROR_SHARING_VIOLATION) {
-            path[wcslen(path) - 4] = 0;   // drop ".log"
-            wcsncat(path, L"-game.log", MAX_PATH - wcslen(path) - 1);
-            g_fh = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-        }
+        if (!g_fh && in_use && plat_home_path(path, sizeof path, "mkwmp-game.log")) g_fh = plat_log_create(path, &in_use);
     }
     g_ready = 1;
     mkwmp_log("=== mkwmp session log ===");
@@ -50,12 +38,12 @@ static void emit(const char *line, size_t len) {
     if (!g_ready) return;
     char stamp[24];
     int sn = snprintf(stamp, sizeof stamp, "[%8llums] ",
-                      (unsigned long long)(GetTickCount64() - g_start_ms));
-    EnterCriticalSection(&g_cs);
+                      (unsigned long long)(plat_ms() - g_start_ms));
+    plat_lock(&g_cs);
     write_raw(stamp, sn < 0 ? 0 : (size_t)sn);
     write_raw(line, len);
     write_raw("\r\n", 2);
-    LeaveCriticalSection(&g_cs);
+    plat_unlock(&g_cs);
 }
 
 void mkwmp_log(const char *fmt, ...) {

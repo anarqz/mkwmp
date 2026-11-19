@@ -2,19 +2,37 @@
 // thread: a UDP socket connected to the relay, control up on change and every 5 s, voice and state down handed to the
 // engine (voice_audio.h). The engine runs only while the launcher's setting is on and the relay says this player is in
 // a voice room; mutes and deafen are applied by the relay first and here again (the engine's second gate).
+// Chat rooms and video (VOICE_API.md §6, VIDEO_API.md; mkwmp_voice.h's second part): in room mode the same thread says
+// so on every control up, subscribes to the pictures wanted after it (op 6), keeps the relay's room (state down ver 2:
+// the friend room and this player's mutual friends in it) and puts their frames together; the camera's own frames
+// leave from the caller's thread. With such a relay voice runs in a friend room only, for the whole room.
 #define MKWMP_VOICE_BUILD
 #include "mkwmp_voice.h"
 
 #include "voice_audio.h"
 #include "voice_log.h"
+#include "voice_video.h"
 #include "voice_volume.h"
 #include "voice_wire.h"
 
+#ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
+#else
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <time.h>
+#include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -24,7 +42,15 @@
 #include <thread>
 #include <vector>
 
+#ifndef _WIN32
+// POSIX sockets under Winsock's names: the relay client below is the same code on both.
+using SOCKET = int;
+constexpr SOCKET INVALID_SOCKET = -1;
+inline int closesocket(SOCKET s) { return close(s); }
+#endif
+
 namespace wire = mkwmp::voice_wire;
+namespace video = mkwmp::voice_video;
 namespace audio = fi::audio;
 
 namespace {
@@ -51,12 +77,29 @@ struct Shared {
     // what the relay said
     wire::StateDown state;
     bool subscribed = false;
+    // friend rooms: what the probe asked for
+    bool room_mode = false, camera_on = false;
+    std::vector<uint64_t> video_want;
+    uint32_t room_serial = 0; // bumped when the video subscription must go now
+    mkwmp_voice_video_fn video_fn = nullptr;
+    void *video_user = nullptr;
+    // and what the relay said: 0 no state yet, else the version of its last state (1: a relay without rooms)
+    int relay = 0;
 };
 Shared g;
 
+// The camera's frames leave from the probe's thread: their numbers and what was sent lately.
+struct VideoOut {
+    std::mutex lock;
+    video::Pacer pacer;
+    uint16_t frame = 0;
+    uint32_t sent = 0, held = 0;
+    int64_t said = 0;
+};
+VideoOut g_video_out;
+
 std::atomic<bool> g_thread_started{false};
 std::atomic<SOCKET> g_socket{INVALID_SOCKET};
-std::atomic<uint32_t> g_rand{0};
 
 void Logf(const char *format, ...) {
     mkwmp_voice_log_fn log = g_log.load();
@@ -74,7 +117,17 @@ uint32_t Random32() {
     return rng();
 }
 
+#ifdef _WIN32
 int64_t NowMs() { return static_cast<int64_t>(GetTickCount64()); }
+void SleepMs(int ms) { Sleep(static_cast<DWORD>(ms)); }
+#else
+int64_t NowMs() {
+    timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return static_cast<int64_t>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
+}
+void SleepMs(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
+#endif
 
 bool Muted(const std::vector<uint64_t> &mutes, uint64_t account) { return std::find(mutes.begin(), mutes.end(), account) != mutes.end(); }
 
@@ -106,12 +159,19 @@ SOCKET Open(const std::string &host, int port) {
         s = INVALID_SOCKET;
     }
     if (s != INVALID_SOCKET) {
+#ifdef _WIN32
         u_long nb = 1;
         ioctlsocket(s, FIONBIO, &nb);
         // Windows: an ICMP port unreachable must not turn every later recv into WSAECONNRESET
         BOOL off = FALSE;
         DWORD ret = 0;
         WSAIoctl(s, _WSAIOW(IOC_VENDOR, 12) /* SIO_UDP_CONNRESET */, &off, sizeof off, nullptr, 0, &ret, nullptr, nullptr);
+#else
+        // Linux: an ICMP port unreachable fails one recv (ECONNREFUSED) and nothing after; the loop just reads again
+        const int fl = fcntl(s, F_GETFL, 0);
+        fcntl(s, F_SETFL, (fl < 0 ? 0 : fl) | O_NONBLOCK);
+        fcntl(s, F_SETFD, FD_CLOEXEC);
+#endif
         char addr[64] = {};
         inet_ntop(AF_INET, &reinterpret_cast<sockaddr_in *>(res->ai_addr)->sin_addr, addr, sizeof addr);
         Logf("voice: relay %s:%d (%s)", host.c_str(), port, addr);
@@ -120,23 +180,61 @@ SOCKET Open(const std::string &host, int port) {
     return s;
 }
 
+void RandomTxid(uint8_t txid[12]) {
+    for (int i = 0; i < 12; i += 4) { const uint32_t r = Random32(); std::memcpy(txid + i, &r, 4); }
+}
+
+// Under g.lock. The self bits of a control up: room mode's two only in room mode (a client out of it never sets them).
+uint8_t SelfBits() {
+    uint8_t self = static_cast<uint8_t>((g.mic_muted ? wire::kSelfMicMuted : 0) | (g.deafened ? wire::kSelfDeafened : 0));
+    if (g.room_mode) {
+        self |= wire::kSelfRoomMode | (g.camera_on ? wire::kSelfCameraOn : 0);
+        if (!g.settings.enabled) self |= wire::kSelfMicMuted | wire::kSelfDeafened; // in the room for the camera only
+    }
+    return self;
+}
+
 void SendControl(SOCKET s, uint8_t op, const std::string &ticket, uint8_t self, std::vector<uint64_t> mutes) {
     if (s == INVALID_SOCKET || ticket.empty()) return;
     if (mutes.size() > wire::kMaxMutes) mutes.resize(wire::kMaxMutes);
     uint8_t txid[12];
-    for (int i = 0; i < 12; i += 4) { const uint32_t r = Random32(); std::memcpy(txid + i, &r, 4); }
-    const std::vector<uint8_t> d = wire::EncodeControlUp(op, self, mutes, ticket, txid);
+    RandomTxid(txid);
+    const std::vector<uint8_t> d = self & wire::kSelfRoomMode ? wire::EncodeControlUpRoom(op, self, mutes, ticket, txid)
+                                                              : wire::EncodeControlUp(op, self, mutes, ticket, txid);
     if (d.empty()) { Logf("voice: control up refused by the encoder (ticket %zu bytes)", ticket.size()); return; }
     send(s, reinterpret_cast<const char *>(d.data()), static_cast<int>(d.size()), 0);
 }
 
+// Room mode, after a control up and when the probe's choice changes: the pictures wanted (op 6; none is said too).
+void SendVideoSubscribe(SOCKET s, std::vector<uint64_t> pictures) {
+    if (s == INVALID_SOCKET) return;
+    if (pictures.size() > wire::kMaxVideoSubscriptions) pictures.resize(wire::kMaxVideoSubscriptions); // the relay drops a longer list whole
+    uint8_t txid[12];
+    RandomTxid(txid);
+    const std::vector<uint8_t> d = wire::EncodeVideoSubscribe(pictures, txid);
+    if (!d.empty()) send(s, reinterpret_cast<const char *>(d.data()), static_cast<int>(d.size()), 0);
+}
+
+// Under g.lock: is this account one of the mutual friends the relay last named in the friend room?
+bool RoomMember(uint64_t account) {
+    for (const wire::Member &m : g.state.members)
+        if (m.account == account) return true;
+    return false;
+}
+
 // The network thread: lives for the process (the probe loads the DLL once).
 void NetLoop() {
+#ifdef _WIN32
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
+#endif
     SOCKET s = INVALID_SOCKET;
     uint32_t target_seen = ~0u, control_seen = ~0u;
     std::string ticket;
+    uint32_t room_seen = ~0u;
+    bool joined = false; // a subscribe went out on this socket
+    video::Reassembler pictures;
+    video::Frame picture;
     int64_t last_control = 0, last_rx_state = 0, last_engine_try = -100000, last_open_try = -100000;
     bool engine_wanted_logged = false;
     Settings applied;
@@ -157,15 +255,18 @@ void NetLoop() {
         if (serial != target_seen || (s == INVALID_SOCKET && !host.empty() && NowMs() - last_open_try > 5000)) {
             if (serial != target_seen && s != INVALID_SOCKET) {
                 uint8_t self;
-                { std::lock_guard lock(g.lock); self = static_cast<uint8_t>((g.mic_muted ? 1 : 0) | (g.deafened ? 2 : 0)); }
+                { std::lock_guard lock(g.lock); self = SelfBits(); }
                 if (host.empty()) SendControl(s, wire::kLeave, ticket, self, {});
                 g_socket = INVALID_SOCKET;
                 if (audio::Running()) audio::Stop();
                 closesocket(s);
                 s = INVALID_SOCKET;
+                joined = false;
+                pictures.Reset();
                 std::lock_guard lock(g.lock);
                 g.subscribed = false;
                 g.state = {};
+                g.relay = 0;
             }
             target_seen = serial;
             if (!host.empty() && port > 0) {
@@ -180,21 +281,38 @@ void NetLoop() {
         uint8_t self = 0;
         std::vector<uint64_t> mutes;
         Settings want;
-        bool subscribed;
+        bool subscribed, room_mode;
         uint64_t me;
         {
             std::lock_guard lock(g.lock);
-            self = static_cast<uint8_t>((g.mic_muted ? wire::kSelfMicMuted : 0) | (g.deafened ? wire::kSelfDeafened : 0));
+            self = SelfBits();
             mutes = g.mutes;
             want = g.settings;
             subscribed = g.subscribed;
             me = g.account;
+            room_mode = g.room_mode;
+            bool refresh = false;
             if (s != INVALID_SOCKET && (g.control_serial != control_seen || NowMs() - last_control >= 5000)) {
                 const bool first = control_seen == ~0u;
                 control_seen = g.control_serial;
                 last_control = NowMs();
-                if (want.enabled) SendControl(s, first ? wire::kSubscribe : wire::kReplaceMutes, ticket, self, mutes);
-                else if (g.subscribed) { SendControl(s, wire::kLeave, ticket, self, {}); g.subscribed = false; g.state = {}; }
+                // in room mode the relay is joined with voice off too: the camera's room is there
+                if (want.enabled || room_mode) {
+                    SendControl(s, first ? wire::kSubscribe : wire::kReplaceMutes, ticket, self, mutes);
+                    joined = refresh = true;
+                } else if (g.subscribed || joined) {
+                    SendControl(s, wire::kLeave, ticket, self, {});
+                    joined = false;
+                    g.subscribed = false;
+                    g.state = {};
+                    g.relay = 0;
+                }
+            }
+            if (!room_mode) {
+                room_seen = g.room_serial;
+            } else if (s != INVALID_SOCKET && joined && g.relay != 1 && (refresh || g.room_serial != room_seen)) {
+                room_seen = g.room_serial; // a relay without rooms (state ver 1) is not sent what it cannot read
+                SendVideoSubscribe(s, g.video_want);
             }
         }
 
@@ -204,20 +322,66 @@ void NetLoop() {
             FD_ZERO(&rd);
             FD_SET(s, &rd);
             timeval tv{0, 50 * 1000};
-            if (select(0, &rd, nullptr, nullptr, &tv) > 0) {
+#ifdef _WIN32
+            const int nfds = 0; // ignored by Winsock
+#else
+            const int nfds = s + 1;
+#endif
+            if (select(nfds, &rd, nullptr, nullptr, &tv) > 0) {
                 for (int i = 0; i < 256; i++) {
                     const int n = recv(s, reinterpret_cast<char *>(buf.data()), static_cast<int>(buf.size()), 0);
                     if (n <= 0) break;
                     const uint8_t *d = buf.data();
                     wire::VoiceDown v;
                     wire::StateDown st;
+                    wire::VideoChunk chunk;
                     if (wire::DecodeVoiceDown(d, static_cast<size_t>(n), v)) {
                         if (audio::Running()) audio::Receive(v.seat, v.seq, v.ts, v.flags, v.opus, v.size);
+                    } else if (wire::DecodeVideoDown(d, static_cast<size_t>(n), chunk)) {
+                        // a friend's picture: whole frames only, of a seat the relay's state names as a mutual friend in the room
+                        if (!room_mode || !pictures.Feed(chunk, NowMs(), picture)) continue;
+                        uint64_t account = 0;
+                        mkwmp_voice_video_fn fn = nullptr;
+                        void *user = nullptr;
+                        {
+                            std::lock_guard lock(g.lock);
+                            for (const wire::Seat &seat : g.state.seats)
+                                if (seat.seat == picture.seat) account = seat.account;
+                            if (!g.room_mode || g.relay != wire::kVersionRooms || !g.state.room_id || !account || account == g.account || !RoomMember(account))
+                                account = 0;
+                            fn = g.video_fn;
+                            user = g.video_user;
+                        }
+                        if (account && fn) fn(account, picture.bytes.data(), static_cast<int>(picture.bytes.size()), user);
                     } else if (wire::DecodeStateDown(d, static_cast<size_t>(n), st)) {
                         std::lock_guard lock(g.lock);
                         const bool room = (st.room & wire::kRoomVoice) != 0;
                         if (room != g.subscribed || st.seats.size() != g.state.seats.size())
                             Logf("voice: %s (%zu seats, bundle %u)", room ? "in a voice room" : "not in a voice room yet", st.seats.size(), st.bundle);
+                        if (g.room_mode) {
+                            // the friends are the others: this player is never one of its own
+                            std::erase_if(st.members, [](const wire::Member &m) { return !m.account || m.account == g.account; });
+                            const bool rooms = st.version == wire::kVersionRooms;
+                            if (!rooms) st.room_id = 0, st.members.clear();
+                            if (st.version != g.relay)
+                                Logf(rooms ? "voice: the relay speaks friend rooms (state ver 2): voice and the camera in a friend room only"
+                                           : "voice: the relay speaks no friend rooms (state ver 1): no camera is sent or shown; voice is voice/v1, "
+                                             "as that relay routes it");
+                            if (rooms && (st.version != g.relay || st.room_id != g.state.room_id || st.members.size() != g.state.members.size() ||
+                                          st.fps != g.state.fps)) {
+                                int cameras = 0;
+                                for (const wire::Member &m : st.members) cameras += m.flags & wire::kMemberCamera;
+                                if (st.room_id)
+                                    Logf("voice: friend room %#llx: voice with the whole room; %zu mutual friend(s) in it, %d with a camera on, "
+                                         "send divisor %u", static_cast<unsigned long long>(st.room_id), st.members.size(), cameras, st.fps);
+                                else Logf("voice: in no friend room (a matchmade race or battle, or no room yet): no voice, no camera");
+                            }
+                            if (st.version != g.relay) g.room_serial++; // the relay bound this endpoint: the subscription once more
+                            if (st.room_id != g.state.room_id) pictures.Reset();
+                            g.relay = st.version;
+                        } else {
+                            g.relay = 0;
+                        }
                         g.subscribed = room;
                         g.state = std::move(st);
                         last_rx_state = NowMs();
@@ -225,18 +389,22 @@ void NetLoop() {
                 }
             }
         } else {
-            Sleep(50);
+            SleepMs(50);
         }
 
         // 4. a relay gone quiet (it sends state at least every 1 s): out of the room after 10 s
         {
             std::lock_guard lock(g.lock);
-            if (g.subscribed && NowMs() - last_rx_state > 10000) {
+            if ((g.subscribed || g.relay) && NowMs() - last_rx_state > 10000) {
                 Logf("voice: no state from the relay for 10 s; voice paused");
                 g.subscribed = false;
                 g.state = {};
+                g.relay = 0;
             }
             subscribed = g.subscribed;
+            // a relay with rooms carries voice in a friend room only, and for the whole room: in none (a matchmade
+            // lobby) the engine does not run, so the microphone is closed and nothing is played
+            if (g.room_mode && g.relay == wire::kVersionRooms && !g.state.room_id) subscribed = false;
         }
 
         // 5. the engine: settings, start/stop, gates
@@ -401,6 +569,92 @@ MKWMP_VOICE_API int mkwmp_voice_status(void) {
     if (audio::Sending()) st |= MKWMP_VOICE_SENDING;
     if (audio::ListenOnly()) st |= MKWMP_VOICE_LISTEN_ONLY;
     return st;
+}
+
+// ---- chat rooms and video
+
+MKWMP_VOICE_API int mkwmp_voice_room_api(void) { return MKWMP_VOICE_ROOM_API; }
+
+MKWMP_VOICE_API void mkwmp_voice_room_mode(int on) {
+    std::lock_guard lock(g.lock);
+    if ((on != 0) == g.room_mode) return;
+    g.room_mode = on != 0;
+    g.control_serial++; // self bit 3 from the next control up on, or never again
+    g.room_serial++;
+    g.relay = 0;
+    Logf("voice: room mode %s", on ? "on: voice and the camera in a friend room only" : "off");
+}
+
+MKWMP_VOICE_API void mkwmp_voice_room_camera(int on) {
+    std::lock_guard lock(g.lock);
+    if ((on != 0) == g.camera_on) return;
+    g.camera_on = on != 0;
+    if (g.room_mode) g.control_serial++;
+}
+
+MKWMP_VOICE_API void mkwmp_voice_video_subscribe(const uint64_t *accounts, int count) {
+    std::vector<uint64_t> w;
+    for (int i = 0; accounts && i < count && w.size() < wire::kMaxVideoSubscriptions; i++)
+        if (accounts[i] && !Muted(w, accounts[i])) w.push_back(accounts[i]);
+    std::lock_guard lock(g.lock);
+    if (w == g.video_want) return;
+    g.video_want = std::move(w);
+    g.room_serial++;
+}
+
+MKWMP_VOICE_API int mkwmp_voice_video_send(const uint8_t *jpeg, int len, uint32_t ts_ms) {
+    const SOCKET s = g_socket.load();
+    if (s == INVALID_SOCKET || !jpeg || len <= 0) return 0;
+    int divisor;
+    {
+        std::lock_guard lock(g.lock); // the relay takes video only in a friend room, with the camera bit on, for mutual friends
+        if (!g.room_mode || !g.camera_on || g.relay != wire::kVersionRooms || !g.state.room_id || g.state.members.empty()) return 0;
+        divisor = g.state.fps;
+    }
+    std::lock_guard lock(g_video_out.lock);
+    const std::vector<std::vector<uint8_t>> out =
+        video::ChunkFrame(jpeg, static_cast<size_t>(len), g_video_out.frame, ts_ms, [](size_t) { return Random32(); });
+    size_t bytes = 0;
+    for (const std::vector<uint8_t> &d : out) bytes += d.size();
+    const int64_t now = NowMs();
+    const bool go = !out.empty() && g_video_out.pacer.Admit(now, bytes, out.size(), divisor);
+    if (go) {
+        g_video_out.frame++;
+        g_video_out.sent++;
+        for (const std::vector<uint8_t> &d : out) send(s, reinterpret_cast<const char *>(d.data()), static_cast<int>(d.size()), 0);
+    } else {
+        g_video_out.held++;
+    }
+    if (now - g_video_out.said > 30000) { // a line every half minute while the camera is sent
+        Logf("voice: camera: %u frame(s) sent, %u held back (the sender's limits, or the relay's divisor %d); the last one %d bytes in %zu "
+             "datagram(s)", g_video_out.sent, g_video_out.held, divisor, len, out.size());
+        g_video_out.said = now;
+        g_video_out.sent = g_video_out.held = 0;
+    }
+    return go ? 1 : 0;
+}
+
+MKWMP_VOICE_API void mkwmp_voice_video_receiver(mkwmp_voice_video_fn fn, void *user) {
+    std::lock_guard lock(g.lock);
+    g.video_fn = fn;
+    g.video_user = user;
+}
+
+MKWMP_VOICE_API int mkwmp_voice_room_state(mkwmp_voice_room *out) {
+    if (!out) return 0;
+    std::memset(out, 0, sizeof *out);
+    std::lock_guard lock(g.lock);
+    if (!g.room_mode || !g.relay) return 0;
+    out->relay = g.relay;
+    out->fps_divisor = g.state.fps == 2 || g.state.fps == 4 ? g.state.fps : 1;
+    if (g.relay != wire::kVersionRooms) return 1;
+    out->room_id = g.state.room_id;
+    for (const wire::Member &m : g.state.members) {
+        if (out->count >= MKWMP_VOICE_ROOM_FRIENDS) break;
+        out->member[out->count++] = {m.account, static_cast<uint8_t>((m.flags & wire::kMemberCamera) != 0),
+                                     static_cast<uint8_t>((m.flags & wire::kMemberBound) != 0)};
+    }
+    return 1;
 }
 
 } // extern "C"

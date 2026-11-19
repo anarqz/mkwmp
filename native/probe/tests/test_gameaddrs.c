@@ -5,7 +5,7 @@
 //   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"
 //   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_gameaddrs.exe `
 //       native\probe\tests\test_gameaddrs.c native\probe\tests\stub_coff.c native\probe\src\gameaddrs.c `
-//       native\probe\src\guesthook.c native\probe\src\log.c
+//       native\probe\src\guesthook.c native\probe\src\log.c native\probe\src\plat_win.c
 //   foreach ($b in "none", "100", "180", "other", "badid") { scratch\test_gameaddrs.exe $b }
 #include "../src/gameaddrs.h"
 #include "../src/guesthook.h"
@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 
-Runtime g_rt;
+RtApi g_rt;
 
 static int failures;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
         CHECK(r100->vt_online_pause == 0x7003248970ull && r100->fn_plate_text == 0x70021deb68ull);
         CHECK(r100->rows == 24 && r100->page_plates == 0x770 && r100->plate_size == 0x150);
         CHECK(r100->page_count == 0x3d80 && r100->page_entries == 0x3d88 && r100->entry_name == 0x18 && r100->entry_me == 0x78);
-        CHECK(r100->proton_skip_error == 0x9b928162 && r100->kart_idle_kick == 1 && !r100->stock_hi);
+        CHECK(r100->kart_idle_kick == 1 && !r100->stock_hi);
         CHECK(r100->game_global == 0x70033d2548ull && r100->kart_entry[0] && r100->kart_entry[1] && r100->room_sync);
         for (int i = 0; i < GAME_PIA_STEPS; i++) CHECK(r100->pia_join_step[i]);
         for (int i = 0; i < GAME_WATCH; i++) CHECK(r100->watch[i]);
@@ -81,7 +81,6 @@ int main(int argc, char **argv) {
         CHECK(r180->page_count == 0x4628 && r180->page_entries == 0x4630 && r180->entry_name == 0x18 && r180->entry_me == 0x78);
         CHECK(r180->stock_lo == 0x7003800000ull && r180->stock_hi == 0x70038e0000ull);   // subsdk0 "movie"
         // ... and what stays off there: zero fields
-        CHECK(r180->proton_skip_error == 0x9b928162u);                        // Proton default skip, as on 1.0.0
         CHECK(r180->kart_idle_kick == 0 && !r180->kart_entry[0] && !r180->kart_entry[1]);   // MKWMP_NO_IDLE_KICK refused
         CHECK(!r180->room_sync && !r180->room_main && !r180->room_vote && !r180->room_event);   // MKWMP_TRACE_ROOM
         int ranges = 0;

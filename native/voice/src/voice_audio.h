@@ -20,7 +20,7 @@ namespace fi::audio {
 // frames since the engine started. Called on an engine thread; must not block.
 using SendFn = std::function<void(const uint8_t *opus, size_t size, uint8_t flags, uint16_t seq, uint32_t ts)>;
 
-// Starts capture and playback (WASAPI shared mode both ways, 48 kHz inside). False: no device or a library failed;
+// Starts capture and playback (WASAPI shared mode both ways on Windows, PulseAudio streams on Linux; 48 kHz inside). False: no device or a library failed;
 // voice stays off and Start may be tried again later (a device plugged in). Called on the voice thread: it waits up to
 // 3 s for the first device attempts (holding no lock the game's threads take); Stop waits up to 1.5 s, then leaves a
 // worker stuck in a driver call behind. Every other call here returns at once, whatever the devices do.
@@ -53,13 +53,14 @@ void SetVolume(float voices); // 0..1, the mix's level
 void SetMicGain(float gain);
 void SetSeatGain(uint8_t seat, float gain);
 
-// The endpoints the player chose (§15): IMMDevice ids in UTF-8, empty for the system default. A change reopens that
+// The endpoints the player chose (§15): IMMDevice ids in UTF-8 (Linux: PulseAudio source/sink names), empty for the
+// system default. A change reopens that
 // stream at once (within ~0.5 s); a chosen device that is not there (unplugged, or for capture not a microphone) falls
 // back to the system default until it comes back. Any thread. This is the only setter of the devices: the echo
 // canceller's reference is the mix played to that same output, so the output it hears is always the one chosen here.
 void SetDevices(const std::string &microphone_id, const std::string &output_id);
-// The render endpoint voice plays to now (UTF-8 IMMDevice id: the chosen output, or the default's id while it stands
-// in); empty while no output is open. For a WASAPI loopback of the playback device, should one ever be needed.
+// The render endpoint voice plays to now (UTF-8 IMMDevice id or PulseAudio sink name: the chosen output, or the
+// default's id while it stands in); empty while no output is open. For a WASAPI loopback of the playback device, should one ever be needed.
 std::string OutputDeviceInUse();
 
 // One entry of the settings' device lists: an empty id is "System default".
@@ -67,7 +68,8 @@ struct Device {
     std::string id, name; // UTF-8
 };
 // "System default" first, then each active endpoint in the system's order; for capture only microphones (never a
-// monitor or loopback, voice_audio_devices.h). Enumerates through COM on the calling thread: never the game's thread.
+// monitor or loopback, voice_audio_devices.h). Enumerates through COM on the calling thread (Linux: PulseAudio, on a
+// helper thread waited for at most 3 s): never the game's thread.
 std::vector<Device> ListDevices(bool capture);
 
 // Heard talking now (a packet within the last 300 ms, not silenced). For the UI and the game's icons.

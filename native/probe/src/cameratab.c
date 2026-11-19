@@ -1,0 +1,181 @@
+// The Camera settings: the tab of mkw-recomp's in-game settings and a section of the mod's options page. The values
+// are the mod's settings, all off unless "1" (as voice): camera, camera_view, camera_mirror; camera_device is a capture
+// device's name ("" the first one, "test" the test pattern). camera.c reads them twice a second, so a change applies
+// without a restart. The device list is the capture library's (camlib.c), loaded when these widgets are first drawn,
+// in the game and on the start screen alike.
+#include "cameratab.h"
+
+#include "camera.h"
+#include "camlib.h"
+#include "chatroom.h"
+#include "friends.h"
+#include "plat.h"
+#include "seatapi.h"
+
+#include <stdio.h>
+#include <string.h>
+
+enum { C_ON, C_DEVICE, C_FIRST, C_TEST, C_MIRROR, C_VIEW, C_WHAT, C_NOT_SENT, C_NEED_CONSENT, C_OLD_RUNTIME, C_NO_LIBRARY,
+       C_FAILED, C_RUNNING, C_STARTING, C_GAME, C_DECLINED, C_ROOM, C_ROOM_EMPTY, C_MEMBER_ON, C_REPORT, C_REPORT_NEXT, C_COUNT };
+static const char *const EN[C_COUNT] = {
+    "Show my camera above my kart",
+    "Camera",
+    "First camera found",
+    "Test pattern (colour bars)",
+    "Mirror my picture",
+    "Show the other players' cameras",
+    "With the camera on, the players racing with you who chose to see cameras see your picture above your kart. "
+    "Nothing is recorded. A player you mute no longer shows, and no longer sees you.",
+    "This version does not send pictures to other players yet: only you see your camera.",
+    "Accept the notice on the MKWMP page first (18 or older).",
+    "The camera needs a newer mkw-recomp (plugin API 3).",
+    "The camera library (" PLAT_CAMERA_LIB ") is not in the mod's folder: only the test pattern works.",
+    "This camera could not be opened: another program may be using it.",
+    "The camera is running.",
+    "Opening the camera...",
+    "The camera works in Mario Kart World 1.8.0 only, in online lobbies and races.",
+    "You chose Camera Off when the game asked: your camera is off until you choose Online Play again.",
+    "Players in your camera room",
+    "Nobody: the room is made of your friends racing with you.",
+    "camera on",
+    "Report",
+    "%s is in the report form: finish it in the MKWMP tab (Report camera abuse).",
+};
+static const char *const PT[C_COUNT] = {
+    "Mostrar minha câmera em cima do meu kart",
+    "Câmera",
+    "Primeira câmera encontrada",
+    "Padrão de teste (barras coloridas)",
+    "Espelhar minha imagem",
+    "Mostrar as câmeras dos outros jogadores",
+    "Com a câmera ligada, os jogadores correndo com você que escolheram ver câmeras veem sua imagem em cima do seu kart. "
+    "Nada é gravado. Um jogador que você silenciar deixa de aparecer e deixa de ver você.",
+    "Esta versão ainda não envia imagens para outros jogadores: só você vê sua câmera.",
+    "Aceite primeiro o aviso na página MKWMP (18 anos ou mais).",
+    "A câmera precisa de um mkw-recomp mais novo (API de plugins 3).",
+    "A biblioteca da câmera (" PLAT_CAMERA_LIB ") não está na pasta do mod: só o padrão de teste funciona.",
+    "Não foi possível abrir esta câmera: outro programa pode estar usando.",
+    "A câmera está funcionando.",
+    "Abrindo a câmera...",
+    "A câmera funciona só no Mario Kart World 1.8.0, em lobbies e corridas online.",
+    "Você escolheu Câmera desligada quando o jogo perguntou: sua câmera fica desligada até você escolher Jogo Online de novo.",
+    "Jogadores na sua sala de câmera",
+    "Ninguém: a sala é formada pelos seus amigos correndo com você.",
+    "câmera ligada",
+    "Denunciar",
+    "%s está no formulário de denúncia: termine na aba MKWMP (Denunciar abuso na câmera).",
+};
+
+enum { DEVICES_MAX = 24 };
+static struct {
+    int n;
+    char ids[DEVICES_MAX][256];
+    const char *values[DEVICES_MAX + 2], *labels[DEVICES_MAX + 2];
+} D;
+
+// {"devices":[{"id","name"}]} between "the first one" and the test pattern.
+static void parse(const char *json, const char *const *T) {
+    D.n = 0;
+    const char *b = NULL, *e = NULL;
+    if (json && seatapi_json_span(json, "devices", &b, &e)) {
+        for (const char *p = b; p < e && D.n < DEVICES_MAX;) {
+            const char *o = strchr(p, '{');
+            if (!o || o >= e) break;
+            const char *c = strchr(o, '}');
+            if (!c || c > e) break;
+            char obj[600];
+            size_t len = (size_t)(c - o + 1);
+            if (len < sizeof obj) {
+                memcpy(obj, o, len);
+                obj[len] = 0;
+                if (seatapi_json_str(obj, "id", D.ids[D.n], sizeof D.ids[0]) && D.ids[D.n][0] && strcmp(D.ids[D.n], CAMERA_DEVICE_TEST))
+                    D.n++;
+            }
+            p = c + 1;
+        }
+    }
+    D.values[0] = "", D.labels[0] = T[C_FIRST];
+    for (int i = 0; i < D.n; i++) D.values[i + 1] = D.labels[i + 1] = D.ids[i];   // the id is the device's name
+    D.values[D.n + 1] = CAMERA_DEVICE_TEST, D.labels[D.n + 1] = T[C_TEST];
+}
+
+static int is_on(const MkwPage *p, const char *key) {
+    char v[8] = "";
+    return p->setting_get(key, v, sizeof v) && !strcmp(v, "1");
+}
+
+void cameratab_widgets(const MkwPage *p) {
+    const char *const *T = p->language && (!strcmp(p->language, "pt-BR") || !strcmp(p->language, "pt")) ? PT : EN;
+    if (p->version < CAMERA_API_VERSION) {
+        p->note(MKW_NOTE_DIM, T[C_OLD_RUNTIME]);
+        return;
+    }
+    camlib_set_dir(p->mod_dir);
+    camlib_show_devices();
+    static char json[8192];
+    parse(camlib_devices_json(json, sizeof json) ? json : NULL, T);
+
+    int consent = is_on(p, "consent18");
+    if (!consent) p->note(MKW_NOTE_WARN, T[C_NEED_CONSENT]);
+    p->disabled_begin(!consent);
+    p->checkbox("camera", T[C_ON], 0);   // off by default
+    int on = is_on(p, "camera");
+    p->disabled_begin(!on);
+    p->choice("camera_device", T[C_DEVICE], D.values, D.labels, D.n + 2);
+    p->checkbox("camera_mirror", T[C_MIRROR], 0);
+    p->disabled_end();
+    if (on && consent && camera_declined_now()) p->note(MKW_NOTE_WARN, T[C_DECLINED]);
+    if (on && consent) {
+        char device[256] = "";
+        p->setting_get("camera_device", device, sizeof device);
+        if (strcmp(device, CAMERA_DEVICE_TEST)) {
+            int state = camlib_state();
+            if (state == CAMLIB_MISSING) p->note(MKW_NOTE_WARN, T[C_NO_LIBRARY]);
+            else if (state == CAMLIB_FAILED) p->note(MKW_NOTE_ERROR, T[C_FAILED]);
+            else if (state == CAMLIB_RUNNING) p->note(MKW_NOTE_OK, T[C_RUNNING]);
+            else if (state == CAMLIB_STARTING) p->busy(T[C_STARTING]);
+        }
+    }
+    p->checkbox("camera_view", T[C_VIEW], 0);   // off by default too
+    p->disabled_end();
+    // In the game: who is in the camera room (the faces chosen among the mutual friends in the friend room), each with
+    // a Report that fills the MKWMP tab's form, as the Voice chat tab's does for a muted player.
+    ChatRoom room;
+    if (p->in_game && consent && (on || is_on(p, "camera_view")) && chatroom_get(&room)) {
+        static char reported[64];   // the menu's thread only
+        if (p->opened) reported[0] = 0;
+        p->heading(T[C_ROOM]);
+        p->list_begin("camera_room", 5);
+        p->list_empty(T[C_ROOM_EMPTY]);
+        const char *const buttons[] = {T[C_REPORT]};
+        for (int i = 0; i < room.n; i++) {
+            char name[FRIEND_NAME_SIZE];
+            if (!friends_name_of(room.member[i].account, name, sizeof name)) continue;   // the form needs the name
+            int b = p->list_row(name, room.member[i].camera ? T[C_MEMBER_ON] : NULL, buttons, seatapi_name_ok(name) ? 1 : 0);
+            if (b == 1 && p->setting_set("report_name", name)) snprintf(reported, sizeof reported, "%s", name);
+        }
+        p->list_end();
+        if (reported[0]) {
+            char line[240];
+            snprintf(line, sizeof line, T[C_REPORT_NEXT], reported);
+            p->note(MKW_NOTE_INFO, line);
+        }
+    }
+    p->note(MKW_NOTE_DIM, T[C_WHAT]);
+    p->note(MKW_NOTE_DIM, T[C_GAME]);
+}
+
+// In the game the tab is there even when camera_install left the camera off (not signed up, an older runtime or
+// game): it says why, and the settings can still be set for the next start.
+void cameratab_draw(const MkwPage *p) {
+    if (p->size < sizeof(MkwPage)) return;
+    const char *why = camera_off_reason();
+    if (why) {
+        int pt = p->language && (!strcmp(p->language, "pt-BR") || !strcmp(p->language, "pt"));
+        char line[320];
+        snprintf(line, sizeof line, pt ? "A câmera está desligada nesta sessão do jogo: %s. Mudanças valem no próximo início."
+                                       : "The camera is off in this game session: %s. Changes apply at the next start.", why);
+        p->note(MKW_NOTE_WARN, line);
+    }
+    cameratab_widgets(p);
+}

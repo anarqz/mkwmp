@@ -1,26 +1,22 @@
 #include "launcher.h"
 #include "config.h"
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include "plat_net.h"
 #include <stdio.h>
 #include <string.h>
 
 // Returns the HTTP status (0 = no usable response).
 static int request_once(const MkwmpConfig *cfg, const char *method, const char *path, const char *json,
                         char *buf, size_t cap, const char **body) {
-    WSADATA wsa;
-    WSAStartup(MAKEWORD(2, 2), &wsa);
-    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (s == INVALID_SOCKET) return 0;
-    DWORD tmo = 5000;
-    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tmo, sizeof tmo);
-    setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tmo, sizeof tmo);
+    plat_net_init();
+    PlatSock s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (s == PLAT_NO_SOCK) return 0;
+    plat_sock_timeouts(s, 5000);
     struct sockaddr_in sa = {0};
     sa.sin_family = AF_INET;
     sa.sin_port = htons((unsigned short)cfg->launcher_port);
     sa.sin_addr.s_addr = inet_addr(cfg->launcher_host);
-    if (connect(s, (struct sockaddr *)&sa, sizeof sa)) { closesocket(s); return 0; }
+    if (connect(s, (struct sockaddr *)&sa, sizeof sa)) { plat_sock_close(s); return 0; }
     char req[512];
     size_t jlen = json ? strlen(json) : 0;
     int n = snprintf(req, sizeof req,
@@ -28,15 +24,15 @@ static int request_once(const MkwmpConfig *cfg, const char *method, const char *
                      "Content-Length: %u\r\nConnection: close\r\n\r\n",
                      method, path, cfg->launcher_host, cfg->launcher_port, cfg->launcher_token,
                      json ? "Content-Type: application/json\r\n" : "", (unsigned)jlen);
-    if (n < 0 || n >= (int)sizeof req || send(s, req, n, 0) != n) { closesocket(s); return 0; }
+    if (n < 0 || n >= (int)sizeof req || send(s, req, n, 0) != n) { plat_sock_close(s); return 0; }
     for (size_t sent = 0; sent < jlen;) {
         int k = send(s, json + sent, (int)(jlen - sent), 0);
-        if (k <= 0) { closesocket(s); return 0; }
+        if (k <= 0) { plat_sock_close(s); return 0; }
         sent += (size_t)k;
     }
     int got = 0, r;
     while (got < (int)cap - 1 && (r = recv(s, buf + got, (int)cap - 1 - got, 0)) > 0) got += r;
-    closesocket(s);
+    plat_sock_close(s);
     buf[got] = 0;
     int status = 0;
     if (sscanf(buf, "HTTP/1.%*d %d", &status) != 1) return 0;
@@ -44,6 +40,10 @@ static int request_once(const MkwmpConfig *cfg, const char *method, const char *
     *body = b ? b + 4 : buf + got;
     return status;
 }
+
+static LauncherDirect g_direct;   // the plugin's in-process answers (seatd.c), used when the config is direct
+
+void launcher_set_direct(LauncherDirect fn) { g_direct = fn; }
 
 int launcher_request(const char *method, const char *path, char *buf, size_t cap, const char **body) {
     return launcher_request_json(method, path, NULL, buf, cap, body);
@@ -53,11 +53,12 @@ int launcher_request_json(const char *method, const char *path, const char *json
                           const char **body) {
     // One request at a time: the seat keepalive and the friends refresh run on their own
     // threads, and a retry re-reads the shared config.
-    static SRWLOCK lock = SRWLOCK_INIT;
+    static PlatLock lock = PLAT_LOCK_INIT;
     if (cap == 0) return 0;
     buf[0] = 0;
     *body = buf;
-    AcquireSRWLockExclusive(&lock);
+    if (g_direct && mkwmp_config()->direct) return g_direct(method, path, json, buf, cap, body);
+    plat_lock(&lock);
     const MkwmpConfig *cfg = mkwmp_config();
     int status = -1;
     if (cfg->launcher_port) {
@@ -68,6 +69,6 @@ int launcher_request_json(const char *method, const char *path, const char *json
             status = cfg->launcher_port ? request_once(cfg, method, path, json, buf, cap, body) : 0;
         }
     }
-    ReleaseSRWLockExclusive(&lock);
+    plat_unlock(&lock);
     return status;
 }

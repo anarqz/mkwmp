@@ -2,13 +2,13 @@
 #include "log.h"
 
 #include <windows.h>
+#include <stdlib.h>
 #include <string.h>
 
-Runtime g_rt;
-Delegates g_dele;
+RtApi g_rt;
 
-// Names we need, in a fixed order mirrored by the pointer slots below. The first N_RT go to g_rt
-// (required); the rest are optional delegate handlers (g_dele).
+// Names we need, in a fixed order mirrored by the pointer slots below. The first N_RT are g_rt's required entries;
+// the rest fill its optional ones (or are read by keypad.c through coff_symbol).
 static const char *const kNames[] = {
     "hostfn_add_override",
     "ldr_count",
@@ -16,22 +16,15 @@ static const char *const kNames[] = {
     "rt_log",
     "rt_call",
     "cfg_get",
-    // optional delegates (static fs handlers)
+    // optional: the runtime's static fs handlers (g_rt.fs_*)
     "ov_open_file",
     "ov_entry_type",
     "ov_read_file",
     "ov_file_size",
     "ov_close_file",
-    "fiber_switch_to",
-    "kern_fiber_switch",
-    "kern_fiber_initialize",
-    "g_fibers",
-    "plat_fiber_new",
-    "plat_fiber_free",
-    "kern_cpu",
     "kern_core_away",
     "kern_core_back",
-    // optional: the dispatch host registry (guesthook.c)
+    // optional: the dispatch host registry (g_rt.host_fn_at)
     "g_host",
     // optional: the on-screen keypad (keypad.c): the runtime's text-entry stub, its overlay frame, Dear ImGui
     "text_entry_run",
@@ -90,6 +83,90 @@ static uint8_t *read_own_image(uint32_t *out_size) {
 
 static uint32_t rd32(const uint8_t *p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static uint16_t rd16(const uint8_t *p) { uint16_t v; memcpy(&v, p, 2); return v; }
+
+// ---- g_rt.host_fn_at: mkw-recomp runtime/cpu/dispatch.c's
+// static struct { uint64_t addr; GuestFn fn; } g_host[HOST_CAP]; (open addressing, its own hash)
+enum { HOST_CAP = 8192 };
+typedef struct { volatile uint64_t addr; GuestFn fn; } HostEntry;
+static HostEntry *g_host;
+
+static uint64_t host_hash(uint64_t addr) { return (addr >> 2) * 0x9E3779B97F4A7C15ull >> 51; }
+
+static int coff_host_fn_at(uint64_t addr, GuestFn fn) {
+    for (uint64_t h = host_hash(addr), n = 0; n < HOST_CAP; h = (h + 1) & (HOST_CAP - 1), n++) {
+        if (g_host[h].addr == addr) { g_host[h].fn = fn; return 1; }
+        if (!g_host[h].addr) {
+            g_host[h].fn = fn;   // the function first: a reader that sees the address sees it
+            __atomic_store_n(&g_host[h].addr, addr, __ATOMIC_RELEASE);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// ---- g_rt.stock: mkw.exe's .ovr section, {const char *name, GuestFn fn} pairs (runtime/cpu/hostfn.c)
+static GuestFn coff_stock(const char *name) {
+    static const char **names;
+    static GuestFn *fns;
+    static int count = -1;
+    if (count < 0) {
+        count = 0;
+        unsigned char *img = (unsigned char *)GetModuleHandleW(NULL);
+        IMAGE_NT_HEADERS64 *nt = (IMAGE_NT_HEADERS64 *)(img + ((IMAGE_DOS_HEADER *)img)->e_lfanew);
+        IMAGE_SECTION_HEADER *sec = IMAGE_FIRST_SECTION(nt);
+        for (int i = 0; i < nt->FileHeader.NumberOfSections; i++, sec++) {
+            if (memcmp(sec->Name, ".ovr", 5)) continue;
+            uint64_t *p = (uint64_t *)(img + sec->VirtualAddress);
+            int n = (int)(sec->Misc.VirtualSize / 16);
+            names = calloc((size_t)n, sizeof *names);
+            fns = calloc((size_t)n, sizeof *fns);
+            for (int k = 0; k < n && names && fns; k++) {
+                if (!p[2 * k] || !p[2 * k + 1]) continue;
+                names[count] = (const char *)(uintptr_t)p[2 * k];
+                fns[count++] = (GuestFn)(uintptr_t)p[2 * k + 1];
+            }
+        }
+        mkwmp_log("dormant mode: %d stock handlers in .ovr", count);
+        if (g_rt.log) g_rt.log("mkwmp: dormant mode: %d stock handlers in .ovr", count);   // as npln.c's mlog
+    }
+    for (int k = 0; k < count; k++) if (!strcmp(names[k], name)) return fns[k];
+    return NULL;
+}
+
+// ---- g_rt.game_code_loaded / g_rt.dispatch_hook: the lifted game code is mkwgame.dll, whose indirect calls go
+// through its import of mkw.exe!rt_dispatch; we swap that import (IAT entry) for ours.
+static int coff_game_code_loaded(void) { return GetModuleHandleW(L"mkwgame.dll") != NULL; }
+
+static int coff_dispatch_hook(GuestFn ours, GuestFn *original) {
+    uint8_t *base = (void *)GetModuleHandleW(L"mkwgame.dll");
+    if (!base) return 0;
+    IMAGE_DOS_HEADER *dos = (void *)base;
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return 0;
+    IMAGE_NT_HEADERS64 *nt = (void *)(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return 0;
+    IMAGE_DATA_DIRECTORY dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (!dir.VirtualAddress) return 0;
+    IMAGE_IMPORT_DESCRIPTOR *imports = (void *)(base + dir.VirtualAddress);
+    for (size_t i = 0; i < dir.Size / sizeof(*imports) && imports[i].Name; i++) {
+        IMAGE_IMPORT_DESCRIPTOR *imp = &imports[i];
+        if (_stricmp((char *)base + imp->Name, "mkw.exe") || !imp->OriginalFirstThunk) continue;
+        IMAGE_THUNK_DATA64 *names = (void *)(base + imp->OriginalFirstThunk);
+        IMAGE_THUNK_DATA64 *iat = (void *)(base + imp->FirstThunk);
+        for (size_t j = 0; names[j].u1.AddressOfData; j++) {
+            uint64_t rva = names[j].u1.AddressOfData;
+            if (IMAGE_SNAP_BY_ORDINAL64(rva)) continue;
+            IMAGE_IMPORT_BY_NAME *name = (void *)(base + rva);
+            if (strcmp((char *)name->Name, "rt_dispatch")) continue;
+            DWORD protection;
+            if (!VirtualProtect(&iat[j], sizeof iat[j], PAGE_READWRITE, &protection)) return 0;
+            *original = (GuestFn)(uintptr_t)iat[j].u1.Function;   // before the swap: ours may run at once
+            InterlockedExchangePointer((void *volatile *)&iat[j].u1.Function, (void *)ours);
+            VirtualProtect(&iat[j], sizeof iat[j], protection, &protection);
+            return 1;
+        }
+    }
+    return 0;
+}
 
 int coff_resolve_runtime(void) {
     uintptr_t base = (uintptr_t)GetModuleHandleW(NULL);
@@ -162,26 +239,25 @@ int coff_resolve_runtime(void) {
         }
         HeapFree(GetProcessHeap(), 0, secva);
 
-        g_rt.hostfn_add_override = (fn_hostfn_add_override)slots[0];
-        g_rt.ldr_count           = (fn_ldr_count)slots[1];
-        g_rt.ldr_symbol          = (fn_ldr_symbol)slots[2];
-        g_rt.rt_log              = (fn_rt_log)slots[3];
-        g_rt.rt_call             = (fn_rt_call)slots[4];
-        g_rt.cfg_get             = (fn_cfg_get)slots[5];
-        g_dele.fs_open_file  = (GuestFn)slots[6];
-        g_dele.fs_entry_type = (GuestFn)slots[7];
-        g_dele.fs_read_file  = (GuestFn)slots[8];
-        g_dele.fs_file_size  = (GuestFn)slots[9];
-        g_dele.fs_close_file = (GuestFn)slots[10];
-        g_dele.fiber_switch_to = (void (*)(void *, const Cpu *, void *))slots[11];
-        g_dele.fiber_switch = (GuestFn)slots[12];
-        g_dele.fiber_initialize = (GuestFn)slots[13];
-        g_dele.fibers = (void **)slots[14];
-        g_dele.fiber_new = (void *(*)(size_t, void (*)(void *), void *))slots[15];
-        g_dele.fiber_free = (void (*)(void *))slots[16];
-        g_dele.current_cpu = (Cpu *(*)(void))slots[17];
-        g_dele.core_away = (int (*)(void))slots[18];
-        g_dele.core_back = (void (*)(int *))slots[19];
+        // mkw-recomp runtime/cpu/hostfn.c, core/boot/loader.c, core/base/log.c, core/base/cfg.c
+        g_rt.override     = (void (*)(const char *, GuestFn))slots[0];       // hostfn_add_override
+        g_rt.guest_modules = (int (*)(void))slots[1];                       // ldr_count
+        g_rt.guest_symbol = (uint64_t (*)(const char *))slots[2];           // ldr_symbol
+        g_rt.log          = (void (*)(const char *, ...))slots[3];          // rt_log
+        g_rt.call         = (uint64_t (*)(Cpu *, uint64_t, int, ...))slots[4];   // rt_call
+        g_rt.cfg_get      = (const char *(*)(const char *))slots[5];
+        g_rt.fs_open_file  = (GuestFn)slots[6];
+        g_rt.fs_entry_type = (GuestFn)slots[7];
+        g_rt.fs_read_file  = (GuestFn)slots[8];
+        g_rt.fs_file_size  = (GuestFn)slots[9];
+        g_rt.fs_close_file = (GuestFn)slots[10];
+        g_rt.core_away = (int (*)(void))slots[11];        // kern_core_away
+        g_rt.core_back = (void (*)(int *))slots[12];      // kern_core_back
+        g_host = (HostEntry *)slots[13];
+        g_rt.host_fn_at = g_host ? coff_host_fn_at : NULL;
+        g_rt.stock = coff_stock;
+        g_rt.game_code_loaded = coff_game_code_loaded;
+        g_rt.dispatch_hook = coff_dispatch_hook;
 
         int req = 0;
         for (int k = 0; k < N_RT; k++) req += slots[k] != NULL;

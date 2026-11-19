@@ -34,12 +34,11 @@ struct game_addrs {
     uint64_t sdk_mono_source_slot, sdk_tick_source;
     uint32_t sdk_tick_source_words[8];
     // Error service, vtable slot 6: post a communication error (x1 = info, id = its first u32). Target of
-    // MKWMP_SKIP_ERROR, the Proton default skip and MKWMP_SKIP_REFEREE_TIMEOUT. Guard: slot 6 of the vtable holds it
+    // MKWMP_SKIP_ERROR and MKWMP_SKIP_REFEREE_TIMEOUT. Guard: slot 6 of the vtable holds it
     // and the function starts with these words.
     uint64_t errsvc_post, errsvc_vtable;
     uint32_t errsvc_words[2];
     uint32_t err_referee_timeout;   // id dropped by MKWMP_SKIP_REFEREE_TIMEOUT=1
-    uint32_t proton_skip_error;     // id dropped by default under Wine/Proton; 0: no default for this build
     // voice_ui.c: UIPageOnlinePauseMenu. Guards: the two slots hold fn_pause_open / fn_pause_frame, and
     // fn_plate_text(ctl, char16*) starts with plate_text_words.
     uint64_t vt_online_pause, fn_pause_open, fn_pause_frame, fn_plate_text;
@@ -55,6 +54,27 @@ struct game_addrs {
     // declines; 0 = this build makes none (1.8.0: none in a whole offline session), so the first request is the
     // player opening Online Play.
     uint8_t boot_signin;
+    // camera.c camera_setup_install: the game's own "Use the camera?" set-up (research CAMERA-RE.md 9). Choosing
+    // Online Play runs OnlineCameraSetup.module, whose first node, AIGlobalSeqCheckVideoCameraConnection, asks the
+    // console's camera service whether a camera is attached and skips the prompt when it is not. 0 cam_check_slot:
+    // the build has no such set-up (1.0.0) or it is not mapped.
+    //   cam_check_slot / cam_check_fn: the one vtable slot that holds the node's update, and that function. Guards:
+    //     the slot holds it, and cam_check_words are at fn + cam_check_at (it reads its is_online input, a pointer
+    //     to a byte at node + cam_check_online); node + cam_check_result's top two bits are 2 once it answered
+    //     "Valid", 3 "Invalid".
+    //   cam_service: the global with the camera service object, whose vtable slot cam_query_slot is the "is a camera
+    //     with this picture format attached" request (0: yes). Guard: cam_query_words at cam_query_at, the call.
+    //   cam_ret0: a game function that only returns 0, put in that slot while the node asks. Guard: its two words.
+    //   g_flags4 / cam_setup_bit: game_global's flag word and the bit "the player chose Camera On" (read, logged).
+    uint64_t cam_check_slot, cam_check_fn;
+    uint32_t cam_check_words[4];
+    uint16_t cam_check_at, cam_check_online, cam_check_result;
+    uint64_t cam_service, cam_query_at;
+    uint32_t cam_query_words[3];
+    uint16_t cam_query_slot;
+    uint64_t cam_ret0;
+    uint32_t cam_ret0_words[2];
+    uint16_t g_flags4, cam_setup_bit;
 
     // ---------------------------------------------------------------- diagnostic (0 address = off)
     uint64_t pia_join_step[GAME_PIA_STEPS];         // JoinRandomSessionJob step functions

@@ -2,24 +2,12 @@
 
 #include "log.h"
 
-#include <windows.h>
+#include "plat.h"
 #include <string.h>
 
-// mkw-recomp runtime/cpu/dispatch.c: static struct { uint64_t addr; GuestFn fn; } g_host[HOST_CAP];
-enum { HOST_CAP = 8192 };
-typedef struct { volatile uint64_t addr; GuestFn fn; } HostEntry;
-static HostEntry *g_host;
 static uint64_t g_next_fake = 0x00000FF000000000ull;   // far outside every guest module and the flat table
 
-void *coff_symbol(const char *name);
-
-static int mapped(uint64_t addr, size_t n) {
-    MEMORY_BASIC_INFORMATION mi;
-    if (!VirtualQuery((const void *)(uintptr_t)addr, &mi, sizeof mi) || mi.State != MEM_COMMIT ||
-        (mi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
-        return 0;
-    return addr + n <= (uint64_t)(uintptr_t)mi.BaseAddress + mi.RegionSize;
-}
+static int mapped(uint64_t addr, size_t n) { return plat_mem_readable((const void *)(uintptr_t)addr) >= n; }
 
 int game_build(void) {
     static const struct { int build; uint32_t mod0; uint32_t note; uint8_t id[16]; } kBuilds[] = {
@@ -28,7 +16,7 @@ int game_build(void) {
         {GAME_180, 0x02bb3060u, 0x346ba64u,
          {0xd0, 0x0e, 0x4f, 0x39, 0x9e, 0x41, 0x1d, 0x06, 0x13, 0xaa, 0x8d, 0x26, 0xb1, 0xc0, 0x2f, 0xef}},
     };
-    static volatile LONG cached;
+    static volatile int32_t cached;
     if (cached) return cached;
     uint64_t main = GUEST_MAIN(0);
     if (!mapped(main + 4, 4)) return GAME_UNKNOWN;   // not loaded yet: ask again later
@@ -41,7 +29,7 @@ int game_build(void) {
         break;
     }
     if (build == GAME_UNKNOWN) build = GAME_OTHER;   // mapped but not a build we know: final
-    InterlockedExchange(&cached, build);
+    plat_xchg(&cached, build);
     mkwmp_log("game build: %s (main+4 = %#x)", game_build_name(build), mod0);
     return build;
 }
@@ -51,31 +39,18 @@ const char *game_build_name(int build) {
 }
 
 int guesthook_init(void) {
-    if (g_host) return 1;
-    g_host = (HostEntry *)coff_symbol("g_host");
-    if (!g_host) mkwmp_log("guesthook: g_host not found in mkw.exe; in-game voice UI off");
-    return g_host != NULL;
-}
-
-static uint64_t host_hash(uint64_t addr) { return (addr >> 2) * 0x9E3779B97F4A7C15ull >> 51; }
-
-static int host_insert(uint64_t addr, GuestFn fn) {
-    for (uint64_t h = host_hash(addr), n = 0; n < HOST_CAP; h = (h + 1) & (HOST_CAP - 1), n++) {
-        if (g_host[h].addr == addr) { g_host[h].fn = fn; return 1; }
-        if (!g_host[h].addr) {
-            g_host[h].fn = fn;   // the function first: a reader that sees the address sees it
-            __atomic_store_n(&g_host[h].addr, addr, __ATOMIC_RELEASE);
-            return 1;
-        }
-    }
+    static volatile int32_t said;
+    if (g_rt.host_fn_at || g_rt.override_address) return 1;
+    if (!plat_xchg(&said, 1))
+        mkwmp_log("guesthook: the runtime cannot route indirect calls to us now (no g_host, or the plugin API's "
+                  "address overrides are closed: the game is running); in-game voice UI off");
     return 0;
 }
 
 int guesthook_vtable(uint64_t vtable, int slot, GuestFn fn, uint64_t *original) {
     if (!guesthook_init()) return 0;
     uint64_t *at = (uint64_t *)(uintptr_t)(vtable + 8ull * (uint64_t)slot);
-    MEMORY_BASIC_INFORMATION mi;
-    if (!VirtualQuery(at, &mi, sizeof mi) || mi.State != MEM_COMMIT) {
+    if (plat_mem_readable(at) < 8) {
         mkwmp_log("guesthook: vtable %#llx slot %d not mapped", (unsigned long long)vtable, slot);
         return 0;
     }
@@ -83,28 +58,43 @@ int guesthook_vtable(uint64_t vtable, int slot, GuestFn fn, uint64_t *original) 
     if (old >= 0x00000FF000000000ull && old < 0x0000100000000000ull) {   // ours already
         return 1;
     }
+    if (!g_rt.host_fn_at) {
+        // the plugin API: the slot stays; the function it holds is overridden for every indirect caller, so fn checks
+        // its object (the hook's caller does) and passes anything else on with guesthook_original
+        if (!old || !g_rt.override_address(old, fn)) {
+            mkwmp_log("guesthook: override of %#llx (vtable %#llx slot %d) refused", (unsigned long long)old,
+                      (unsigned long long)vtable, slot);
+            return 0;
+        }
+        *original = old;
+        mkwmp_log("guesthook: vtable %#llx slot %d: %#llx overridden", (unsigned long long)vtable, slot,
+                  (unsigned long long)old);
+        return 1;
+    }
     uint64_t fake = g_next_fake;
     g_next_fake += 16;
-    if (!host_insert(fake, fn)) { mkwmp_log("guesthook: host registry full"); return 0; }
-    DWORD prot;
-    if (!VirtualProtect(at, 8, PAGE_READWRITE, &prot)) {
-        mkwmp_log("guesthook: VirtualProtect %#llx failed (%lu)", (unsigned long long)(uintptr_t)at, GetLastError());
+    if (!g_rt.host_fn_at(fake, fn)) { mkwmp_log("guesthook: host registry full"); return 0; }
+    *original = old;   // before the slot changes: ours may run at once
+    if (!plat_mem_write_u64(at, fake)) {
+        mkwmp_log("guesthook: cannot write vtable slot %#llx (error %lu)", (unsigned long long)(uintptr_t)at,
+                  plat_last_error());
         return 0;
     }
-    *original = old;
-    __atomic_store_n(at, fake, __ATOMIC_RELEASE);
-    VirtualProtect(at, 8, prot, &prot);
-    FlushInstructionCache(GetCurrentProcess(), at, 8);
     mkwmp_log("guesthook: vtable %#llx slot %d: %#llx -> ours", (unsigned long long)vtable, slot, (unsigned long long)old);
     return 1;
 }
 
 uint64_t guest_call(Cpu *c, uint64_t fn, int n, uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3) {
     switch (n) {
-    case 0: return g_rt.rt_call(c, fn, 0);
-    case 1: return g_rt.rt_call(c, fn, 1, a0);
-    case 2: return g_rt.rt_call(c, fn, 2, a0, a1);
-    case 3: return g_rt.rt_call(c, fn, 3, a0, a1, a2);
-    default: return g_rt.rt_call(c, fn, 4, a0, a1, a2, a3);
+    case 0: return g_rt.call(c, fn, 0);
+    case 1: return g_rt.call(c, fn, 1, a0);
+    case 2: return g_rt.call(c, fn, 2, a0, a1);
+    case 3: return g_rt.call(c, fn, 3, a0, a1, a2);
+    default: return g_rt.call(c, fn, 4, a0, a1, a2, a3);
     }
+}
+
+uint64_t guesthook_original(Cpu *c, uint64_t original) {
+    if (g_rt.host_fn_at) return g_rt.call(c, original, 0);   // the slot points at us: call its old target
+    return g_rt.call_original(c);   // an address override: calling original would land in us again
 }

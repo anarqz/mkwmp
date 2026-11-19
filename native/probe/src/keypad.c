@@ -14,7 +14,7 @@
 #include "detour.h"
 #include "keypad_logic.h"
 #include "log.h"
-#include "recomp.h"
+#include "rtapi.h"
 
 #include <windows.h>
 #include <stdint.h>

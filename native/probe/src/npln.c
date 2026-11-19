@@ -4,12 +4,12 @@
 // SendMsg/RecvMsg; it trusts the CA the probe returns (lobby_ca.h: the server's own, else capture_cert.h).
 // nn::ssl stubs below cover other SDK paths, not the captured gRPC transport.
 //
-// Gates, completed local async prerequisites and runtime fiber fixes start NPLN.
+// Gates and completed local async prerequisites start NPLN.
 // Winsock carries its TLS records to resources/python-lobby/mkwmp_server.py, which terminates
 // TLS, decodes the HTTP/2 + protobuf requests and supplies experimental responses.
 //
 // Env: MKWMP_PORT (default 8900), MKWMP_HOST (default 127.0.0.1).
-#include "recomp.h"
+#include "rtapi.h"
 #include "log.h"
 #include "config.h"
 #include "lobby_ca.h"
@@ -17,12 +17,13 @@
 #include "friends.h"
 #include "gameaddrs.h"
 #include "guesthook.h"
+#include "probe.h"
 #include "voice.h"
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include "plat_net.h"
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -38,13 +39,13 @@ static void mlog(const char *fmt, ...) {
     va_end(ap);
     if (n < 0) return;
     mkwmp_log("%s", buf);
-    if (g_rt.rt_log) g_rt.rt_log("mkwmp: %s", buf);
+    if (g_rt.log) g_rt.log("mkwmp: %s", buf);
 }
 static void rlog(const char *s) { mlog("%s", s); }
 // MKWMP_TRACE_EDGES=1: the probe's debugging detail (every call, hex dumps, every packet). Off for players.
 static int g_trace_edges;
 static void dump_args(const char *name, Cpu *c, int n) {
-    if (!g_rt.rt_log || !g_trace_edges) return;
+    if (!g_rt.log || !g_trace_edges) return;
     uint64_t a[6] = {0};
     for (int i = 0; i < n && i < 6; i++) a[i] = arg_x(c, i);
     mlog("CALL %s x0=%#llx x1=%#llx x2=%#llx x3=%#llx x4=%#llx", name,
@@ -52,10 +53,10 @@ static void dump_args(const char *name, Cpu *c, int n) {
                 (unsigned long long)a[3], (unsigned long long)a[4]);
 }
 static void dump_cstr(const char *label, const void *p) {
-    if (g_rt.rt_log) mlog("%s = %s", label, p ? (const char *)p : "(null)");
+    if (g_rt.log) mlog("%s = %s", label, p ? (const char *)p : "(null)");
 }
 static void rhex(const char *tag, const void *buf, size_t len) {
-    if (!g_rt.rt_log || !g_trace_edges) return;
+    if (!g_rt.log || !g_trace_edges) return;
     static const char H[] = "0123456789abcdef";
     const unsigned char *b = buf;
     char hb[1537];
@@ -80,18 +81,18 @@ static void net_init(void);
 // Guest symbols never move once the modules are loaded, but ldr_symbol is a linear strcmp scan over every symbol:
 // overrides on hot paths (1.8.0's SDK calls pthread_cond_timedwait and clock_gettime constantly) must not pay it per
 // call. A miss (0) is retried.
-static uint64_t sym_once(volatile LONG64 *slot, const char *name) {
+static uint64_t sym_once(volatile int64_t *slot, const char *name) {
     uint64_t v = (uint64_t)*slot;
-    if (!v && g_rt.ldr_symbol) InterlockedExchange64(slot, (LONG64)(v = g_rt.ldr_symbol(name)));
+    if (!v && g_rt.guest_symbol) plat_xchg(slot, (int64_t)(v = g_rt.guest_symbol(name)));
     return v;
 }
-#define SYM(name) ({ static volatile LONG64 slot_; sym_once(&slot_, name); })
+#define SYM(name) ({ static volatile int64_t slot_; sym_once(&slot_, name); })
 
 // The SDK's own clock_gettime, called directly (the import override below is not in its way). 1 = a usable timestamp.
 static int sdk_clock_gettime(Cpu *c, int id, int64_t *out) {
-    if (!g_rt.ldr_symbol || !g_rt.rt_call) return 0;
+    if (!g_rt.guest_symbol || !g_rt.call) return 0;
     uint64_t original = SYM("clock_gettime");
-    return original && !g_rt.rt_call(c, original, 2, (uint64_t)(unsigned)id, (uint64_t)(uintptr_t)out) &&
+    return original && !g_rt.call(c, original, 2, (uint64_t)(unsigned)id, (uint64_t)(uintptr_t)out) &&
            out[1] >= 0 && out[1] < 1000000000;
 }
 
@@ -112,17 +113,17 @@ static int sdk_monotonic_repair_row(const struct game_addrs *ga) {
     if (!ga || !ga->sdk_mono_source_slot ||
         !game_guard_words("SDK tick clock source", ga->sdk_tick_source, ga->sdk_tick_source_words, 8))
         return 0;
-    volatile LONG64 *slot = (volatile LONG64 *)(uintptr_t)ga->sdk_mono_source_slot;
-    uint64_t was = (uint64_t)InterlockedExchange64(slot, (LONG64)ga->sdk_tick_source);
+    volatile int64_t *slot = (volatile int64_t *)(uintptr_t)ga->sdk_mono_source_slot;
+    uint64_t was = (uint64_t)plat_xchg(slot, (int64_t)ga->sdk_tick_source);
     if (was == ga->sdk_tick_source) return 0;   // already the tick source: whatever fails, it is not the source
-    static volatile LONG said;
-    if (!InterlockedExchange(&said, 1))
+    static volatile int32_t said;
+    if (!plat_xchg(&said, 1))
         mlog("SDK monotonic clock failed (source %#llx): tick source restored, timed waits can block",
              (unsigned long long)was);
     return 1;
 }
 static int sdk_monotonic_repair(void) {
-    static volatile LONG state;   // 0 undecided (main not mapped yet), 1 the build has a verified repair, 2 it has not
+    static volatile int32_t state;   // 0 undecided (main not mapped yet), 1 the build has a verified repair, 2 it has not
     if (state == 2) return 0;
     int build = game_build();
     if (build == GAME_UNKNOWN) return 0;
@@ -130,7 +131,7 @@ static int sdk_monotonic_repair(void) {
     if (state == 1) return sdk_monotonic_repair_row(ga);
     int ok = ga && ga->sdk_mono_source_slot &&
              game_guard_words("SDK tick clock source", ga->sdk_tick_source, ga->sdk_tick_source_words, 8);
-    if (!InterlockedExchange(&state, ok ? 1 : 2) && !ok)
+    if (!plat_xchg(&state, ok ? 1 : 2) && !ok)
         mlog("SDK monotonic clock failed on game build %s: no verified repair, SDK timed waits cannot block",
              game_build_name(build));
     return ok && sdk_monotonic_repair_row(ga);
@@ -138,10 +139,10 @@ static int sdk_monotonic_repair(void) {
 
 // The SDK's default monotonic clock, computed here: the epoch its timed waits use once repaired.
 static int tick_monotonic(Cpu *c, int64_t *out) {
-    if (!g_rt.ldr_symbol || !g_rt.rt_call) return 0;
+    if (!g_rt.guest_symbol || !g_rt.call) return 0;
     uint64_t tick = SYM("_ZN2nn2os13GetSystemTickEv"), span = SYM("_ZN2nn2os17ConvertToTimeSpanENS0_4TickE");
     if (!tick || !span) return 0;
-    int64_t ns = (int64_t)g_rt.rt_call(c, span, 1, g_rt.rt_call(c, tick, 0));
+    int64_t ns = (int64_t)g_rt.call(c, span, 1, g_rt.call(c, tick, 0));
     if (ns < 0) return 0;
     out[0] = ns / 1000000000;
     out[1] = ns % 1000000000;
@@ -163,18 +164,9 @@ static void ov_clock_gettime(Cpu *c) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
     if (id == 0) {
-        FILETIME time;
-        GetSystemTimePreciseAsFileTime(&time);
-        ULARGE_INTEGER ticks;
-        ticks.LowPart = time.dwLowDateTime; ticks.HighPart = time.dwHighDateTime;
-        uint64_t unix_ticks = ticks.QuadPart - 116444736000000000ull;
-        out[0] = (int64_t)(unix_ticks / 10000000ull);
-        out[1] = (int64_t)((unix_ticks % 10000000ull) * 100ull);
+        plat_realtime(out);
     } else if (!(sdk_monotonic_repair() && sdk_clock_gettime(c, 1, out)) && !tick_monotonic(c, out)) {
-        LARGE_INTEGER count, frequency;
-        QueryPerformanceCounter(&count); QueryPerformanceFrequency(&frequency);
-        out[0] = count.QuadPart / frequency.QuadPart;
-        out[1] = (count.QuadPart % frequency.QuadPart) * 1000000000ll / frequency.QuadPart;
+        plat_monotonic(out);
     }
     ret_x(c, 0);
 }
@@ -183,16 +175,16 @@ static void ov_clock_gettime(Cpu *c) {
 // none: an unknown build, or the instruction before it is not the expected BL (then every timed wait keeps the SDK's
 // own clock). Decided once main is mapped: until then (GAME_UNKNOWN) nothing is cached and the next call asks again.
 static uint64_t grpc_timedwait_gate(void) {
-    static volatile LONG state;        // 0 undecided, 1 decided
-    static volatile LONG64 gate;
+    static volatile int32_t state;        // 0 undecided, 1 decided
+    static volatile int64_t gate;
     if (state) return (uint64_t)gate;
     int build = game_build();
     if (build == GAME_UNKNOWN) return 0;
     const struct game_addrs *ga = game_addrs_for(build);
     uint64_t lr = ga && game_guard_words("gRPC timed wait call", ga->grpc_timedwait_lr - 4, &ga->grpc_timedwait_bl, 1)
                       ? ga->grpc_timedwait_lr : 0;
-    InterlockedExchange64(&gate, (LONG64)lr);
-    if (!InterlockedExchange(&state, 1) && !lr)
+    plat_xchg(&gate, (int64_t)lr);
+    if (!plat_xchg(&state, 1) && !lr)
         mkwmp_log("game build %s: gRPC timed waits keep the SDK clock (no verified call site)", game_build_name(build));
     return lr;
 }
@@ -217,7 +209,7 @@ static void ov_cond_timedwait(Cpu *c) {
     uint64_t gate = grpc_timedwait_gate();
     if (!gate || c->x[30] != gate || !clockwait || !deadline ||
         deadline[1] < 0 || deadline[1] >= 1000000000) {
-        ret_x(c, original ? g_rt.rt_call(c, original, 3, cond, mutex,
+        ret_x(c, original ? g_rt.call(c, original, 3, cond, mutex,
                                         (uint64_t)(uintptr_t)deadline) : G_EINVAL);
         return;
     }
@@ -234,9 +226,9 @@ static void ov_cond_timedwait(Cpu *c) {
     }
     int64_t absolute[2];
     deadline_on_clock(deadline, now, mono, absolute);
-    static volatile LONG announced;
-    if (InterlockedCompareExchange(&announced, 1, 0) == 0) rlog("gRPC timed waits use SDK monotonic clock");
-    ret_x(c, g_rt.rt_call(c, clockwait, 4, cond, mutex, (uint64_t)1,
+    static volatile int32_t announced;
+    if (plat_cas(&announced, 1, 0) == 0) rlog("gRPC timed waits use SDK monotonic clock");
+    ret_x(c, g_rt.call(c, clockwait, 4, cond, mutex, (uint64_t)1,
                           (uint64_t)(uintptr_t)absolute));
 }
 
@@ -260,15 +252,15 @@ static void ov_friend_list(Cpu *c) {
     int offset = (int)arg_x(c, 3), count = (int)arg_x(c, 4);
     int n = friends_list(arg_p(c, 2), offset, count, arg_p(c, 1));
     if (out_count) *out_count = n;
-    static volatile LONG last = -1;
-    if (offset == 0 && InterlockedExchange(&last, n) != n) mlog("friend list: %d friends from offset 0", n);
+    static volatile int32_t last = -1;
+    if (offset == 0 && plat_xchg(&last, n) != n) mlog("friend list: %d friends from offset 0", n);
     ret_x(c, 0);
 }
 
 static void ov_show_error_variant(Cpu *c) {
     // SDK error applets need a console service that the shipped host lacks.
     const uint32_t *variant = arg_p(c, 0);
-    if (!variant || !g_rt.rt_log) return;
+    if (!variant || !g_rt.log) return;
     if (variant[0] == 1) {
         uint32_t result = variant[1];
         mlog("game error result=%#x (%04u-%04u) caller=%#llx",
@@ -292,57 +284,6 @@ static void ov_get_thread_core_mask(Cpu *c) {
     ret_x(c, 0);
 }
 static void ov_set_thread_core_mask(Cpu *c) { ret_x(c, 0); }
-static void ov_fiber_switch(Cpu *c) {
-    // The shipped runtime rejects NULL, although GetCurrentFiber returns NULL
-    // on a thread's base context. Its lower-level switch already supports it.
-    if (!arg_x(c, 0) && g_dele.fiber_switch_to && c->thread) {
-        g_dele.fiber_switch_to(c->thread, c, NULL);
-    } else if (g_dele.fiber_switch) g_dele.fiber_switch(c);
-}
-typedef struct {
-    uint64_t addr, func, arg, stack, size;
-    Cpu *cpu;
-    void *host;
-    int state;
-    volatile LONG running;
-} RecompFiber;
-static void fiber_entry(void *p) {
-    RecompFiber *f = p;
-    uint8_t *thread = g_dele.current_cpu()->thread;
-    RecompFiber **leaving = (RecompFiber **)(thread + 0x1e0);
-    if (*leaving) { InterlockedExchange(&(*leaving)->running, 0); *leaving = NULL; }
-    *(int *)(thread + 4) = 0;
-    uint64_t next = g_rt.rt_call(f->cpu, f->func, 1, f->arg);
-    f->state = 2;
-    RecompFiber *to = NULL;
-    if (next) {
-        for (int i = 0; i < 1024; i++) {
-            RecompFiber *candidate = g_dele.fibers[i];
-            if (candidate && candidate->addr == next) { to = candidate; break; }
-        }
-        if (!to) { rlog("fiber returned an unknown target"); abort(); }
-    }
-    // rt_call can migrate the fiber. The shipped fiber_main caches &tcur
-    // across that call; fetch the current thread again through the runtime.
-    thread = g_dele.current_cpu()->thread;
-    g_dele.fiber_switch_to(thread, f->cpu, to);
-    abort();
-}
-static void ov_fiber_initialize(Cpu *c) {
-    uint64_t addr = arg_x(c, 0);
-    if (g_dele.fiber_initialize) g_dele.fiber_initialize(c);
-    if (g_dele.fibers) {
-        for (int i = 0; i < 1024; i++) {
-            RecompFiber *f = g_dele.fibers[i];
-            if (f && f->addr == addr) {
-                g_dele.fiber_free(f->host);
-                f->host = g_dele.fiber_new(256u * 1024u * 1024u, fiber_entry, f);
-                if (!f->host) abort();
-                break;
-            }
-        }
-    }
-}
 static void ov_nifm_is_network_available(Cpu *c) { ret_x(c, 1); }
 static GuestFn stock_handler(const char *name);
 // Going online may wait this long for the launcher's friend roster: the game reads its friend
@@ -417,8 +358,8 @@ static uint64_t nsa_id(void) {
 static void ov_nsa_get_id(Cpu *c) {
     uint64_t *o = arg_p(c, 0);
     if (o) *o = nsa_id();
-    static volatile LONG announced;
-    if (InterlockedCompareExchange(&announced, 1, 0) == 0) mlog("account id %#llx", (unsigned long long)nsa_id());
+    static volatile int32_t announced;
+    if (plat_cas(&announced, 1, 0) == 0) mlog("account id %#llx", (unsigned long long)nsa_id());
     ret_x(c, 0);
 }
 static void ov_nsa_load_token(Cpu *c) {
@@ -443,9 +384,9 @@ static void ov_nsa_async_event(Cpu *c) {
     uint64_t create = SYM("_ZN2nn2os17CreateSystemEventEPNS0_15SystemEventTypeENS0_14EventClearModeEb");
     uint64_t signal = SYM("_ZN2nn2os17SignalSystemEventEPNS0_15SystemEventTypeE");
     if (!event || !create || !signal) { ret_x(c, (uint64_t)-1); return; }
-    uint64_t result = g_rt.rt_call(c, create, 3, event, (uint64_t)0, (uint64_t)1);
+    uint64_t result = g_rt.call(c, create, 3, event, (uint64_t)0, (uint64_t)1);
     if (!result) {
-        g_rt.rt_call(c, signal, 1, event);
+        g_rt.call(c, signal, 1, event);
         rlog("account token async event -> completed");
     }
     ret_x(c, result);
@@ -457,8 +398,8 @@ static void ov_clock_init(Cpu *c) {
     uint64_t create = SYM("_ZN2nn2os17CreateSystemEventEPNS0_15SystemEventTypeENS0_14EventClearModeEb");
     uint64_t signal = SYM("_ZN2nn2os17SignalSystemEventEPNS0_15SystemEventTypeE");
     if (!task || !create || !signal) { ret_x(c, (uint64_t)-1); return; }
-    uint64_t result = g_rt.rt_call(c, create, 3, task, (uint64_t)0, (uint64_t)1);
-    if (!result) g_rt.rt_call(c, signal, 1, task);
+    uint64_t result = g_rt.call(c, create, 3, task, (uint64_t)0, (uint64_t)1);
+    if (!result) g_rt.call(c, signal, 1, task);
     rlog("network clock task -> local completed event");
     ret_x(c, result);
 }
@@ -466,7 +407,7 @@ static void ov_clock_event(Cpu *c) { /* event is at offset zero; x0 already poin
 static void ov_clock_destroy(Cpu *c) {
     uint64_t task = arg_x(c, 0);
     uint64_t destroy = SYM("_ZN2nn2os18DestroySystemEventEPNS0_15SystemEventTypeE");
-    if (destroy && task && *(uint8_t *)(uintptr_t)(task + 0x28)) g_rt.rt_call(c, destroy, 1, task);
+    if (destroy && task && *(uint8_t *)(uintptr_t)(task + 0x28)) g_rt.call(c, destroy, 1, task);
 }
 static void ov_nsd_env_id(Cpu *c) {
     char *out = arg_p(c, 0);
@@ -498,7 +439,7 @@ static void ov_fs_entry_type(Cpu *c) {
         ret_x(c, 0);
         return;
     }
-    if (g_dele.fs_entry_type) g_dele.fs_entry_type(c); else ret_x(c, 0);
+    if (g_rt.fs_entry_type) g_rt.fs_entry_type(c); else ret_x(c, 0);
 }
 static void ov_fs_open_file(Cpu *c) {
     const char *path = arg_p(c, 1);
@@ -510,7 +451,7 @@ static void ov_fs_open_file(Cpu *c) {
         ret_x(c, 0);
         return;
     }
-    if (g_dele.fs_open_file) g_dele.fs_open_file(c); else ret_x(c, 0);
+    if (g_rt.fs_open_file) g_rt.fs_open_file(c); else ret_x(c, 0);
 }
 // GetFileSize(long* out, FileHandle h): h is the u64 in x1.
 static void ov_fs_file_size(Cpu *c) {
@@ -520,7 +461,7 @@ static void ov_fs_file_size(Cpu *c) {
         ret_x(c, 0);
         return;
     }
-    if (g_dele.fs_file_size) g_dele.fs_file_size(c); else ret_x(c, 0);
+    if (g_rt.fs_file_size) g_rt.fs_file_size(c); else ret_x(c, 0);
 }
 // ReadFile(size_t* outRead, FileHandle h, long offset, void* buf, size_t size)
 static void ov_fs_read_file(Cpu *c) {
@@ -536,36 +477,35 @@ static void ov_fs_read_file(Cpu *c) {
         ret_x(c, 0);
         return;
     }
-    if (g_dele.fs_read_file) g_dele.fs_read_file(c); else ret_x(c, 0);
+    if (g_rt.fs_read_file) g_rt.fs_read_file(c); else ret_x(c, 0);
 }
 // CloseFile(FileHandle h): h in x0.
 static void ov_fs_close_file(Cpu *c) {
     if (arg_x(c, 0) == NPLN_FH) { ret_x(c, 0); return; }
-    if (g_dele.fs_close_file) g_dele.fs_close_file(c); else ret_x(c, 0);
+    if (g_rt.fs_close_file) g_rt.fs_close_file(c); else ret_x(c, 0);
 }
 
 // ===========================================================================
 // Real-socket bridge to the local gRPC server
 // ===========================================================================
 #define NFD 128
-static SOCKET g_sock[NFD];
+static PlatSock g_sock[NFD];
 static int g_used[NFD];
 typedef struct { int level, option, value, used; } SocketOption;
 static SocketOption g_options[NFD][16];
-static SOCKET g_wake_peer[NFD];
+static PlatSock g_wake_peer[NFD];
 static uint64_t g_wake_count[NFD];
 static int g_wake_semaphore[NFD];
-static SRWLOCK g_wake_lock = SRWLOCK_INIT;
+static PlatLock g_wake_lock = PLAT_LOCK_INIT;
 static int g_ready;
 static struct sockaddr_in g_server;
 
 static void net_init(void) {
     if (g_ready) return;
-    WSADATA wsa;
-    WSAStartup(MAKEWORD(2, 2), &wsa);
+    plat_net_init();
     for (int i = 0; i < NFD; i++) {
-        g_sock[i] = INVALID_SOCKET;
-        g_wake_peer[i] = INVALID_SOCKET;
+        g_sock[i] = PLAT_NO_SOCK;
+        g_wake_peer[i] = PLAT_NO_SOCK;
     }
     // Server from mkwmp.toml; env vars override for testing.
     const MkwmpConfig *cfg = mkwmp_config();
@@ -596,19 +536,19 @@ static void net_init(void) {
     g_lan = g_server.sin_addr.s_addr != htonl(INADDR_LOOPBACK);
     g_local_ip.s_addr = htonl(INADDR_LOOPBACK);
     if (g_lan) {
-        SOCKET probe = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        struct sockaddr_in route = g_server, me; int ml = sizeof me;
-        if (probe != INVALID_SOCKET && !connect(probe, (struct sockaddr *)&route, sizeof route) &&
+        PlatSock probe = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        struct sockaddr_in route = g_server, me; plat_socklen_t ml = sizeof me;
+        if (probe != PLAT_NO_SOCK && !connect(probe, (struct sockaddr *)&route, sizeof route) &&
             !getsockname(probe, (struct sockaddr *)&me, &ml))
             g_local_ip = me.sin_addr;
-        if (probe != INVALID_SOCKET) closesocket(probe);
+        if (probe != PLAT_NO_SOCK) plat_sock_close(probe);
     }
     g_ready = 1;
     mlog("net bridge ready -> %s:%u (%s, local %s)", host && *host ? host : "127.0.0.1",
                 (unsigned)ntohs(g_server.sin_port), g_lan ? "LAN" : "loopback", inet_ntoa(g_local_ip));
 }
 
-static int fd_new(SOCKET s) {
+static int fd_new(PlatSock s) {
     for (int i = 0; i < NFD; i++) if (!g_used[i]) {
         g_used[i] = 1; g_sock[i] = s;
         memset(g_options[i], 0, sizeof g_options[i]);
@@ -616,26 +556,25 @@ static int fd_new(SOCKET s) {
     }
     return -1;
 }
-static SOCKET fd_get(int fd) { return (fd >= 0 && fd < NFD && g_used[fd]) ? g_sock[fd] : INVALID_SOCKET; }
+static PlatSock fd_get(int fd) { return (fd >= 0 && fd < NFD && g_used[fd]) ? g_sock[fd] : PLAT_NO_SOCK; }
 
 // gRPC probes EventFd before selecting its poll backend. Keep a real counter and
-// a coalesced UDP wakeup so the same descriptor participates in WSAPoll.
+// a coalesced UDP wakeup so the same descriptor participates in poll.
 static void ov_eventfd(Cpu *c) {
     net_init();
-    SOCKET rd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    SOCKET wr = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    PlatSock rd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    PlatSock wr = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    int size = sizeof addr;
+    plat_socklen_t size = sizeof addr;
     int fd = -1;
-    if (rd == INVALID_SOCKET || wr == INVALID_SOCKET ||
+    if (rd == PLAT_NO_SOCK || wr == PLAT_NO_SOCK ||
         bind(rd, (struct sockaddr *)&addr, sizeof addr) ||
         getsockname(rd, (struct sockaddr *)&addr, &size) ||
         connect(wr, (struct sockaddr *)&addr, size)) goto fail;
-    u_long nb = 1;
-    ioctlsocket(rd, FIONBIO, &nb);
-    ioctlsocket(wr, FIONBIO, &nb);
+    plat_sock_nonblock(rd);
+    plat_sock_nonblock(wr);
     fd = fd_new(rd);
     if (fd < 0) goto fail;
     g_wake_peer[fd] = wr;
@@ -646,40 +585,40 @@ static void ov_eventfd(Cpu *c) {
     ret_x(c, (uint64_t)fd);
     return;
 fail:
-    if (rd != INVALID_SOCKET) closesocket(rd);
-    if (wr != INVALID_SOCKET) closesocket(wr);
+    if (rd != PLAT_NO_SOCK) plat_sock_close(rd);
+    if (wr != PLAT_NO_SOCK) plat_sock_close(wr);
     g_errno = G_EINVAL;
     ret_x(c, (uint64_t)-1);
 }
 static void ov_eventfd_read(Cpu *c) {
     int fd = (int)arg_x(c, 0);
     uint64_t *out = arg_p(c, 1);
-    if (!out || fd_get(fd) == INVALID_SOCKET || g_wake_peer[fd] == INVALID_SOCKET) {
+    if (!out || fd_get(fd) == PLAT_NO_SOCK || g_wake_peer[fd] == PLAT_NO_SOCK) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
-    AcquireSRWLockExclusive(&g_wake_lock);
+    plat_lock(&g_wake_lock);
     uint64_t count = g_wake_count[fd];
     if (count) {
         *out = g_wake_semaphore[fd] ? 1 : count;
         g_wake_count[fd] -= *out;
         if (!g_wake_count[fd]) { char byte; recv(g_sock[fd], &byte, 1, 0); }
     }
-    ReleaseSRWLockExclusive(&g_wake_lock);
+    plat_unlock(&g_wake_lock);
     if (!count) g_errno = G_EAGAIN;
     ret_x(c, count ? 0 : (uint64_t)-1);
 }
 static void ov_eventfd_write(Cpu *c) {
     int fd = (int)arg_x(c, 0);
     uint64_t value = arg_x(c, 1);
-    if (fd_get(fd) == INVALID_SOCKET || g_wake_peer[fd] == INVALID_SOCKET || value == UINT64_MAX) {
+    if (fd_get(fd) == PLAT_NO_SOCK || g_wake_peer[fd] == PLAT_NO_SOCK || value == UINT64_MAX) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
-    AcquireSRWLockExclusive(&g_wake_lock);
+    plat_lock(&g_wake_lock);
     uint64_t count = g_wake_count[fd];
     int ok = value < UINT64_MAX - count;
     if (ok && value && !count) ok = send(g_wake_peer[fd], "w", 1, 0) == 1;
     if (ok) g_wake_count[fd] += value;
-    ReleaseSRWLockExclusive(&g_wake_lock);
+    plat_unlock(&g_wake_lock);
     if (!ok) g_errno = G_EAGAIN;
     ret_x(c, ok ? 0 : (uint64_t)-1);
 }
@@ -688,11 +627,11 @@ static void ov_eventfd_write(Cpu *c) {
 static void ov_sock_socket(Cpu *c) {
     net_init();
     dump_args("nnsocketSocket", c, 3);
-    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (s == INVALID_SOCKET) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
-    u_long nb = 1; ioctlsocket(s, FIONBIO, &nb);
+    PlatSock s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (s == PLAT_NO_SOCK) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
+    plat_sock_nonblock(s);
     int fd = fd_new(s);
-    if (fd < 0) { closesocket(s); g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
+    if (fd < 0) { plat_sock_close(s); g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
     ret_x(c, (uint64_t)fd);
 }
 // int nnsocketConnect(int fd, const sockaddr*, u32 len): connect to our loopback server.
@@ -700,8 +639,8 @@ static void ov_sock_socket(Cpu *c) {
 // plaintext Gamesync endpoint we hand out in session assignments, keeps its port.
 static void ov_sock_connect(Cpu *c) {
     int fd = (int)arg_x(c, 0);
-    SOCKET s = fd_get(fd);
-    if (s == INVALID_SOCKET) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
+    PlatSock s = fd_get(fd);
+    if (s == PLAT_NO_SOCK) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
     struct sockaddr_in target = g_server;
     const uint8_t *guest = arg_p(c, 1);
     if (guest && arg_x(c, 2) >= 4 && guest[1] == 2) {
@@ -713,21 +652,21 @@ static void ov_sock_connect(Cpu *c) {
         mlog("nnsocketConnect keeps explicit port %u", (unsigned)ntohs(target.sin_port));
     int r = connect(s, (struct sockaddr *)&target, sizeof target);
     if (r == 0) { rlog("nnsocketConnect -> connected (loopback)"); ret_x(c, 0); return; }
-    int e = WSAGetLastError();
-    if (e == WSAEWOULDBLOCK || e == WSAEINPROGRESS || e == WSAEALREADY) {
+    int e = plat_net_error();
+    if (e == PLAT_NET_WOULDBLOCK || e == PLAT_NET_INPROGRESS || e == PLAT_NET_ALREADY) {
         g_errno = G_EINPROGRESS; rlog("nnsocketConnect -> EINPROGRESS (loopback)");
-    } else if (e == WSAEISCONN) { ret_x(c, 0); return; }
+    } else if (e == PLAT_NET_ISCONN) { ret_x(c, 0); return; }
     else g_errno = G_EINVAL;
     ret_x(c, (uint64_t)-1);
 }
 static void ov_sock_close(Cpu *c) {
     int fd = (int)arg_x(c, 0);
-    SOCKET s = fd_get(fd);
-    if (s != INVALID_SOCKET) {
-        if (g_wake_peer[fd] != INVALID_SOCKET) closesocket(g_wake_peer[fd]);
-        g_wake_peer[fd] = INVALID_SOCKET;
+    PlatSock s = fd_get(fd);
+    if (s != PLAT_NO_SOCK) {
+        if (g_wake_peer[fd] != PLAT_NO_SOCK) plat_sock_close(g_wake_peer[fd]);
+        g_wake_peer[fd] = PLAT_NO_SOCK;
         g_wake_count[fd] = 0;
-        closesocket(s); g_sock[fd] = INVALID_SOCKET; g_used[fd] = 0;
+        plat_sock_close(s); g_sock[fd] = PLAT_NO_SOCK; g_used[fd] = 0;
     }
     ret_x(c, 0);
 }
@@ -735,7 +674,7 @@ static void ov_sock_fcntl(Cpu *c) { ret_x(c, 0); }    // sockets already non-blo
 static void ov_sock_setsockopt(Cpu *c) {
     int fd = (int)arg_x(c, 0), level = (int)arg_x(c, 1), option = (int)arg_x(c, 2);
     const int32_t *value = arg_p(c, 3);
-    if (fd_get(fd) == INVALID_SOCKET || !value || arg_x(c, 4) < 4) {
+    if (fd_get(fd) == PLAT_NO_SOCK || !value || arg_x(c, 4) < 4) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
     for (int i = 0; i < 16; i++) {
@@ -751,7 +690,7 @@ static void ov_sock_setsockopt(Cpu *c) {
 static void ov_sock_getsockopt(Cpu *c) {
     int fd = (int)arg_x(c, 0), level = (int)arg_x(c, 1), option = (int)arg_x(c, 2);
     void *val = arg_p(c, 3); uint32_t *len = arg_p(c, 4);
-    if (fd_get(fd) == INVALID_SOCKET || !val || !len || *len < 4) {
+    if (fd_get(fd) == PLAT_NO_SOCK || !val || !len || *len < 4) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
     int32_t result = 0;
@@ -760,7 +699,7 @@ static void ov_sock_getsockopt(Cpu *c) {
         if (saved->used && saved->level == level && saved->option == option) { result = saved->value; break; }
     }
     if (level == 0xffff && option == 0x1007) {
-        int bytes = sizeof result;
+        plat_socklen_t bytes = sizeof result;
         getsockopt(g_sock[fd], SOL_SOCKET, SO_ERROR, (char *)&result, &bytes);
         if (result) result = G_EINVAL;
     }
@@ -768,28 +707,28 @@ static void ov_sock_getsockopt(Cpu *c) {
     ret_x(c, 0);
 }
 static void ov_sock_shutdown(Cpu *c) {
-    SOCKET s = fd_get((int)arg_x(c, 0));
-    if (s != INVALID_SOCKET) shutdown(s, SD_BOTH);
+    PlatSock s = fd_get((int)arg_x(c, 0));
+    if (s != PLAT_NO_SOCK) plat_sock_shutdown(s);
     ret_x(c, 0);
 }
 static void ov_errno_location(Cpu *c) { ret_x(c, (uintptr_t)&g_errno); }
 
-// nnsocketPoll(pollfd* fds, nfds, timeout): WSAPoll the real sockets. Console pollfd = {s32 fd; s16 events; s16 revents}.
+// nnsocketPoll(pollfd* fds, nfds, timeout): poll the real sockets (WSAPoll on Windows). Console pollfd = {s32 fd; s16 events; s16 revents}.
 enum { G_POLLIN = 1, G_POLLOUT = 4, G_POLLERR = 8, G_POLLHUP = 0x10, G_POLLNVAL = 0x20 };
 static void ov_sock_poll(Cpu *c) {
     uint8_t *g = arg_p(c, 0);
     uint64_t n = arg_x(c, 1);
     int ms = (int)arg_x(c, 2);
     if ((!g && n) || n > NFD) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
-    WSAPOLLFD h[NFD];
+    PlatPollFd h[NFD];
     int map[NFD], valid = 0, ready = 0;
     for (uint64_t i = 0; i < n; i++) {
         int32_t fd; int16_t events;
         memcpy(&fd, g + i * 8, 4);
         memcpy(&events, g + i * 8 + 4, 2);
         int16_t zero = 0; memcpy(g + i * 8 + 6, &zero, 2);
-        SOCKET s = fd_get(fd);
-        if (s == INVALID_SOCKET) {
+        PlatSock s = fd_get(fd);
+        if (s == PLAT_NO_SOCK) {
             if (fd >= 0) {
                 int16_t invalid = G_POLLNVAL;
                 memcpy(g + i * 8 + 6, &invalid, 2);
@@ -798,7 +737,7 @@ static void ov_sock_poll(Cpu *c) {
             continue;
         }
         h[valid].fd = s;
-        h[valid].events = (short)(((events & G_POLLIN) ? POLLRDNORM : 0) | ((events & G_POLLOUT) ? POLLWRNORM : 0));
+        h[valid].events = (short)(((events & G_POLLIN) ? PLAT_POLLIN : 0) | ((events & G_POLLOUT) ? PLAT_POLLOUT : 0));
         h[valid].revents = 0;
         map[valid] = (int)i;
         valid++;
@@ -806,25 +745,26 @@ static void ov_sock_poll(Cpu *c) {
     int away = 0;
     static int no_core_away = -1;
     if (no_core_away < 0) { const char *v = getenv("MKWMP_NO_CORE_AWAY"); no_core_away = v && !strcmp(v, "1"); }
-    if (ms && !ready && c->thread && g_dele.core_away && g_dele.core_back && !no_core_away) away = g_dele.core_away();
+    int guest = g_rt.guest_thread ? g_rt.guest_thread(c) : c->thread != NULL;
+    if (ms && !ready && guest && g_rt.core_away && g_rt.core_back && !no_core_away) away = g_rt.core_away();
     int result = 0;
     if (valid) {
-        result = WSAPoll(h, (ULONG)valid, ready ? 0 : (ms < 0 ? -1 : ms));
+        result = plat_poll(h, valid, ready ? 0 : (ms < 0 ? -1 : ms));
     } else if (!ready && ms) {
-        Sleep(ms < 0 ? INFINITE : (DWORD)ms);
+        plat_sleep_ms(ms < 0 ? PLAT_FOREVER : (uint32_t)ms);
     }
-    int socket_error = result == SOCKET_ERROR ? WSAGetLastError() : 0;
-    if (g_dele.core_back && away) g_dele.core_back(&away);
-    if (result == SOCKET_ERROR) {
-        g_errno = socket_error == WSAEINTR ? G_EINTR : G_EINVAL;
+    int socket_error = result < 0 ? plat_net_error() : 0;
+    if (g_rt.core_back && away) g_rt.core_back(&away);
+    if (result < 0) {
+        g_errno = socket_error == PLAT_NET_INTR ? G_EINTR : G_EINVAL;
         ret_x(c, (uint64_t)-1); return;
     }
     if (valid) {
         if (result > 0) {
             for (int k = 0; k < valid; k++) {
                 short re = h[k].revents;
-                int16_t gre = (int16_t)(((re & (POLLRDNORM | POLLHUP)) ? G_POLLIN : 0) |
-                                        ((re & POLLWRNORM) ? G_POLLOUT : 0) |
+                int16_t gre = (int16_t)(((re & (PLAT_POLLIN | POLLHUP)) ? G_POLLIN : 0) |
+                                        ((re & PLAT_POLLOUT) ? G_POLLOUT : 0) |
                                         ((re & POLLERR) ? G_POLLERR : 0) | ((re & POLLHUP) ? G_POLLHUP : 0) |
                                         ((re & POLLNVAL) ? G_POLLNVAL : 0));
                 if (gre) { memcpy(g + (size_t)map[k] * 8 + 6, &gre, 2); ready++; }
@@ -841,26 +781,26 @@ typedef struct {
     void *control; uint32_t controllen; int32_t flags;
 } GMsgHdr;
 static void socket_msg(Cpu *c, int reading) {
-    SOCKET sock = fd_get((int)arg_x(c, 0));
+    PlatSock sock = fd_get((int)arg_x(c, 0));
     GMsgHdr *msg = arg_p(c, 1);
-    if (sock == INVALID_SOCKET || !msg || !msg->iov || msg->iovlen > 1024) {
+    if (sock == PLAT_NO_SOCK || !msg || !msg->iov || msg->iovlen > 1024) {
         g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
     }
-    WSABUF buffers[1024];
+    PlatIov buffers[1024];
     for (uint32_t i = 0; i < msg->iovlen; i++) {
         if (msg->iov[i].size > INT_MAX) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
-        buffers[i].buf = msg->iov[i].base;
-        buffers[i].len = (ULONG)msg->iov[i].size;
+        buffers[i].base = msg->iov[i].base;
+        buffers[i].len = (size_t)msg->iov[i].size;
     }
-    DWORD transferred = 0, flags = 0;
-    int result = reading ? WSARecv(sock, buffers, msg->iovlen, &transferred, &flags, NULL, NULL)
-                         : WSASend(sock, buffers, msg->iovlen, &transferred, 0, NULL, NULL);
-    if (result) {
-        g_errno = WSAGetLastError() == WSAEWOULDBLOCK ? G_EAGAIN : G_EINVAL;
+    long result = reading ? plat_sock_recvv(sock, buffers, (int)msg->iovlen)
+                          : plat_sock_sendv(sock, buffers, (int)msg->iovlen);
+    if (result < 0) {
+        g_errno = plat_net_error() == PLAT_NET_WOULDBLOCK ? G_EAGAIN : G_EINVAL;
         ret_x(c, (uint64_t)-1); return;
     }
+    size_t transferred = (size_t)result;
     if (reading) msg->flags = 0;
-    if (transferred && msg->iovlen) rhex(reading ? "<<< RecvMsg" : ">>> SendMsg", buffers[0].buf,
+    if (transferred && msg->iovlen) rhex(reading ? "<<< RecvMsg" : ">>> SendMsg", buffers[0].base,
         transferred < buffers[0].len ? transferred : buffers[0].len);
     ret_x(c, transferred);
 }
@@ -889,7 +829,7 @@ static void ov_sock_freeaddrinfo(Cpu *c) {
 // The game frees a result right after copying the address out; an entry is reused 64 lookups later.
 enum { TYPED_AI_RING = 64 };
 static struct { GAddrInfo ai; uint8_t sa[16]; } g_typed_ai[TYPED_AI_RING];
-static volatile LONG g_typed_ai_next;
+static volatile int32_t g_typed_ai_next;
 
 static void sock_getaddrinfo(Cpu *c, const char *label, int cpp_layout) {
     net_init();
@@ -900,7 +840,7 @@ static void sock_getaddrinfo(Cpu *c, const char *label, int cpp_layout) {
     GAddrInfo *ai;
     uint8_t *sa;   // console sockaddr_in: len,family,port,addr,zero[8]
     if (cpp_layout) {
-        unsigned slot = (unsigned)(InterlockedIncrement(&g_typed_ai_next) - 1) % TYPED_AI_RING;
+        unsigned slot = (unsigned)(plat_inc(&g_typed_ai_next) - 1) % TYPED_AI_RING;
         memset(&g_typed_ai[slot], 0, sizeof g_typed_ai[slot]);
         ai = &g_typed_ai[slot].ai;
         sa = g_typed_ai[slot].sa;
@@ -950,27 +890,26 @@ static void ov_pia_socket(Cpu *c) {
     net_init();
     dump_args("Pia Socket", c, 3);
     if (arg_x(c, 0) == 2 && ((unsigned)arg_x(c, 1) & 0xf) == 3 && arg_x(c, 2) == 1) {
-        static volatile LONG said;
-        if (InterlockedCompareExchange(&said, 1, 0) == 0)
+        static volatile int32_t said;
+        if (plat_cas(&said, 1, 0) == 0)
             mlog("Pia ping socket (raw ICMP) refused: EPROTONOSUPPORT, pings stay off");
         g_errno = G_EPROTONOSUPPORT; ret_x(c, UINT64_MAX); return;
     }
     if (arg_x(c, 0) != 2 || ((unsigned)arg_x(c, 1) & 0xf) != 2) {
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
-    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    u_long nonblocking = 1;
-    if (s == INVALID_SOCKET || ioctlsocket(s, FIONBIO, &nonblocking)) {
-        if (s != INVALID_SOCKET) closesocket(s);
+    PlatSock s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == PLAT_NO_SOCK || plat_sock_nonblock(s)) {
+        if (s != PLAT_NO_SOCK) plat_sock_close(s);
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
     int fd = fd_new(s);
-    if (fd < 0) { closesocket(s); g_errno = G_EINVAL; }
+    if (fd < 0) { plat_sock_close(s); g_errno = G_EINVAL; }
     ret_x(c, (uint64_t)(int64_t)fd);
 }
 
 static void ov_pia_bind(Cpu *c) {
-    SOCKET s = fd_get((int)arg_x(c, 0));
+    PlatSock s = fd_get((int)arg_x(c, 0));
     const uint8_t *guest = arg_p(c, 1);
     struct sockaddr_in sa = {0};
     sa.sin_family = AF_INET;
@@ -982,12 +921,12 @@ static void ov_pia_bind(Cpu *c) {
         memcpy(&sa.sin_port, guest + 2, sizeof sa.sin_port);
         requested = ntohs(sa.sin_port);
     }
-    if (s == INVALID_SOCKET) { g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return; }
+    if (s == PLAT_NO_SOCK) { g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return; }
     if (bind(s, (struct sockaddr *)&sa, sizeof sa)) {
         sa.sin_port = 0;
         if (bind(s, (struct sockaddr *)&sa, sizeof sa)) { g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return; }
     }
-    struct sockaddr_in got; int gl = sizeof got;
+    struct sockaddr_in got; plat_socklen_t gl = sizeof got;
     unsigned actual = getsockname(s, (struct sockaddr *)&got, &gl) ? 0 : ntohs(got.sin_port);
     mlog("Pia UDP bound to %s: requested port %u, got %u", g_lan ? "all interfaces" : "loopback", requested, actual);
     ret_x(c, 0);
@@ -996,10 +935,10 @@ static void ov_pia_bind(Cpu *c) {
 static void ov_pia_setsockopt(Cpu *c) {
     int opt = (int)arg_x(c, 2);
     int winopt = opt == 4 ? SO_REUSEADDR : opt == 0x20 ? SO_BROADCAST : 0;
-    SOCKET s = fd_get((int)arg_x(c, 0));
+    PlatSock s = fd_get((int)arg_x(c, 0));
     const void *value = arg_p(c, 3);
     dump_args("Pia SetSockOpt", c, 5);
-    if (arg_x(c, 1) == 0xffff && winopt && s != INVALID_SOCKET && value && arg_x(c, 4) == 4) {
+    if (arg_x(c, 1) == 0xffff && winopt && s != PLAT_NO_SOCK && value && arg_x(c, 4) == 4) {
         if (setsockopt(s, SOL_SOCKET, winopt, value, 4)) {
             g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
         }
@@ -1011,32 +950,32 @@ static void ov_pia_setsockopt(Cpu *c) {
 // to whom), and one summary per minute. Logging every packet (and dumping it) on the game threads cost
 // the Steam Deck much of its frame rate online (2026-11-15). MKWMP_TRACE_EDGES=1 logs every packet.
 static int pia_log_packet(int send, unsigned bytes, uint32_t ip, uint16_t port) {
-    static volatile LONG64 count[2], total[2];
-    static volatile LONG64 window_start;
+    static volatile int64_t count[2], total[2];
+    static volatile int64_t window_start;
     static uint64_t seen[64];
-    static volatile LONG nseen;
-    InterlockedIncrement64(&count[send]);
-    InterlockedAdd64(&total[send], bytes);
+    static volatile int32_t nseen;
+    plat_inc(&count[send]);
+    plat_add(&total[send], bytes);
     if (g_trace_edges) return 1;
     int fresh = 0;
     uint64_t key = (uint64_t)send << 48 | (uint64_t)ip << 16 | port;
-    LONG k = nseen, i = 0;
+    int32_t k = nseen, i = 0;
     while (i < k && i < 64 && seen[i] != key) i++;
-    if (i == k && k < 64 && InterlockedCompareExchange(&nseen, k + 1, k) == k) { seen[k] = key; fresh = 1; }
-    LONG64 now = (LONG64)GetTickCount64(), start = window_start;
-    if (now - start >= 60000 && InterlockedCompareExchange64(&window_start, now, start) == start) {
-        LONG64 sc = InterlockedExchange64(&count[1], 0), sb = InterlockedExchange64(&total[1], 0);
-        LONG64 rc = InterlockedExchange64(&count[0], 0), rb = InterlockedExchange64(&total[0], 0);
+    if (i == k && k < 64 && plat_cas(&nseen, k + 1, k) == k) { seen[k] = key; fresh = 1; }
+    int64_t now = (int64_t)plat_ms(), start = window_start;
+    if (now - start >= 60000 && plat_cas(&window_start, now, start) == start) {
+        int64_t sc = plat_xchg(&count[1], 0), sb = plat_xchg(&total[1], 0);
+        int64_t rc = plat_xchg(&count[0], 0), rb = plat_xchg(&total[0], 0);
         if (start) mlog("Pia UDP last %llds: sent %lld (%lld B), received %lld (%lld B)", (long long)((now - start) / 1000),
                         (long long)sc, (long long)sb, (long long)rc, (long long)rb);
     }
     return fresh;
 }
 static void ov_pia_sendto(Cpu *c) {
-    SOCKET s = fd_get((int)arg_x(c, 0));
+    PlatSock s = fd_get((int)arg_x(c, 0));
     const char *buf = arg_p(c, 1);
     uint64_t len = arg_x(c, 2);
-    if (s == INVALID_SOCKET || !buf || len > 65507) {
+    if (s == PLAT_NO_SOCK || !buf || len > 65507) {
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
     const uint8_t *guest = arg_p(c, 4);
@@ -1060,8 +999,8 @@ static void ov_pia_sendto(Cpu *c) {
     } else if (guest && arg_x(c, 5) >= 16 && guest[1] == 2 && !is_probe && (guest[2] || guest[3])) {
         memcpy(&sa.sin_port, guest + 2, sizeof sa.sin_port);
         if (!(guest[4] == 127 && guest[5] == 0 && guest[6] == 0 && guest[7] == 1)) {
-            static volatile LONG redirected;
-            if (InterlockedIncrement(&redirected) <= 20)
+            static volatile int32_t redirected;
+            if (plat_inc(&redirected) <= 20)
                 mlog("Pia UDP peer %u.%u.%u.%u:%u redirected to loopback", guest[4], guest[5], guest[6], guest[7],
                      ntohs(sa.sin_port));
         }
@@ -1073,8 +1012,8 @@ static void ov_pia_sendto(Cpu *c) {
         sa.sin_port = htons(10025);
     }
     if (!sa.sin_port) {
-        static volatile LONG rejected;
-        if (InterlockedIncrement(&rejected) <= 20)
+        static volatile int32_t rejected;
+        if (plat_inc(&rejected) <= 20)
             mlog("Pia UDP send rejected: %u bytes, addr family %u port %u ip %u.%u.%u.%u", (unsigned)len,
                  guest && arg_x(c, 5) >= 16 ? guest[1] : 0xff,
                  guest && arg_x(c, 5) >= 16 ? (unsigned)((guest[2] << 8) | guest[3]) : 0,
@@ -1083,7 +1022,7 @@ static void ov_pia_sendto(Cpu *c) {
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
     if (len != 16 && pia_log_packet(1, (unsigned)len, sa.sin_addr.s_addr, sa.sin_port)) {
-        struct sockaddr_in local; int ll = sizeof local;
+        struct sockaddr_in local; plat_socklen_t ll = sizeof local;
         unsigned lport = getsockname(s, (struct sockaddr *)&local, &ll) ? 0 : ntohs(local.sin_port);
         int has_guest = guest && arg_x(c, 5) >= 16;
         mlog("Pia UDP send %u -> %s:%u (%u bytes; guest fam %u %u.%u.%u.%u:%u)", lport, inet_ntoa(sa.sin_addr),
@@ -1093,28 +1032,28 @@ static void ov_pia_sendto(Cpu *c) {
     }
     if (g_trace_edges) rhex(">>> Pia UDP", buf, (size_t)len);
     int sent =sendto(s, buf, (int)len, 0, (struct sockaddr *)&sa, sizeof sa);
-    if (sent == SOCKET_ERROR) g_errno = WSAGetLastError() == WSAEWOULDBLOCK ? G_EAGAIN : G_EINVAL;
+    if (sent < 0) g_errno = plat_net_error() == PLAT_NET_WOULDBLOCK ? G_EAGAIN : G_EINVAL;
     ret_x(c, (uint64_t)(int64_t)sent);
 }
 
 static void ov_pia_recvfrom(Cpu *c) {
-    SOCKET s = fd_get((int)arg_x(c, 0));
+    PlatSock s = fd_get((int)arg_x(c, 0));
     char *buf = arg_p(c, 1);
     uint64_t cap = arg_x(c, 2);
     uint8_t *out = arg_p(c, 4);
     uint32_t *out_len = arg_p(c, 5);
-    if (s == INVALID_SOCKET || !buf || cap > INT_MAX || (out && (!out_len || *out_len < 16))) {
+    if (s == PLAT_NO_SOCK || !buf || cap > INT_MAX || (out && (!out_len || *out_len < 16))) {
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
     struct sockaddr_in sa;
-    int addrlen = sizeof sa;
+    plat_socklen_t addrlen = sizeof sa;
     int got = recvfrom(s, buf, (int)cap, 0, (struct sockaddr *)&sa, &addrlen);
-    if (got == SOCKET_ERROR) {
-        int err = WSAGetLastError();
-        g_errno = err == WSAEWOULDBLOCK || err == WSAECONNRESET ? G_EAGAIN : G_EINVAL;
+    if (got < 0) {
+        int err = plat_net_error();
+        g_errno = err == PLAT_NET_WOULDBLOCK || err == PLAT_NET_CONNRESET ? G_EAGAIN : G_EINVAL;
     } else if (out) {
         if (got != 16 && pia_log_packet(0, (unsigned)got, sa.sin_addr.s_addr, sa.sin_port)) {
-            struct sockaddr_in local; int ll = sizeof local;
+            struct sockaddr_in local; plat_socklen_t ll = sizeof local;
             unsigned lport = getsockname(s, (struct sockaddr *)&local, &ll) ? 0 : ntohs(local.sin_port);
             mlog("Pia UDP recv %u <- %s:%u (%d bytes)", lport, inet_ntoa(sa.sin_addr), ntohs(sa.sin_port), got);
         }
@@ -1132,16 +1071,16 @@ static void ov_pia_recvfrom(Cpu *c) {
 // calls it, and the runtime's 64 override slots are all taken (see kRegs). Register it if a ping socket is ever
 // opened here; tests/test_bridge.c exercises it meanwhile.
 __attribute__((unused)) static void ov_pia_recv(Cpu *c) {
-    SOCKET s = fd_get((int)arg_x(c, 0));
+    PlatSock s = fd_get((int)arg_x(c, 0));
     char *buf = arg_p(c, 1);
     uint64_t cap = arg_x(c, 2);
-    if (s == INVALID_SOCKET || !buf || cap > INT_MAX) {
+    if (s == PLAT_NO_SOCK || !buf || cap > INT_MAX) {
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
     }
     int got = recv(s, buf, (int)cap, 0);   // the probe's sockets are non-blocking, so MSG_DONTWAIT is implied
-    if (got == SOCKET_ERROR) {
-        int err = WSAGetLastError();
-        g_errno = err == WSAEWOULDBLOCK || err == WSAECONNRESET ? G_EAGAIN : G_EINVAL;
+    if (got < 0) {
+        int err = plat_net_error();
+        g_errno = err == PLAT_NET_WOULDBLOCK || err == PLAT_NET_CONNRESET ? G_EAGAIN : G_EINVAL;
     }
     ret_x(c, (uint64_t)(int64_t)got);
 }
@@ -1186,19 +1125,14 @@ static const char *const kWatchName[W_COUNT] = {"start_p2p", "p2p_init_seq", "us
                                                 "plugin_16279e4", "plugin_1629020", "comm_error"};
 // Optional field dump at x0 + off (W_US_JOB: A.us_job_dump): count qwords.
 static const uint8_t kWatchDumpCount[W_COUNT] = {0, 0, 12, 0, 0, 0, 0};
-static volatile LONG g_watch_hits[W_COUNT];
+static volatile int32_t g_watch_hits[W_COUNT];
 
-static int guest_readable(const void *p, size_t n) {
-    MEMORY_BASIC_INFORMATION mbi;
-    if ((uintptr_t)p < 0x10000 || !VirtualQuery(p, &mbi, sizeof mbi)) return 0;
-    if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) return 0;
-    return (const char *)p + n <= (const char *)mbi.BaseAddress + mbi.RegionSize;
-}
+static int guest_readable(const void *p, size_t n) { return plat_mem_readable(p) >= n; }
 
 static void trace_watch(const Cpu *c) {
     for (int w = 0; w < W_COUNT; w++) {
         if (!at(c->pc, watch_addr(w))) continue;
-        LONG n = InterlockedIncrement(&g_watch_hits[w]);
+        int32_t n = plat_inc(&g_watch_hits[w]);
         if (n > 20 && n % 200) return;
         const uint8_t *mgr = (const uint8_t *)(uintptr_t)c->x[0];
         if (w == W_START_P2P && guest_readable(mgr + A.mgr_count, 0x18)) {
@@ -1209,7 +1143,7 @@ static void trace_watch(const Cpu *c) {
             const uint8_t *slot =
                 (const uint8_t *)(uintptr_t)(slots + (uint64_t)(cur < count ? cur : 0) * A.mgr_slot_size);
             if (slots && guest_readable(slot, 4)) memcpy(&handles, slot, 4);
-            g_rt.rt_log("mkwmp: watch #%ld %s caller=main+%#llx mgr=%p slots=%#llx count=%u cur=%u handles=%u",
+            g_rt.log("mkwmp: watch #%ld %s caller=main+%#llx mgr=%p slots=%#llx count=%u cur=%u handles=%u",
                         (long)n, kWatchName[w], (unsigned long long)(c->x[30] - GUEST_MAIN(0)),
                         (const void *)mgr, (unsigned long long)slots, count, cur, handles);
             mkwmp_log("watch #%ld %s caller=main+%#llx count=%u cur=%u handles=%u", (long)n, kWatchName[w],
@@ -1231,7 +1165,7 @@ static void trace_watch(const Cpu *c) {
                       (unsigned long long)(lr[2] - GUEST_MAIN(0)), (unsigned long long)(lr[3] - GUEST_MAIN(0)),
                       (unsigned long long)(lr[4] - GUEST_MAIN(0)), (unsigned long long)(lr[5] - GUEST_MAIN(0)),
                       (unsigned long long)w[0], (unsigned long long)w[1], (unsigned long long)w[2]);
-            g_rt.rt_log("mkwmp: comm_error caller=main+%#llx frames=%#llx %#llx %#llx %#llx",
+            g_rt.log("mkwmp: comm_error caller=main+%#llx frames=%#llx %#llx %#llx %#llx",
                         (unsigned long long)(c->x[30] - GUEST_MAIN(0)), (unsigned long long)(lr[0] - GUEST_MAIN(0)),
                         (unsigned long long)(lr[1] - GUEST_MAIN(0)), (unsigned long long)(lr[2] - GUEST_MAIN(0)),
                         (unsigned long long)(lr[3] - GUEST_MAIN(0)));
@@ -1262,7 +1196,7 @@ static int in_trace_range(uint64_t a) {
 #define EDGE_SLOTS 16384
 static int g_trace_edges;
 static int g_skip_referee_timeout;
-static volatile LONG64 g_edges[EDGE_SLOTS];
+static volatile int64_t g_edges[EDGE_SLOTS];
 
 static void trace_edge(uint64_t caller, uint64_t target, const Cpu *c) {
     if (!in_trace_range(caller)) return;
@@ -1270,12 +1204,12 @@ static void trace_edge(uint64_t caller, uint64_t target, const Cpu *c) {
     if (!key) return;
     uint64_t h = key * 0x9E3779B97F4A7C15ull;
     for (unsigned probe = 0; probe < 64; probe++) {
-        volatile LONG64 *slot = &g_edges[(h + probe) & (EDGE_SLOTS - 1)];
-        LONG64 seen = InterlockedCompareExchange64(slot, (LONG64)key, 0);
-        if (seen == (LONG64)key) return;
+        volatile int64_t *slot = &g_edges[(h + probe) & (EDGE_SLOTS - 1)];
+        int64_t seen = plat_cas(slot, (int64_t)key, 0);
+        if (seen == (int64_t)key) return;
         if (seen == 0) {
             mlog("edge t=%llu caller=main+%#llx target=main+%#llx x0=%#llx x1=%#llx x2=%#llx",
-                        (unsigned long long)GetTickCount64(),
+                        (unsigned long long)plat_ms(),
                         (unsigned long long)(caller - GUEST_MAIN(0)),
                         (unsigned long long)(target - GUEST_MAIN(0)),
                         (unsigned long long)c->x[0], (unsigned long long)c->x[1],
@@ -1293,18 +1227,15 @@ static uint64_t g_sdk_memmove;
 static void trace_sdk_message(const Cpu *c) {
     const char *msg = (const char *)(uintptr_t)c->x[1];
     if ((uintptr_t)msg < 0x10000) return;
-    MEMORY_BASIC_INFORMATION mbi;
-    if (!VirtualQuery(msg, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT ||
-        (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
-        return;
-    size_t avail = (size_t)((const char *)mbi.BaseAddress + mbi.RegionSize - msg);
+    size_t avail = plat_mem_readable(msg);
+    if (!avail) return;
     char buf[400];
     size_t n = 0;
     for (; n < sizeof buf - 1 && n < avail && msg[n]; n++)
         buf[n] = (msg[n] >= 0x20 && msg[n] < 0x7f) ? msg[n] : '.';
     buf[n] = 0;
     mlog("sdk-msg t=%llu caller=main+%#llx \"%s\"",
-                (unsigned long long)GetTickCount64(),
+                (unsigned long long)plat_ms(),
                 (unsigned long long)(c->x[30] - GUEST_MAIN(0)), buf);
 }
 
@@ -1375,13 +1306,13 @@ static void trace_kart_watchdog(uint8_t *ctrl) {
     if (g_no_idle_kick && A.kart_idle_kick && state == 5 && frames > 2900 && moves < 20) {
         moves = 20;
         memcpy(ctrl + A.kart_moves, &moves, 4);
-        static volatile LONG said;
-        if (InterlockedIncrement(&said) <= 5) mlog("kart watchdog: move count raised (player %d)", player);
+        static volatile int32_t said;
+        if (plat_inc(&said) <= 5) mlog("kart watchdog: move count raised (player %d)", player);
     }
     if (!g_trace_kart) return;
     static uint32_t last_state[24];
-    static ULONGLONG last_ms[24];
-    ULONGLONG now = GetTickCount64();
+    static uint64_t last_ms[24];
+    uint64_t now = plat_ms();
     if (state == last_state[player] && now - last_ms[player] < 1000) return;
     last_state[player] = state;
     last_ms[player] = now;
@@ -1405,7 +1336,7 @@ static void profile_dispatch(Cpu *c) {
     if (room_trace && (at(c->pc, A.room_sync) || at(c->pc, A.room_main) || at(c->pc, A.room_vote) ||
                        at(c->pc, A.room_event)))
         trace_room_start(c->pc, (const uint8_t *)(uintptr_t)c->x[0], (const uint8_t *)(uintptr_t)c->x[1]);
-    if (g_trace_edges && g_rt.rt_log) {
+    if (g_trace_edges && g_rt.log) {
         trace_watch(c);
         if (at(c->pc, g_sdk_memmove) && in_trace_range(c->x[30]))
             trace_sdk_message(c);
@@ -1419,7 +1350,7 @@ static void profile_dispatch(Cpu *c) {
     uint64_t caller = c->x[30];
     // (Every read through a matched register below is checked with guest_readable first: a row whose address is
     // only "high" confidence must not fault the game.)
-    if (at(target, A.ctl_event_sink) && c->x[1] && g_rt.rt_log &&
+    if (at(target, A.ctl_event_sink) && c->x[1] && g_rt.log &&
         guest_readable((const void *)(uintptr_t)c->x[1], 7 * sizeof(uint32_t))) {
         uint32_t event[7];
         memcpy(event, (const void *)(uintptr_t)c->x[1], sizeof event);
@@ -1466,8 +1397,8 @@ static void profile_dispatch(Cpu *c) {
     if (error_post && c->x[1] && guest_readable((const void *)(uintptr_t)c->x[1], 4)) {
         uint32_t id = *(const uint32_t *)(uintptr_t)c->x[1];
         static uint32_t last_id;
-        static ULONGLONG last_ms;
-        ULONGLONG now = GetTickCount64();
+        static uint64_t last_ms;
+        uint64_t now = plat_ms();
         if (id != last_id || now - last_ms > 10000) {
             last_id = id;
             last_ms = now;
@@ -1485,44 +1416,41 @@ static void profile_dispatch(Cpu *c) {
                  (unsigned long long)(lr[3] - GUEST_MAIN(0)), (unsigned long long)(lr[4] - GUEST_MAIN(0)));
         }
     }
-    // MKWMP_SKIP_ERROR=<hex id>: drop that one communication error (diagnostics; e.g. 0x9b928162, the
-    // end-of-battle move-count kick a driving Steam Deck player gets, RACEEND-RE.md).
-    // Default under Wine/Proton (user decision for 1.0.0, 2026-11-15): the Steam Deck gets 0x9b928162 from
-    // the kart watchdog (FUN_020d4ab0 -> FUN_02624bf0) at the end of every battle round while driving; the
-    // PC never does. Dropping it, a 3-round friend battle ran to the end. MKWMP_SKIP_ERROR=0 turns it off.
-    // The default id is the build's (A.proton_skip_error): none on 1.8.0 until its error-post row is proven live.
+    // MKWMP_SKIP_ERROR=<hex id>: drop that one communication error, opt-in. E.g. 0x9b928162, the end-of-battle
+    // move-count kick (kart watchdog FUN_020d4ab0 -> FUN_02624bf0, RACEEND-RE.md) the Steam Deck got under Proton at
+    // the end of every battle round while driving; dropping it, a 3-round friend battle ran to the end. It used to be
+    // the default under Wine/Proton; the Proton support was removed (native Linux comes with mkw-recomp's plugin API),
+    // so a native Deck run must show whether the kick still happens there.
     static uint32_t skip_id = 1;
     if (skip_id == 1) {
         const char *e = getenv("MKWMP_SKIP_ERROR");
-        HMODULE nt = GetModuleHandleA("ntdll.dll");
-        int wine = nt && GetProcAddress(nt, "wine_get_version");
-        skip_id = e && *e ? (uint32_t)strtoul(e, NULL, 16) : wine ? A.proton_skip_error : 0;
-        if (skip_id) mlog("communication error %#x will be dropped (%s)", skip_id, e && *e ? "MKWMP_SKIP_ERROR" : "Proton default");
+        skip_id = e && *e ? (uint32_t)strtoul(e, NULL, 16) : 0;
+        if (skip_id) mlog("communication error %#x will be dropped (MKWMP_SKIP_ERROR)", skip_id);
     }
     if (error_post && skip_id && c->x[1] && guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
         *(const uint32_t *)(uintptr_t)c->x[1] == skip_id) {
-        static volatile LONG skipped_one;
-        if (InterlockedIncrement(&skipped_one) <= 20)
+        static volatile int32_t skipped_one;
+        if (plat_inc(&skipped_one) <= 20)
             mlog("communication error %#x dropped (MKWMP_SKIP_ERROR)", skip_id);
         return;
     }
     if (error_post && g_skip_referee_timeout && c->x[1] &&
         guest_readable((const void *)(uintptr_t)c->x[1], 4) &&
         (g_skip_referee_timeout == 2 || *(const uint32_t *)(uintptr_t)c->x[1] == A.err_referee_timeout)) {
-        static volatile LONG skipped;
-        if (InterlockedIncrement(&skipped) <= 50)
+        static volatile int32_t skipped;
+        if (plat_inc(&skipped) <= 50)
             mkwmp_log("communication error %#x suppressed (caller main+%#llx)",
                       *(const uint32_t *)(uintptr_t)c->x[1], (unsigned long long)(caller - GUEST_MAIN(0)));
         return;
     }
     original_dispatch(c);
-    if (trace_operation && g_rt.rt_log)
+    if (trace_operation && g_rt.log)
         mlog("Match controller %s op=%llu target=%#llx ret=%#llx next_phase=%u desired=%u/%u flags=%#x",
                     next_phase ? "complete" : "prepare", (unsigned long long)operation,
                     (unsigned long long)target, (unsigned long long)c->x[0],
                     next_phase && guest_readable(next_phase, 4) ? *next_phase : 0, desired_mode, desired_phase,
                     game_flags);
-    if (seq && g_rt.rt_log) {
+    if (seq && g_rt.log) {
         uint32_t after[2];
         memcpy(after, seq + A.seq_phase, sizeof after);
         if (memcmp(seq_before, after, sizeof after))
@@ -1530,10 +1458,10 @@ static void profile_dispatch(Cpu *c) {
                         target == A.seq_wait ? "wait" : "start",
                         seq_before[0], seq_before[1], after[0], after[1]);
     }
-    if (result && g_rt.rt_log && guest_readable(result, 4))
+    if (result && g_rt.log && guest_readable(result, 4))
         mlog("BulkGetDocuments completion=%u (target=%#llx)",
                     *result, (unsigned long long)target);
-    if (job && g_rt.rt_log) {
+    if (job && g_rt.log) {
         uint64_t after, label;
         uint32_t error;
         memcpy(&after, job + A.join_step, sizeof after);
@@ -1546,10 +1474,45 @@ static void profile_dispatch(Cpu *c) {
     }
 }
 
+// The plugin API's way (override_address, only while the game loads): profile_dispatch runs as the override of each
+// target it matches, and "the original" is the game's function instead of the runtime's dispatcher. What it matched
+// by caller only (the controller's next-phase / prepare BLRs) and MKWMP_TRACE_EDGES' every-call coverage have no
+// target to hook, so those traces are COFF-only. The opt-in hooks (kart watchdog, room trace) go in only when their
+// switch is on at start: they run every frame.
+static void original_by_address(Cpu *c) { g_rt.call_original(c); }
+
+static void install_by_address(const struct game_addrs *a) {
+    if (!g_rt.call_original) {
+        mlog("version-specific hooks off: the plugin API has no call_original");
+        return;
+    }
+    original_dispatch = original_by_address;
+    uint64_t t[32];
+    int n = 0;
+    const char *e = getenv("MKWMP_TRACE_KART"), *k = getenv("MKWMP_NO_IDLE_KICK"), *r = getenv("MKWMP_TRACE_ROOM");
+    t[n++] = a->errsvc_post;
+    if ((e && e[0] == '1') || (k && k[0] == '1')) t[n++] = a->kart_entry[0], t[n++] = a->kart_entry[1];
+    if (r && r[0] == '1') t[n++] = a->room_sync, t[n++] = a->room_main, t[n++] = a->room_vote, t[n++] = a->room_event;
+    t[n++] = a->bulkget_fn, t[n++] = a->ctl_event_sink, t[n++] = a->seq_wait, t[n++] = a->seq_start;
+    for (int i = 0; i < GAME_PIA_STEPS; i++) t[n++] = a->pia_join_step[i];
+    int ok = 0, tried = 0;
+    for (int i = 0; i < n; i++) {
+        if (!t[i]) continue;
+        int dup = 0;
+        for (int j = 0; j < i; j++) dup |= t[j] == t[i];
+        if (dup) continue;
+        tried++;
+        if (g_rt.override_address(t[i], profile_dispatch)) ok++;
+        else mlog("version-specific hook at main+%#llx refused by the runtime", (unsigned long long)(t[i] - GUEST_MAIN(0)));
+    }
+    mlog("BulkGetDocuments and Pia join tracing installed (%d of %d address overrides)", ok, tried);
+}
+
 static void install_profile_dispatch_trace(void) {
-    static volatile LONG attempted;
-    uint8_t *base = (void *)GetModuleHandleW(L"mkwgame.dll");
-    if (!base || InterlockedCompareExchange(&attempted, 1, 0)) return;
+    static volatile int32_t attempted;
+    if ((!g_rt.dispatch_hook && !g_rt.override_address) || !g_rt.game_code_loaded || !g_rt.game_code_loaded() ||
+        plat_cas(&attempted, 1, 0))
+        return;
     // profile_dispatch matches guest pcs of one game build and reads/writes through their registers (error skips,
     // idle-kick guard, traces): on a build without a table row it would act on unrelated code, so it is not
     // installed at all.
@@ -1558,7 +1521,7 @@ static void install_profile_dispatch_trace(void) {
     if (!row) {
         mlog("game build %s: version-specific hooks off (BulkGetDocuments/Pia tracing, communication-error skips)",
              game_build_name(build));
-        if (build == GAME_UNKNOWN) InterlockedExchange(&attempted, 0);   // main is not mapped yet: ask again
+        if (build == GAME_UNKNOWN) plat_xchg(&attempted, 0);   // main is not mapped yet: ask again
         return;
     }
     struct game_addrs a = *row;
@@ -1569,44 +1532,24 @@ static void install_profile_dispatch_trace(void) {
         mlog("game build %s: error-service guard mismatch, communication-error log and skips off",
              game_build_name(build));
         a.errsvc_post = 0;
-        a.proton_skip_error = 0;
     }
     const char *kick = getenv("MKWMP_NO_IDLE_KICK");
     if (kick && kick[0] == '1' && !a.kart_idle_kick)
         mlog("game build %s: MKWMP_NO_IDLE_KICK refused (the kart state field is not confirmed for this build)",
              game_build_name(build));
-    g_sdk_memmove = g_rt.ldr_symbol ? g_rt.ldr_symbol("memmove") : 0;
+    g_sdk_memmove = g_rt.guest_symbol ? g_rt.guest_symbol("memmove") : 0;
     A = a;   // before the hook goes in: profile_dispatch only ever sees the whole row
     mlog("game build %s: version-specific hooks on (error service %s, idle-kick guard %s)", game_build_name(build),
          a.errsvc_post ? "verified" : "off", a.kart_idle_kick ? "available" : "unavailable");
-    IMAGE_DOS_HEADER *dos = (void *)base;
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return;
-    IMAGE_NT_HEADERS64 *nt = (void *)(base + dos->e_lfanew);
-    if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) return;
-    IMAGE_DATA_DIRECTORY dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-    if (!dir.VirtualAddress) return;
-    IMAGE_IMPORT_DESCRIPTOR *imports = (void *)(base + dir.VirtualAddress);
-    for (size_t i = 0; i < dir.Size / sizeof(*imports) && imports[i].Name; i++) {
-        IMAGE_IMPORT_DESCRIPTOR *imp = &imports[i];
-        if (_stricmp((char *)base + imp->Name, "mkw.exe") || !imp->OriginalFirstThunk) continue;
-        IMAGE_THUNK_DATA64 *names = (void *)(base + imp->OriginalFirstThunk);
-        IMAGE_THUNK_DATA64 *iat = (void *)(base + imp->FirstThunk);
-        for (size_t j = 0; names[j].u1.AddressOfData; j++) {
-            uint64_t rva = names[j].u1.AddressOfData;
-            if (IMAGE_SNAP_BY_ORDINAL64(rva)) continue;
-            IMAGE_IMPORT_BY_NAME *name = (void *)(base + rva);
-            if (strcmp((char *)name->Name, "rt_dispatch")) continue;
-            DWORD protection;
-            if (!VirtualProtect(&iat[j], sizeof iat[j], PAGE_READWRITE, &protection)) return;
-            original_dispatch = (GuestFn)(uintptr_t)iat[j].u1.Function;
-            InterlockedExchangePointer((void *volatile *)&iat[j].u1.Function, (void *)profile_dispatch);
-            VirtualProtect(&iat[j], sizeof iat[j], protection, &protection);
-            rlog("BulkGetDocuments and Pia join tracing installed");
-            return;
-        }
+    if (!g_rt.dispatch_hook) {
+        install_by_address(&a);
+        return;
     }
-    rlog("BulkGetDocuments completion tracing: rt_dispatch import not found");
+    if (g_rt.dispatch_hook(profile_dispatch, &original_dispatch)) rlog("BulkGetDocuments and Pia join tracing installed");
+    else rlog("BulkGetDocuments completion tracing: rt_dispatch import not found");
 }
+
+void npln_address_hooks(void) { install_profile_dispatch_trace(); }
 
 static void ov_ssl_initialize(Cpu *c) {
     install_profile_dispatch_trace();
@@ -1653,46 +1596,22 @@ static void ov_ssl_certificates(Cpu *c) {
 // only when seated turns ACTIVE (our overrides from then on). Overrides with no stock handler
 // (raw sockets, ssl, ...) are only reached once the game is online.
 // MKWMP_EAGER=1: active from start (old behaviour, for debugging).
-static volatile LONG g_active;
+static volatile int32_t g_active;
 
-static GuestFn stock_handler(const char *name) {
-    static const char **names;
-    static GuestFn *fns;
-    static int count = -1;
-    if (count < 0) {
-        count = 0;
-        unsigned char *img = (unsigned char *)GetModuleHandleW(NULL);
-        IMAGE_NT_HEADERS64 *nt = (IMAGE_NT_HEADERS64 *)(img + ((IMAGE_DOS_HEADER *)img)->e_lfanew);
-        IMAGE_SECTION_HEADER *sec = IMAGE_FIRST_SECTION(nt);
-        for (int i = 0; i < nt->FileHeader.NumberOfSections; i++, sec++) {
-            if (memcmp(sec->Name, ".ovr", 5)) continue;
-            uint64_t *p = (uint64_t *)(img + sec->VirtualAddress);
-            int n = (int)(sec->Misc.VirtualSize / 16);
-            names = calloc((size_t)n, sizeof *names);
-            fns = calloc((size_t)n, sizeof *fns);
-            for (int k = 0; k < n && names && fns; k++) {
-                if (!p[2 * k] || !p[2 * k + 1]) continue;
-                names[count] = (const char *)(uintptr_t)p[2 * k];
-                fns[count++] = (GuestFn)(uintptr_t)p[2 * k + 1];
-            }
-        }
-        mlog("dormant mode: %d stock handlers in .ovr", count);
-    }
-    for (int k = 0; k < count; k++) if (!strcmp(names[k], name)) return fns[k];
-    return NULL;
-}
+// The runtime's own handler of an SDK name (NULL with none, or a backend without stock handlers).
+static GuestFn stock_handler(const char *name) { return g_rt.stock ? g_rt.stock(name) : NULL; }
 
 // Online Play was opened: get a seat (if a launcher is configured) and go active.
 static void try_activate(void) {
-    static SRWLOCK lock = SRWLOCK_INIT;
-    AcquireSRWLockExclusive(&lock);
+    static PlatLock lock = PLAT_LOCK_INIT;
+    plat_lock(&lock);
     if (!g_active) {
         const MkwmpConfig *cfg = mkwmp_config();
         SeatReply r;
-        if (!cfg->launcher_port) {
+        if (!mkwmp_config_has_seat(cfg)) {
             mlog("online requested: no launcher in mkwmp.toml, going active without a seat");
             voice_online(cfg->host);
-            InterlockedExchange(&g_active, 1);
+            plat_xchg(&g_active, 1);
         } else if (seat_acquire(&r, 10 * 60 * 1000) == SEAT_SEATED) {
             char *colon = strrchr(r.lobby, ':');
             if (r.lobby[0] && colon) {
@@ -1704,26 +1623,26 @@ static void try_activate(void) {
             friends_online(FRIENDS_WAIT_MS);
             mlog("online requested: seated, going active");
             voice_online(g_lobby_host);
-            InterlockedExchange(&g_active, 1);
+            plat_xchg(&g_active, 1);
         } else {
             mlog("online requested: no seat, staying offline (stock no-network)");
         }
     }
-    ReleaseSRWLockExclusive(&lock);
+    plat_unlock(&lock);
 }
 
 // MKWMP_EAGER=1 is active from boot, so try_activate never runs: the first account-token load (the sign-in) takes
 // the seat instead, so the lobby gets a real seat ticket and voice starts. Retried on the next sign-in if refused.
 static int g_eager;
 static void eager_seat(void) {
-    static volatile LONG seated;
-    static SRWLOCK lock = SRWLOCK_INIT;
+    static volatile int32_t seated;
+    static PlatLock lock = PLAT_LOCK_INIT;
     if (!g_eager || seated) return;
-    AcquireSRWLockExclusive(&lock);
+    plat_lock(&lock);
     if (!seated) {
         const MkwmpConfig *cfg = mkwmp_config();
         SeatReply r;
-        if (!cfg->launcher_port) {
+        if (!mkwmp_config_has_seat(cfg)) {
             voice_online(cfg->host);
             seated = 1;
         } else if (seat_acquire(&r, 60 * 1000) == SEAT_SEATED) {
@@ -1742,7 +1661,7 @@ static void eager_seat(void) {
             mlog("eager sign-in: no seat (the lobby will refuse the sign-in)");
         }
     }
-    ReleaseSRWLockExclusive(&lock);
+    plat_unlock(&lock);
 }
 
 // nn::nifm::GetCurrentIpConfigInfo(nn::socket::InAddr * x5), game 1.8.0 (Pia 7.3's transport start). The runtime has
@@ -1776,24 +1695,24 @@ static int stock_only_caller(uint64_t lr) {
 static void gate_call(int i, Cpu *c) {
     // The first gated call (about 3 s into the boot, long before any hook): say in mkwmp.log which game build runs
     // and whether its table row fits it.
-    static volatile LONG checked;
-    if (!checked && game_build() != GAME_UNKNOWN && !InterlockedExchange(&checked, 1)) game_addrs_selfcheck();
+    static volatile int32_t checked;
+    if (!checked && game_build() != GAME_UNKNOWN && !plat_xchg(&checked, 1)) game_addrs_selfcheck();
     if (g_stock[i] && stock_only_caller(c->x[30])) { g_stock[i](c); return; }
     if (!g_active && g_stock[i]) {
-        static volatile LONG seen[NREG];
-        if (!InterlockedExchange(&seen[i], 1) || g_trigger[i])
+        static volatile int32_t seen[NREG];
+        if (!plat_xchg(&seen[i], 1) || g_trigger[i])
             mlog("dormant call: %s caller=main+%#llx", g_gate_name[i],
                  (unsigned long long)(c->x[30] - GUEST_MAIN(0)));
         // The game makes one automatic sign-in at boot (nifm request ~5 s in, before the title
         // screen) and one per Online Play click, from the same caller (main+0x2247a7c). Decline
         // the boot one (stock "no network": the menu stays offline, no seat taken); every later
         // request is the player opening Online Play.
-        static volatile LONG requests;
+        static volatile int32_t requests;
         if (g_trigger[i]) {
             // An unknown build keeps the 1.0.0 behaviour (decline the first request).
             const struct game_addrs *ga = game_addrs();
             int boot = !ga || ga->boot_signin;
-            if (boot && InterlockedIncrement(&requests) == 1) mlog("boot sign-in declined (stays offline until Online Play)");
+            if (boot && plat_inc(&requests) == 1) mlog("boot sign-in declined (stays offline until Online Play)");
             else try_activate();
         }
         if (!g_active) { g_stock[i](c); return; }
@@ -1874,8 +1793,6 @@ static const Reg kRegs[] = {
     {"_ZN2nn6socket12GetLastErrnoEv", ov_pia_errno},
     {"clock_gettime", ov_clock_gettime},
     // socket C-API
-    {"_ZN2nn2os13SwitchToFiberEPNS0_9FiberTypeE", ov_fiber_switch},
-    {"_ZN2nn2os15InitializeFiberEPNS0_9FiberTypeEPFS2_PvES3_S3_mi", ov_fiber_initialize},
     {"_ZN2nn6socket7EventFdEmNS0_12EventFdFlagsE", ov_eventfd},
     {"_ZN2nn6socket11EventFdReadEiPm", ov_eventfd_read},
     {"_ZN2nn6socket12EventFdWriteEim", ov_eventfd_write},
@@ -1895,15 +1812,14 @@ static const Reg kRegs[] = {
 };
 // The runtime keeps overrides in a fixed table of 64: its hostfn_add_override ends the
 // process past that ("hostfn_add_override: more than 64"; cmp rax, 0x40 in mkw.exe 1.0.8 and
-// 0.1.10). Every hostfn_add_override call of npln_register counts: kRegs, where the two
-// *Fiber entries are registered only with MKWMP_NO_FIBER=0, and otherwise the core-mask pair
-// in their place. Both ways must fit, and each kRegs entry needs its own gate.
-// The table is full: 64 kRegs entries, 62 + the core-mask pair registered by default. A new override needs the slot
-// of an old one (game 1.8.0's GetCurrentIpConfigInfo(InAddr *) took FreeAddrInfo(AddrInfo *)'s).
+// 0.1.10). Every hostfn_add_override call of npln_register counts: kRegs and the core-mask pair,
+// and each kRegs entry needs its own gate.
+// The table is full: 62 kRegs entries + the core-mask pair. A new override needs the slot of an old one (game
+// 1.8.0's GetCurrentIpConfigInfo(InAddr *) took FreeAddrInfo(AddrInfo *)'s). The SwitchToFiber / InitializeFiber
+// workaround for runtime 1.0.8 (research/docs/FINDINGS.md) was removed: every supported runtime fixed it.
 enum {
     RUNTIME_OVERRIDE_MAX = 64,
     N_REGS = sizeof(kRegs) / sizeof(kRegs[0]),
-    N_FIBER_REGS = 2,       // SwitchToFiber, InitializeFiber
     N_CORE_MASK_REGS = 2,   // nnosGetThreadCoreMask, nnosSetThreadCoreMask
 };
 // The typed FreeAddrInfo must have a stock (do-nothing) handler: the SDK's own would free a g_typed_ai entry.
@@ -1912,8 +1828,7 @@ static const char kStockFreeAddrInfo[] = "_ZN2nn6socket12FreeAddrInfoEPNS0_8Addr
 static const char kIpConfigInAddr[] = "_ZN2nn4nifm22GetCurrentIpConfigInfoEPNS_6socket6InAddrES3_S3_S3_S3_";
 static void ov_nothing(Cpu *c) { (void)c; }
 _Static_assert(N_REGS <= NREG, "one gate per kRegs entry");
-_Static_assert(N_REGS <= RUNTIME_OVERRIDE_MAX, "runtime override limit (MKWMP_NO_FIBER=0)");
-_Static_assert(N_REGS - N_FIBER_REGS + N_CORE_MASK_REGS <= RUNTIME_OVERRIDE_MAX, "runtime override limit");
+_Static_assert(N_REGS + N_CORE_MASK_REGS <= RUNTIME_OVERRIDE_MAX, "runtime override limit");
 
 int npln_register(void) {
     // Opt-in: engage only if mkwmp.toml is present (or MKWMP_ENABLE=1 for tests).
@@ -1929,56 +1844,44 @@ int npln_register(void) {
     g_trace_edges = edges && !strcmp(edges, "1");
     const char *skip = getenv("MKWMP_SKIP_REFEREE_TIMEOUT");
     g_skip_referee_timeout = skip ? atoi(skip) : 0;
-    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
-    if (!g_rt.hostfn_add_override || !g_rt.ldr_count) { log_line("npln_register: runtime not resolved"); return -1; }
-    if (!g_dele.fiber_initialize || !g_dele.fiber_switch || !g_dele.fiber_switch_to ||
-        !g_dele.fibers || !g_dele.fiber_new || !g_dele.fiber_free || !g_dele.current_cpu ||
-        !g_dele.core_away || !g_dele.core_back) {
-        log_line("npln_register: required fiber delegates missing; capture disabled"); return -1;
+    plat_no_error_dialogs();
+    if (!g_rt.override || !g_rt.guest_modules) { log_line("npln_register: runtime not resolved"); return -1; }
+    if (!g_rt.core_away || !g_rt.core_back) {
+        log_line("npln_register: kern_core_away/back missing; capture disabled"); return -1;
     }
-    if (g_rt.ldr_count() != 0) { log_line("npln_register: TOO LATE"); return -1; }
+    if (g_rt.guest_modules() != 0) { log_line("npln_register: TOO LATE"); return -1; }
     int n = N_REGS;
-    // Fibers are left to the runtime by default (mkw-recomp 0.1.10, whose fiber
-    // internals differ from the 1.0.8 build the fiber workaround targets); the freed
-    // override slots take the core-mask pair. MKWMP_NO_FIBER=0 restores the fiber
-    // overrides (older runtimes).
-    const char *nofiber = getenv("MKWMP_NO_FIBER");
-    int skip_fiber = !(nofiber && !strcmp(nofiber, "0"));
     const char *eager = getenv("MKWMP_EAGER");
     if (eager && !strcmp(eager, "1")) { g_active = 1; g_eager = 1; log_line("MKWMP_EAGER=1: active from start"); }
     int gated = 0;
     int stock_free = stock_handler(kStockFreeAddrInfo) != NULL;
     for (int i = 0; i < n; i++) {
-        if (skip_fiber && strstr(kRegs[i].name, "Fiber")) { log_line(kRegs[i].name); continue; }
         if (!stock_free && !strcmp(kRegs[i].name, kIpConfigInAddr)) {
             // A runtime without that stock handler (none of the supported ones): the slot goes back to FreeAddrInfo,
             // as a no-op, and game 1.8.0's Pia keeps the SDK's GetCurrentIpConfigInfo(InAddr *).
             mlog("npln: no stock FreeAddrInfo(AddrInfo *) in this runtime: overriding it instead of %s", kIpConfigInAddr);
-            g_rt.hostfn_add_override(kStockFreeAddrInfo, ov_nothing);
+            g_rt.override(kStockFreeAddrInfo, ov_nothing);
             continue;
         }
         g_ours[i] = kRegs[i].fn;
         g_gate_name[i] = kRegs[i].name;
         g_stock[i] = stock_handler(kRegs[i].name);
         g_trigger[i] = !strcmp(kRegs[i].name, "_ZN2nn4nifm27SubmitNetworkRequestAndWaitEv");
-        // Never gated: fs overrides only log and delegate; fibers are runtime fixes; nn::account
+        // Never gated: fs overrides only log and delegate; nn::account
         // is checked once at boot (IsNetworkServiceAccountAvailable) and cached, so a stock
         // "no network account" there makes the first Online Play click fail (GetNickname gives
         // the launcher name offline too); CancelNetworkRequest calls the stock one itself.
-        if (!strncmp(kRegs[i].name, "_ZN2nn2fs", 9) || strstr(kRegs[i].name, "Fiber") ||
-            !strncmp(kRegs[i].name, "_ZN2nn7account", 14) || strstr(kRegs[i].name, "CancelNetworkRequest"))
+        if (!strncmp(kRegs[i].name, "_ZN2nn2fs", 9) || !strncmp(kRegs[i].name, "_ZN2nn7account", 14) || strstr(kRegs[i].name, "CancelNetworkRequest"))
             g_stock[i] = NULL;
         gated += g_stock[i] != NULL;
-        g_rt.hostfn_add_override(kRegs[i].name, g_stock[i] ? kGates[i] : kRegs[i].fn);
+        g_rt.override(kRegs[i].name, g_stock[i] ? kGates[i] : kRegs[i].fn);
     }
     mlog("npln: %d overrides gated (dormant until Online)%s", gated, g_active ? ", but MKWMP_EAGER" : "");
-    if (skip_fiber) {
-        // The freed slots take the core-mask pair: runtime 0.1.10 aborts the SDK's
-        // GetThreadCoreMask (result 0xe801) on the online start-up path (main+0x14c5bc0).
-        g_rt.hostfn_add_override("nnosGetThreadCoreMask", ov_get_thread_core_mask);
-        g_rt.hostfn_add_override("nnosSetThreadCoreMask", ov_set_thread_core_mask);
-        log_line("core-mask overrides registered");
-    }
+    // Runtime 0.1.10 aborts the SDK's GetThreadCoreMask (result 0xe801) on the online start-up path
+    // (main+0x14c5bc0).
+    g_rt.override("nnosGetThreadCoreMask", ov_get_thread_core_mask);
+    g_rt.override("nnosSetThreadCoreMask", ov_set_thread_core_mask);
+    log_line("core-mask overrides registered");
     log_kv("npln_register: overrides", (uint64_t)n);
     return n;
 }

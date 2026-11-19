@@ -1,0 +1,84 @@
+# Keeps the probe's platform-neutral core and the voice library portable (docs/PLUGIN-API-READINESS.md): both must
+# build for Linux with no Windows dependency, the Windows winmm.dll / mkwmp-voice.dll must still build, and so must the
+# plugin for mkw-recomp's plugin API v1 (mkwmp.so / mkwmp.dll, tested against a fake API). The voice job also lays the
+# mod out (mods/mkwmp/: the plugin and the voice libraries) as a test artifact. Nothing is released.
+name: probe-linux
+
+on:
+  push:
+    branches: [probe-plat, voice-linux, probe-plugin, plugin-v1, plugin-seat, plugin-camera]
+    paths: ["native/probe/**", "native/voice/**", "native/camera/**", ".github/workflows/probe-linux.yml"]
+  pull_request:
+    paths: ["native/probe/**", "native/voice/**", "native/camera/**", ".github/workflows/probe-linux.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Zig from ziglang.org, checked against its published SHA-256 (download/index.json). No setup action: every
+      # mlugg/setup-zig release so far (v2.2.1) still runs on the deprecated Node 20.
+      - name: Zig 0.15.2
+        env:
+          ZIG: zig-x86_64-linux-0.15.2
+          ZIG_SHA256: 02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$ZIG.tar.xz" "https://ziglang.org/download/0.15.2/$ZIG.tar.xz"
+          echo "$ZIG_SHA256  $RUNNER_TEMP/$ZIG.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/$ZIG.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/$ZIG" >> "$GITHUB_PATH"
+          echo "ZIG_GLOBAL_CACHE_DIR=$RUNNER_TEMP/zig-cache" >> "$GITHUB_ENV"
+          echo "ZIG_LOCAL_CACHE_DIR=$RUNNER_TEMP/zig-cache" >> "$GITHUB_ENV"
+      - name: Linux core (.so, -Werror, --no-undefined)
+        run: python3 -I native/probe/build_linux.py
+      - name: Windows probe (winmm.dll)
+        run: python3 -I native/probe/build.py
+      # The native mkw-recomp plugin (src/mkw_plugin.h): mkwmp.so + mkwmp.dll, and the .so against a fake plugin API
+      - name: Plugin builds (mkwmp.so, mkwmp.dll) and test_plugin
+        run: python3 -I native/probe/build_plugin.py --test
+      # The camera capture library (DirectShow on Windows, no capture yet on Linux) and its picture conversion test
+      - name: Camera library (mkwmp-camera.dll, libmkwmp-camera.so)
+        run: |
+          python3 -I native/camera/build.py --target linux --test --list
+          python3 -I native/camera/build.py --target windows
+
+  voice:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Zig from ziglang.org, checked against its published SHA-256 (download/index.json). No setup action: every
+      # mlugg/setup-zig release so far (v2.2.1) still runs on the deprecated Node 20.
+      - name: Zig 0.15.2
+        env:
+          ZIG: zig-x86_64-linux-0.15.2
+          ZIG_SHA256: 02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$ZIG.tar.xz" "https://ziglang.org/download/0.15.2/$ZIG.tar.xz"
+          echo "$ZIG_SHA256  $RUNNER_TEMP/$ZIG.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/$ZIG.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/$ZIG" >> "$GITHUB_PATH"
+          echo "ZIG_GLOBAL_CACHE_DIR=$RUNNER_TEMP/zig-cache" >> "$GITHUB_ENV"
+          echo "ZIG_LOCAL_CACHE_DIR=$RUNNER_TEMP/zig-cache" >> "$GITHUB_ENV"
+      - name: Third-party sources (pinned SHA-256)
+        run: python3 -I native/voice/fetch.py
+      - name: Linux voice library (.so) and its tests
+        run: python3 -I native/voice/build.py --target linux --test
+      - name: Windows voice library (mkwmp-voice.dll)
+        run: python3 -I native/voice/build.py
+      # The mod as mkw-recomp loads it (<game>/mods/mkwmp/), with both systems' libraries: a test artifact, not a release
+      - name: Camera library (mkwmp-camera.dll, libmkwmp-camera.so)
+        run: |
+          python3 -I native/camera/build.py --target linux
+          python3 -I native/camera/build.py --target windows
+      - name: Plugin builds and the mod folder (mods/mkwmp/)
+        run: python3 -I native/probe/build_plugin.py --test --package --version "ci-${GITHUB_SHA::7}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mkwmp-mod
+          path: native/probe/build/plugin/mod/
+          retention-days: 14
+          if-no-files-found: error
