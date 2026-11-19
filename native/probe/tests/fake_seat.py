@@ -1,15 +1,18 @@
 """A fake seat server (docs/contracts/SEAT_API.md) for the plugin's own seat client: profiles with PINs, sessions with
-tickets, presence tokens and friends, in memory, over plain HTTP on 127.0.0.1. Used by build_plugin.py --test.
+tickets, presence tokens, friends and room tickets, in memory, over plain HTTP on 127.0.0.1. Used by build_plugin.py
+--test (and by tests/test_seatapi.c when it is given the server's URL).
 
     python fake_seat.py PORTFILE      prints nothing; writes the port it listens on into PORTFILE, serves until killed
 
 Only what seatapi.c calls, with the contract's answers and error codes. Not the real server (rust/seat).
 """
+import base64
 import json
 import random
 import re
 import sys
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -155,6 +158,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200, {"name": other, "state": "accepted"})
                 PENDING.add((me, other))
                 return self.send(200, {"name": other, "state": "pending"})
+            if p == "/seat/v1/rooms/ticket":   # chat rooms: a ticket naming the caller and its accepted friends among those asked
+                if not me:
+                    return self.error(401, "PRESENCE_NOT_FOUND")
+                asked = b.get("friends")
+                if not isinstance(asked, list) or len(asked) > 4 or not all(isinstance(n, str) for n in asked):
+                    return self.error(400, "ROOM_INVALID")
+                granted = [canon(n) for n in asked if canon(n) and frozenset({me, canon(n)}) in FRIENDS]
+                now = int(time.time())
+                claims = {"v": 1, "iss": "fake", "kid": "k1", "name": me, "friends": granted, "iat": now, "exp": now + 900}
+                body = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
+                return self.send(200, {"ticket": "mkwr1.%s.fakesig" % body, "friends": granted, "expires": now + 900})
             m = re.match(r"^/seat/v1/friends/([^/]+)/accept$", p)
             if m:
                 if not me:

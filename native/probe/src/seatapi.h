@@ -93,6 +93,26 @@ SeatApiResult seatapi_friend_request(const char *base, const char *token, const 
 SeatApiResult seatapi_friend_accept(const char *base, const char *token, const char *name);
 SeatApiResult seatapi_friend_remove(const char *base, const char *token, const char *name);  // reject, cancel or end
 
+// ---- chat rooms (docs/contracts/VOICE_API.md section 6): the room ticket the voice relay asks for
+// POST /seat/v1/rooms/ticket (presence bearer) {friends:[names, at most 4]} -> 200 {ticket, friends, expires}: a ticket
+// (mkwr1..., at most 512 bytes, good for 15 minutes) naming the caller and those of the names who are its accepted
+// friends. The relay puts two players in a chat room only when each holds a ticket naming the other. 30 a minute.
+enum { SEATAPI_ROOM_FRIENDS = 4, SEATAPI_ROOM_TICKET_MAX = 512, SEATAPI_ROOM_TICKET_LIFE = 900 };
+typedef struct {
+    char ticket[SEATAPI_ROOM_TICKET_MAX + 1];
+    int nfriends;                                               // the friends the server put in the ticket
+    char friends[SEATAPI_ROOM_FRIENDS][SEATAPI_NAME_MAX + 1];
+    long long expires;                                          // as the server said (0: it did not)
+} SeatApiRoomTicket;
+SeatApiResult seatapi_room_ticket(const char *base, const char *token, const char *const *names, int n, SeatApiRoomTicket *out);
+// The body of that call. 0 with no name, more than four, a name that is none, or no room. Pure (tests/test_seatapi.c).
+int seatapi_room_ticket_body(char *json, size_t cap, const char *const *names, int n);
+// The answer's ticket, friends and expires. 0 without a ticket that fits. Pure.
+int seatapi_room_ticket_parse(const char *body, SeatApiRoomTicket *out);
+// Seconds the ticket still lives at now (unix seconds): `expires` as a time (seconds, or milliseconds) or as a number
+// of seconds from the answer; 15 minutes when the server did not say; never more than that. Pure.
+int seatapi_room_ticket_life(long long expires, long long now);
+
 // ---- the account and voice-chat reports (seat server 1.2.0)
 // DELETE /seat/v1/profiles/{name} {pin}: the profile, its PIN, friendships, presences and seats, and the reports it
 // filed, gone; the name is free again. 204 deleted; 404 PROFILE_NOT_FOUND is as good (nothing left); 403/401 wrong PIN.

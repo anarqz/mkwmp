@@ -353,6 +353,61 @@ SeatApiResult seatapi_friend_remove(const char *base, const char *token, const c
     return call("DELETE", base, path, token, NULL, out, sizeof out);
 }
 
+// ---- chat rooms: the room ticket
+int seatapi_room_ticket_body(char *json, size_t cap, const char *const *names, int n) {
+    if (!json || !names || n < 1 || n > SEATAPI_ROOM_FRIENDS) return 0;
+    size_t k = (size_t)snprintf(json, cap, "{\"friends\":[");
+    for (int i = 0; i < n; i++) {
+        if (!seatapi_name_ok(names[i]) || k + SEATAPI_NAME_MAX + 8 > cap) return 0;
+        k += (size_t)snprintf(json + k, cap - k, "%s\"%s\"", i ? "," : "", names[i]);
+    }
+    return snprintf(json + k, cap - k, "]}") == 2;
+}
+
+int seatapi_room_ticket_parse(const char *body, SeatApiRoomTicket *out) {
+    memset(out, 0, sizeof *out);
+    char ticket[SEATAPI_ROOM_TICKET_MAX + 2];
+    if (!seatapi_json_str(body, "ticket", ticket, sizeof ticket) || !ticket[0] || strlen(ticket) > SEATAPI_ROOM_TICKET_MAX) return 0;
+    memcpy(out->ticket, ticket, strlen(ticket) + 1);
+    const char *b, *e;
+    if (seatapi_json_span(body, "friends", &b, &e) && *b == '[')
+        for (const char *p = b + 1; p < e && out->nfriends < SEATAPI_ROOM_FRIENDS;) {   // an array of names
+            const char *q = memchr(p, '"', (size_t)(e - p));
+            const char *end = q ? memchr(q + 1, '"', (size_t)(e - q - 1)) : NULL;
+            if (!end) break;
+            char name[SEATAPI_NAME_MAX + 2] = "";
+            if ((size_t)(end - q - 1) <= SEATAPI_NAME_MAX) memcpy(name, q + 1, (size_t)(end - q - 1));
+            if (seatapi_name_ok(name)) memcpy(out->friends[out->nfriends++], name, strlen(name) + 1);
+            p = end + 1;
+        }
+    seatapi_json_int(body, "expires", &out->expires);
+    return 1;
+}
+
+int seatapi_room_ticket_life(long long expires, long long now) {
+    long long left = SEATAPI_ROOM_TICKET_LIFE;
+    if (expires > 100000000000ll) left = expires / 1000 - now;   // a time in milliseconds
+    else if (expires > 1000000000) left = expires - now;         // a time in seconds
+    else if (expires > 0) left = expires;                        // seconds from the answer
+    return left < 0 ? 0 : left > SEATAPI_ROOM_TICKET_LIFE ? SEATAPI_ROOM_TICKET_LIFE : (int)left;
+}
+
+SeatApiResult seatapi_room_ticket(const char *base, const char *token, const char *const *names, int n, SeatApiRoomTicket *out) {
+    char json[160], body[2048];
+    memset(out, 0, sizeof *out);
+    if (!seatapi_room_ticket_body(json, sizeof json, names, n)) {
+        SeatApiResult r = {400, 0, "ROOM_INVALID", "one to four friends' names"};
+        return r;
+    }
+    SeatApiResult r = call("POST", base, "/seat/v1/rooms/ticket", token, json, body, sizeof body);
+    if (r.status == 200 && !seatapi_room_ticket_parse(body, out)) {
+        r.status = 0;
+        snprintf(r.code, sizeof r.code, "BAD_ANSWER");
+        snprintf(r.message, sizeof r.message, "the server's answer has no room ticket");
+    }
+    return r;
+}
+
 // ---- the account and voice-chat reports
 SeatApiResult seatapi_profile_delete(const char *base, const char *name, const char *pin) {
     char path[96], json[48], out[512];
