@@ -422,16 +422,15 @@ static Source *source_of(uint64_t account) {
     return NULL;
 }
 
-// Nearest-neighbour copy of a sw x sh picture (rows sw * 4 apart) over a dw x dh one (rows drow apart).
+// Nearest-neighbour copy of a sw x sh picture (rows sw * 4 apart) over a dw x dh one (rows drow apart), flipped left
+// to right: the game draws its camera images mirrored (the first live run showed the test pattern's name reversed
+// above the other kart), so the picture is stored mirrored and shows the right way round. The player's own "Mirror
+// my picture" setting still applies on top, in the capture library.
 static void blit(uint8_t *dst, int dw, int dh, int drow, const uint8_t *src, int sw, int sh) {
-    if (dw == sw && dh == sh) {
-        for (int y = 0; y < dh; y++) memcpy(dst + (size_t)y * (size_t)drow, src + (size_t)y * (size_t)sw * 4, (size_t)sw * 4);
-        return;
-    }
     for (int y = 0; y < dh; y++) {
         const uint8_t *row = src + (size_t)(y * sh / dh) * (size_t)sw * 4;
         uint8_t *out = dst + (size_t)y * (size_t)drow;
-        for (int x = 0; x < dw; x++) memcpy(out + (size_t)x * 4, row + (size_t)(x * sw / dw) * 4, 4);
+        for (int x = 0; x < dw; x++) memcpy(out + (size_t)x * 4, row + (size_t)((dw - 1 - x) * sw / dw) * 4, 4);
     }
 }
 
