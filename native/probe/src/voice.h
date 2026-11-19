@@ -1,6 +1,7 @@
-// Voice chat, probe side (docs/contracts/VOICE_API.md §4, §5). The relay's voice room is the lobby; with the plugin
-// backend the player hears and talks to the chat room only (chatroom.h): a relay that speaks rooms routes it so
-// (room mode, roomnet.c), with any other the plugin filters the lobby's voice itself (voice.c push_mutes). The probe loads mkwmp-voice.dll (the engine and
+// Voice chat, probe side (docs/contracts/VOICE_API.md §4, §5, §6). With the plugin backend and a relay that speaks
+// friend rooms, voice exists in a private friend room only, for everyone in it; a matchmade race or battle has none
+// (room mode, roomnet.c: the relay routes it, and the voice library keeps the engine off outside a room). Nothing is
+// filtered here. The probe loads mkwmp-voice.dll (the engine and
 // the relay client, native/voice) from the game folder the first time the game goes online, feeds it the seat ticket
 // and the relay address, and polls the launcher's voice settings (GET /local/v1/voice) every 2 s. Mutes chosen in
 // the game's menus go to the engine (and through it to the relay) and to the launcher (POST /local/v1/voice/mute).
@@ -28,12 +29,6 @@ typedef struct {
 // otherwise (and *out is the defaults). Unit-tested.
 int voice_parse_settings(int http_status, const char *body, VoiceSettings *out);
 
-// Pure, unit-tested: the mute list the engine is given while voice is shared with the chat room only (chatroom.h). The
-// lobby's players (peers, the player not among them) who are not in the room come first, then the player's own mutes;
-// each account once, at most cap. *heard (may be NULL): how many of the room's members are among the peers.
-int voice_room_mutes(const uint64_t *user, int nuser, const uint64_t *peers, int npeers, const uint64_t *room, int nroom,
-                     uint64_t *out, int cap, int *heard);
-
 // The game went online (seated): load the engine if needed and join the relay of `lobby_host`.
 void voice_online(const char *lobby_host);
 // The player left online.
@@ -45,23 +40,21 @@ int voice_is_talking(uint64_t account);
 // Mute or unmute a player from the game's menus (`name` may be NULL). Applies at once; the launcher is told on the
 // voice thread.
 void voice_set_muted(uint64_t account, const char *name, int muted);
-// For the camera (camera.c): 1 between voice_online and voice_offline, whatever the voice settings; and the accounts
-// of the other players in the voice room, as the relay last said (none while the engine is not in a room).
+// For the camera (camera.c): 1 between voice_online and voice_offline, whatever the voice settings.
 int voice_is_online(void);
-int voice_peer_accounts(uint64_t *out, int cap);
 // 1 while voice runs in a room (the engine is on and the relay has this player in a lobby).
 int voice_active(void);
 
-// ---- chat rooms and video (roomnet.c drives them; mkwmp_voice.h's second part). Any thread.
+// ---- friend rooms and video (roomnet.c drives them; mkwmp_voice.h's second part). Any thread.
 // The loaded voice library's room API version: -1 while no library is loaded (the game was never online, or voice is
-// off on the server), 0 a library without it (an older mkwmp-voice: no room mode, the camera stays off the network).
+// off on the server), 0 a library without room API 2 (an older mkwmp-voice: no room mode, the camera stays off the
+// network).
 int voice_room_api(void);
 // 1 when voice chat is on in the settings (the launcher's or the mod's), as last read.
 int voice_enabled(void);
-// The library's calls; nothing without the room API. Room mode on: the relay is joined with voice chat off too, and
-// while the relay speaks rooms it routes voice inside the room, so the local filter (voice_room_mutes) steps aside.
+// The library's calls; nothing without the room API. Room mode on: the relay is joined with voice chat off too (the
+// camera needs the room), and a relay that speaks friend rooms carries voice in a friend room only.
 void voice_room_mode(int on);
-void voice_room_request(const char *sharing_key, const uint64_t *want, int count, const char *room_ticket);
 void voice_room_camera(int on);
 void voice_video_subscribe(const uint64_t *accounts, int count);
 int voice_video_send(const uint8_t *jpeg, int len, uint32_t ts_ms);

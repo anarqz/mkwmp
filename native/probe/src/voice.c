@@ -1,6 +1,5 @@
 #include "voice.h"
 
-#include "chatroom.h"
 #include "config.h"
 #include "friends.h"
 #include "launcher.h"
@@ -67,26 +66,6 @@ static int int_field(const char *json, const char *key, int def, int lo, int hi)
     return v < lo || v > hi ? def : v;
 }
 
-static int holds(const uint64_t *list, int n, uint64_t account) {
-    for (int i = 0; i < n; i++)
-        if (list[i] == account) return 1;
-    return 0;
-}
-
-int voice_room_mutes(const uint64_t *user, int nuser, const uint64_t *peers, int npeers, const uint64_t *room, int nroom,
-                     uint64_t *out, int cap, int *heard) {
-    int n = 0, in_room = 0;
-    for (int i = 0; i < npeers; i++) {   // the lobby's players outside the room first: these must fit
-        int member = holds(room, nroom, peers[i]);
-        in_room += member;
-        if (!member && peers[i] && n < cap && !holds(out, n, peers[i])) out[n++] = peers[i];
-    }
-    for (int i = 0; i < nuser; i++)      // then the player's own mutes
-        if (user[i] && n < cap && !holds(out, n, user[i])) out[n++] = user[i];
-    if (heard) *heard = in_room;
-    return n;
-}
-
 int voice_parse_settings(int http_status, const char *body, VoiceSettings *out) {
     defaults(out);
     if (http_status != 200 || !body) return 0;
@@ -127,17 +106,15 @@ static struct {
     int (*devices_json)(char *, int);
     int (*peers)(mkwmp_voice_peer *, int);
     int (*status)(void);
-    // chat rooms and video: all there, or room_api stays 0 (an older library)
+    // friend rooms and video: room API 2 with all of it there, or room_api stays 0 (an older library)
     int room_api;
     void (*room_mode)(int);
-    void (*room_request)(const char *, const uint64_t *, int, const char *);
     void (*room_camera)(int);
     void (*video_subscribe)(const uint64_t *, int);
     int (*video_send)(const uint8_t *, int, uint32_t);
     void (*video_receiver)(mkwmp_voice_video_fn, void *);
     int (*room_state)(mkwmp_voice_room *);
 } g_dll;
-static volatile int g_room_mode;   // what voice_room_mode last asked
 
 static PlatLock g_lock = PLAT_LOCK_INIT;
 static int g_online;
@@ -176,7 +153,6 @@ static int load_dll(void) {
     SYM(peers, "mkwmp_voice_peers");
     SYM(status, "mkwmp_voice_status");
     SYM(room_mode, "mkwmp_voice_room_mode");
-    SYM(room_request, "mkwmp_voice_room_request");
     SYM(room_camera, "mkwmp_voice_room_camera");
     SYM(video_subscribe, "mkwmp_voice_video_subscribe");
     SYM(video_send, "mkwmp_voice_video_send");
@@ -185,8 +161,9 @@ static int load_dll(void) {
 #undef SYM
     mkwmp_voice_room_api_fn room_api = (mkwmp_voice_room_api_fn)plat_dl_sym(m, "mkwmp_voice_room_api");
     int room = room_api ? room_api() : 0;
-    if (room < 1 || !g_dll.room_mode || !g_dll.room_request || !g_dll.room_camera || !g_dll.video_subscribe || !g_dll.video_send ||
-        !g_dll.video_receiver || !g_dll.room_state)
+    // room API 1 asked the relay for chat rooms (a sharing key, a room ticket) and gave a smaller room state: not spoken
+    if (room < 2 || !g_dll.room_mode || !g_dll.room_camera || !g_dll.video_subscribe || !g_dll.video_send || !g_dll.video_receiver ||
+        !g_dll.room_state)
         room = 0;
     if (!g_dll.init || !g_dll.connect || !g_dll.disconnect || !g_dll.settings || !g_dll.set_mutes || !g_dll.set_account ||
         !g_dll.devices_json || !g_dll.peers || !g_dll.status) {
@@ -198,8 +175,8 @@ static int load_dll(void) {
     g_dll.room_api = room;
     g_dll.dll = m;
     g_dll.init(dll_log);
-    mkwmp_log("voice: engine loaded (%s)", room ? "with chat rooms and video: room API 1" :
-              "without the room API, an older library: no chat rooms on the relay, the camera stays off the network");
+    mkwmp_log("voice: engine loaded (%s)", room ? "with friend rooms and video: room API 2" :
+              "without room API 2, an older library: no friend rooms on the relay, the camera stays off the network");
     return 1;
 }
 
@@ -209,47 +186,11 @@ static int find_mute(uint64_t account) {
     return -1;
 }
 
-// Under g_lock. What the engine (and through it the relay) is told: the player's own mutes and, while voice is shared
-// with the chat room only (chatroom.h), everybody else in the lobby's voice room. The relay cannot group yet, so this
-// is the listener's half: the player hears the room's members only, and the microphone closes while none of them is
-// in the lobby. A lobby player on an older build still hears this one until the relay speaks rooms.
+// Under g_lock. What the engine (and through it the relay) is told: the player's own mutes. Who is heard at all is the
+// relay's business: everyone in the player's friend room, nobody in a matchmade lobby (roomnet.h). Nothing is
+// filtered here.
 static void push_mutes(void) {
-    if (!g_dll.set_mutes) return;
-    // In room mode a relay that speaks rooms routes voice inside the chat room (and the library keeps the others
-    // silent as its second gate): the mutes are the player's own again and the microphone is the player's to open.
-    // Any other relay (state ver 1), or no state yet: the listener's half below, as before rooms.
-    static int routed_was = -1;
-    mkwmp_voice_room relay_room;
-    int routed = g_room_mode && g_dll.room_api && g_dll.room_state(&relay_room) && relay_room.relay == 2;
-    if (routed != routed_was) {
-        if (routed_was >= 0 || routed)
-            mkwmp_log(routed ? "voice: the relay routes voice inside the chat room: the plugin's own filter steps aside" :
-                               "voice: no relay with chat rooms: voice is filtered to the chat room here, as before");
-        if (g_dll.set_self) g_dll.set_self(0, 0);
-        routed_was = routed;
-    }
-    if (!chatroom_voice_filter() || !g_dll.peers || routed) {
-        g_dll.set_mutes(g_mutes, g_mute_count);
-        return;
-    }
-    enum { WIRE_MUTES = 32 };   // what one control datagram carries (VOICE_API.md section 2)
-    mkwmp_voice_peer p[32];
-    uint64_t peers[32], room[CHATROOM_FRIENDS], out[WIRE_MUTES];
-    int np = 0, n = g_dll.peers(p, 32), heard = 0;
-    for (int i = 0; i < n; i++)
-        if (!p[i].self && p[i].account) peers[np++] = p[i].account;
-    ChatRoom chat;
-    chatroom_get(&chat, NULL);
-    for (int i = 0; i < chat.n; i++) room[i] = chat.member[i].account;
-    int count = voice_room_mutes(g_mutes, g_mute_count, peers, np, room, chat.n, out, WIRE_MUTES, &heard);
-    g_dll.set_mutes(out, count);
-    if (g_dll.set_self) g_dll.set_self(np > 0 && !heard, 0);
-    static int last_np = -1, last_heard = -1;
-    if (np != last_np || heard != last_heard) {
-        mkwmp_log("voice: shared with the chat room only: %d of its %d members among the %d other players of the lobby's voice "
-                  "room%s", heard, chat.n, np, np && !heard ? "; nobody to talk to, the microphone is closed" : "");
-        last_np = np, last_heard = heard;
-    }
+    if (g_dll.set_mutes) g_dll.set_mutes(g_mutes, g_mute_count);
 }
 
 static void post_pending(void) {
@@ -349,9 +290,6 @@ static void voice_thread(void *unused) {
             }
         }
         g_settings = s;
-        plat_unlock(&g_lock);
-        chatroom_refresh();   // it asks voice_peer_accounts and the roster: not under g_lock
-        plat_lock(&g_lock);
         push_mutes();
         plat_unlock(&g_lock);
         if (s.enabled != last_enabled) {
@@ -437,15 +375,6 @@ int voice_is_online(void) {
     return online;
 }
 
-int voice_peer_accounts(uint64_t *out, int cap) {
-    if (!g_dll.peers || cap <= 0) return 0;
-    mkwmp_voice_peer p[32];
-    int n = g_dll.peers(p, 32), k = 0;
-    for (int i = 0; i < n && k < cap; i++)
-        if (!p[i].self && p[i].account) out[k++] = p[i].account;
-    return k;
-}
-
 int voice_room_api(void) {
     plat_lock_shared(&g_lock);
     int api = g_dll.dll ? g_dll.room_api : -1;
@@ -461,13 +390,7 @@ int voice_enabled(void) {
 }
 
 void voice_room_mode(int on) {
-    if (voice_room_api() < 1) return;
-    g_room_mode = on != 0;
-    g_dll.room_mode(on);
-}
-
-void voice_room_request(const char *sharing_key, const uint64_t *want, int count, const char *room_ticket) {
-    if (voice_room_api() >= 1) g_dll.room_request(sharing_key, want, count, room_ticket);
+    if (voice_room_api() >= 1) g_dll.room_mode(on);
 }
 
 void voice_room_camera(int on) {

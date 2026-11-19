@@ -1,20 +1,16 @@
 // The chat room: MKWMP's stand-in for a GameChat room (research/docs/CAMERA-RE.md section 8). On the console a chat
-// room is a small group made in the system, apart from any game; a game only learns who is in it (nn::chat::GetRoomInfo)
-// and tells the system which game session the player is in (SetSharingKey), so that cameras are shared between the
-// room's members who play together. A race of 24 can hold several rooms; it is never 24 players sharing.
-//
-// Here ONE room drives both features: the camera's members (camera.c: GetRoomInfo) and who voice chat is shared with
-// (voice.c: everybody else in the lobby's voice room is muted for this player).
-//
-// Who is in it:
-//   - the server's grant, with a relay that speaks rooms (chatroom_grant, from roomnet.c: the relay's state down ver
-//     2): the server decides and the plugin takes what it is given, nobody included. chatroom_request says what the
-//     plugin asks for (the sharing key and the friends it wants);
-//   - without one (an older relay or voice library, a launcher holding the account) the local pick (chatroom_pick): at most CHATROOM_FRIENDS of the player's friends, in the roster's
-//     order, who are in the same game session. "In the same session" is what the lobby's voice relay says today: its
-//     room is the lobby, so a friend among the voice peers races with the player. With MKWMP_CAMERA_LOOPBACK=1 (one PC,
-//     no relay) every friend counts as in the session: the local sharing key is mirrored for them.
-// MKWMP_VOICE_ROOM=0 keeps voice lobby-wide (the room then drives the camera only).
+// room is a small group made in the system, apart from any game; a game only learns who is in it
+// (nn::chat::GetRoomInfo). Here it is the faces of a private FRIEND ROOM (Online, Friends, create or join a room):
+//   - voice and the camera exist in a friend room only. A matchmade race or battle has neither, for everyone;
+//   - in a friend room everyone has voice with everyone (the relay routes it; nothing is filtered here);
+//   - the camera is shared between mutual friends in that room only, and a player sees at most CHATROOM_FRIENDS faces.
+// The server decides all of it and asks nothing of the plugin: the relay's state (state down ver 2, through
+// roomnet.c) names the friend room and the player's mutual friends bound in it, in seat order, at most
+// CHATROOM_ROOM_MAX, each with its camera flag. The plugin only picks which four to show (chatroom_select); those are
+// the members GetRoomInfo lists (camera.c) and the only accounts pictures are asked of (roomnet.c, op 6).
+// Without such a state (a matchmade lobby, an older relay or voice library, not online) there is no room: nobody is
+// listed and the camera's chat stays off. With MKWMP_CAMERA_LOOPBACK=1 (one PC, no relay) the room is made up here:
+// the first four friends of the roster, cameras on.
 #ifndef MKWMP_CHATROOM_H
 #define MKWMP_CHATROOM_H
 
@@ -22,69 +18,53 @@
 #include <stdint.h>
 
 enum {
-    CHATROOM_FRIENDS = 4,       // members besides the player (the game has that many remote cameras)
-    CHATROOM_KEY_SIZE = 0x28,   // nn::chat::SharingKey as the game fills it: text, at most 0x27 characters
+    CHATROOM_FRIENDS = 4,       // faces besides the player's (the game has that many remote cameras; the relay's limit too)
+    CHATROOM_ROOM_MAX = 23,     // mutual friends the relay can name in one room (a lobby of 24)
 };
+#define CHATROOM_LOOPBACK_ID 0x4d4b574d504c4f4full   // the room's id with MKWMP_CAMERA_LOOPBACK=1
 
 typedef struct {
     uint64_t account;   // NetworkServiceAccountId: friends_account_id(name)
-    uint8_t camera;     // the member's camera is on (known from a grant only; the local pick says 0, loopback 1)
+    uint8_t camera;     // the member's camera is on
 } ChatMember;
 
 typedef struct {
-    uint64_t id;        // the server's room id (0: no grant, the local pick)
-    int granted;        // the members are the server's
+    uint64_t id;        // the friend room (0: in none: no member, no camera)
     int n;
-    ChatMember member[CHATROOM_FRIENDS];   // never the player
-    int in_lobby;       // of the local pick: how many are in the lobby's voice room (the rest: loopback's mirror)
+    ChatMember member[CHATROOM_FRIENDS];   // the faces chosen, never the player
+    int friends;        // the mutual friends in the room they were chosen from (n of them)
 } ChatRoom;
 
-// ---- pure, unit-tested (tests/test_camera.c) -----------------------------------------------------------------------
+// ---- pure, unit-tested (tests/test_roomnet.c) ----------------------------------------------------------------------
 
-typedef struct {
-    uint64_t self;
-    int loopback;                // every friend counts as in the session
-    const uint64_t *friends;     // the roster, in its order
-    int nfriends;
-    const uint64_t *peers;       // the other players of the lobby's voice room
-    int npeers;
-} ChatRoomInput;
-// The local pick: friends in the session, those the relay vouches for first, each once, never the player or account 0.
-void chatroom_pick(const ChatRoomInput *in, ChatRoom *out);
-
-// What the plugin asks of the server: the game's sharing key and the friends it wants in the room (those in the lobby
-// first). The server answers with a grant or nothing; it never takes the list as the truth.
-typedef struct {
-    char key[CHATROOM_KEY_SIZE];
-    int n;
-    uint64_t friends[CHATROOM_FRIENDS];
-} ChatRoomRequest;
-void chatroom_ask(const ChatRoomInput *in, const char *key, ChatRoomRequest *out);
+// The faces: at most CHATROOM_FRIENDS of the mutual friends in the room (`friends`, in seat order as the relay gave
+// them; account 0 and repeats are skipped). Deterministic, and stable while they stay:
+//   1. those chosen before (`before`, may be NULL) who are still there with their camera on keep their place;
+//   2. then the others with a camera on, in seat order;
+//   3. then, only if places are left, those chosen before with the camera off, and last the rest in seat order.
+// So a face on screen is never swapped for another while its camera stays on, and a friend without a camera holds a
+// place only until a friend with one needs it. Fills out->n, member and friends; out->id is left 0.
+void chatroom_select(const ChatMember *friends, int n, const ChatRoom *before, ChatRoom *out);
 
 // ---- the room of this process; any thread --------------------------------------------------------------------------
 
 typedef struct {
     uint64_t (*self_account)(void);
-    int (*friends)(uint64_t *accounts, int cap);   // may be NULL
-    int (*peers)(uint64_t *accounts, int cap);     // may be NULL
+    int (*friends)(uint64_t *accounts, int cap);   // the roster (the loopback's members); may be NULL
 } ChatRoomHost;
-// Once, by the plugin backend (again by camera_install with the same host): from then on there is a room. Without it
-// (the COFF backend) nothing is filtered.
+// Once, by the plugin backend (again by camera_install with the same host): from then on there is a room object.
 void chatroom_install(const ChatRoomHost *host);
 int chatroom_installed(void);
-// Asks the host again and picks; the camera's and the voice's threads call it. 1 when the room changed.
+// The relay's state (roomnet.c): the friend room and the player's mutual friends bound in it (n of them, in seat
+// order). id 0, or friends NULL: in no friend room. The faces are chosen here, the choice before kept as
+// chatroom_select says while the room is the same one. (With the loopback nothing calls it; a room given here would
+// stand in for the made-up one.)
+void chatroom_set(uint64_t id, const ChatMember *friends, int n);
+// Publishes the room (the relay's, or the loopback's from the roster); the camera's and roomnet's threads call it.
+// 1 when it changed.
 int chatroom_refresh(void);
-// The game's sharing key (camera.c: SetSharingKey; NULL or "" when it cleared it).
-void chatroom_set_key(const char *key);
-// The room as last picked or granted, and the key ("" none) when key is not NULL. 0 when there is no room object.
-int chatroom_get(ChatRoom *out, char key[CHATROOM_KEY_SIZE]);
+// The room as last published. 0 when there is no room object (*out zeroed).
+int chatroom_get(ChatRoom *out);
 int chatroom_has(uint64_t account);
-// 1 when voice is shared with the room only: a room object exists and MKWMP_VOICE_ROOM is not "0".
-int chatroom_voice_filter(void);
-// For the transport that speaks rooms (roomnet.c). 1 when there is something to ask: a key is set.
-int chatroom_request(ChatRoomRequest *out);
-// The server's answer: the room it put the player in (n members besides the player, at most CHATROOM_FRIENDS kept).
-// members NULL or n < 0: no grant any more, back to the local pick.
-void chatroom_grant(uint64_t id, const ChatMember *members, int n);
 
 #endif

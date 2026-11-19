@@ -101,14 +101,9 @@ static int setting_get(const char *key, char *out, size_t cap) {
 static int no_settings(const char *key, char *out, size_t cap) { (void)key, (void)out, (void)cap; return 0; }
 
 enum { SELF = 0x1111 };
-static int g_online, g_npeers;
-static uint64_t g_peers[16], g_muted;
+static int g_online;
+static uint64_t g_muted;
 static int h_online(void) { return g_online; }
-static int h_peers(uint64_t *out, int cap) {
-    int n = g_npeers < cap ? g_npeers : cap;
-    memcpy(out, g_peers, (size_t)n * 8);
-    return n;
-}
 static int g_nfriends;
 static uint64_t g_friends[4];
 static int h_friends(uint64_t *out, int cap) {
@@ -193,32 +188,16 @@ static void test_room(void) {
     CHECK(u64_at(r + 0x40 + 10 * 0x10) != 0);   // the eleventh entry ends exactly at 0xf0
 }
 
-// The chat room (chatroom.h): at most four friends in the same game session, the server's grant instead when there is one.
+// The chat room (chatroom.h): the faces chosen among the mutual friends in the friend room. The choice itself is
+// tests/test_roomnet.c's; here, what there is before any room object.
 static void test_chatroom(void) {
-    const uint64_t friends[] = {1, 2, 3, SELF, 2, 0, 5, 6, 7}, lobby[] = {3, 9, 7, 5, 6, 2};
-    ChatRoomInput in = {.self = SELF, .friends = friends, .nfriends = 9, .peers = lobby, .npeers = 6};
+    const ChatMember two[] = {{7, 0}, {8, 1}};
     ChatRoom r;
-    chatroom_pick(&in, &r);   // the friends racing with the player, in the roster's order; a stranger (9) never
-    CHECK(r.n == 4 && !r.granted && r.id == 0 && r.in_lobby == 4);
-    CHECK(r.member[0].account == 2 && r.member[1].account == 3 && r.member[2].account == 5 && r.member[3].account == 6);
-    CHECK(!r.member[0].camera && !r.member[3].camera);   // whose camera is on: the relay's to say
-    in.npeers = 0;
-    chatroom_pick(&in, &r);   // friends who are elsewhere: nobody (it was every friend, and before that the whole lobby)
-    CHECK(r.n == 0);
-    in.npeers = 1, in.loopback = 1;
-    chatroom_pick(&in, &r);   // loopback mirrors the session for every friend; the one the relay has comes first
-    CHECK(r.n == 4 && r.in_lobby == 1 && r.member[0].account == 3 && r.member[1].account == 1 && r.member[2].account == 2 &&
-          r.member[3].account == 5 && r.member[0].camera && r.member[3].camera);
-    ChatRoomRequest q;
-    in.npeers = 6, in.loopback = 0;
-    chatroom_ask(&in, "-4156392711634492312", &q);   // what the server will be asked: the key, the friends wanted
-    CHECK(!strcmp(q.key, "-4156392711634492312") && q.n == 4 && q.friends[0] == 2 && q.friends[3] == 6);
-    in.npeers = 1;
-    chatroom_ask(&in, NULL, &q);   // friends not seen in the lobby are still asked for: the server knows where they are
-    CHECK(q.key[0] == 0 && q.n == 4 && q.friends[0] == 3 && q.friends[1] == 1 && q.friends[2] == 2 && q.friends[3] == 5);
-    CHECK(!chatroom_installed() && !chatroom_voice_filter() && !chatroom_request(&q));   // no room object yet: nothing filtered
+    chatroom_select(two, 2, NULL, &r);
+    CHECK(r.n == 2 && r.friends == 2 && r.id == 0 && r.member[0].account == 8 && r.member[0].camera && r.member[1].account == 7);
+    CHECK(!chatroom_installed() && !chatroom_get(&r) && r.n == 0 && !chatroom_has(7));   // no room object yet
+    CHECK(camera_in_room(0x7701, 0) && camera_in_room(1, 1) && camera_in_room(0, 1) && !camera_in_room(0, 0));
 }
-
 // The game's own loop over one camera (1.8.0, 0x2996af0 and 0x2996c50): poll slot[next]'s sync; when done,
 // current = next, next advances, and the next image is asked for.
 typedef struct { int current, next; uint64_t sync[3][2]; } Game;
@@ -325,7 +304,7 @@ static uint8_t g_types[5][0x100];   // the game's Local/RemoteCameraVideoType ob
 static CameraHost host(uint32_t api) {
     CameraHost h = {.api_version = api, .game_version = "1.8.0", .native_image_create = api >= 3 ? image_create : NULL,
                     .native_image_touch = api >= 3 ? image_touch : NULL, .setting_get = setting_get, .mod_dir = "",
-                    .online = h_online, .peers = h_peers, .friends = h_friends, .muted = h_muted, .self_account = h_self, .self_name = h_name,
+                    .online = h_online, .friends = h_friends, .muted = h_muted, .self_account = h_self, .self_name = h_name,
                     .account_of = h_account_of, .no_thread = 1};
     return h;
 }
@@ -533,20 +512,21 @@ static void test_overrides(void) {
     CHECK(image_is(handles[1][g[1].next], pic[1]));
     CHECK(camera_frame_in(fake, NULL, W, HT) == 0 && camera_frame_in(fake, small, 0, 36) == 0);
 
-    // the lobby fills with strangers: they are not in the chat room, nothing changes
-    g_peers[0] = 0xa9, g_peers[1] = 0xa2, g_npeers = 2;
+    // nothing changed: nothing is signalled
     int signals = g_signals;
     camera_refresh();
     CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1 && g_signals == signals);
     CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && i32_at(room + 0x38) == 1 && u64_at(room + 0x40) == fake);
-    // two of them are friends: the room is theirs (the one the relay has in the lobby first), the made-up member is
-    // gone, the event fires
+    // two friends in the roster: the loopback's room is theirs, in the roster's order, the made-up member is gone, the
+    // event fires
     g_friends[0] = 0xa1, g_friends[1] = 0xa2, g_nfriends = 2;
     camera_refresh();
     CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1 && g_signals == signals + 1);
     CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && i32_at(room + 0x38) == 2);
-    CHECK(u64_at(room + 0x40) == 0xa2 && room[0x48] == 1 && u64_at(room + 0x50) == 0xa1 && room[0x58] == 1);
-    CHECK(chatroom_installed() && chatroom_has(0xa1) && chatroom_has(0xa2) && !chatroom_has(0xa9) && chatroom_voice_filter());
+    CHECK(u64_at(room + 0x40) == 0xa1 && room[0x48] == 1 && u64_at(room + 0x50) == 0xa2 && room[0x58] == 1);
+    ChatRoom made;
+    CHECK(chatroom_installed() && chatroom_has(0xa1) && chatroom_has(0xa2) && !chatroom_has(0xa9) && chatroom_get(&made) &&
+          made.id == CHATROOM_LOOPBACK_ID && made.n == 2 && made.friends == 2);
     // the event handler (0x2995ea0): the made-up member left, so its stream stops; the handle it held answers done
     uint64_t held[2] = {g[1].sync[g[1].next][0], g[1].sync[g[1].next][1]};
     CHECK(call("RequestNextRemoteCameraImage", P(held), P(g_types[1]), 2, 0, 0, P(&fake)) == 0);
@@ -562,21 +542,18 @@ static void test_overrides(void) {
     CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && i32_at(room + 0x38) == 2);
     CHECK(u64_at(room + 0x40) == 0xa1 && room[0x48] == 1 && u64_at(room + 0x50) == 0xa2 && room[0x58] == 0);
     g_muted = 0;
-    // the game's sharing key is what the room is asked of the server with; nothing asks yet
-    ChatRoomRequest ask;
-    CHECK(!chatroom_request(&ask));
+    // the game's sharing key is its own business (the server knows the friend room without it): it changes nobody
     CHECK(call("SetSharingKey", P("-4156392711634492312"), 0, 0, 0, 0, 0) == 0);
     camera_refresh();
-    CHECK(chatroom_request(&ask) && !strcmp(ask.key, "-4156392711634492312") && ask.n == 2 && ask.friends[0] == 0xa2);
-    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && i32_at(room + 0x38) == 2);   // the key changes nobody
-    // the server's room (phase 4) replaces the local pick; five streams asked: the fifth is refused
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && i32_at(room + 0x38) == 2);
+    // a friend room from the relay stands in for the made-up one; five streams asked: the fifth is refused
     CameraMember relay[] = {{0xb1, 1}, {0xb2, 0}};
-    camera_members_set(relay, 2);
+    camera_members_set(0x7701, relay, 2);
     camera_refresh();
     CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && i32_at(room + 0x38) == 2 && u64_at(room + 0x40) == 0xb1);
     CHECK(chatroom_has(0xb2) && !chatroom_has(0xa1));
-    ChatRoom granted;
-    CHECK(chatroom_get(&granted, NULL) && granted.granted && granted.n == 2);
+    ChatRoom given;
+    CHECK(chatroom_get(&given) && given.id == 0x7701 && given.n == 2 && given.friends == 2);
     for (uint64_t id = 0xc1; id <= 0xc5; id++)
         CHECK(call("StartRemoteCameraStreaming", P(&id), 0, 0, 0, 0, 0) == (id == 0xc5 ? 1u : 0u));
     CHECK(camera_subscriptions(subs, 8) == 4);
@@ -599,7 +576,6 @@ static void test_overrides(void) {
     CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 0);
     CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && i32_at(room + 0x38) == 0 && room[0x30] == 0);
     CHECK(call("SetSharingKey", P("1234567890"), 0, 0, 0, 0, 0) == 0 && call("ClearSharingKey", 0, 0, 0, 0, 0, 0) == 0);
-    CHECK(!chatroom_request(&ask));   // the game left its session: nothing to ask
     CHECK(call("FinalizeRemoteCameraVideoStorage", P(g_types[4]), 0, 0, 0, 0, 0) == 0);
     // set up again after a finalize: the images made before are used again (they live until the process ends)
     CHECK(call("InitializeRemoteCameraVideoStorage", P(g_types[4]), W, HT, 3, 0, 0x1000) == 0 && g_nimg == 15);
@@ -798,6 +774,90 @@ static void test_setup(void) {
     camera_refresh();
 }
 
+// ---- the friend room (no loopback): the camera exists in a private friend room only ----------------------------------
+// After test_setup: the camera installed again without MKWMP_CAMERA_LOOPBACK, the room as the relay's state gives it
+// (camera_members_set stands in for roomnet.c).
+static int room_is(const uint8_t *room, int own, int n, const uint64_t *accounts, const int *cameras) {
+    int ok = room[0x30] == own && i32_at(room + 0x38) == n;
+    for (int i = 0; ok && i < n; i++) ok = u64_at(room + 0x40 + i * 0x10) == accounts[i] && room[0x48 + i * 0x10] == cameras[i];
+    return ok;
+}
+
+static void test_friend_room(void) {
+    plat_setenv("MKWMP_CAMERA_LOOPBACK", NULL);
+    CameraHost h = host(3);
+    CHECK(camera_install(&h) == CAMERA_OVERRIDES);
+    uint8_t room[CAMERA_ROOM_SIZE];
+    camera_members_set(0, NULL, 0);
+    set("camera", "1"), set("camera_view", "1"), set("camera_device", CAMERA_DEVICE_TEST);
+    g_friends[0] = 0xc1, g_friends[1] = 0xc2, g_nfriends = 2;   // friends in the roster are not a room
+
+    // online in a matchmade race: no camera for anyone. Nobody is listed, the player's own camera is off and nothing
+    // is captured or sent; IsChatting goes on (the game would forget the prompt's answer if the chat ended)
+    g_online = 1;
+    camera_refresh();
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1 && !camera_declined_now());
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && room_is(room, 0, 0, NULL, NULL) && u64_at(room + 0x28) == SELF);
+    CHECK(call("StartLocalCameraStreaming", 0, 0, 0, 0, 0, 0) == 0 && camera_local_streaming() == 0);   // self bit 2 stays 0
+    int out_calls = g_out_calls, jpeg_calls = g_jpeg_calls;
+    plat_sleep_ms(80);
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1 && g_out_calls == out_calls && g_jpeg_calls == jpeg_calls);
+    ChatRoom chat;
+    CHECK(chatroom_get(&chat) && chat.id == 0 && chat.n == 0 && !chatroom_has(0xc1));
+
+    // a friend room with six mutual friends, three cameras on: four faces, the cameras first, in seat order
+    CameraMember six[] = {{0xc1, 0}, {0xc2, 1}, {0xc3, 0}, {0xc4, 1}, {0xc5, 1}, {0xc6, 0}};
+    camera_members_set(0x7702, six, 6);
+    camera_refresh();
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 &&
+          room_is(room, 1, 4, (const uint64_t[]){0xc2, 0xc4, 0xc5, 0xc1}, (const int[]){1, 1, 1, 0}));
+    CHECK(chatroom_get(&chat) && chat.id == 0x7702 && chat.n == 4 && chat.friends == 6 && !chatroom_has(0xc3) && !chatroom_has(0xc6));
+    CHECK(camera_local_streaming() == 1);   // the game streams the local camera, in a friend room: self bit 2
+    plat_sleep_ms(80);
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1 && g_out_calls > out_calls && g_jpeg_calls > jpeg_calls);   // and its pictures leave
+    // two more cameras go on: the one already listed shows its face; the other waits, nobody on screen is swapped out
+    six[0].camera = six[5].camera = 1;
+    camera_members_set(0x7702, six, 6);
+    camera_refresh();
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 &&
+          room_is(room, 1, 4, (const uint64_t[]){0xc2, 0xc4, 0xc5, 0xc1}, (const int[]){1, 1, 1, 1}));
+    // one of the four leaves the room: the one who waited takes the place, the others keep theirs
+    CameraMember five[] = {{0xc1, 1}, {0xc2, 1}, {0xc3, 0}, {0xc5, 1}, {0xc6, 1}};
+    camera_members_set(0x7702, five, 5);
+    camera_refresh();
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 &&
+          room_is(room, 1, 4, (const uint64_t[]){0xc2, 0xc5, 0xc1, 0xc6}, (const int[]){1, 1, 1, 1}));
+    // "See the others' cameras" off: the faces are listed without their flag; the player's own camera stays
+    set("camera_view", "0");
+    camera_refresh();
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 &&
+          room_is(room, 1, 4, (const uint64_t[]){0xc2, 0xc5, 0xc1, 0xc6}, (const int[]){0, 0, 0, 0}));
+    set("camera_view", "1");
+
+    // the room ends and a matchmade race follows: everything off again, at once
+    camera_members_set(0, NULL, 0);
+    camera_refresh();
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1);
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 && room_is(room, 0, 0, NULL, NULL) && camera_local_streaming() == 0);
+    out_calls = g_out_calls, jpeg_calls = g_jpeg_calls;
+    plat_sleep_ms(80);
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1 && g_out_calls == out_calls && g_jpeg_calls == jpeg_calls);
+    // another friend room: chosen anew (nobody is kept from the room before)
+    camera_members_set(0x7703, five, 5);
+    camera_refresh();
+    CHECK(call("GetRoomInfo", P(room), 0, 0, 0, 0, 0) == 0 &&
+          room_is(room, 1, 4, (const uint64_t[]){0xc1, 0xc2, 0xc5, 0xc6}, (const int[]){1, 1, 1, 1}));
+    CHECK(camera_local_streaming() == 1);
+    // offline: no chat
+    CHECK(call("StopLocalCameraStreaming", 0, 0, 0, 0, 0, 0) == 0);
+    g_online = 0;
+    camera_refresh();
+    CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 0);
+    camera_members_set(0, NULL, 0);
+    set("camera", "0"), set("camera_view", "0");
+    camera_refresh();
+}
+
 int main(int argc, char **argv) {
     g_rt.override = rt_override;
     g_rt.guest_modules = rt_guest_modules;
@@ -819,6 +879,7 @@ int main(int argc, char **argv) {
     } else {
         test_overrides();
         test_setup();
+        test_friend_room();
     }
     printf("test_camera%s: %s\n", argc > 1 ? " api2" : "", failures ? "FAIL" : "PASS");
     return failures != 0;

@@ -138,10 +138,10 @@ void cameratab_widgets(const MkwPage *p) {
     }
     p->checkbox("camera_view", T[C_VIEW], 0);   // off by default too
     p->disabled_end();
-    // In the game: who is in the camera room (friends in the same session, or the server's grant), each with a Report
-    // that fills the MKWMP tab's form, as the Voice chat tab's does for a muted player.
+    // In the game: who is in the camera room (the faces chosen among the mutual friends in the friend room), each with
+    // a Report that fills the MKWMP tab's form, as the Voice chat tab's does for a muted player.
     ChatRoom room;
-    if (p->in_game && consent && (on || is_on(p, "camera_view")) && chatroom_get(&room, NULL)) {
+    if (p->in_game && consent && (on || is_on(p, "camera_view")) && chatroom_get(&room)) {
         static char reported[64];   // the menu's thread only
         if (p->opened) reported[0] = 0;
         p->heading(T[C_ROOM]);

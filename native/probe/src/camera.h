@@ -6,8 +6,12 @@
 // How it works. The game talks to GameChat through nn::chat; 21 of those functions and nn::gs::TryWaitNativeSync are
 // overridden here (CAMERA_OVERRIDES):
 //   - the chat session: IsChatting is 1 while the player is online (or answering the game's camera prompt on the way
-//     there, camera_hold) and has `camera` or `camera_view` on (and gave the 18+ consent); GetRoomInfo lists the chat room's members with their camera flags (chatroom.h: at most four
-//     friends in the same game session; camera_room_encode); a change signals the room event the game attached;
+//     there, camera_hold) and has `camera` or `camera_view` on (and gave the 18+ consent). The camera itself exists in
+//     a private friend room only (camera_in_room): there GetRoomInfo lists the chat room's members with their camera
+//     flags (chatroom.h: at most four of the player's mutual friends in the room; camera_room_encode); in a matchmade
+//     race or battle it lists nobody and the player's own camera flag is down, so no face is drawn, captured or sent.
+//     IsChatting does not follow the room: the game forgets the prompt's answer when the chat ends, and the prompt
+//     comes before any room. A change signals the room event the game attached;
 //   - the pictures: per camera the game makes three native images. Ours come from the plugin API (RGBA8, the runtime's
 //     memory). The game cycles them: it asks for the next image (RequestNext*CameraImage gives it a sync handle of
 //     ours), polls the handle each frame (TryWaitNativeSync) and shows the image once the poll says done. We answer
@@ -26,11 +30,10 @@
 // camera shows a tile with the player's name.
 //
 // Environment (tests): MKWMP_CAMERA=0 keeps the whole feature off. MKWMP_CAMERA_LOOPBACK=1 shows the local picture as
-// every other member's too (nothing is sent or received): the chat room then takes the player's friends whether or
-// not the relay has them in the lobby (the local sharing key is mirrored for them), each by the account id the lobby
-// gives it, which is how the game finds the kart to draw a picture above; with nobody at all a made-up member is
-// added, so one PC alone exercises the remote path. MKWMP_CAMERA_MEMBERS=name,name lists more members by name with
-// their cameras on.
+// every other member's too (nothing is sent or received): the chat room is then made up of the roster's first four
+// friends, wherever they are, friend room or not, each by the account id the lobby gives it, which is how the game
+// finds the kart to draw a picture above; with nobody at all a made-up member is added, so one PC alone exercises the
+// remote path. MKWMP_CAMERA_MEMBERS=name,name lists more members by name with their cameras on (in a room only).
 // MKWMP_CAMERA_TRACE=1 logs the flow, bounded: the first calls of every override with their arguments (which game
 // object and image a handle belongs to, what was written and whether the runtime took it), a line a second with each
 // camera's polls / requests / writes when they change, and the game's own state when it changes (camera.c trace_game:
@@ -46,10 +49,10 @@
 //   camera_jpeg_in(account, ...)     a member's frame as it arrived: decoded, shown at the game's next poll
 //   camera_set_send_divisor(n)       the relay's "send fewer": every frame, every second or every fourth
 //   (camera_set_frame_out / camera_frame_in are the same two ends before and after the codec, RGBA)
-//   camera_members_set(list, n)      the room the server granted: who is in it and whose camera is on (chatroom_grant)
+//   chatroom_set(id, friends, n)     (chatroom.h) the friend room and the mutual friends in it, as the relay said
 //   camera_subscriptions(out, cap)   the accounts the game asked pictures of (at most 4): the relay's "send me these"
 //   camera_local_streaming()         1 while the game wants the local camera sent: the relay's "my camera is on"
-// Until camera_members_set is first called, the members are the chat room's local pick (cameras off unless loopback).
+// Without a friend room from the relay there are no members and no camera (the loopback makes its own room up).
 #ifndef MKWMP_CAMERA_PROBE_H
 #define MKWMP_CAMERA_PROBE_H
 
@@ -85,8 +88,7 @@ typedef struct {
     const char *mod_dir;         // where the capture library is
     // the session, asked from the camera's own thread
     int (*online)(void);                             // the player is seated and online
-    int (*peers)(uint64_t *accounts, int cap);       // the other players of the lobby (voice room): the same game session
-    int (*friends)(uint64_t *accounts, int cap);     // the player's friends (the roster): the chat room is made of them; may be NULL
+    int (*friends)(uint64_t *accounts, int cap);     // the player's friends (the roster): the loopback's room is made of them; may be NULL
     int (*muted)(uint64_t account);                  // muted by the player: the face is hidden too
     uint64_t (*self_account)(void);
     const char *(*self_name)(void);
@@ -109,6 +111,10 @@ typedef struct {
 void camera_settings_read(int (*setting_get)(const char *key, char *out, size_t cap), CameraSettings *out);
 // 1 while the game is told a chat runs.
 int camera_chatting(const CameraSettings *s, int online);
+// 1 while there is a camera at all: in a friend room (room_id != 0; the loopback's made-up room counts), or while the
+// game's "Use the camera?" prompt is held open before the sign-in (prompt: the local camera only, nothing leaves).
+// 0 in a matchmade race or battle and in the menus: nobody is listed, the player's own camera is off.
+int camera_in_room(uint64_t room_id, int prompt);
 
 // The chat held on before the player is online: the game's "Use the camera?" prompt comes when Online Play is chosen,
 // before the sign-in, accepts Camera On only with a chat running, and forgets the answer when the chat ends. at:
@@ -194,13 +200,11 @@ void camera_set_send_divisor(int divisor);
 // A member's frame, reassembled: a baseline JPEG of any size up to 384x216. 1 shown; 0 when the game did not ask for
 // that account's pictures (nothing is decoded then), or the bytes are not such a JPEG.
 int camera_jpeg_in(uint64_t account, const uint8_t *jpeg, int len);
-void camera_members_set(const CameraMember *members, int n);
+// (tests) chatroom_set: the friend room and the mutual friends in it; room_id 0: in no friend room.
+void camera_members_set(uint64_t room_id, const CameraMember *members, int n);
 int camera_subscriptions(uint64_t *accounts, int cap);
 int camera_local_streaming(void);
 // 1 while the player's Camera Off in the game's prompt holds (camera_declined): the Camera tab says so.
 int camera_declined_now(void);
-// 1 while the game is told a chat runs (camera_chatting): the camera wants its chat room on the network (roomnet.c).
-// 0 when the camera is not installed.
-int camera_chat_on(void);
 
 #endif

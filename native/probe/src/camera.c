@@ -40,6 +40,8 @@ void camera_settings_read(int (*setting_get)(const char *key, char *out, size_t 
 
 int camera_chatting(const CameraSettings *s, int online) { return online && s->consent && (s->camera || s->view); }
 
+int camera_in_room(uint64_t room_id, int prompt) { return room_id != 0 || prompt; }
+
 int camera_hold(CameraHold *h, int online, uint64_t now) {
     if (!h->at) return 0;
     if (online) {
@@ -767,14 +769,12 @@ static void ov_set_sharing_key(Cpu *c) {
     memcpy(last, text, sizeof last);
     cleared = g_key_cleared;
     plat_unlock(&g_lock);
-    chatroom_set_key(text);   // what the room is asked of the server with (chatroom_request)
-    if (changed)
+    if (changed)   // (the key is the game's own business: the server knows the friend room without it)
         mkwmp_log("camera: sharing key \"%s\" (the game's session number: the same for players racing together); the game is "
                   "in its GameChat mode from here", text);
     ret_x(c, 0);
 }
 static void ov_clear_sharing_key(Cpu *c) {
-    chatroom_set_key("");
     plat_lock(&g_lock);
     g_key_cleared++;
     plat_unlock(&g_lock);
@@ -1023,18 +1023,24 @@ void camera_refresh(void) {
                              "camera: set-up: Camera Off no longer holds (the player left online play, or chose Camera On)%s",
                   !declined ? "" : s.view ? "are still shown" : "are not shown either (\"See the others' cameras\" is off)");
 
-    // The members are the chat room's (chatroom.h): the server's grant, else at most four friends in the same game
-    // session. The game matches a member to a kart by account id alone and gives its four remote cameras to the first
-    // four members with the flag, so a room larger than that would show some faces and not others.
+    // The members are the chat room's (chatroom.h): at most four of the player's mutual friends in the private friend
+    // room, as the relay names them. The game matches a member to a kart by account id alone and gives its four remote
+    // cameras to the first four members with the flag, so a room larger than that would show some faces and not others.
+    // In no friend room (a matchmade race or battle, the menus) there is no camera at all: nobody is listed, the
+    // player's own camera flag is down, nothing is captured or sent. IsChatting itself goes on while the player is
+    // online: the game drops the answer to its "Use the camera?" prompt, given at Online Play before any room, the
+    // moment the chat ends (setup_watch), and would then draw and send no face in the friend room either. Before the
+    // sign-in, while that prompt is held open, the local camera is on for it (nothing leaves: there is no relay yet).
     CameraMember m[CAMERA_MEMBERS_MAX + 1];
     int n = 0;
     chatroom_refresh();
     ChatRoom chat;
-    char key[CHATROOM_KEY_SIZE];
-    chatroom_get(&chat, key);
+    chatroom_get(&chat);
+    int in_room = camera_in_room(chat.id, held && !online);
+    if (!in_room) s.camera = 0;
     for (int i = 0; i < chat.n; i++) m[n++] = chat.member[i];
     int from_room = n, from_env = 0, made_up = 0;
-    if (g_env_members[0] && H.account_of) {
+    if (chat.id && g_env_members[0] && H.account_of) {
         char names[sizeof g_env_members];
         memcpy(names, g_env_members, sizeof names);
         for (char *t = strtok(names, ", "); t && n < CAMERA_MEMBERS_MAX; t = strtok(NULL, ", "))
@@ -1068,8 +1074,16 @@ void camera_refresh(void) {
 
     if (was != chatting)
         mkwmp_log("camera: chat %s (online %d, consent %d, camera %d%s, view %d%s%s)", chatting ? "on" : "off", online, s.consent,
-                  s.camera, declined ? " (Camera Off in the game's prompt)" : "", s.view, g_loopback ? ", loopback" : "",
+                  tab.camera, declined ? " (Camera Off in the game's prompt)" : "", s.view, g_loopback ? ", loopback" : "",
                   held && !online ? ", held on for the game's camera prompt until the player is online" : "");
+    static int where_was = -1;
+    int where = chat.id ? 2 : in_room;
+    if (chatting && where != where_was) {
+        mkwmp_log("camera: %s", where == 2 ? "in a friend room: the camera is shared with the player's mutual friends there, at most four faces" :
+                  where ? "the game's camera prompt: the local camera is on for it (nothing is sent)" :
+                          "in no friend room (a matchmade race or battle, or the menus): no camera, the player's or anyone's");
+        where_was = where;
+    }
     if (changed && chatting) {
         char list[400] = "";
         int cameras = 0, k = 0;
@@ -1081,11 +1095,10 @@ void camera_refresh(void) {
                 k += snprintf(list + k, sizeof list - (size_t)k, " %#llx%s", (unsigned long long)account,
                               room[0x40 + i * 0x10 + 8] ? " (camera)" : "");
         }
-        mkwmp_log("camera: room: account %#llx camera %s, %d members, %d with a camera (%d from the chat room%s, %d of them in "
-                  "the lobby's voice room, %d by MKWMP_CAMERA_MEMBERS, %d made up; sharing key \"%s\"):%s",
-                  (unsigned long long)self, s.camera ? "on" : "off", listed, cameras, from_room,
-                  chat.granted ? " the server granted" : g_loopback ? " (friends, loopback)" : " (friends in the same session)",
-                  chat.in_lobby, from_env, made_up, key, listed ? list : " nobody");
+        mkwmp_log("camera: room: account %#llx camera %s, %d members, %d with a camera (friend room %#llx%s: %d of the %d mutual "
+                  "friends in it, %d by MKWMP_CAMERA_MEMBERS, %d made up):%s",
+                  (unsigned long long)self, s.camera ? "on" : "off", listed, cameras, (unsigned long long)chat.id,
+                  g_loopback ? " (loopback)" : "", from_room, chat.friends, from_env, made_up, listed ? list : " nobody");
     }
 }
 
@@ -1142,7 +1155,7 @@ int camera_install(const CameraHost *host) {
         return 0;
     }
     H = *host;
-    ChatRoomHost room = {.self_account = host->self_account, .friends = host->friends, .peers = host->peers};
+    ChatRoomHost room = {.self_account = host->self_account, .friends = host->friends};
     chatroom_install(&room);
     char v[8] = "";
     g_loopback = plat_getenv("MKWMP_CAMERA_LOOPBACK", v, sizeof v) && !strcmp(v, "1");
@@ -1219,9 +1232,8 @@ int camera_jpeg_in(uint64_t account, const uint8_t *jpeg, int len) {
     return ok;
 }
 
-void camera_members_set(const CameraMember *members, int n) {
-    static const CameraMember none;
-    chatroom_grant(0, members ? members : &none, members && n > 0 ? n : 0);   // the room is the server's from here on
+void camera_members_set(uint64_t room_id, const CameraMember *members, int n) {
+    chatroom_set(room_id, members, members && n > 0 ? n : 0);
 }
 
 int camera_subscriptions(uint64_t *accounts, int cap) {
@@ -1240,12 +1252,6 @@ int camera_local_streaming(void) {
     return on;
 }
 
-int camera_chat_on(void) {
-    plat_lock_shared(&g_lock);
-    int on = g_installed && g_chatting;
-    plat_unlock_shared(&g_lock);
-    return on;
-}
 
 int camera_declined_now(void) {
     plat_lock_shared(&g_lock);

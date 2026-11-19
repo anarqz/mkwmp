@@ -203,17 +203,16 @@ static void use_camera(const MkwPluginApi *api, uint32_t api_version) {
         .setting_get = has_settings(api) ? api->setting_get : NULL,
         .mod_dir = api->mod_dir,
         .online = voice_is_online,
-        .peers = voice_peer_accounts,
         .friends = friends_accounts,
         .muted = voice_is_muted,
         .self_account = cam_self_account,
         .self_name = cam_self_name,
         .account_of = friends_account_id,
     };
-    // the chat room drives voice too, also where the camera cannot work (an older runtime or game)
-    ChatRoomHost room = {.self_account = cam_self_account, .friends = friends_accounts, .peers = voice_peer_accounts};
+    // room mode (voice in a friend room only) is wanted also where the camera cannot work (an older runtime or game)
+    ChatRoomHost room = {.self_account = cam_self_account, .friends = friends_accounts};
     chatroom_install(&room);
-    roomnet_start();   // the room on the relay: tickets, the grant, the camera's frames (nothing with the loopback)
+    roomnet_start();   // the friend room on the relay: room mode, its state, the camera's frames (nothing with the loopback)
     if (!camera_install(&h)) return;
     int pt = api->language && (!strcmp(api->language, "pt-BR") || !strcmp(api->language, "pt"));
     if (api->settings_tab) api->settings_tab(pt ? "Câmera" : "Camera", cameratab_draw);
