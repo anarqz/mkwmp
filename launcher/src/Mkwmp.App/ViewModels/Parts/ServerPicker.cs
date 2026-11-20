@@ -217,10 +217,14 @@ public sealed class ServerPicker : ObservableObject
         FocusRequested?.Invoke(this, first); // the first of the new rows
     }
 
-    /// <summary>The page is open: read the list and measure now, then measure again every 15 s.</summary>
+    /// <summary>
+    /// The page is open: read the list and measure now, then measure again every 15 s. Always asks
+    /// once (the launcher answers "off" when no beholder is set): before, a list that had never been
+    /// read counted as no list, so it was never read and only the address box showed.
+    /// </summary>
     public void Start()
     {
-        if (!HasList || _timer.IsEnabled)
+        if (_timer.IsEnabled)
         {
             return;
         }

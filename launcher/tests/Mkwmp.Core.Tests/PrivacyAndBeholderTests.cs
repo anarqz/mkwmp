@@ -225,6 +225,19 @@ public class PrivacyAndBeholderTests
     }
 
     [Fact]
+    public async Task A_set_beholder_shows_the_list_as_coming_before_anyone_asked()
+    {
+        // The window opened the server page, saw "off" and never asked: the list never came.
+        var root = Rig.NewFolder("beholder-coming");
+        var path = Path.Combine(root, "client.toml");
+        new ClientConfig { Settings = new LauncherSettings { AutoUpdate = false } }.Save(path);
+        await using var l = new Launcher(path, root, new LauncherOptions { BindLocalApi = false, BackgroundLoops = false, Beholder = "https://beholder.example.net", Targets = [new MkwRecompTarget("1.4.0")] }, new FakeNet());
+        Assert.Equal(ServerListState.Loading, l.Servers.State);
+
+        await using var none = new Launcher(Path.Combine(Rig.NewFolder("beholder-none"), "client.toml"), root, new LauncherOptions { BindLocalApi = false, BackgroundLoops = false, Beholder = "", Targets = [new MkwRecompTarget("1.4.0")] }, new FakeNet());
+        Assert.Equal(ServerListState.Off, none.Servers.State);
+    }
+    [Fact]
     public async Task Servers_are_listed_measured_and_sorted_by_latency()
     {
         var net = new FakeNet();

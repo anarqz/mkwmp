@@ -36,6 +36,12 @@ public sealed partial class Launcher
         get
         {
             var view = _serverListView;
+            // A beholder is set but nobody asked it yet: the list is coming, not off (the window
+            // shows the server discovery, never just the address box, and asks for it at once).
+            if (view.State == ServerListState.Off && Beholder is not null)
+            {
+                view = view with { State = ServerListState.Loading };
+            }
             var hidden = Config.HiddenServers;
             return ReferenceEquals(view.Hidden, hidden) ? view : view with { Hidden = hidden };
         }
