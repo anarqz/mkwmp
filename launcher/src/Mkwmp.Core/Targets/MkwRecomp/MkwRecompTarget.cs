@@ -80,6 +80,19 @@ public sealed class MkwRecompTarget : IGameTarget
 
     public GameSetupStatus? SetupStatus(GameInstall install) => RecompSetup.Status(install);
 
+    /// <summary>The player's copy: a <c>.nup</c> or <c>.nx</c> package, or a folder with <c>exefs\main</c> and <c>romfs</c> right in it.</summary>
+    public Files.PickFilter GameCopyFilter { get; } = new()
+    {
+        Files = true,
+        Extensions = [".nup", ".nx"],
+        FolderMatches = folder => File.Exists(Path.Combine(folder, "exefs", "main"))
+            && (Directory.Exists(Path.Combine(folder, "romfs")) || File.Exists(Path.Combine(folder, "romfs"))),
+    };
+
+    public string? GameCopyProblem(string? path) => RecompSetup.DumpProblem(path);
+
+    public bool LooksLikeInstall(string folder) => File.Exists(Path.Combine(folder, Recomp.Exe));
+
     /// <summary>The game's menu picture and title logo, from the player's own copy (<see cref="RecompCover"/>).</summary>
     public string? CoverArt(GameInstall install, string cacheFolder) => RecompCover.Find(install, cacheFolder);
 
@@ -582,13 +595,23 @@ public sealed class MkwRecompTarget : IGameTarget
         return false;
     }
 
+    /// <summary>
+    /// Where the mod keeps its native libraries: <c>mods/mkwmp/</c> itself (mkwmp-camera.dll and
+    /// mkwmp-voice.dll sit beside mod.json, as the package lays them out; only the plugin is in
+    /// <c>plugin/</c>), then <c>plugin/</c> for older layouts, then the game folder (the probe's).
+    /// </summary>
     public IEnumerable<string> NativeLibraryFolders(GameInstall install)
     {
         ArgumentNullException.ThrowIfNull(install);
-        yield return Path.Combine(install.DataRoot ?? install.Root, "mods", Recomp.Mod, "plugin");
+        var roots = new List<string> { install.DataRoot ?? install.Root };
         if (install.DataRoot is { } data && !string.Equals(data, install.Root, StringComparison.OrdinalIgnoreCase))
         {
-            yield return Path.Combine(install.Root, "mods", Recomp.Mod, "plugin");
+            roots.Add(install.Root);
+        }
+        foreach (var root in roots)
+        {
+            yield return Path.Combine(root, "mods", Recomp.Mod);
+            yield return Path.Combine(root, "mods", Recomp.Mod, "plugin");
         }
         yield return install.Root;
     }

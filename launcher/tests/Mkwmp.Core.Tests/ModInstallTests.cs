@@ -448,4 +448,16 @@ public sealed class ModInstallTests
             Assert.Null(on.PlayProblem);
         }
     }
+
+    [Fact]
+    public void The_launchers_camera_test_looks_where_the_mod_keeps_its_libraries()
+    {
+        // mkwmp-camera.dll sits in mods/mkwmp/ (beside mod.json), not in plugin/: the camera test missed it.
+        var game = Rig.NewFolder("camera-folders");
+        var install = new GameInstall("mkw-recomp", game, Path.Combine(game, "mkw.exe"), "0.1.16-mkwmp", "1.8.0", null);
+        var folders = new MkwRecompTarget("1.4.0").NativeLibraryFolders(install).ToList();
+        Assert.Equal(Path.Combine(game, "mods", "mkwmp"), folders[0]);
+        Assert.Contains(Path.Combine(game, "mods", "mkwmp", "plugin"), folders);
+        Assert.Equal(game, folders[^1]);
+    }
 }
