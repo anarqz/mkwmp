@@ -23,6 +23,15 @@
   <DataTemplate DataType="{x:Type vm:SetupViewModel}">
     <setup:SetupPage />
   </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:CameraTestViewModel}">
+    <settings:CameraTestPage />
+  </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:ChoiceListViewModel}">
+    <settings:ChoiceList />
+  </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:PinRevealViewModel}">
+    <settings:PinReveal />
+  </DataTemplate>
   <DataTemplate DataType="{x:Type vm:GalleryViewModel}">
     <dev:GalleryPage />
   </DataTemplate>

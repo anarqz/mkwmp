@@ -81,7 +81,13 @@ public partial class App : Application
         var shell = new ShellViewModel(_launcher, strings);
         var window = new MainWindow(shell, args);
         MainWindow = window;
-        window.Show();
+        // tray, close-to-tray, system notifications (nothing of it in the screenshot harness)
+        var harness = Option(args, "--shot") is not null || Option(args, "--icon") is not null;
+        var desktop = Desktop.DesktopIntegration.Attach(window, shell, options.Tray, harness);
+        if (desktop is not { StartHidden: true })
+        {
+            window.Show(); // --tray: the window stays hidden until the tray icon opens it
+        }
         _ = StartAsync(_launcher);
     }
 

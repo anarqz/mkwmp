@@ -1,0 +1,60 @@
+<UserControl x:Class="Mkwmp.App.Views.Settings.ProfileEntry"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             Focusable="False">
+  <!-- DataContext: ProfileForm. The gamertag box with REGISTER; the PIN box with USE when the name is
+       someone's (or "I already have a PIN"); exactly one message line under them. -->
+  <StackPanel input:FocusNav.IsGroup="True">
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <Grid>
+        <TextBox x:Name="NameBox" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" IsEnabled="{Binding CanEdit}"
+                 input:FocusNav.IsDefault="True" />
+        <TextBlock Text="{Binding S[settings.profile.name_hint]}" Style="{StaticResource Text.Base}" Foreground="{DynamicResource Brush.TextFaint}"
+                   Margin="28,0" IsHitTestVisible="False"
+                   Visibility="{Binding Text, ElementName=NameBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
+      </Grid>
+      <c:ConsoleButton Grid.Column="1" Kind="Primary" Width="300" Margin="20,0,0,0" Content="{Binding RegisterLabel}"
+                       Command="{Binding RegisterCommand}" />
+    </Grid>
+
+    <Grid Margin="0,18,0,0" Visibility="{Binding ShowPinEntry, Converter={StaticResource Conv.Visible}}">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <Grid>
+        <TextBox x:Name="PinBox" Text="{Binding Pin, UpdateSourceTrigger=PropertyChanged}" MaxLength="6" IsEnabled="{Binding CanEdit}"
+                 InputScope="Number" />
+        <TextBlock Text="{Binding S[settings.profile.pin_hint]}" Style="{StaticResource Text.Base}" Foreground="{DynamicResource Brush.TextFaint}"
+                   Margin="28,0" IsHitTestVisible="False"
+                   Visibility="{Binding Text, ElementName=PinBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
+      </Grid>
+      <c:ConsoleButton Grid.Column="1" Width="300" Margin="20,0,0,0" Content="{Binding S[settings.profile.use]}"
+                       Command="{Binding UsePinCommand}" />
+    </Grid>
+
+    <TextBlock Text="{Binding Message}" FontSize="25" Margin="6,18,6,0">
+      <TextBlock.Style>
+        <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding MessageIsError}" Value="True">
+              <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </TextBlock.Style>
+    </TextBlock>
+    <TextBlock Text="{Binding BusyNote}" Style="{StaticResource Text.Caption}" Margin="6,6,6,0"
+               Visibility="{Binding BusyNote, Converter={StaticResource Conv.Visible}}" />
+
+    <c:ConsoleButton Kind="Ghost" HorizontalAlignment="Left" Height="72" Padding="6,0" Margin="0,10,0,0" Content="{Binding HavePinLabel}"
+                     Command="{Binding HavePinCommand}"
+                     Visibility="{Binding ShowHavePin, Converter={StaticResource Conv.Visible}}" />
+  </StackPanel>
+</UserControl>

@@ -4,6 +4,8 @@ using System.Globalization;
 using System.Windows.Input;
 using Mkwmp.App.Input;
 using Mkwmp.Core;
+using Mkwmp.Core.Targets;
+using CoreStrings = Mkwmp.Core.Strings;
 
 namespace Mkwmp.App.ViewModels;
 
@@ -13,23 +15,28 @@ public sealed class HomeTile : ObservableObject
     private string _title = "";
     private string _subtitle = "";
     private string _badge = "";
+    private string _iconKey;
     private double _progress = double.NaN;
 
     public HomeTile(string key, string iconKey, string seed, Action invoke)
     {
         Key = key;
-        IconKey = iconKey;
+        _iconKey = iconKey;
         Seed = seed;
         Command = new RelayCommand(invoke);
     }
 
     public string Key { get; }
 
-    public string IconKey { get; }
-
     public string Seed { get; }
 
     public ICommand Command { get; }
+
+    public string IconKey
+    {
+        get => _iconKey;
+        set => Set(ref _iconKey, value);
+    }
 
     public string Title
     {
@@ -57,8 +64,9 @@ public sealed class HomeTile : ObservableObject
 }
 
 /// <summary>
-/// Home: the carousel and the dock. STUB of the design system: it already plays (in the demo),
-/// opens the pages and the panels; the home agent owns this file and Views/HomePage.xaml(.cs).
+/// Home: the carousel (Play Online, Party Chat, Friends, Game, What's New), the session's status
+/// under it, and the dock. PLAY is the Rust launcher's PLAY / STOP; when something blocks it, A on
+/// it explains what and leads to the place that fixes it.
 /// </summary>
 public sealed class HomeViewModel : PageViewModel
 {
@@ -67,53 +75,98 @@ public sealed class HomeViewModel : PageViewModel
     private readonly HomeTile _friends;
     private readonly HomeTile _game;
     private readonly HomeTile _update;
-    private string _selectedTitle = "";
+    private HomeTile? _selected;
 
     public HomeViewModel(ShellViewModel shell)
         : base(shell)
     {
-        _play = new HomeTile("play", "Icon.Kart", "#0", () => RelayCommand.Async(TogglePlayAsync).Execute(null));
-        _chat = new HomeTile("chat", "Icon.Headset", "#1", () => Shell.Navigate(Routes.Chat));
-        _friends = new HomeTile("friends", "Icon.Friends", "#3", () => Shell.IsFriendsOpen = true);
-        _game = new HomeTile("game", "Icon.Folder", "#2", () => Shell.Navigate(Routes.Settings));
-        _update = new HomeTile("update", "Icon.Download", "#5", Shell.ShowUpdateModal);
-        Tiles = [_play, _chat, _friends, _game, _update];
-
-        FriendsCommand = new RelayCommand(() => Shell.IsFriendsOpen = true);
+        PlayCommand = RelayCommand.Async(TogglePlayAsync);
+        FriendsCommand = new RelayCommand(() => Shell.OpenFriends());
         ChatCommand = new RelayCommand(() => Shell.Navigate(Routes.Chat));
+        GameCommand = new RelayCommand(() => Shell.OpenSettings("game"));
         UpdateCommand = new RelayCommand(Shell.ShowUpdateModal);
-        SettingsCommand = new RelayCommand(() => Shell.Navigate(Routes.Settings));
+        SettingsCommand = new RelayCommand(() => Shell.OpenSettings());
         FullscreenCommand = RelayCommand.Async(() => Shell.SetFullscreenAsync(!Shell.IsFullscreen));
-        QuitCommand = RelayCommand.Async(AskQuitAsync);
+        PowerCommand = new RelayCommand(ShowPowerMenu);
+        StatusCommand = new RelayCommand(() =>
+        {
+            if (Problem is { } problem)
+            {
+                ExplainProblem(problem);
+            }
+        });
+
+        _play = new HomeTile("play", "Icon.Kart", "#0", () => PlayCommand.Execute(null));
+        _chat = new HomeTile("chat", "Icon.Headset", "#1", () => ChatCommand.Execute(null));
+        _friends = new HomeTile("friends", "Icon.Friends", "#3", () => FriendsCommand.Execute(null));
+        _game = new HomeTile("game", "Icon.Folder", "#2", () => GameCommand.Execute(null));
+        _update = new HomeTile("update", "Icon.Download", "#5", () => UpdateCommand.Execute(null));
+        Tiles = [_play, _chat, _friends, _game, _update];
         Refresh();
-        _selectedTitle = _play.Title;
     }
 
     public override bool ShowTopBar => true;
 
     public ObservableCollection<HomeTile> Tiles { get; }
 
-    /// <summary>The title of the tile under the focus, shown above the carousel.</summary>
-    public string SelectedTitle
+    /// <summary>The tile under the focus (the view sets it): its title is shown above it.</summary>
+    public HomeTile? SelectedTile
     {
-        get => _selectedTitle;
-        set => Set(ref _selectedTitle, value);
+        get => _selected;
+        set => Set(ref _selected, value);
     }
 
-    public string StatusText => Launcher.PlayProblem ?? Launcher.Session.Status;
+    // ── the session's status, under the carousel ──
+
+    private bool Busy => Launcher.Session.Busy;
+
+    /// <summary>What blocks PLAY now (nothing while a session runs: STOP always works).</summary>
+    private string? Problem => Busy ? null : Launcher.PlayProblem;
+
+    /// <summary>The session's status, verbatim; what blocks PLAY instead while idle.</summary>
+    public string StatusText => Launcher.Session.State == SessionState.Failed && Launcher.Session.Status.Length > 0
+        ? Launcher.Session.Status
+        : Problem ?? Launcher.Session.Status;
 
     /// <summary>good / warn / bad / info / plain.</summary>
-    public string StatusTone => Launcher.PlayProblem is null ? Launcher.Session.Tone : "bad";
+    public string StatusTone => Launcher.Session.State == SessionState.Failed ? "bad" : Problem is null ? Launcher.Session.Tone : "warn";
 
-    public bool IsBusy => Launcher.Session.State == SessionState.Starting || Launcher.Session.Phase is SeatPhase.Joining;
+    public bool HasProblem => Problem is not null;
 
-    public bool HasUpdate => Launcher.Update.State is UpdateState.Available or UpdateState.Downloading;
+    /// <summary>Something is on its way (starting the game, taking a seat).</summary>
+    public bool IsWorking => Launcher.Session.State == SessionState.Starting || Launcher.Session.Phase is SeatPhase.Joining;
+
+    public bool IsSettled => !IsWorking;
+
+    /// <summary>The server pill of the Rust launcher, verbatim ("ONLINE · 20/32 SEATS FREE").</summary>
+    public string ServerText => CoreStrings.ServerPill(Launcher.Server);
+
+    public bool IsServerOnline => Launcher.Server.State == ServerState.Online;
+
+    // ── the dock ──
+
+    public string PlayLabel => Busy ? S["home.stop"] : S["home.play"];
+
+    public string PlayIcon => Busy ? "Icon.Stop" : "Icon.Kart";
+
+    public string FullscreenLabel => Shell.IsFullscreen ? S["home.windowed"] : S["home.fullscreen"];
+
+    public string FullscreenIcon => Shell.IsFullscreen ? "Icon.Window" : "Icon.Fullscreen";
+
+    /// <summary>The Steam Deck's Game Mode has one full-screen window: nothing to switch.</summary>
+    public bool CanSwitchFullscreen { get; } = !Desktop.DesktopEnvironment.IsGameMode;
+
+    public bool HasUpdate => Launcher.Update.State is UpdateState.Available or UpdateState.Downloading or UpdateState.Failed;
 
     public bool HasRequests => Launcher.Friends.Incoming.Count > 0;
+
+    public ICommand PlayCommand { get; }
 
     public ICommand FriendsCommand { get; }
 
     public ICommand ChatCommand { get; }
+
+    public ICommand GameCommand { get; }
 
     public ICommand UpdateCommand { get; }
 
@@ -121,7 +174,10 @@ public sealed class HomeViewModel : PageViewModel
 
     public ICommand FullscreenCommand { get; }
 
-    public ICommand QuitCommand { get; }
+    public ICommand PowerCommand { get; }
+
+    /// <summary>A click on the status line: explains what blocks PLAY.</summary>
+    public ICommand StatusCommand { get; }
 
     public override IReadOnlyList<Hint> Hints =>
     [
@@ -130,40 +186,194 @@ public sealed class HomeViewModel : PageViewModel
         new Hint(PadButton.A, S["hint.start"]),
     ];
 
+    public override void OnEnter()
+    {
+        Shell.PropertyChanged -= OnShellChanged;
+        Shell.PropertyChanged += OnShellChanged;
+        Refresh();
+        RaiseAll();
+    }
+
+    public override void OnLeave() => Shell.PropertyChanged -= OnShellChanged;
+
+    private void OnShellChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ShellViewModel.IsFullscreen))
+        {
+            Raise(nameof(FullscreenLabel));
+            Raise(nameof(FullscreenIcon));
+        }
+    }
+
     public override void OnStateChanged()
     {
         Refresh();
         base.OnStateChanged();
     }
 
+    private static string Number(int value) => value.ToString(CultureInfo.CurrentCulture);
+
     private void Refresh()
     {
         var server = Launcher.Server;
         var game = Launcher.Game;
         var session = Launcher.Session;
-        _play.Title = session.Busy ? S["home.stop"] : S["home.play"];
-        _play.Subtitle = game.Install is { } install ? $"Mario Kart World {install.GameVersion}" : S["home.no_game"];
-        _play.Badge = server.State == ServerState.Online
-            ? S.Format("home.seats", ("seated", server.Seated.ToString(CultureInfo.CurrentCulture)), ("total", server.SeatsTotal.ToString(CultureInfo.CurrentCulture)))
-            : S["home.offline"];
+        var friends = Launcher.Friends;
+
+        // Play Online: the game and its version; the seats of the server (or where the player is in it)
+        _play.Title = PlayLabel;
+        _play.IconKey = PlayIcon;
+        _play.Subtitle = Problem is not null ? S["home.play_blocked"]
+            : game.Install is { } install ? string.IsNullOrEmpty(install.GameVersion) ? "Mario Kart World" : $"Mario Kart World {install.GameVersion}"
+            : S["home.no_game"];
+        _play.Badge = session.Phase switch
+        {
+            SeatPhase.Queued when session.QueuePosition > 0 => S.Format("home.queued", ("n", Number(session.QueuePosition))),
+            SeatPhase.Seated => S["home.seated"],
+            _ => server.State switch
+            {
+                ServerState.Online => S.Format("home.seats", ("seated", Number(server.Seated)), ("total", Number(server.SeatsTotal))),
+                ServerState.Checking => S["home.checking"],
+                _ => S["home.offline"],
+            },
+        };
+
         _chat.Title = S["home.chat"];
         _chat.Subtitle = S["home.chat_sub"];
+
         _friends.Title = S["home.friends"];
-        _friends.Subtitle = S.Format("home.friends_online", ("n", Launcher.Friends.OnlineCount.ToString(CultureInfo.CurrentCulture)));
-        _friends.Badge = Launcher.Friends.Incoming.Count > 0 ? "+" + Launcher.Friends.Incoming.Count.ToString(CultureInfo.CurrentCulture) : "";
+        _friends.Subtitle = !Launcher.Profile.SignedIn ? S["home.friends_signin"]
+            : !friends.Loaded ? S["home.friends_loading"]
+            : S.Format("home.friends_online", ("n", Number(friends.OnlineCount)));
+        _friends.Badge = friends.Incoming.Count > 0 ? "+" + Number(friends.Incoming.Count) : "";
+
+        // Game: which way of running the game (the target) and whether MKWMP is in it
         _game.Title = S["home.game"];
-        _game.Subtitle = game.Install is { } found ? $"{found.TargetId} {found.Version}" : S["home.no_game"];
+        var targetId = game.Install?.TargetId ?? Launcher.Settings.Target;
+        var targetName = game.Targets.FirstOrDefault(t => string.Equals(t.Id, targetId, StringComparison.OrdinalIgnoreCase))?.DisplayName ?? targetId;
+        _game.Subtitle = game.Install is { } found ? string.IsNullOrEmpty(found.Version) ? targetName : $"{targetName} {found.Version}" : S["home.no_game"];
+        _game.Badge = game.Searching ? S["home.game_searching"]
+            : game.Working ? S["home.game_working"]
+            : game.Install is null ? S["home.game_setup"]
+            : game.Check is { Status: not TargetStatus.Ready } || game.Integration is { Ok: false } ? S["home.game_attention"]
+            : S["home.game_ready"];
+
         var update = Launcher.Update;
         _update.Title = S["home.update"];
-        _update.Subtitle = update.AvailableVersion is { } version ? S.Format("home.update_version", ("version", version)) : S["update.uptodate"];
+        _update.Subtitle = update.State switch
+        {
+            UpdateState.Available => S.Format("home.update_available", ("version", update.AvailableVersion ?? "")),
+            UpdateState.Downloading => S["home.update_downloading"],
+            UpdateState.Restarting => S["update.restarting"],
+            UpdateState.Checking => S["update.checking"],
+            UpdateState.Failed => S["update.failed"],
+            _ => S.Format("home.update_current", ("version", Launcher.Version)),
+        };
+        _update.Badge = update.State == UpdateState.Available ? S["home.update_new"] : "";
         _update.Progress = update.State == UpdateState.Downloading ? update.Progress : double.NaN;
     }
 
-    private Task TogglePlayAsync() => Launcher.Session.Busy ? Launcher.StopAsync() : Launcher.PlayAsync();
+    // ── PLAY ──
 
-    private async Task AskQuitAsync()
+    private Task TogglePlayAsync()
     {
-        if (await Shell.ConfirmAsync(S["quit.title"], S["quit.body"], S["quit.yes"]).ConfigureAwait(true))
+        if (Busy)
+        {
+            return Launcher.StopAsync();
+        }
+        if (Launcher.PlayProblem is { } problem)
+        {
+            ExplainProblem(problem);
+            return Task.CompletedTask;
+        }
+        return Launcher.PlayAsync();
+    }
+
+    /// <summary>Says what blocks PLAY; its first button goes to the place that fixes it.</summary>
+    private void ExplainProblem(string problem)
+    {
+        var check = Launcher.Game.Check is { } found && found.Problem == problem ? found : null;
+        var body = check?.Explain is { Length: > 0 } explain ? problem + "\n\n" + explain : problem;
+        var modal = new ModalViewModel { Title = S["home.blocked.title"], Body = body };
+        if (FixFor(problem, check) is ({ } label, { } go))
+        {
+            modal.Actions.Add(new ModalAction(label, () =>
+            {
+                Shell.CloseModal(modal);
+                go();
+            }, Controls.ButtonKind.Outline, isDefault: true));
+        }
+        modal.Bottom = new ModalAction(S["common.close"], () => Shell.CloseModal(modal));
+        Shell.ShowModal(modal);
+    }
+
+    /// <summary>Where a problem is fixed: the profile (or the first-run setup), the game's settings, or a page in the browser.</summary>
+    private (string Label, Action Go)? FixFor(string problem, TargetCheck? check)
+    {
+        if (problem is CoreStrings.NoConsent or CoreStrings.PickGamertag or CoreStrings.NeedPin or CoreStrings.SetServer)
+        {
+            if (!Launcher.Settings.Ui.SetupDone)
+            {
+                return (S["home.fix.setup"], () => Shell.Navigate(Routes.Setup));
+            }
+            // the age confirmation and the server have their own categories; the gamertag and its PIN are the profile
+            return problem switch
+            {
+                CoreStrings.NoConsent => (S["home.fix.settings"], () => Shell.OpenSettings("privacy")),
+                CoreStrings.SetServer => (S["home.fix.settings"], () => Shell.OpenSettings("server")),
+                _ => (S["home.fix.profile"], () => Shell.OpenSettings("profile")),
+            };
+        }
+        if (check?.FixUrl is { } url)
+        {
+            return (check.FixLabel is { Length: > 0 } text ? text : S["home.fix.browser"], () =>
+            {
+                if (!Links.Open(url))
+                {
+                    Shell.ShowToast(S["home.fix.browser_failed"], url.AbsoluteUri);
+                }
+            });
+        }
+        if (problem == CoreStrings.AnotherLauncher(Launcher.Settings.LocalPort))
+        {
+            return null; // nothing to open: the other launcher has to be closed
+        }
+        return (S["home.fix.game"], () => Shell.OpenSettings("game"));
+    }
+
+    // ── power ──
+
+    private void ShowPowerMenu()
+    {
+        var modal = new ModalViewModel { Title = S["power.title"], Body = S["quit.body"] };
+        void Add(string label, Action run, bool isDefault = false) => modal.Actions.Add(new ModalAction(label, () =>
+        {
+            Shell.CloseModal(modal);
+            run();
+        }, Controls.ButtonKind.Outline, isDefault));
+
+        if (Shell.TrayAvailable)
+        {
+            Add(S["power.hide"], Shell.HideToTray, isDefault: true);
+        }
+        else if (Desktop.DesktopEnvironment.IsWine && Desktop.DesktopEnvironment.CanMinimize)
+        {
+            Add(S["power.minimize"], Shell.HideToTray, isDefault: true); // no tray under Wine: the window steps aside minimized
+        }
+        if (CanSwitchFullscreen)
+        {
+            Add(Shell.IsFullscreen ? S["power.windowed"] : S["power.fullscreen"],
+                () => RelayCommand.Async(() => Shell.SetFullscreenAsync(!Shell.IsFullscreen)).Execute(null), isDefault: modal.Actions.Count == 0);
+        }
+        Add(S["power.quit"], () => RelayCommand.Async(QuitAsync).Execute(null), isDefault: modal.Actions.Count == 0);
+        modal.Bottom = new ModalAction(S["common.cancel"], () => Shell.CloseModal(modal));
+        Shell.ShowModal(modal);
+    }
+
+    /// <summary>Quits at once; asks first while a session holds a seat (quitting gives it back).</summary>
+    private async Task QuitAsync()
+    {
+        if (!Busy || await Shell.ConfirmAsync(S["quit.title"], S["quit.body"], S["quit.yes"]).ConfigureAwait(true))
         {
             Shell.Quit();
         }

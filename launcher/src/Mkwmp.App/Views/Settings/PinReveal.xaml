@@ -1,0 +1,17 @@
+<UserControl x:Class="Mkwmp.App.Views.Settings.PinReveal"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             Focusable="False">
+  <!-- DataContext: PinRevealViewModel. The PIN, once and large, right after REGISTER. -->
+  <Border Background="{DynamicResource Brush.Surface}" CornerRadius="14" Padding="40,30" Margin="0,8,0,0">
+    <StackPanel HorizontalAlignment="Center">
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+        <c:Icon Data="{StaticResource Icon.Lock}" Width="34" Height="34" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,12,0" />
+        <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Caption}" FontSize="27" />
+      </StackPanel>
+      <TextBlock Text="{Binding Pin}" FontFamily="{StaticResource Font.Ui}" FontSize="104" FontWeight="ExtraBold"
+                 Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+    </StackPanel>
+  </Border>
+</UserControl>

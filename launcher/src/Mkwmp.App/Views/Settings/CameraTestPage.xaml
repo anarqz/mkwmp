@@ -1,0 +1,42 @@
+<UserControl x:Class="Mkwmp.App.Views.Settings.CameraTestPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             Focusable="False">
+  <!-- DataContext: CameraTestViewModel. The header, the live picture (16:9, as large as the page
+       allows), one line under it. Nothing to focus: X mirrors, B goes back. -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <c:PageHeader Title="{Binding S[settings.camera_test.title]}" Icon="{StaticResource Icon.Camera}" />
+
+    <Viewbox Grid.Row="1" Margin="72,34,72,14" Stretch="Uniform">
+      <Grid Width="1280" Height="720">
+        <Border CornerRadius="16" Background="#FF17181B" />
+        <Border CornerRadius="16">
+          <Border.Background>
+            <ImageBrush ImageSource="{Binding Preview.Frame}" Stretch="UniformToFill" />
+          </Border.Background>
+        </Border>
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="900"
+                    Visibility="{Binding StatusText, Converter={StaticResource Conv.Visible}}">
+          <c:Icon Data="{StaticResource Icon.CameraOff}" Width="120" Height="120" StrokeThickness="1.4" Foreground="#FF8E929B"
+                  HorizontalAlignment="Center"
+                  Visibility="{Binding ShowSpinner, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
+          <c:Spinner Width="84" Height="84" Foreground="#FFE6E8EC" HorizontalAlignment="Center"
+                     Visibility="{Binding ShowSpinner, Converter={StaticResource Conv.Visible}}" />
+          <TextBlock Text="{Binding StatusText}" FontFamily="{StaticResource Font.Ui}" FontSize="36" Foreground="#FFE6E8EC"
+                     TextWrapping="Wrap" TextAlignment="Center" LineHeight="52" Margin="0,30,0,0" />
+        </StackPanel>
+      </Grid>
+    </Viewbox>
+
+    <StackPanel Grid.Row="2" Margin="72,0,72,22" HorizontalAlignment="Center">
+      <TextBlock Text="{Binding DeviceLine}" Style="{StaticResource Text.Base}" FontSize="27" HorizontalAlignment="Center" />
+      <TextBlock Text="{Binding PrivacyLine}" Style="{StaticResource Text.Caption}" FontSize="23" HorizontalAlignment="Center" TextAlignment="Center" />
+    </StackPanel>
+  </Grid>
+</UserControl>

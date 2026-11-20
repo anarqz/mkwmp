@@ -33,6 +33,16 @@ public static class FocusNav
     public static readonly DependencyProperty SkipProperty =
         DependencyProperty.RegisterAttached("Skip", typeof(bool), typeof(FocusNav), new PropertyMetadata(false));
 
+    /// <summary>
+    /// On a container: up and down never leave it (a column beside another column, like the two
+    /// halves of Settings: from the top row of the pane, up does not jump into the category list).
+    /// </summary>
+    public static readonly DependencyProperty IsColumnProperty =
+        DependencyProperty.RegisterAttached("IsColumn", typeof(bool), typeof(FocusNav), new PropertyMetadata(false));
+
+    public static bool GetIsColumn(DependencyObject o) => (bool)(o ?? throw new ArgumentNullException(nameof(o))).GetValue(IsColumnProperty);
+    public static void SetIsColumn(DependencyObject o, bool value) => (o ?? throw new ArgumentNullException(nameof(o))).SetValue(IsColumnProperty, value);
+
     private static readonly DependencyProperty LastProperty =
         DependencyProperty.RegisterAttached("Last", typeof(WeakReference<UIElement>), typeof(FocusNav), new PropertyMetadata(null));
 
@@ -131,6 +141,19 @@ public static class FocusNav
         var from = Bounds(current!, root);
         var stops = Stops(root).Where(s => !ReferenceEquals(s, current)).Select(s => (Stop: s, Box: Bounds(s, root)))
             .Where(s => !s.Box.IsEmpty && s.Box.Width > 0 && s.Box.Height > 0).ToList();
+        if (direction is NavDirection.Up or NavDirection.Down)
+        {
+            // inside a column, up and down stay in it
+            for (DependencyObject? at = Parent(current!); at is not null && !ReferenceEquals(at, root); at = Parent(at))
+            {
+                if (GetIsColumn(at))
+                {
+                    var column = at;
+                    stops = [.. stops.Where(s => IsInside(s.Stop, column))];
+                    break;
+                }
+            }
+        }
 
         // first what is on the same line (sideways) or anything that way (up, down); then, sideways, anything that way
         // at all: from a category at the bottom of its list into a pane whose rows are all higher

@@ -3,48 +3,144 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              xmlns:vm="clr-namespace:Mkwmp.App.ViewModels"
+             xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              Focusable="False">
-  <!-- DataContext: SetupViewModel. STUB that shows a consent page: text, a secondary button, a tick
-       box, and Next that stays disabled until the box is ticked. -->
+  <!-- DataContext: SetupViewModel. The first-run setup as a paged flow: the header with the page
+       dots, one step's content in the middle, Next (and Later, where a step can wait) below. -->
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
     <c:PageHeader Title="{Binding Title}">
       <c:PageDots Count="{x:Static vm:SetupViewModel.StepCount}" Index="{Binding Step}"
                   Accent="{DynamicResource Brush.Accent}" Foreground="{DynamicResource Brush.Text}" />
     </c:PageHeader>
 
-    <!-- welcome -->
-    <StackPanel Grid.Row="1" Width="1100" VerticalAlignment="Center"
-                Visibility="{Binding IsWelcome, Converter={StaticResource Conv.Visible}}">
-      <c:Icon Data="{StaticResource Icon.Kart}" Width="150" Height="150" StrokeThickness="1.5" Foreground="{DynamicResource Brush.Accent}"
-              HorizontalAlignment="Center" />
-      <TextBlock Text="{Binding S[setup.welcome.heading]}" Style="{StaticResource Text.Display}" HorizontalAlignment="Center" Margin="0,18,0,0" />
+    <!-- 0: welcome -->
+    <StackPanel Grid.Row="1" MaxWidth="1100" Margin="72,0" VerticalAlignment="Center"
+                Visibility="{Binding Step, Converter={StaticResource Conv.Visible}, ConverterParameter='=0'}">
+      <!-- MKWMP's own picture: a chequered flag over a kart, plain shapes -->
+      <Canvas Width="300" Height="200" HorizontalAlignment="Center">
+        <Ellipse Canvas.Left="40" Canvas.Top="20" Width="220" Height="170" Fill="{DynamicResource Brush.AccentSoft}" />
+        <c:Icon Canvas.Left="62" Canvas.Top="24" Data="{StaticResource Icon.Kart}" Width="176" Height="176" StrokeThickness="1.4"
+                Foreground="{DynamicResource Brush.Accent}" />
+        <c:Icon Canvas.Left="204" Canvas.Top="0" Data="{StaticResource Icon.Flag}" Width="84" Height="84" StrokeThickness="1.8"
+                Foreground="{DynamicResource Brush.Text}" />
+      </Canvas>
+      <TextBlock Text="{Binding S[setup.welcome.heading]}" Style="{StaticResource Text.Display}" HorizontalAlignment="Center" Margin="0,10,0,0" />
       <TextBlock Text="{Binding S[setup.welcome.text]}" Style="{StaticResource Text.Body}" FontSize="32" LineHeight="48" TextAlignment="Center"
-                 Margin="0,18,0,0" />
-      <c:ConsoleButton Kind="Secondary" Width="650" Height="116" Margin="0,70,0,0" Content="{Binding S[common.next]}"
-                       Command="{Binding NextCommand}" input:FocusNav.IsDefault="True" />
+                 Margin="0,16,0,0" />
+      <TextBlock Text="{Binding S[setup.welcome.note]}" Style="{StaticResource Text.Caption}" FontSize="25" TextAlignment="Center" Margin="0,16,0,0" />
     </StackPanel>
 
-    <!-- consent -->
+    <!-- 1: before you play online (the consent) -->
+    <StackPanel Grid.Row="1" MaxWidth="1240" Margin="72,0" VerticalAlignment="Center"
+                Visibility="{Binding Step, Converter={StaticResource Conv.Visible}, ConverterParameter='=1'}">
+      <TextBlock Text="{Binding S[setup.consent.p1]}" Style="{StaticResource Text.Body}" FontSize="32" LineHeight="46" />
+      <TextBlock Text="{Binding S[setup.consent.p2]}" Style="{StaticResource Text.Caption}" FontSize="26" LineHeight="38" Margin="0,18,0,0" />
+      <TextBlock Text="{Binding S[setup.consent.p3]}" Style="{StaticResource Text.Caption}" FontSize="26" LineHeight="38" Margin="0,14,0,0" />
+      <c:ConsoleButton Kind="Secondary" Width="800" Margin="0,40,0,0" Content="{Binding S[setup.consent.policy]}" Command="{Binding PolicyCommand}" />
+      <c:ConsoleCheck HorizontalAlignment="Center" MinWidth="580" Margin="0,12,0,0" Content="{Binding S[setup.consent.adult]}"
+                      IsChecked="{Binding Adult}" input:FocusNav.IsDefault="True" />
+    </StackPanel>
+
+    <!-- 2: gamertag -->
+    <StackPanel Grid.Row="1" Width="1080" VerticalAlignment="Center" DataContext="{Binding Profile}"
+                Visibility="{Binding DataContext.Step, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Conv.Visible}, ConverterParameter='=2'}">
+      <StackPanel Visibility="{Binding SignedIn, Converter={StaticResource Conv.Visible}}">
+        <Border Style="{StaticResource Card}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <c:Avatar DisplayName="{Binding SavedName}" Width="116" Height="116" />
+            <StackPanel Grid.Column="1" Margin="28,0,0,0" VerticalAlignment="Center">
+              <TextBlock Text="{Binding SavedName}" Style="{StaticResource Text.Title}" />
+              <TextBlock Text="{Binding S[setup.name.ready]}" Style="{StaticResource Text.Caption}" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="24,0,8,0">
+              <TextBlock Text="{Binding S[settings.profile.pin]}" Style="{StaticResource Text.Small}" HorizontalAlignment="Right" />
+              <TextBlock Text="{Binding SavedPin}" Style="{StaticResource Text.Value}" FontSize="46" FontWeight="ExtraBold" HorizontalAlignment="Right" />
+            </StackPanel>
+          </Grid>
+        </Border>
+        <TextBlock Text="{Binding Message}" Style="{StaticResource Text.Caption}" FontSize="26" Margin="6,22,6,0" TextAlignment="Center" />
+        <c:ConsoleButton Kind="Ghost" HorizontalAlignment="Center" Margin="0,14,0,0" Content="{Binding S[settings.profile.change]}"
+                         Command="{Binding EditCommand}" />
+      </StackPanel>
+      <StackPanel Visibility="{Binding ShowEntry, Converter={StaticResource Conv.Visible}}">
+        <TextBlock Text="{Binding S[setup.name.text]}" Style="{StaticResource Text.Body}" FontSize="32" LineHeight="46" TextAlignment="Center" />
+        <settings:ProfileEntry Margin="0,40,0,0" />
+      </StackPanel>
+    </StackPanel>
+
+    <!-- 3: the game folder -->
+    <Grid Grid.Row="1" Width="1180" Margin="0,26,0,0"
+          Visibility="{Binding Step, Converter={StaticResource Conv.Visible}, ConverterParameter='=3'}">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+      <StackPanel>
+        <TextBlock Text="{Binding GameHeading}" Style="{StaticResource Text.Heading}" HorizontalAlignment="Center" />
+        <TextBlock Text="{Binding S[setup.game.text]}" Style="{StaticResource Text.Caption}" FontSize="26" TextAlignment="Center" Margin="0,8,0,0" />
+      </StackPanel>
+      <c:SmoothScrollViewer Grid.Row="1" Padding="14,10,22,20" Margin="0,8,0,0" input:FocusNav.IsGroup="True">
+        <StackPanel>
+          <settings:GamePanel DataContext="{Binding Game}" />
+          <c:SettingsRow Label="{Binding Game.InstallLabel}" Icon="{StaticResource Icon.Download}" Margin="0,10,0,0"
+                         Command="{Binding Game.InstallCommand}" Caption="{Binding S[settings.game.install_caption]}"
+                         Visibility="{Binding Game.NeedsInstall, Converter={StaticResource Conv.Visible}}" />
+          <TextBlock Text="{Binding Game.Note}" Style="{StaticResource Text.Caption}" Margin="20,10,20,0"
+                     Visibility="{Binding Game.Note, Converter={StaticResource Conv.Visible}}" />
+        </StackPanel>
+      </c:SmoothScrollViewer>
+    </Grid>
+
+    <!-- 4: Party Chat, quickly -->
     <StackPanel Grid.Row="1" Width="1180" VerticalAlignment="Center"
-                Visibility="{Binding IsConsent, Converter={StaticResource Conv.Visible}}">
-      <TextBlock Text="{Binding S[setup.consent.text]}" Style="{StaticResource Text.Body}" FontSize="34" LineHeight="50" />
-      <c:ConsoleButton Kind="Secondary" Width="800" Margin="0,84,0,0" Content="{Binding S[setup.consent.rules]}" />
-      <c:ConsoleCheck Width="580" Margin="0,12,0,0" Content="{Binding S[setup.consent.adult]}" IsChecked="{Binding Adult}"
-                      input:FocusNav.IsDefault="True" />
-      <c:ConsoleButton Kind="Secondary" Width="800" Height="110" Margin="0,56,0,0" Content="{Binding S[common.next]}"
-                       Command="{Binding NextCommand}" />
+                Visibility="{Binding Step, Converter={StaticResource Conv.Visible}, ConverterParameter='=4'}">
+      <TextBlock Text="{Binding S[setup.chat.text]}" Style="{StaticResource Text.Body}" FontSize="32" LineHeight="46" TextAlignment="Center" />
+      <TextBlock Text="{Binding S[setup.chat.note]}" Style="{StaticResource Text.Caption}" FontSize="26" TextAlignment="Center" Margin="0,12,0,26" />
+      <c:SettingsRow Label="{Binding S[settings.chat.input]}" Kind="Chevron" Icon="{StaticResource Icon.Mic}" Value="{Binding InputName}"
+                     Command="{Binding InputCommand}" Margin="14,0" />
+      <c:SettingsRow Label="{Binding S[settings.chat.mic_test]}" Kind="Toggle" IsOn="{Binding MicTesting}" Margin="14,0"
+                     Caption="{Binding S[settings.chat.mic_test_caption]}">
+        <Grid Width="340" Height="16" Margin="0,0,30,0" Visibility="{Binding MicTesting, Converter={StaticResource Conv.Visible}}">
+          <Border x:Name="MeterTrack" CornerRadius="8" Background="{DynamicResource Brush.Track}" />
+          <Border CornerRadius="8" Background="{DynamicResource Brush.Good}" HorizontalAlignment="Left">
+            <Border.Width>
+              <MultiBinding Converter="{StaticResource Conv.Fraction}">
+                <Binding Path="Mic.Level" />
+                <Binding Path="ActualWidth" ElementName="MeterTrack" />
+              </MultiBinding>
+            </Border.Width>
+          </Border>
+        </Grid>
+      </c:SettingsRow>
     </StackPanel>
 
-    <!-- the steps the setup agent builds -->
+    <!-- 5: done -->
     <StackPanel Grid.Row="1" Width="1100" VerticalAlignment="Center"
-                Visibility="{Binding IsPlaceholder, Converter={StaticResource Conv.Visible}}">
-      <TextBlock Text="{Binding S[setup.placeholder]}" Style="{StaticResource Text.Body}" FontSize="32" TextAlignment="Center" />
-      <c:ConsoleButton Kind="Primary" Width="650" Height="110" Margin="0,70,0,0" Content="{Binding S[common.next]}"
+                Visibility="{Binding Step, Converter={StaticResource Conv.Visible}, ConverterParameter='=5'}">
+      <Border Width="120" Height="120" CornerRadius="60" Background="{DynamicResource Brush.Accent}" HorizontalAlignment="Center">
+        <c:Icon Data="{StaticResource Icon.Check}" Width="70" Height="70" StrokeThickness="2.6" Foreground="{DynamicResource Brush.OnAccent}" />
+      </Border>
+      <TextBlock Text="{Binding DoneText}" Style="{StaticResource Text.Body}" FontSize="32" LineHeight="46" TextAlignment="Center" Margin="0,24,0,8" />
+      <Border Style="{StaticResource Card}" Padding="20,6,20,24" Margin="0,18,0,0">
+        <settings:StatusLines DataContext="{Binding Summary}" />
+      </Border>
+    </StackPanel>
+
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,18,0,40" input:FocusNav.IsGroup="True">
+      <c:ConsoleButton Kind="Ghost" Width="320" Height="112" Margin="0,0,24,0" Content="{Binding S[setup.later]}" Command="{Binding LaterCommand}"
+                       Visibility="{Binding ShowLater, Converter={StaticResource Conv.Visible}}" />
+      <c:ConsoleButton Kind="Secondary" Width="650" Height="112" Content="{Binding NextLabel}"
                        Command="{Binding NextCommand}" input:FocusNav.IsDefault="True" />
     </StackPanel>
   </Grid>

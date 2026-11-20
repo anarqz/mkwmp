@@ -1,0 +1,21 @@
+<UserControl x:Class="Mkwmp.App.Views.Settings.GamePanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
+             Focusable="False">
+  <!-- DataContext: GameForm. The game folder (the system's folder dialog), "search again" with a
+       spinner while the launcher looks around, the lines with lights, and where to get a supported
+       build when that is what blocks play. Settings › Game and the setup's game step both show it. -->
+  <StackPanel>
+    <c:SettingsRow Label="{Binding S[settings.game.folder]}" Kind="Chevron" Icon="{StaticResource Icon.Folder}"
+                   Value="{Binding FolderShort}" Command="{Binding BrowseCommand}" />
+    <c:SettingsRow Label="{Binding S[settings.game.search]}" Icon="{StaticResource Icon.Search}" Command="{Binding SearchCommand}">
+      <c:Spinner Width="40" Height="40" Visibility="{Binding Searching, Converter={StaticResource Conv.Visible}}" />
+    </c:SettingsRow>
+    <settings:StatusLines DataContext="{Binding Lines}" Margin="0,6,0,0" />
+    <c:SettingsRow Label="{Binding FixLabel}" Kind="Chevron" Icon="{StaticResource Icon.Download}" Command="{Binding FixCommand}"
+                   Caption="{Binding FixCaption}" Margin="0,14,0,0"
+                   Visibility="{Binding HasFix, Converter={StaticResource Conv.Visible}}" />
+  </StackPanel>
+</UserControl>

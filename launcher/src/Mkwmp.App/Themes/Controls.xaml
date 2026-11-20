@@ -487,13 +487,21 @@
         <ControlTemplate TargetType="ListBoxItem">
           <StackPanel Background="Transparent">
             <Border x:Name="Sep" Height="1.5" Margin="38,10,38,10" Background="{DynamicResource Brush.Rule}" Visibility="Collapsed" />
+            <!-- a group heading above the entry (CategoryEntry.Heading) -->
+            <TextBlock Text="{Binding Heading}" FontFamily="{StaticResource Font.Ui}" FontSize="23" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.TextMuted}" Margin="38,22,24,4" TextTrimming="CharacterEllipsis"
+                       Visibility="{Binding Heading, Converter={StaticResource Conv.Visible}}" />
             <Grid Height="110" Margin="0,6">
               <Border x:Name="Hover" CornerRadius="12" Background="{DynamicResource Brush.Hover}" Visibility="Collapsed" />
               <c:FocusRing IsActive="{TemplateBinding IsFocused}" CornerRadius="12" Fill="{DynamicResource Brush.Focus.Fill}" />
               <Border x:Name="Bar" Width="6" Height="72" CornerRadius="1.5" HorizontalAlignment="Left" Margin="32,0,0,0"
                       Background="{DynamicResource Brush.Accent}" Visibility="Collapsed" />
-              <TextBlock Text="{Binding Title}" FontFamily="{StaticResource Font.Ui}" FontSize="32" Margin="68,0,24,0"
-                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              <DockPanel Margin="68,0,24,0" VerticalAlignment="Center">
+                <c:Icon Data="{Binding IconKey, Converter={StaticResource Conv.Icon}}" Width="40" Height="40" Margin="0,0,18,0" StrokeThickness="1.8"
+                        Visibility="{Binding IconKey, Converter={StaticResource Conv.Visible}}" />
+                <TextBlock Text="{Binding Title}" FontFamily="{StaticResource Font.Ui}" FontSize="32"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              </DockPanel>
             </Grid>
           </StackPanel>
           <ControlTemplate.Triggers>

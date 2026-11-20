@@ -37,6 +37,7 @@ Shell regions (all in `MainWindow.xaml`):
 | friends panel | `Views/FriendsPanel.xaml` in a `c:SlideHost`, from the right, 700 wide, any page (Y / RB / F) | |
 | bottom sheet | `c:BottomSheet` showing `Shell.Sheet` | content height |
 | `c:ModalHost` | dimmed page and the card of `Shell.Modal` | card 1080 wide |
+| `c:OnScreenKeyboard` | the on-screen keyboard of `Shell.Keyboard`, above the modal (section 5) | content height |
 | `c:ToastHost` | `Shell.Toasts`, top right | 640 wide |
 
 A page that is not home starts with a `c:PageHeader` (126 high) and has the hint bar's rule under it.
@@ -104,7 +105,7 @@ Line icons, 24 x 24 grid, stroked by `c:Icon` in the inherited text colour:
 `Icon.Home Play User Friends UserPlus Chat Mic MicOff Camera CameraOff Volume Headset Settings Power
 Download Refresh Fullscreen Window Globe Signal SignalOff ChevronRight ChevronLeft ChevronDown Check
 Close Plus Minus Menu Info Warning Bell Flag Folder Moon Sun Trash Exit Star Lock Search Shield Clock
-Block Keyboard Kart Trophy`. Solid ones (use `Filled="True"`): `IconFill.Gamepad Play Star User`.
+Block Keyboard Kart Trophy Backspace Shift Stop Tray`. Solid ones (use `Filled="True"`): `IconFill.Gamepad Play Star User`.
 
 ```xml
 <c:Icon Data="{StaticResource Icon.Mic}" Width="40" Height="40" Foreground="{DynamicResource Brush.Accent}" />
@@ -199,6 +200,38 @@ nothing changed) instead of replacing a list on every `OnStateChanged`, or the f
 
 Chrome that must not take the focus: `Focusable="False"` (or the `ChromeButton` style).
 
+### Text entry and the on-screen keyboard
+
+A player with a controller (the Steam Deck, a TV) has no keyboard, so **every `TextBox` and `PasswordBox`
+gets the on-screen keyboard by itself** (`Input/TextEntry.cs`, `Controls/OnScreenKeyboard.xaml`,
+`ViewModels/KeyboardViewModel.cs`); a page does nothing for it:
+
+- A on the focused box (the last input was the controller), or a touch on it, opens the keyboard. In the
+  Steam Deck's Game Mode and under Wine with a controller connected a click counts as a touch (touch
+  arrives as the mouse there). With a real keyboard the box is typed into directly.
+- The keyboard is the top layer (above a modal): the D-pad moves over its keys with the focus card;
+  **X** backspace, **Y** space, **LB** shift (twice: caps lock), **Start** OK, **B** cancel. It edits its own
+  copy: OK writes the text back through the box's binding, cancel leaves the box as it was.
+- Enter in the box (keyboard) and OK (on-screen keyboard) both raise the bubbling event
+  `input:TextEntry.Submitted`: handle it to act on the text ("add this friend", "next step").
+
+Optional attached properties on the box:
+
+| Property | |
+| --- | --- |
+| `input:TextEntry.Title` | what is being typed, shown above the keyboard's text ("Your gamertag") |
+| `input:TextEntry.Charset` | `Any` (default) / `Gamertag` (A-Z a-z 0-9 _ -) / `Digits` (a PIN): the other keys are greyed out |
+| `MaxLength` (the box's own) | the keyboard's limit, with a counter |
+
+```xml
+<TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" MaxLength="16"
+         input:TextEntry.Title="{Binding S[setup.name.title]}" input:TextEntry.Charset="Gamertag"
+         input:TextEntry.Submitted="OnNameSubmitted" />
+```
+
+No launcher action may depend on the Guide button or on View+Menu together (Steam and the Xbox Game Bar
+take them).
+
 ## 6. Shell API (`ViewModels/ShellViewModel.cs`)
 
 A page view model derives from `PageViewModel` and gets the shell in its constructor.
@@ -231,7 +264,10 @@ public sealed class RoomsViewModel : PageViewModel
 | `ShowModal(ModalViewModel)`, `CloseModal(modal?)` | any modal: `Title`, `Body`, `Content` (a view model with a DataTemplate), `ShowProgress`, `Progress`, `Detail`, `ShowSpinner`, `Actions` (centred buttons), `Bottom` (the full-width one), `CanDismiss`, `Dismissed` |
 | `ShowUpdateModal()` | the update card (follows `Launcher.Update`) |
 | `OpenSheet(LayerViewModel)`, `CloseSheet()` | bottom sheet; its view is a DataTemplate in `Views/ViewMap.xaml` |
-| `IsFriendsOpen`, `ToggleFriends()` | friends panel |
+| `IsFriendsOpen`, `ToggleFriends()`, `OpenFriends(name?)` | friends panel (with the focus on that friend's line) |
+| `OpenSettings(category?)` | settings on a category (`profile`, `game`, `chat`, `notifications`, `appearance`, `updates`, `about`) |
+| `OpenKeyboard(KeyboardViewModel)`, `CloseKeyboard()`, `IsKeyboardOpen` | the on-screen keyboard (text boxes open it by themselves, section 5) |
+| `TrayAvailable`, `HideToTray()`, `IsQuitting`, `ToastSink` | the desktop integration's (section 10) |
 | `ShowToast(title, body, kind)` | toast (the launcher's own `Toasted` events arrive by themselves) |
 | `SetThemeAsync("light" / "dark")`, `IsDark` | theme, saved to `UiSettings.Theme` |
 | `SetFullscreenAsync(bool)`, `IsFullscreen` | saved to `UiSettings.Fullscreen` |
@@ -275,6 +311,8 @@ Add your keys to **both** files; prefix them with your area (`home.`, `settings.
 | Settings | `ViewModels/SettingsViewModel.cs`, `Views/Settings/*` |
 | Party Chat | `ViewModels/ChatViewModel.cs` (also holds `ChatSheetViewModel`), `Views/Chat/*` |
 | Shared (small, additive edits only) | `Views/ViewMap.xaml`, `ViewModels/Navigation.cs` (`Routes`), `i18n/*.json`, `Themes/Icons.xaml` |
+| On-screen keyboard | `Controls/OnScreenKeyboard.xaml(.cs)`, `ViewModels/KeyboardViewModel.cs`, `Input/TextEntry.cs` |
+| Desktop (tray, close-to-tray, notifications) | `Desktop/*`, `ViewModels/ShellViewModel.Desktop.cs` |
 | Design system and shell | `Themes/*`, `Controls/*`, `Input/*`, `MainWindow.*`, `App.xaml*`, `ViewModels/ShellViewModel*.cs`, `ViewModels/Modals.cs`, `Design/*`, `Views/Dev/*` |
 
 The stub pages already use the design system and work in the demo; replace their content freely.
@@ -295,7 +333,9 @@ If a control lacks something, add a property to it rather than restyling it in a
 settle and writes the PNG. Options: `--page home|settings|chat|setup|gallery`, `--category <key>`
 (settings), `--press a,b,x,y,up,down,left,right,start` (pressed in order before the shot: the way to
 put the focus somewhere or to walk into a sub-step), `--size WxH`, `--theme dark`, `--battery 93`,
-`--input keyboard`, `--locale pt-BR`, `-NoBuild`. Look at every state at 1920x1080 and 1280x800, light
+`--input keyboard`, `--locale pt-BR`, `-NoBuild`; `--then a,down,…` presses after the panel / sheet / modal is open
+(`--friends --then a`: the on-screen keyboard on the friend field); `--state blocked|offline|signedout|nofriends|uptodate|queued|seated`
+puts the demo in another situation; `--with-tray` shows what Windows with a tray shows ("Hide to Tray"). Look at every state at 1920x1080 and 1280x800, light
 and dark.
 
 `--demo` uses `Design/DesignLauncher.cs`: server online 12/32, a signed-in player, 8 friends, 2 incoming
@@ -305,3 +345,18 @@ every 24 s; `Devices` gives moving gradient frames and a sine microphone level. 
 gains a member, add it there too.
 
 Build only the app: `dotnet build src/Mkwmp.App --no-dependencies` (warnings are errors).
+
+## 10. The desktop: tray, closing, notifications (`Desktop/*`)
+
+`DesktopIntegration.Attach(window, shell, …)` (called by `App`) is the port of the Rust launcher's tray.rs /
+notify.rs; the shell only exposes `TrayAvailable`, `HideToTray()`, `Quit()` and `ToastSink`.
+
+| Where | Tray | Closing the window | `--tray` | A friend's news (`Toasted`) |
+| --- | --- | --- | --- | --- |
+| Windows | icon "MKWMP": left click opens, menu Open MKWMP / Quit | hides into the tray when "close to tray" is on (the first time a notification says so), else quits | starts hidden | window active: in-app toast; hidden or minimized: a Windows notification from the tray icon; behind another window: both |
+| Wine / Proton, Linux desktop | none (Wine's tray may never show; a hidden window would be lost) | quits | starts minimized | always the in-app toast |
+| Steam Deck Game Mode (`SteamGamepadUI`, `GAMESCOPE_WAYLAND_DISPLAY`, `XDG_CURRENT_DESKTOP=gamescope`) | none | quits | ignored | always the in-app toast |
+
+Power (home's dock) offers Hide to Tray (Windows) or Minimize (Wine desktop), Exit Full Screen (not in Game
+Mode) and Quit; quitting asks first only while a session holds a seat. Every quit path ends in
+`App.OnExit`, which disposes the launcher (the seat is given back). Wine is `Mkwmp.Core.Platform.WineHost.Detected`.

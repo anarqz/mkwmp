@@ -134,7 +134,16 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     public bool ShowTopBar => Page?.ShowTopBar ?? false;
 
-    public void Navigate(string route) => Nav.Navigate(route);
+    public void Navigate(string route)
+    {
+        // Party Chat is its sheet, over the current page; its introduction (a page) only until it was seen.
+        if (route == Routes.Chat && Launcher.Settings.Voice.ChatIntroDone)
+        {
+            OpenSheet(new ChatSheetViewModel(this));
+            return;
+        }
+        Nav.Navigate(route);
+    }
 
     public void Navigate(PageViewModel page) => Nav.Navigate(page);
 
@@ -379,7 +388,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     public void RefreshHints()
     {
-        if (_modal is { } modal)
+        if (_keyboard is { } keyboard)
+        {
+            Hints = keyboard.Hints ?? [];
+        }
+        else if (_modal is { } modal)
         {
             Hints = modal.Hints ?? (modal.CanDismiss ? [new Hint(PadButton.B, S["hint.back"]), new Hint(PadButton.A, S["hint.ok"])] : [new Hint(PadButton.A, S["hint.ok"])]);
         }
@@ -415,6 +428,10 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool HandleButton(PadButton button)
     {
+        if (HandleKeyboardButton(button))
+        {
+            return true; // the on-screen keyboard is above everything
+        }
         if (_modal is { } modal)
         {
             if (modal.OnButton(button))
@@ -528,7 +545,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// <summary>The window closes itself on this.</summary>
     public event EventHandler? QuitRequested;
 
-    public void Quit() => QuitRequested?.Invoke(this, EventArgs.Empty);
+    public void Quit()
+    {
+        IsQuitting = true;
+        QuitRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     // ── the launcher's events ──
 
@@ -553,7 +574,13 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     }
 
     private void OnLauncherToasted(object? sender, Toast toast) =>
-        _dispatcher.BeginInvoke(() => ShowToast(toast.Title, toast.Body, toast.Kind));
+        _dispatcher.BeginInvoke(() =>
+        {
+            if (ToastSink?.Invoke(toast) != true)
+            {
+                ShowToast(toast.Title, toast.Body, toast.Kind);
+            }
+        });
 
     private void Tick()
     {

@@ -212,17 +212,32 @@ public sealed class PageDots : FrameworkElement
     }
 }
 
-/// <summary>A battery drawn from <see cref="Percent"/>, with a bolt while <see cref="Charging"/>. 52 x 28.</summary>
+/// <summary>
+/// A battery drawn from <see cref="Percent"/> (the fill follows the level; red at 15 % or less), with
+/// a bolt and a green fill while <see cref="Charging"/>, and a plug while on the charger without
+/// filling (<see cref="PluggedIn"/>: full, or held by the system). 52 x 28.
+/// </summary>
 public sealed class BatteryIcon : FrameworkElement
 {
     public static readonly DependencyProperty PercentProperty = Dp.Register<BatteryIcon, int>(nameof(Percent), 100, null, FrameworkPropertyMetadataOptions.AffectsRender);
     public static readonly DependencyProperty ChargingProperty = Dp.Register<BatteryIcon, bool>(nameof(Charging), false, null, FrameworkPropertyMetadataOptions.AffectsRender);
+    public static readonly DependencyProperty PluggedInProperty = Dp.Register<BatteryIcon, bool>(nameof(PluggedIn), false, null, FrameworkPropertyMetadataOptions.AffectsRender);
     public static readonly DependencyProperty LowProperty = Dp.Register<BatteryIcon, Brush>(nameof(Low), Brushes.OrangeRed, null, FrameworkPropertyMetadataOptions.AffectsRender);
     public static readonly DependencyProperty GoodProperty = Dp.Register<BatteryIcon, Brush>(nameof(Good), Brushes.LimeGreen, null, FrameworkPropertyMetadataOptions.AffectsRender);
     public static readonly DependencyProperty ForegroundProperty = TextElement.ForegroundProperty.AddOwner(
         typeof(BatteryIcon), new FrameworkPropertyMetadata(Brushes.Black, FrameworkPropertyMetadataOptions.Inherits | FrameworkPropertyMetadataOptions.AffectsRender));
 
     private static readonly Geometry Bolt = Geometry.Parse("M26,4.5 L17,15 H23.5 L21,23.5 L30,13 H23.5 Z");
+
+    /// <summary>A two-prong plug, centred like the bolt.</summary>
+    private static readonly Geometry Plug = Geometry.Parse("M19.5,5 H21.5 V9 H19.5 Z M25.5,5 H27.5 V9 H25.5 Z M17,9 H30 V14 C30,17.5 27.5,19 25,19 V23 H22 V19 C19.5,19 17,17.5 17,14 Z");
+
+    /// <summary>On the charger, not filling.</summary>
+    public bool PluggedIn
+    {
+        get => (bool)GetValue(PluggedInProperty);
+        set => SetValue(PluggedInProperty, value);
+    }
 
     public int Percent
     {
@@ -269,7 +284,12 @@ public sealed class BatteryIcon : FrameworkElement
         drawingContext.DrawRoundedRectangle(fill, null, new Rect(5.5, 5.5, Math.Max(4, 36 * level), 17), 2.5, 2.5);
         if (Charging)
         {
-            drawingContext.DrawGeometry(Brushes.White, new Pen(fill, 1.2), Bolt);
+            // outlined in the frame colour so the bolt reads over the fill and over the empty part alike
+            drawingContext.DrawGeometry(Brushes.White, new Pen(Foreground, 1.4) { LineJoin = PenLineJoin.Round }, Bolt);
+        }
+        else if (PluggedIn)
+        {
+            drawingContext.DrawGeometry(Brushes.White, new Pen(fill, 1.2), Plug);
         }
     }
 }

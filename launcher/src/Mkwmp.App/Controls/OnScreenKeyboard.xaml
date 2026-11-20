@@ -1,0 +1,144 @@
+<UserControl x:Class="Mkwmp.App.Controls.OnScreenKeyboard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             Focusable="False">
+  <!-- DataContext: ShellViewModel. The on-screen keyboard of Shell.Keyboard (a KeyboardViewModel): the layer
+       above all the others. Input/TextEntry opens it for any TextBox / PasswordBox. It carries its own hint
+       bar, because it covers the shell's. -->
+  <UserControl.Resources>
+    <Style x:Key="KeyboardKey" TargetType="Button">
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="OverridesDefaultStyle" Value="True" />
+      <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+      <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
+      <Setter Property="Height" Value="82" />
+      <Setter Property="Margin" Value="4" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Grid x:Name="Root">
+              <Border x:Name="Bd" CornerRadius="12" Background="{TemplateBinding Background}" />
+              <Border x:Name="Press" CornerRadius="12" Background="{DynamicResource Brush.Pressed}" Visibility="Collapsed" />
+              <c:FocusRing IsActive="{TemplateBinding IsFocused}" CornerRadius="12" Fill="{DynamicResource Brush.Focus.Fill}" />
+              <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Stretch" RecognizesAccessKey="False" />
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsFocused" Value="True">
+                <Setter Property="Panel.ZIndex" Value="1" />
+              </Trigger>
+              <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Press" Property="Visibility" Value="Visible" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Root" Property="Opacity" Value="0.3" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </UserControl.Resources>
+
+  <Grid>
+    <Border Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnScrim"
+            Visibility="{Binding IsKeyboardOpen, Converter={StaticResource Conv.Visible}}" />
+    <c:SlideHost IsOpen="{Binding IsKeyboardOpen}" Edge="Bottom" VerticalAlignment="Bottom">
+      <!-- its DataContext is the keyboard (kept while it slides away): see the code-behind -->
+      <Border x:Name="Sheet" Background="{DynamicResource Brush.Background}" CornerRadius="30,30,0,0">
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="112" />
+          </Grid.RowDefinitions>
+
+          <!-- what is being typed -->
+          <StackPanel Width="1392" Margin="0,28,0,16">
+            <Grid Margin="6,0,6,8">
+              <TextBlock Text="{Binding Title}" Style="{StaticResource Text.Small}" FontSize="24" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding Rule}" Style="{StaticResource Text.Small}" FontSize="24" HorizontalAlignment="Center"
+                         Visibility="{Binding Title, Converter={StaticResource Conv.Visible}}" />
+              <TextBlock Text="{Binding Rule}" Style="{StaticResource Text.Small}" FontSize="24" HorizontalAlignment="Left"
+                         Visibility="{Binding Title, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
+              <TextBlock Text="{Binding Counter}" HorizontalAlignment="Right" FontSize="24" FontWeight="SemiBold">
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Small}">
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsFull}" Value="True">
+                        <Setter Property="Foreground" Value="{DynamicResource Brush.Warn}" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </TextBlock.Style>
+              </TextBlock>
+            </Grid>
+            <Border Height="88" CornerRadius="12" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Accent}"
+                    BorderThickness="2.5" Padding="26,0">
+              <Viewbox StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Text="{Binding Display}" Style="{StaticResource Text.Base}" FontSize="38" TextTrimming="None" />
+                  <Border x:Name="Caret" Width="3" Height="46" Margin="4,0,0,0" CornerRadius="1.5" Background="{DynamicResource Brush.Accent}" />
+                </StackPanel>
+              </Viewbox>
+            </Border>
+          </StackPanel>
+
+          <!-- ten columns of keys -->
+          <ItemsControl Grid.Row="1" ItemsSource="{Binding Rows}" Focusable="False" HorizontalAlignment="Center" Margin="0,0,0,10"
+                        input:FocusNav.IsGroup="True">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <ItemsControl ItemsSource="{Binding}" Focusable="False">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Button x:Name="Key" Style="{StaticResource KeyboardKey}" Width="{Binding Width}" Command="{Binding Command}"
+                              IsEnabled="{Binding IsEnabled}" input:FocusNav.IsDefault="{Binding IsDefault}">
+                        <Grid>
+                          <TextBlock x:Name="Text" Text="{Binding Label}" FontSize="36" FontWeight="SemiBold" HorizontalAlignment="Center"
+                                     VerticalAlignment="Center" Margin="0,0,0,3" />
+                          <c:Icon x:Name="Pic" Data="{Binding IconKey, Converter={StaticResource Conv.Icon}}" Width="42" Height="42" StrokeThickness="2"
+                                  Visibility="{Binding IconKey, Converter={StaticResource Conv.Visible}}" />
+                          <Viewbox Height="24" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,7,8,0" Opacity="0.75"
+                                   Visibility="{Binding HasShortcut, Converter={StaticResource Conv.Visible}}">
+                            <c:HintGlyph Button="{Binding Shortcut}"
+                                         Input="{Binding DataContext.InputKind, RelativeSource={RelativeSource AncestorType=c:OnScreenKeyboard}}"
+                                         Fill="{DynamicResource Brush.Glyph}" Ink="{DynamicResource Brush.OnGlyph}" />
+                          </Viewbox>
+                        </Grid>
+                      </Button>
+                      <DataTemplate.Triggers>
+                        <DataTrigger Binding="{Binding Kind}" Value="Accept">
+                          <Setter TargetName="Key" Property="Background" Value="{DynamicResource Brush.Accent}" />
+                          <Setter TargetName="Text" Property="Foreground" Value="{DynamicResource Brush.OnAccent}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Kind}" Value="Space">
+                          <Setter TargetName="Text" Property="FontSize" Value="26" />
+                          <Setter TargetName="Text" Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsLit}" Value="True">
+                          <Setter TargetName="Pic" Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+                          <Setter TargetName="Key" Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
+                        </DataTrigger>
+                      </DataTemplate.Triggers>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <c:HintBar Grid.Row="2" DataContext="{Binding Shell}" />
+        </Grid>
+      </Border>
+    </c:SlideHost>
+  </Grid>
+</UserControl>

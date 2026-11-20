@@ -4,8 +4,8 @@
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              Focusable="False">
-  <!-- DataContext: HomeViewModel. STUB that shows the design system: the title of the focused tile,
-       the carousel, the status, the dock. The top bar and the hint bar are the shell's. -->
+  <!-- DataContext: HomeViewModel. The title of the focused tile (centred above it by the code-behind), the
+       carousel, the session's status with the server's, the dock. The top bar and the hint bar are the shell's. -->
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="76" />
@@ -15,13 +15,17 @@
       <RowDefinition Height="1.1*" />
     </Grid.RowDefinitions>
 
-    <!-- the title of the tile under the focus -->
-    <StackPanel Orientation="Horizontal" Margin="160,0,0,0" VerticalAlignment="Bottom">
-      <c:Icon Data="{StaticResource Icon.Flag}" Width="36" Height="36" Foreground="{DynamicResource Brush.Accent}" StrokeThickness="2.4" />
-      <TextBlock Text="{Binding SelectedTitle}" Style="{StaticResource Text.Accent}" FontSize="36" FontWeight="Regular" Margin="12,0,0,0" />
+    <!-- the title of the tile under the focus: follows the tile, hidden while the focus is elsewhere -->
+    <StackPanel x:Name="TitleHost" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Bottom" Opacity="0"
+                IsHitTestVisible="False" DataContext="{Binding SelectedTile}">
+      <StackPanel.RenderTransform>
+        <TranslateTransform x:Name="TitleShift" />
+      </StackPanel.RenderTransform>
+      <c:Icon Data="{Binding IconKey, Converter={StaticResource Conv.Icon}}" Width="36" Height="36" Foreground="{DynamicResource Brush.Accent}" StrokeThickness="2.2" />
+      <TextBlock Text="{Binding Title}" Style="{StaticResource Text.Accent}" FontSize="36" FontWeight="Regular" Margin="12,0,0,0" />
     </StackPanel>
 
-    <c:SmoothScrollViewer Grid.Row="1" Style="{StaticResource Carousel}">
+    <c:SmoothScrollViewer x:Name="Carousel" Grid.Row="1" Style="{StaticResource Carousel}" ScrollChanged="OnCarouselScrolled">
       <ItemsControl ItemsSource="{Binding Tiles}" Focusable="False" Margin="134,26,134,26">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
@@ -32,52 +36,99 @@
           <DataTemplate>
             <c:Tile Title="{Binding Title}" Subtitle="{Binding Subtitle}" Badge="{Binding Badge}" Progress="{Binding Progress}"
                     Seed="{Binding Seed}" Icon="{Binding IconKey, Converter={StaticResource Conv.Icon}}"
-                    Command="{Binding Command}" GotFocus="OnTileFocus" />
+                    Command="{Binding Command}" GotFocus="OnTileFocus" LostFocus="OnTileBlur" />
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
     </c:SmoothScrollViewer>
 
-    <!-- the session's status -->
+    <!-- the session's status (a click explains what blocks PLAY), then the server's -->
     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-      <c:Spinner Width="34" Height="34" Margin="0,0,14,0" Visibility="{Binding IsBusy, Converter={StaticResource Conv.Visible}}" />
-      <Ellipse x:Name="Tone" Width="16" Height="16" Margin="0,2,14,0" VerticalAlignment="Center">
-        <Ellipse.Style>
-          <Style TargetType="Ellipse">
-            <Setter Property="Fill" Value="{DynamicResource Brush.TextFaint}" />
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding StatusTone}" Value="good">
-                <Setter Property="Fill" Value="{DynamicResource Brush.Good}" />
-              </DataTrigger>
-              <DataTrigger Binding="{Binding StatusTone}" Value="warn">
-                <Setter Property="Fill" Value="{DynamicResource Brush.Warn}" />
-              </DataTrigger>
-              <DataTrigger Binding="{Binding StatusTone}" Value="bad">
-                <Setter Property="Fill" Value="{DynamicResource Brush.Bad}" />
-              </DataTrigger>
-              <DataTrigger Binding="{Binding StatusTone}" Value="info">
-                <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </Ellipse.Style>
-      </Ellipse>
-      <TextBlock Text="{Binding StatusText}" Style="{StaticResource Text.Base}" FontSize="28" Foreground="{DynamicResource Brush.TextMuted}" />
+      <Button Style="{StaticResource ChromeButton}" Padding="18,10" Command="{Binding StatusCommand}">
+        <StackPanel Orientation="Horizontal">
+          <c:Spinner Width="30" Height="30" Margin="0,0,14,0" Visibility="{Binding IsWorking, Converter={StaticResource Conv.Visible}}" />
+          <Ellipse Width="16" Height="16" Margin="0,2,14,0" VerticalAlignment="Center"
+                   Visibility="{Binding IsSettled, Converter={StaticResource Conv.Visible}}">
+            <Ellipse.Style>
+              <Style TargetType="Ellipse">
+                <Setter Property="Fill" Value="{DynamicResource Brush.TextFaint}" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding StatusTone}" Value="good">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Good}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding StatusTone}" Value="warn">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Warn}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding StatusTone}" Value="bad">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Bad}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding StatusTone}" Value="info">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Ellipse.Style>
+          </Ellipse>
+          <TextBlock Text="{Binding StatusText}" FontSize="27" FontWeight="SemiBold" MaxWidth="980" TextTrimming="CharacterEllipsis">
+            <TextBlock.Style>
+              <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Base}">
+                <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding StatusTone}" Value="good">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Good}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding StatusTone}" Value="warn">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding StatusTone}" Value="bad">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding StatusTone}" Value="info">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </TextBlock.Style>
+          </TextBlock>
+          <c:Icon Data="{StaticResource Icon.ChevronRight}" Width="26" Height="26" Margin="8,2,0,0" StrokeThickness="2.4"
+                  Foreground="{DynamicResource Brush.TextMuted}" Visibility="{Binding HasProblem, Converter={StaticResource Conv.Visible}}" />
+        </StackPanel>
+      </Button>
+
+      <Border Width="1.5" Height="30" Margin="14,0,30,0" Background="{DynamicResource Brush.Rule}" />
+
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <c:Icon Width="30" Height="30" Margin="0,0,12,0" StrokeThickness="2" Foreground="{DynamicResource Brush.TextMuted}">
+          <c:Icon.Style>
+            <Style TargetType="c:Icon">
+              <Setter Property="Data" Value="{StaticResource Icon.SignalOff}" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding IsServerOnline}" Value="True">
+                  <Setter Property="Data" Value="{StaticResource Icon.Signal}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </c:Icon.Style>
+        </c:Icon>
+        <TextBlock Text="{Binding ServerText}" Style="{StaticResource Text.Base}" FontSize="24" FontWeight="SemiBold"
+                   Foreground="{DynamicResource Brush.TextMuted}" />
+      </StackPanel>
     </StackPanel>
 
     <Border Grid.Row="3" Style="{StaticResource Dock}">
       <StackPanel Orientation="Horizontal">
-        <c:DockButton Icon="{StaticResource Icon.Kart}" Label="{Binding S[home.play]}" Fill="{DynamicResource Brush.Accent}"
-                      Tint="{DynamicResource Brush.OnAccent}" Command="{Binding Tiles[0].Command}" />
+        <c:DockButton Icon="{Binding PlayIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding PlayLabel}"
+                      Fill="{DynamicResource Brush.Accent}" Tint="{DynamicResource Brush.OnAccent}" Command="{Binding PlayCommand}" />
         <c:DockButton Icon="{StaticResource Icon.Friends}" Label="{Binding S[home.friends]}" Tint="#FFF08A1A"
                       HasDot="{Binding HasRequests}" Command="{Binding FriendsCommand}" />
         <c:DockButton Icon="{StaticResource Icon.Headset}" Label="{Binding S[home.chat]}" Tint="#FF12A86B" Command="{Binding ChatCommand}" />
-        <c:DockButton Icon="{StaticResource Icon.Download}" Label="{Binding S[home.update]}" Tint="#FFE2498A"
+        <c:DockButton Icon="{StaticResource Icon.Download}" Label="{Binding S[home.updates]}" Tint="#FFE2498A"
                       HasDot="{Binding HasUpdate}" Command="{Binding UpdateCommand}" />
-        <c:DockButton Icon="{StaticResource Icon.Fullscreen}" Label="{Binding S[home.fullscreen]}" Tint="#FF0E9DB8"
-                      Command="{Binding FullscreenCommand}" />
+        <c:DockButton Icon="{Binding FullscreenIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding FullscreenLabel}" Tint="#FF0E9DB8"
+                      Command="{Binding FullscreenCommand}"
+                      Visibility="{Binding CanSwitchFullscreen, Converter={StaticResource Conv.Visible}}" />
         <c:DockButton Icon="{StaticResource Icon.Settings}" Label="{Binding S[home.settings]}" Command="{Binding SettingsCommand}" />
-        <c:DockButton Icon="{StaticResource Icon.Power}" Label="{Binding S[home.quit]}" Command="{Binding QuitCommand}" />
+        <c:DockButton Icon="{StaticResource Icon.Power}" Label="{Binding S[home.power]}" Command="{Binding PowerCommand}" />
       </StackPanel>
     </Border>
   </Grid>

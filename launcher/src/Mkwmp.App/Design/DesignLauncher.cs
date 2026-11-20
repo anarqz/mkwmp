@@ -2,6 +2,7 @@
 using Mkwmp.Core;
 using Mkwmp.Core.Devices;
 using Mkwmp.Core.Targets;
+using CoreStrings = Mkwmp.Core.Strings;
 
 namespace Mkwmp.App.Design;
 
@@ -41,7 +42,7 @@ public sealed class DesignLauncher : ILauncher
 
     public ProfileView Profile { get; private set; } = new("Alex", "482913", true, true, RegisterState.Idle, null, false);
 
-    public SessionView Session { get; private set; } = new(SessionState.Idle, null, 0, false, false, "Ready to play", "plain");
+    public SessionView Session { get; private set; } = new(SessionState.Idle, null, 0, false, false, CoreStrings.Ready, "plain");
 
     public FriendsView Friends { get; private set; } = new(
         true,
@@ -82,7 +83,61 @@ public sealed class DesignLauncher : ILauncher
 
     public IDeviceLab Devices => _devices;
 
-    public string? PlayProblem => null;
+    public string? PlayProblem { get; private set; }
+
+    /// <summary>For screenshots and trying things (<c>--state</c>): another situation than the happy one.</summary>
+    public void Pretend(string? state)
+    {
+        switch (state)
+        {
+            case "blocked":
+                Change(() =>
+                {
+                    PlayProblem = "mkw-recomp 0.1.13 is too old for online play: MKWMP needs 0.1.15-mkwmp";
+                    Game = Game with
+                    {
+                        Install = Game.Install! with { Version = "0.1.13" },
+                        Check = new TargetCheck(TargetStatus.Unsupported, PlayProblem,
+                            "Download the build below, extract it over your game folder (keep setup\\), then press PLAY again.",
+                            new Uri("https://github.com/anarqz/mkw-recomp/releases"), "Get 0.1.15-mkwmp"),
+                    };
+                });
+                break;
+            case "offline":
+                Change(() => Server = new ServerView(ServerState.Offline, null, 0, 0, 0, CoreStrings.Unreachable));
+                break;
+            case "signedout":
+                Change(() =>
+                {
+                    PlayProblem = CoreStrings.PickGamertag;
+                    Settings = Settings with { Name = "", Pin = "" };
+                    Profile = new ProfileView("", "", false, false, RegisterState.Idle, CoreStrings.RegisterToPlay, false);
+                    Friends = new FriendsView(false, [], [], [], null, false, false);
+                    Session = Session with { Status = CoreStrings.PickGamertag.ToUpperInvariant(), Tone = "warn" };
+                });
+                break;
+            case "nofriends":
+                Change(() => Friends = new FriendsView(true, [], [], [], null, false, false));
+                break;
+            case "uptodate":
+                Change(() => Update = new UpdateView(UpdateState.UpToDate, null, null, 0, null, CoreStrings.UpToDate));
+                break;
+            case "queued":
+                Change(() =>
+                {
+                    Session = new SessionView(SessionState.Running, SeatPhase.Queued, 2, true, false, CoreStrings.Queued(2), "warn");
+                    Server = Server with { Seated = 32, Queued = 2 };
+                });
+                break;
+            case "seated":
+                Change(() =>
+                {
+                    Session = new SessionView(SessionState.Running, SeatPhase.Seated, 0, true, false, CoreStrings.SeatedHaveFun, "good");
+                    Server = Server with { Seated = 13 };
+                });
+                break;
+        }
+    }
 
     public Task StartAsync(CancellationToken cancel)
     {
@@ -201,19 +256,19 @@ public sealed class DesignLauncher : ILauncher
         _play = play;
         try
         {
-            Change(() => Session = new SessionView(SessionState.Starting, null, 0, false, false, "Starting the game…", "info"));
+            Change(() => Session = new SessionView(SessionState.Starting, null, 0, false, false, CoreStrings.Connecting, "info"));
             await Task.Delay(1500, play.Token).ConfigureAwait(false);
-            Change(() => Session = new SessionView(SessionState.Running, SeatPhase.Joining, 0, true, false, "Joining the server…", "info"));
+            Change(() => Session = new SessionView(SessionState.Running, SeatPhase.Joining, 0, true, false, CoreStrings.TakingASeat, "info"));
             await Task.Delay(1500, play.Token).ConfigureAwait(false);
             Change(() =>
             {
-                Session = new SessionView(SessionState.Running, SeatPhase.Queued, 2, true, false, "In the queue: #2", "warn");
+                Session = new SessionView(SessionState.Running, SeatPhase.Queued, 2, true, false, CoreStrings.Queued(2), "warn");
                 Server = Server with { Queued = 2 };
             });
             await Task.Delay(1800, play.Token).ConfigureAwait(false);
             Change(() =>
             {
-                Session = new SessionView(SessionState.Running, SeatPhase.Seated, 0, true, false, "Online: you have a seat", "good");
+                Session = new SessionView(SessionState.Running, SeatPhase.Seated, 0, true, false, CoreStrings.SeatedHaveFun, "good");
                 Server = Server with { Queued = 0, Seated = 13 };
             });
         }
@@ -230,7 +285,7 @@ public sealed class DesignLauncher : ILauncher
         _play = null;
         Change(() =>
         {
-            Session = new SessionView(SessionState.Idle, null, 0, false, false, "Ready to play", "plain");
+            Session = new SessionView(SessionState.Idle, null, 0, false, false, CoreStrings.Ready, "plain");
             Server = Server with { Queued = 0, Seated = 12 };
         });
         return Task.CompletedTask;
@@ -244,7 +299,7 @@ public sealed class DesignLauncher : ILauncher
         {
             Busy = false,
             Outgoing = [.. Friends.Outgoing, new FriendRequest(name, DateTimeOffset.Now)],
-            Note = $"Request sent to {name}.",
+            Note = CoreStrings.RequestSent(name),
             NoteIsError = false,
         });
     }
@@ -330,6 +385,131 @@ public sealed class DesignLauncher : ILauncher
     }
 
     public void ShowTestToast() => Toasted?.Invoke(this, new Toast("Luna", "is racing online now", ToastKind.FriendPlaying));
+
+    // ---- the game's own settings: a few pages with every kind of row --------------------------
+
+    private static readonly GameSettingsSchema DemoGameSettings = new(
+    [
+        new("screen", "Screen", "Fullscreen",
+        [
+            GameSetting.Toggle("fullscreen", "Fullscreen", "Fills the screen with the game; F11 toggles it.", false, false),
+            GameSetting.Choice("window_size", "Window size", "Size of the game window when not fullscreen.", "1920x1080", false,
+                new("1280x720", "1280 × 720"), new("1600x900", "1600 × 900"), new("1920x1080", "1920 × 1080"), new("2560x1440", "2560 × 1440"))
+                with { VisibleWhen = new("fullscreen", ["0"]) },
+            GameSetting.Choice("vk_present", "Presentation", "How finished frames reach the screen.", "mailbox", false,
+                new("mailbox", "Mailbox"), new("fifo", "VSync"), new("immediate", "Immediate")),
+            GameSetting.Choice("aspect", "Aspect ratio", "Wider than 16:9 shows more of the course at the sides, for ultrawide screens.", "16:9", true,
+                new("16:9", "16:9"), new("window", "Window"), new("21:9", "21:9"), new("32:9", "32:9")) with { Group = "Picture" },
+            GameSetting.Choice("hdr", "HDR", "Automatic shows the game's own HDR picture when the display is in HDR.", "auto", false,
+                new("auto", "Automatic"), new("off", "Off")) with { Group = "Picture" },
+        ]),
+        new("graphics", "Graphics", "Star",
+        [
+            GameSetting.Choice("quality", "Quality", "Sets the settings below at once. Console looks like the Switch 2.", "console", true,
+                new("low", "Low", new Dictionary<string, string> { ["tex_quality"] = "quarter", ["shadow_size"] = "1024" }),
+                new("console", "Console", new Dictionary<string, string> { ["tex_quality"] = "full", ["shadow_size"] = "console" }),
+                new("high", "High", new Dictionary<string, string> { ["tex_quality"] = "full", ["shadow_size"] = "4096" }),
+                new("custom", "Custom")),
+            GameSetting.Choice("tex_quality", "Texture quality", "Detail of the game's own textures.", "full", true,
+                new("full", "Full"), new("half", "Half"), new("quarter", "Quarter")),
+            GameSetting.Choice("shadow_size", "Shadow quality", "Size of the map the game draws shadows from.", "console", true,
+                new("console", "Console"), new("1024", "1024"), new("2048", "2048"), new("4096", "4096")),
+            GameSetting.Choice("resolution", "Internal resolution", "Lines the game renders its scenes at, then scaled to the window. Lower is faster.", "original", true,
+                new("original", "Original"), new("720", "720p"), new("1080", "1080p"), new("1440", "1440p"), new("2160", "2160p")) with { Group = "Resolution" },
+            GameSetting.Choice("upscaler", "Scaling to the window", "FSR keeps edges and detail sharper than bilinear.", "bilinear", false,
+                new("fsr", "AMD FSR 1"), new("bilinear", "Bilinear")) with { Group = "Resolution" },
+            GameSetting.Range("sharpness", "FSR sharpness", "Sharpening after FSR scaling; 0 turns it off.", 80, false, 0, 100, 5, "%")
+                with { Group = "Resolution", VisibleWhen = new("upscaler", ["fsr"]) },
+            GameSetting.Choice("fps", "Frame rate", "Frames per second the game aims for.", "auto", false,
+                new("auto", "Automatic"), new("60", "60"), new("30", "30")) with { Group = "Performance", Locked = "Set by the environment variable MKW_FPS" },
+        ]),
+        new("sound", "Sound", "Volume",
+        [
+            GameSetting.Range("volume", "Volume", "Master volume of the game.", 100, false, 0, 100, 5, "%"),
+            GameSetting.Choice("audio_channels", "Speakers", "Automatic gives 5.1 surround when the sound output has 6 channels or more.", "auto", true,
+                new("auto", "Automatic"), new("2", "Stereo"), new("6", "5.1 surround")),
+            GameSetting.Toggle("background_mute", "Mute in background", "No sound while the game window is not in front.", false, false),
+        ]),
+        new("controls", "Controls", "Gamepad",
+        [
+            GameSetting.Choice("pad_layout", "Button layout", "Which button is A.", "auto", false,
+                new("auto", "Automatic"), new("nintendo", "Nintendo (A right)"), new("xbox", "Xbox (A bottom)")),
+            GameSetting.Toggle("motion", "Motion controls", "Steering by tilting the controller.", true, false),
+            GameSetting.Range("rumble_strength", "Vibration strength", "How strong the controller vibrates.", 130, false, 0, 300, 10, "%"),
+            GameSetting.Range("rumble_curve", "Vibration curve", "Lower values make weak vibration stronger.", 0.6, false, 0.2, 1.5, 0.05),
+            GameSetting.Toggle("dsu", "Motion from a DSU server", "The gyro of a controller that gives none to the game, from a Cemuhook / DSU server.", false, false),
+            GameSetting.Text("dsu_server", "DSU server", "The DSU server's address and port.", "127.0.0.1:26760", false, 64, @"[A-Za-z0-9.\-]+:[0-9]{1,5}")
+                with { VisibleWhen = new("dsu", ["1"]) },
+        ]),
+        new("advanced", "Advanced", "Settings",
+        [
+            GameSetting.Toggle("gpl", "Graphics pipeline library", "Uses the Vulkan pipeline library extension.", true, true) with { Group = "Shaders and pipelines" },
+            GameSetting.Toggle("vk_validation", "Validation layer", "Checks every Vulkan call and slows the game down a lot.", false, true) with { Group = "Vulkan" },
+        ], "These settings are for testing and troubleshooting. Change them only when you know why.", Advanced: true),
+    ], "Changes apply the next time the game starts.");
+
+    private readonly Dictionary<string, string> _gameValues = new(StringComparer.OrdinalIgnoreCase) { ["fullscreen"] = "1", ["resolution"] = "1080", ["volume"] = "85" };
+    private string? _gameSettingsNote;
+
+    public GameSettingsView GameSettings
+    {
+        get
+        {
+            lock (_gate)
+            {
+                // as the real one: nothing can be changed while the game runs
+                var running = Session.GameRunning;
+                return new GameSettingsView(
+                    DemoGameSettings,
+                    DemoGameSettings.Effective(_gameValues),
+                    new HashSet<string>(_gameValues.Keys, StringComparer.OrdinalIgnoreCase),
+                    !running,
+                    _gameSettingsNote ?? (running ? "Close the game to change its settings" : null),
+                    _gameSettingsNote is not null);
+            }
+        }
+    }
+
+    private Task ChangeGameSettings(Func<IReadOnlyDictionary<string, string?>> changes)
+    {
+        Change(() =>
+        {
+            try
+            {
+                if (Session.GameRunning)
+                {
+                    throw new LauncherException("Close the game first: it reads these settings when it starts");
+                }
+                foreach (var (id, value) in changes())
+                {
+                    if (DemoGameSettings.Find(id) is { Locked: { } why } locked)
+                    {
+                        throw new LauncherException($"{locked.Label}: {why}");
+                    }
+                    if (string.IsNullOrEmpty(value))
+                    {
+                        _gameValues.Remove(id);
+                    }
+                    else
+                    {
+                        _gameValues[id] = value;
+                    }
+                }
+                _gameSettingsNote = null;
+            }
+            catch (LauncherException e)
+            {
+                _gameSettingsNote = e.Message;
+            }
+        });
+        return Task.CompletedTask;
+    }
+
+    public Task SetGameSettingAsync(string id, string value) => ChangeGameSettings(() => DemoGameSettings.Changes(id, value));
+
+    public Task ResetGameSettingAsync(string id) => ChangeGameSettings(() => DemoGameSettings.Changes(id, null));
+
+    public Task ResetGameSettingsAsync() => ChangeGameSettings(() => _gameValues.Keys.ToDictionary(id => id, _ => (string?)null));
 
     public ValueTask DisposeAsync()
     {

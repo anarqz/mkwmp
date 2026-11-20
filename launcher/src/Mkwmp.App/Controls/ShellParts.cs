@@ -17,7 +17,8 @@ public partial class TopBar : UserControl
     {
         if (DataContext is ShellViewModel shell)
         {
-            shell.IsFriendsOpen = true;
+            // on that friend's line; the player's own disc opens the panel at its top (or on the first request)
+            shell.OpenFriends((sender as FrameworkElement)?.DataContext is TopAvatar { IsSelf: false } friend ? friend.Name : null);
         }
     }
 }

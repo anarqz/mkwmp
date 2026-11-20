@@ -3,11 +3,15 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              xmlns:input="clr-namespace:Mkwmp.App.Input"
-             Focusable="False">
-  <!-- DataContext: ChatSheetViewModel. STUB content of a BottomSheet: participant cards, then a
-       round button, a pill of round toggles, a round button. The bottom margin leaves the hint bar free. -->
-  <StackPanel Margin="0,0,0,196">
-    <ItemsControl ItemsSource="{Binding Participants}" Focusable="False" HorizontalAlignment="Center" input:FocusNav.IsGroup="True">
+             Focusable="False" x:Name="Sheet">
+  <!-- DataContext: ChatSheetViewModel. The Party Chat sheet: the player's card (the local camera
+       preview and microphone level while testing) and the friends who are racing; then Leave, the
+       pill of round toggles (voice, camera preview, microphone test) and Settings. The bottom
+       margin leaves the hint bar free. -->
+  <StackPanel Margin="0,0,0,150">
+    <TextBlock Text="{Binding Status}" Style="{StaticResource Text.Base}" FontSize="28" HorizontalAlignment="Center" Margin="72,0,72,22" />
+
+    <ItemsControl ItemsSource="{Binding Cards}" Focusable="False" HorizontalAlignment="Center" input:FocusNav.IsGroup="True">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
           <StackPanel Orientation="Horizontal" />
@@ -15,37 +19,118 @@
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
         <DataTemplate>
-          <Button Style="{StaticResource CardButton}" Padding="6" Margin="8,0" Width="452" Height="260" VerticalContentAlignment="Stretch">
+          <Button Style="{StaticResource CardButton}" Padding="6" Margin="8,0" Width="400" Height="237" VerticalContentAlignment="Stretch">
             <Grid>
               <Border CornerRadius="10" Background="{Binding Seed, Converter={StaticResource Conv.Art}}" />
-              <c:Avatar DisplayName="{Binding Name}" Width="110" Height="110" />
+              <c:Avatar x:Name="Face" DisplayName="{Binding Name}" Width="104" Height="104" />
+              <!-- your own card: the camera preview and the microphone level, while testing -->
+              <Grid x:Name="Mine" Visibility="Collapsed" DataContext="{Binding DataContext, ElementName=Sheet}">
+                <Border CornerRadius="10" Visibility="{Binding Preview.HasFrame, Converter={StaticResource Conv.Visible}}">
+                  <Border.Background>
+                    <ImageBrush ImageSource="{Binding Preview.Frame}" Stretch="UniformToFill" />
+                  </Border.Background>
+                </Border>
+                <c:Spinner Width="56" Height="56" Foreground="White" VerticalAlignment="Top" HorizontalAlignment="Right" Margin="14">
+                  <c:Spinner.Style>
+                    <Style TargetType="c:Spinner" BasedOn="{StaticResource {x:Type c:Spinner}}">
+                      <Setter Property="Visibility" Value="Collapsed" />
+                      <Style.Triggers>
+                        <MultiDataTrigger>
+                          <MultiDataTrigger.Conditions>
+                            <Condition Binding="{Binding Preview.Running}" Value="True" />
+                            <Condition Binding="{Binding Preview.HasFrame}" Value="False" />
+                          </MultiDataTrigger.Conditions>
+                          <Setter Property="Visibility" Value="Visible" />
+                        </MultiDataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </c:Spinner.Style>
+                </c:Spinner>
+                <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="10" Height="40" CornerRadius="8" Background="#B3202020" Padding="12,0"
+                        Visibility="{Binding Preview.HasFrame, Converter={StaticResource Conv.Visible}}">
+                  <TextBlock Text="{Binding S[chat.only_you]}" Foreground="White" FontSize="21" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </Border>
+                <Grid VerticalAlignment="Bottom" HorizontalAlignment="Right" Width="150" Height="12" Margin="0,0,16,30"
+                      Visibility="{Binding MicTesting, Converter={StaticResource Conv.Visible}}">
+                  <Border x:Name="Track" CornerRadius="6" Background="#80FFFFFF" />
+                  <Border CornerRadius="6" Background="#FF3DDC84" HorizontalAlignment="Left">
+                    <Border.Width>
+                      <MultiBinding Converter="{StaticResource Conv.Fraction}">
+                        <Binding Path="Mic.Level" />
+                        <Binding Path="ActualWidth" ElementName="Track" />
+                      </MultiBinding>
+                    </Border.Width>
+                  </Border>
+                </Grid>
+              </Grid>
               <Border HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10" Height="52" CornerRadius="8" Background="#B3202020"
-                      Padding="8,0,16,0">
+                      Padding="12,0,16,0">
                 <StackPanel Orientation="Horizontal">
-                  <c:Icon Data="{StaticResource Icon.Mic}" Width="30" Height="30" Foreground="White" Margin="0,0,8,0"
-                          Visibility="{Binding Speaking, Converter={StaticResource Conv.Visible}}" />
-                  <TextBlock Text="{Binding Name}" Foreground="White" FontSize="27" FontWeight="SemiBold" VerticalAlignment="Center" />
+                  <c:Icon x:Name="Tag" Data="{StaticResource Icon.Kart}" Width="30" Height="30" Foreground="White" Margin="0,0,8,0" />
+                  <TextBlock Text="{Binding Name}" Foreground="White" FontSize="27" FontWeight="SemiBold" VerticalAlignment="Center" MaxWidth="180"
+                             TextTrimming="CharacterEllipsis" />
                 </StackPanel>
               </Border>
             </Grid>
           </Button>
+          <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding IsSelf}" Value="True">
+              <Setter TargetName="Mine" Property="Visibility" Value="Visible" />
+              <Setter TargetName="Tag" Property="Data" Value="{StaticResource Icon.User}" />
+            </DataTrigger>
+          </DataTemplate.Triggers>
         </DataTemplate>
       </ItemsControl.ItemTemplate>
     </ItemsControl>
 
-    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,34,0,0" input:FocusNav.IsGroup="True">
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,30,0,0" input:FocusNav.IsGroup="True">
       <c:DockButton Icon="{StaticResource Icon.Exit}" Label="{Binding S[chat.leave]}" Fill="#FFF0521A" Tint="White"
                     Command="{Binding LeaveCommand}" VerticalAlignment="Center" />
       <Border Style="{StaticResource Dock}" Background="{DynamicResource Brush.Surface}" Margin="46,0" Padding="22,14">
         <StackPanel Orientation="Horizontal">
-          <c:DockButton Icon="{Binding CameraIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding S[chat.camera]}"
-                        Command="{Binding CameraCommand}" input:FocusNav.IsDefault="True" />
-          <c:DockButton Icon="{Binding MicIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding S[chat.mic]}"
-                        Tint="{DynamicResource Brush.Accent}" Command="{Binding MicCommand}" />
+          <c:DockButton Icon="{Binding VoiceIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding VoiceLabel}"
+                        Command="{Binding VoiceCommand}" input:FocusNav.IsDefault="True">
+            <c:DockButton.Style>
+              <Style TargetType="c:DockButton" BasedOn="{StaticResource {x:Type c:DockButton}}">
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding VoiceOn}" Value="True">
+                    <Setter Property="Tint" Value="{DynamicResource Brush.Accent}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </c:DockButton.Style>
+          </c:DockButton>
+          <c:DockButton Icon="{Binding CameraIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding CameraLabel}"
+                        Command="{Binding CameraCommand}">
+            <c:DockButton.Style>
+              <Style TargetType="c:DockButton" BasedOn="{StaticResource {x:Type c:DockButton}}">
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding CameraOn}" Value="True">
+                    <Setter Property="Tint" Value="{DynamicResource Brush.Accent}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </c:DockButton.Style>
+          </c:DockButton>
+          <c:DockButton Icon="{Binding MicIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding MicLabel}"
+                        Command="{Binding MicCommand}">
+            <c:DockButton.Style>
+              <Style TargetType="c:DockButton" BasedOn="{StaticResource {x:Type c:DockButton}}">
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding MicTesting}" Value="True">
+                    <Setter Property="Tint" Value="{DynamicResource Brush.Accent}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </c:DockButton.Style>
+          </c:DockButton>
         </StackPanel>
       </Border>
-      <c:DockButton Icon="{StaticResource Icon.Settings}" Label="{Binding S[home.settings]}" Fill="{DynamicResource Brush.Surface}"
+      <c:DockButton Icon="{StaticResource Icon.Settings}" Label="{Binding S[chat.settings]}" Fill="{DynamicResource Brush.Surface}"
                     Command="{Binding SettingsCommand}" VerticalAlignment="Center" />
     </StackPanel>
+
+    <TextBlock Text="{Binding Caption}" Style="{StaticResource Text.Caption}" FontSize="23" LineHeight="33" TextAlignment="Center"
+               HorizontalAlignment="Center" MaxWidth="1300" Margin="72,74,72,0" />
   </StackPanel>
 </UserControl>

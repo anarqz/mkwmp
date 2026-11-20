@@ -3,12 +3,95 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              xmlns:input="clr-namespace:Mkwmp.App.Input"
+             xmlns:vm="clr-namespace:Mkwmp.App.ViewModels"
              Focusable="False">
-  <!-- DataContext: FriendsPanelViewModel. STUB: the panel's surface, header and a list of people.
-       The shell slides it in from the right and dims the page; the bottom 112 units belong to the hint bar. -->
+  <!-- DataContext: FriendsPanelViewModel. Header, "add a friend", one message line, then the list in
+       sections (requests, friends, sent). The shell slides it in from the right and dims the page; the
+       bottom 112 units belong to the hint bar. -->
+  <UserControl.Resources>
+    <!-- a small button inside a line of the list -->
+    <Style x:Key="RowButton" TargetType="c:ConsoleButton" BasedOn="{StaticResource {x:Type c:ConsoleButton}}">
+      <Setter Property="Height" Value="64" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="24,0" />
+      <Setter Property="FontSize" Value="24" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <DataTemplate DataType="{x:Type vm:FriendsSection}">
+      <c:SectionHeader Text="{Binding Text}" Margin="6,22,6,6" FontSize="24" />
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:FriendRequestRow}">
+      <Grid Margin="16,8,6,8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <c:Avatar DisplayName="{Binding Name}" Width="72" Height="72" />
+        <StackPanel Grid.Column="1" Margin="20,0,12,0" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="30" />
+          <TextBlock Text="{Binding Note}" Style="{StaticResource Text.Small}" FontSize="22" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" input:FocusNav.IsGroup="True">
+          <c:ConsoleButton Style="{StaticResource RowButton}" Kind="Primary" Command="{Binding AcceptCommand}"
+                           Content="{Binding DataContext.S[friends.accept], RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                           input:FocusNav.IsDefault="{Binding IsDefault}" />
+          <c:ConsoleButton Style="{StaticResource RowButton}" Kind="Secondary" Margin="10,0,0,0" Command="{Binding DeclineCommand}"
+                           Content="{Binding DataContext.S[friends.decline], RelativeSource={RelativeSource AncestorType=ItemsControl}}" />
+        </StackPanel>
+      </Grid>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:FriendRow}">
+      <Button Style="{StaticResource CardButton}" Background="Transparent" Padding="16,10" Margin="0,2" Command="{Binding OpenCommand}"
+              input:FocusNav.IsDefault="{Binding IsDefault}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <c:Avatar DisplayName="{Binding Name}" Presence="{Binding Presence}" Width="72" Height="72" />
+          <TextBlock Grid.Column="1" Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="30" Margin="20,0,12,0" VerticalAlignment="Center" />
+          <TextBlock x:Name="State" Grid.Column="2" Text="{Binding StateText}" Style="{StaticResource Text.Base}" FontSize="24" FontWeight="SemiBold"
+                     Foreground="{DynamicResource Brush.TextFaint}" VerticalAlignment="Center" Margin="0,0,6,0" />
+        </Grid>
+      </Button>
+      <DataTemplate.Triggers>
+        <DataTrigger Binding="{Binding State}" Value="Playing">
+          <Setter TargetName="State" Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="Online">
+          <Setter TargetName="State" Property="Foreground" Value="{DynamicResource Brush.Good}" />
+        </DataTrigger>
+      </DataTemplate.Triggers>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:FriendSentRow}">
+      <Grid Margin="16,8,6,8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <c:Avatar DisplayName="{Binding Name}" Width="72" Height="72" Opacity="0.7" />
+        <StackPanel Grid.Column="1" Margin="20,0,12,0" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="30" />
+          <TextBlock Text="{Binding Note}" Style="{StaticResource Text.Small}" FontSize="22" />
+        </StackPanel>
+        <c:ConsoleButton Grid.Column="2" Style="{StaticResource RowButton}" Kind="Secondary" Command="{Binding CancelCommand}"
+                         Content="{Binding DataContext.S[friends.cancel], RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                         input:FocusNav.IsDefault="{Binding IsDefault}" />
+      </Grid>
+    </DataTemplate>
+  </UserControl.Resources>
+
   <Border Background="{DynamicResource Brush.Background}" CornerRadius="30,0,0,30">
     <Grid Margin="0,0,0,112">
       <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
       </Grid.RowDefinitions>
@@ -17,36 +100,58 @@
           <c:Icon Data="{StaticResource Icon.Friends}" Width="48" Height="48" StrokeThickness="1.8" Foreground="{DynamicResource Brush.Text}" />
           <TextBlock Text="{Binding S[friends.title]}" Style="{StaticResource Text.Title}" FontWeight="Regular" Margin="18,0,0,0" />
         </StackPanel>
-        <TextBlock Text="{Binding Summary}" Style="{StaticResource Text.Caption}" HorizontalAlignment="Right" Margin="0,14,8,0" />
+        <TextBlock Text="{Binding Summary}" Style="{StaticResource Text.Caption}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,14,8,0" />
         <Border Height="1.5" VerticalAlignment="Bottom" Background="{DynamicResource Brush.Rule}" />
       </Grid>
 
-      <c:SmoothScrollViewer Grid.Row="1" Padding="44,18,44,18">
-        <ItemsControl ItemsSource="{Binding Lines}" Focusable="False">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <Button Style="{StaticResource CardButton}" Background="Transparent" Padding="16,14" Margin="0,2">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
-                  <c:Avatar DisplayName="{Binding Name}" Presence="{Binding Presence}" Width="76" Height="76" />
-                  <StackPanel Grid.Column="1" Margin="22,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="32" />
-                    <TextBlock Text="{Binding State}" Style="{StaticResource Text.Small}" FontSize="24" />
-                  </StackPanel>
-                  <Border Grid.Column="2" Style="{StaticResource Pill}" VerticalAlignment="Center"
-                          Visibility="{Binding IsRequest, Converter={StaticResource Conv.Visible}}">
-                    <TextBlock Text="{Binding DataContext.S[friends.request], RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                               Style="{StaticResource Text.Value}" FontSize="24" FontWeight="SemiBold" />
-                  </Border>
-                </Grid>
-              </Button>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
+      <!-- add a friend by gamertag, and the one message line -->
+      <StackPanel Grid.Row="1" Margin="56,26,56,0">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="EntryBox" Text="{Binding Entry, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" IsEnabled="{Binding SignedIn}"
+                   input:TextEntry.Title="{Binding S[friends.add_title]}" input:TextEntry.Charset="Gamertag"
+                   input:TextEntry.Submitted="OnSubmitted" />
+          <StackPanel Orientation="Horizontal" IsHitTestVisible="False" VerticalAlignment="Center" Margin="26,0,0,0"
+                      Visibility="{Binding ShowPlaceholder, Converter={StaticResource Conv.Visible}}">
+            <c:Icon Data="{StaticResource Icon.UserPlus}" Width="34" Height="34" Foreground="{DynamicResource Brush.TextFaint}" />
+            <TextBlock Text="{Binding S[friends.add_hint]}" Style="{StaticResource Text.Base}" FontSize="27" Margin="14,0,0,0"
+                       Foreground="{DynamicResource Brush.TextFaint}" />
+          </StackPanel>
+          <c:ConsoleButton Grid.Column="1" Kind="Primary" Content="{Binding S[friends.add]}" MinWidth="140" Padding="26,0" Margin="14,0,0,0"
+                           Command="{Binding AddCommand}" IsEnabled="{Binding SignedIn}" />
+        </Grid>
+        <TextBlock Text="{Binding NoteText}" FontSize="23" Margin="6,14,6,0" MinHeight="62">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding NoteTone}" Value="bad">
+                  <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding NoteTone}" Value="good">
+                  <Setter Property="Foreground" Value="{DynamicResource Brush.Good}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+      </StackPanel>
+
+      <!-- loading / nobody yet -->
+      <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="56,0,56,60"
+                  Visibility="{Binding IsLoading, Converter={StaticResource Conv.Visible}}">
+        <c:Spinner Width="56" Height="56" />
+      </StackPanel>
+      <StackPanel Grid.Row="2" VerticalAlignment="Center" Margin="70,0,70,60"
+                  Visibility="{Binding IsEmpty, Converter={StaticResource Conv.Visible}}">
+        <c:Icon Data="{StaticResource Icon.Friends}" Width="96" Height="96" StrokeThickness="1.4" Foreground="{DynamicResource Brush.TextFaint}" />
+        <TextBlock Text="{Binding S[friends.empty]}" Style="{StaticResource Text.Caption}" TextAlignment="Center" Margin="0,18,0,0" />
+      </StackPanel>
+
+      <c:SmoothScrollViewer Grid.Row="2" Padding="44,0,44,18">
+        <ItemsControl ItemsSource="{Binding Rows}" Focusable="False" input:FocusNav.IsGroup="True" />
       </c:SmoothScrollViewer>
     </Grid>
   </Border>

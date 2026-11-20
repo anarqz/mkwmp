@@ -47,6 +47,9 @@
 
       <!-- 3: the modal, over everything but the toasts -->
       <c:ModalHost x:Name="ModalLayer" />
+
+      <!-- 4: the on-screen keyboard (Input/TextEntry opens it for any text box) -->
+      <c:OnScreenKeyboard x:Name="KeyboardLayer" />
       <c:ToastHost />
     </Grid>
   </Grid>

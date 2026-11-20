@@ -1,16 +1,25 @@
 // Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
-using System.Runtime.InteropServices;
+using Mkwmp.App.Platform;
 
 namespace Mkwmp.App.ViewModels;
 
-/// <summary>The battery of the top bar (GetSystemPowerStatus; Wine answers it on the Steam Deck).</summary>
+/// <summary>
+/// The battery and network of the top bar (<see cref="SystemStatus"/>: Windows APIs, or the Linux
+/// kernel's files under Wine/Proton). Read off the UI thread every 5 s, and at once when Windows
+/// reports a power change, so plugging the charger in or out shows up right away.
+/// </summary>
 public sealed partial class ShellViewModel
 {
     private DateTime _nextBatteryRead;
     private bool _hasBattery;
     private int _batteryPercent;
-    private bool _batteryCharging;
-    private int? _batteryOverride;
+    private PowerSource _power;
+    private NetworkKind _network = NetworkKind.Wifi;
+    private int _wifiBars = 3;
+    private BatteryStatus? _batteryOverride;
+    private NetworkStatus? _networkOverride;
+    private bool _powerEventsHooked;
+    private int _reading;
 
     /// <summary>False on a desktop: the top bar hides the battery.</summary>
     public bool HasBattery
@@ -25,62 +34,126 @@ public sealed partial class ShellViewModel
         private set => Set(ref _batteryPercent, value);
     }
 
-    public bool BatteryCharging
+    public PowerSource Power
     {
-        get => _batteryCharging;
-        private set => Set(ref _batteryCharging, value);
+        get => _power;
+        private set
+        {
+            if (Set(ref _power, value))
+            {
+                Raise(nameof(BatteryCharging));
+                Raise(nameof(BatteryPluggedIn));
+            }
+        }
     }
 
-    /// <summary>For screenshots (<c>--battery 93</c>): shows this instead of the real one.</summary>
-    public void OverrideBattery(int percent)
+    /// <summary>The battery is filling (bolt, green fill).</summary>
+    public bool BatteryCharging => _power == PowerSource.Charging;
+
+    /// <summary>On the charger without filling (plug).</summary>
+    public bool BatteryPluggedIn => _power == PowerSource.PluggedIn;
+
+    /// <summary>Wi-Fi, wired or offline (the machine's link; the server's state is on the Play tile).</summary>
+    public NetworkKind Network
     {
-        _batteryOverride = percent;
-        ReadBattery();
+        get => _network;
+        private set
+        {
+            if (Set(ref _network, value))
+            {
+                Raise(nameof(NetworkOffline));
+            }
+        }
+    }
+
+    /// <summary>Wi-Fi strength 0..3.</summary>
+    public int WifiBars
+    {
+        get => _wifiBars;
+        private set => Set(ref _wifiBars, value);
+    }
+
+    public bool NetworkOffline => _network == NetworkKind.Offline;
+
+    /// <summary>For screenshots (<c>--battery 93</c>, <c>40c</c>, <c>100p</c>): shows this instead of the real one.</summary>
+    public void OverrideBattery(int percent, PowerSource power = PowerSource.OnBattery)
+    {
+        _batteryOverride = new BatteryStatus(percent, power);
+        Apply(_batteryOverride, null);
+    }
+
+    /// <summary>For screenshots (<c>--network wifi2</c>, <c>wired</c>, <c>offline</c>).</summary>
+    public void OverrideNetwork(NetworkStatus network)
+    {
+        ArgumentNullException.ThrowIfNull(network);
+        _networkOverride = network;
+        Network = network.Kind;
+        WifiBars = network.Bars;
     }
 
     private void ReadBattery()
     {
-        _nextBatteryRead = DateTime.UtcNow + TimeSpan.FromSeconds(20);
-        if (_batteryOverride is { } forced)
+        _nextBatteryRead = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        HookPowerEvents();
+        if (Interlocked.Exchange(ref _reading, 1) == 1)
         {
-            HasBattery = true;
-            BatteryPercent = forced;
-            BatteryCharging = false;
+            return; // the last read is still running (a slow WLAN or /sys answer)
+        }
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var battery = _batteryOverride ?? SystemStatus.ReadBattery();
+                var network = _networkOverride ?? SystemStatus.ReadNetwork();
+                // an override set while this read ran still wins (screenshots)
+                dispatcher?.BeginInvoke(() => Apply(_batteryOverride ?? battery, _networkOverride ?? network));
+            }
+            finally
+            {
+                Volatile.Write(ref _reading, 0);
+            }
+        });
+    }
+
+    private void Apply(BatteryStatus? battery, NetworkStatus? network)
+    {
+        HasBattery = battery is not null;
+        if (battery is not null)
+        {
+            BatteryPercent = battery.Percent;
+            Power = battery.Source;
+        }
+        if (network is not null)
+        {
+            Network = network.Kind;
+            WifiBars = network.Bars;
+        }
+    }
+
+    private void HookPowerEvents()
+    {
+        if (_powerEventsHooked)
+        {
             return;
         }
+        _powerEventsHooked = true;
         try
         {
-            // BatteryFlag 128: no system battery; 255 / percent 255: unknown
-            if (GetSystemPowerStatus(out var status) && (status.BatteryFlag & 128) == 0 && status.BatteryFlag != 255 && status.BatteryLifePercent <= 100)
+            // raised on a system thread: read again on the UI thread
+            Microsoft.Win32.SystemEvents.PowerModeChanged += (_, e) =>
             {
-                HasBattery = true;
-                BatteryPercent = status.BatteryLifePercent;
-                BatteryCharging = status.ACLineStatus == 1;
-                return;
-            }
+                if (e.Mode == Microsoft.Win32.PowerModes.StatusChange)
+                {
+                    System.Windows.Application.Current?.Dispatcher.BeginInvoke(ReadBattery);
+                }
+            };
+            System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged += (_, _) =>
+                System.Windows.Application.Current?.Dispatcher.BeginInvoke(ReadBattery);
         }
-        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
+        catch (Exception e) when (e is InvalidOperationException or System.Runtime.InteropServices.ExternalException or System.Net.NetworkInformation.NetworkInformationException)
         {
-            // no battery to show
+            // no system events (some Wine setups): the 5 s read still runs
         }
-        HasBattery = false;
     }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct SystemPowerStatus
-    {
-        public byte ACLineStatus;
-        public byte BatteryFlag;
-        public byte BatteryLifePercent;
-        public byte SystemStatusFlag;
-        public uint BatteryLifeTime;
-        public uint BatteryFullLifeTime;
-    }
-
-#pragma warning disable SYSLIB1054 // plain DllImport: blittable, and no unsafe code in this project
-    [DllImport("kernel32.dll")]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
-#pragma warning restore SYSLIB1054
 }

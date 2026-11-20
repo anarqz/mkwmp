@@ -57,13 +57,28 @@ public sealed class ConsoleSlider : Slider
         UpdateText();
     }
 
-    private void UpdateText() => ValueText = Math.Round(Value).ToString(CultureInfo.CurrentCulture) + Unit;
+    /// <summary>The value's text as the page wants it ("1.25x"), instead of the rounded number and <see cref="Unit"/>. Null or "": the default.</summary>
+    public string? DisplayText
+    {
+        get => (string?)GetValue(DisplayTextProperty);
+        set => SetValue(DisplayTextProperty, value);
+    }
+
+    public static readonly DependencyProperty DisplayTextProperty = Dp.Register<ConsoleSlider, string?>(nameof(DisplayText), null, (d, _) => ((ConsoleSlider)d).UpdateText());
+
+    private void UpdateText() => ValueText = string.IsNullOrEmpty(DisplayText) ? Math.Round(Value).ToString(CultureInfo.CurrentCulture) + Unit : DisplayText;
 }
 
 /// <summary>One entry of a <see cref="CategoryList"/>.</summary>
 /// <param name="Key">What the page switches on.</param>
 /// <param name="SeparatorBefore">A thin rule above this entry (a new group).</param>
-public sealed record CategoryEntry(string Key, string Title, bool SeparatorBefore = false);
+/// <param name="Heading">A small group heading above this entry ("Game settings"); "" for none.</param>
+/// <param name="Icon">An icon before the title, by its name in Icons.xaml without "Icon." ("Volume"); "" for none.</param>
+public sealed record CategoryEntry(string Key, string Title, bool SeparatorBefore = false, string Heading = "", string Icon = "")
+{
+    /// <summary>The resource key of <see cref="Icon"/> ("Icon.Volume"), or "".</summary>
+    public string IconKey => Icon.Length == 0 ? "" : "Icon." + Icon;
+}
 
 /// <summary>
 /// The left navigation of a settings page: <c>ItemsSource</c> of <see cref="CategoryEntry"/>,

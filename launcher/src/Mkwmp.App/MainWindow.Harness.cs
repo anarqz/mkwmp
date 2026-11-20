@@ -64,9 +64,23 @@ public partial class MainWindow
         var keyboard = string.Equals(App.Option(args, "--input"), "keyboard", StringComparison.OrdinalIgnoreCase);
         _vm.InputKind = keyboard ? InputKind.Keyboard : InputKind.Gamepad;
         _vm.GamepadConnected = !keyboard;
-        if (int.TryParse(App.Option(args, "--battery"), CultureInfo.InvariantCulture, out var battery))
+        // --battery 93 | 40c (charging) | 100p (on the charger, full)
+        if (App.Option(args, "--battery") is { Length: > 0 } batteryArg
+            && int.TryParse(batteryArg.TrimEnd('c', 'p'), CultureInfo.InvariantCulture, out var battery))
         {
-            _vm.OverrideBattery(battery);
+            _vm.OverrideBattery(battery, batteryArg[^1] switch
+            {
+                'c' => Platform.PowerSource.Charging,
+                'p' => Platform.PowerSource.PluggedIn,
+                _ => Platform.PowerSource.OnBattery,
+            });
+        }
+        // --network wifi0..wifi3 | wired | offline
+        if (App.Option(args, "--network") is { Length: > 0 } net)
+        {
+            _vm.OverrideNetwork(net.StartsWith("wifi", StringComparison.OrdinalIgnoreCase)
+                ? new Platform.NetworkStatus(Platform.NetworkKind.Wifi, int.TryParse(net[4..], CultureInfo.InvariantCulture, out var bars) ? bars : 3)
+                : new Platform.NetworkStatus(net.Equals("wired", StringComparison.OrdinalIgnoreCase) ? Platform.NetworkKind.Wired : Platform.NetworkKind.Offline, 0));
         }
         if (App.Option(args, "--theme") is { } theme)
         {
@@ -103,6 +117,9 @@ public partial class MainWindow
 
     private async Task ShootAsync(string[] args, string path, int width, int height)
     {
+        // --state blocked|offline|signedout|nofriends|uptodate|queued|seated: another demo situation; --with-tray: as on Windows
+        (_vm.Launcher as DesignLauncher)?.Pretend(App.Option(args, "--state"));
+        _vm.TrayAvailable = args.Contains("--with-tray");
         await Task.Delay(350).ConfigureAwait(true);
         SyncFocus();
         foreach (var name in (App.Option(args, "--press") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -120,7 +137,14 @@ public partial class MainWindow
         }
         if (args.Contains("--sheet"))
         {
-            _vm.OpenSheet(new ChatSheetViewModel(_vm));
+            var sheet = new ChatSheetViewModel(_vm);
+            _vm.OpenSheet(sheet);
+            if (args.Contains("--sheet-tests"))
+            {
+                // the sheet with its camera preview and microphone test running
+                sheet.CameraCommand.Execute(null);
+                sheet.MicCommand.Execute(null);
+            }
         }
         switch (App.Option(args, "--modal"))
         {
@@ -147,6 +171,16 @@ public partial class MainWindow
         }
         await Task.Delay(300).ConfigureAwait(true);
         SyncFocus();
+        // --then a,down,…: pressed after the panel / sheet / modal is open (into the on-screen keyboard, a menu of the panel)
+        foreach (var name in (App.Option(args, "--then") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (Enum.TryParse<PadButton>(name, ignoreCase: true, out var button))
+            {
+                OnButton(button);
+                await Task.Delay(320).ConfigureAwait(true);
+                SyncFocus();
+            }
+        }
         await Task.Delay(1300).ConfigureAwait(true);
 
         Root.UpdateLayout();

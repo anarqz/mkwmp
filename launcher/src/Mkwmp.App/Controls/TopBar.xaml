@@ -5,7 +5,7 @@
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              Height="188" Focusable="False">
   <!-- DataContext: ShellViewModel. Left: the player and the friends who are on (each opens the
-       friends panel). Right: clock, server connection, battery (hidden without one). -->
+       friends panel). Right: clock, network link, battery (hidden without one). -->
   <Grid Margin="62,34,72,0">
     <ItemsControl ItemsSource="{Binding TopAvatars}" Focusable="False" VerticalAlignment="Center" HorizontalAlignment="Left"
                   input:FocusNav.IsGroup="True">
@@ -25,26 +25,14 @@
 
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
       <TextBlock Text="{Binding ClockText}" Style="{StaticResource Text.Base}" FontSize="40" FontWeight="SemiBold" />
-      <c:Icon x:Name="Net" Width="46" Height="46" Margin="30,0,0,0" StrokeThickness="2.2" VerticalAlignment="Center"
-              Foreground="{DynamicResource Brush.Text}">
-        <c:Icon.Style>
-          <Style TargetType="c:Icon">
-            <Setter Property="Data" Value="{StaticResource Icon.SignalOff}" />
-            <Setter Property="Opacity" Value="0.45" />
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding IsServerOnline}" Value="True">
-                <Setter Property="Data" Value="{StaticResource Icon.Signal}" />
-                <Setter Property="Opacity" Value="1" />
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </c:Icon.Style>
-      </c:Icon>
+      <!-- the machine's link (Wi-Fi bars / wired / offline), read on Windows and under Proton alike -->
+      <c:NetworkIcon x:Name="Net" Margin="30,0,0,0" VerticalAlignment="Center" Kind="{Binding Network}" Bars="{Binding WifiBars}"
+                     Foreground="{DynamicResource Brush.Text}" />
       <StackPanel Orientation="Horizontal" Margin="30,0,0,0" VerticalAlignment="Center"
                   Visibility="{Binding HasBattery, Converter={StaticResource Conv.Visible}}">
         <TextBlock Style="{StaticResource Text.Base}" FontSize="40" FontWeight="SemiBold" Text="{Binding BatteryPercent}" />
         <TextBlock Style="{StaticResource Text.Base}" FontSize="26" FontWeight="SemiBold" Text="%" VerticalAlignment="Bottom" Margin="2,0,0,7" />
-        <c:BatteryIcon Margin="18,2,0,0" VerticalAlignment="Center" Percent="{Binding BatteryPercent}" Charging="{Binding BatteryCharging}"
+        <c:BatteryIcon Margin="18,2,0,0" VerticalAlignment="Center" Percent="{Binding BatteryPercent}" Charging="{Binding BatteryCharging}" PluggedIn="{Binding BatteryPluggedIn}"
                        Foreground="{DynamicResource Brush.Text}" Good="{DynamicResource Brush.Good}" Low="{DynamicResource Brush.Bad}" />
       </StackPanel>
     </StackPanel>

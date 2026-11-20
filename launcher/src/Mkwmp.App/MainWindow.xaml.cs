@@ -82,7 +82,7 @@ public partial class MainWindow : Window
         }
 
         ApplyFullscreen();
-        shell.Nav.ResetTo(shell.Settings.Ui.SetupDone ? Routes.Home : Routes.Setup);
+        shell.Nav.ResetTo(shell.Settings.Ui.SetupDone && shell.Settings.AdultConsent ? Routes.Home : Routes.Setup);
         if (App.Option(args, "--page") is { } page)
         {
             shell.Navigate(page);
@@ -138,10 +138,11 @@ public partial class MainWindow : Window
 
     /// <summary>The layer that has the input now: modal, sheet, friends panel, else the page.</summary>
     private FrameworkElement ActiveRoot =>
-        _vm.IsModalOpen ? ModalLayer : _vm.IsSheetOpen ? SheetLayer : _vm.IsFriendsOpen ? FriendsLayer : BaseLayer;
+        _vm.IsKeyboardOpen ? KeyboardLayer : _vm.IsModalOpen ? ModalLayer : _vm.IsSheetOpen ? SheetLayer : _vm.IsFriendsOpen ? FriendsLayer : BaseLayer;
 
     private int DepthOf(FrameworkElement? root) =>
-        ReferenceEquals(root, ModalLayer) ? 3 : ReferenceEquals(root, SheetLayer) ? 2 : ReferenceEquals(root, FriendsLayer) ? 1 : 0;
+        ReferenceEquals(root, KeyboardLayer) ? 4
+        : ReferenceEquals(root, ModalLayer) ? 3 : ReferenceEquals(root, SheetLayer) ? 2 : ReferenceEquals(root, FriendsLayer) ? 1 : 0;
 
     private void OnShellPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -150,7 +151,7 @@ public partial class MainWindow : Window
             case nameof(ShellViewModel.IsFullscreen):
                 ApplyFullscreen();
                 break;
-            case nameof(ShellViewModel.Modal) or nameof(ShellViewModel.Sheet) or nameof(ShellViewModel.IsFriendsOpen):
+            case nameof(ShellViewModel.Modal) or nameof(ShellViewModel.Sheet) or nameof(ShellViewModel.IsFriendsOpen) or nameof(ShellViewModel.Keyboard):
                 Dispatcher.BeginInvoke(DispatcherPriority.Loaded, SyncFocus);
                 break;
             case nameof(ShellViewModel.InputKind):
@@ -266,6 +267,9 @@ public partial class MainWindow : Window
                 break;
             case ListBoxItem:
                 FocusNav.Move(root, NavDirection.Right);
+                break;
+            case TextBox or PasswordBox:
+                TextEntry.Activate(current, _vm); // the on-screen keyboard for a controller; Enter submits
                 break;
         }
     }

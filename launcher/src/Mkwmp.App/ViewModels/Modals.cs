@@ -227,6 +227,7 @@ public sealed class UpdateModal : ModalViewModel, IDisposable
             default:
                 Title = s["update.uptodate"];
                 Body = s.Format("update.uptodate_body", ("version", _shell.Launcher.Version));
+                Actions.Add(new ModalAction(s["update.check"], () => RelayCommand.Async(_shell.Launcher.CheckForUpdatesAsync).Execute(null), ButtonKind.Outline, isDefault: true));
                 Bottom = close;
                 break;
         }

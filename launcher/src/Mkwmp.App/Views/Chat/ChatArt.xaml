@@ -1,0 +1,104 @@
+<UserControl x:Class="Mkwmp.App.Views.Chat.ChatArt"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             Focusable="False" Width="560" Height="440">
+  <!-- DataContext: ChatViewModel. MKWMP's own pictures for the Party Chat introduction, drawn here
+       from plain shapes (people as a head and shoulders, a handheld, speech bubbles): one per page. -->
+  <UserControl.Resources>
+    <!-- a person: head and shoulders in the Foreground colour -->
+    <ControlTemplate x:Key="Bust" TargetType="ContentControl">
+      <Viewbox Stretch="Uniform">
+        <Canvas Width="100" Height="100">
+          <Path Data="M8,100 C8,72 28,62 50,62 C72,62 92,72 92,100 Z" Fill="{TemplateBinding Foreground}" />
+          <Ellipse Canvas.Left="27" Canvas.Top="10" Width="46" Height="46" Fill="{TemplateBinding Foreground}" />
+          <Ellipse Canvas.Left="27" Canvas.Top="10" Width="46" Height="46" Fill="#33FFFFFF" />
+        </Canvas>
+      </Viewbox>
+    </ControlTemplate>
+    <Style TargetType="ContentControl">
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Template" Value="{StaticResource Bust}" />
+    </Style>
+    <SolidColorBrush x:Key="Art.Orange" Color="#FFF08A1A" />
+    <SolidColorBrush x:Key="Art.Blue" Color="#FF2F6BFF" />
+    <SolidColorBrush x:Key="Art.Violet" Color="#FF7A4DFF" />
+    <SolidColorBrush x:Key="Art.Pink" Color="#FFE2498A" />
+    <SolidColorBrush x:Key="Art.Green" Color="#FF12A86B" />
+    <SolidColorBrush x:Key="Art.Ink" Color="#FF23262D" />
+  </UserControl.Resources>
+
+  <Grid>
+    <!-- 1: you, a handheld in your hands, and your friends in a speech bubble -->
+    <Canvas Visibility="{Binding Step, Converter={StaticResource Conv.Visible}, ConverterParameter='=0'}">
+      <Ellipse Canvas.Left="250" Canvas.Top="6" Width="300" Height="270" Fill="{DynamicResource Brush.Surface}" Stroke="{StaticResource Art.Orange}" StrokeThickness="6" />
+      <Path Data="M286,214 L232,268 L318,246 Z" Fill="{DynamicResource Brush.Surface}" Stroke="{StaticResource Art.Orange}" StrokeThickness="6" StrokeLineJoin="Round" />
+      <Path Data="M290,206 L262,240 L322,238 Z" Fill="{DynamicResource Brush.Surface}" />
+      <ContentControl Canvas.Left="292" Canvas.Top="44" Width="104" Height="104" Foreground="{StaticResource Art.Violet}" />
+      <ContentControl Canvas.Left="406" Canvas.Top="44" Width="104" Height="104" Foreground="{StaticResource Art.Green}" />
+      <ContentControl Canvas.Left="350" Canvas.Top="138" Width="104" Height="104" Foreground="{StaticResource Art.Pink}" />
+      <!-- little "talking" ticks -->
+      <Path Data="M300,40 L292,26 M324,30 L322,14 M508,40 L518,26" Stroke="{StaticResource Art.Orange}" StrokeThickness="5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+
+      <ContentControl Canvas.Left="6" Canvas.Top="150" Width="270" Height="270" Foreground="{StaticResource Art.Blue}" />
+      <!-- the handheld -->
+      <Border Canvas.Left="64" Canvas.Top="330" Width="210" Height="96" CornerRadius="26" Background="{StaticResource Art.Ink}" />
+      <Border Canvas.Left="112" Canvas.Top="344" Width="114" Height="68" CornerRadius="8" Background="#FF4F8DFF" />
+      <Ellipse Canvas.Left="80" Canvas.Top="366" Width="22" Height="22" Fill="#FF8B93A1" />
+      <Ellipse Canvas.Left="236" Canvas.Top="366" Width="22" Height="22" Fill="#FF8B93A1" />
+      <Path Data="M286,318 L306,304 M292,340 L316,336" Stroke="{StaticResource Art.Orange}" StrokeThickness="5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+    </Canvas>
+
+    <!-- 2: voice: a headset on, sound going both ways -->
+    <Canvas Visibility="{Binding Step, Converter={StaticResource Conv.Visible}, ConverterParameter='=1'}">
+      <ContentControl Canvas.Left="20" Canvas.Top="96" Width="320" Height="320" Foreground="{StaticResource Art.Blue}" />
+      <!-- the headset: band, cups, microphone arm -->
+      <Path Data="M102,214 C102,96 258,96 258,214" Stroke="{StaticResource Art.Ink}" StrokeThickness="14" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+      <Border Canvas.Left="84" Canvas.Top="190" Width="38" Height="70" CornerRadius="16" Background="{StaticResource Art.Ink}" />
+      <Border Canvas.Left="238" Canvas.Top="190" Width="38" Height="70" CornerRadius="16" Background="{StaticResource Art.Ink}" />
+      <Path Data="M104,256 C104,300 150,304 176,290" Stroke="{StaticResource Art.Ink}" StrokeThickness="8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+      <Ellipse Canvas.Left="170" Canvas.Top="276" Width="26" Height="26" Fill="{StaticResource Art.Orange}" />
+      <!-- the bubble with a voice wave -->
+      <Border Canvas.Left="330" Canvas.Top="40" Width="216" Height="150" CornerRadius="40" Background="{DynamicResource Brush.Surface}" BorderBrush="{StaticResource Art.Orange}" BorderThickness="6" />
+      <Path Data="M360,180 L326,218 L404,186 Z" Fill="{DynamicResource Brush.Surface}" Stroke="{StaticResource Art.Orange}" StrokeThickness="6" StrokeLineJoin="Round" />
+      <Path Data="M362,176 L350,196 L400,180 Z" Fill="{DynamicResource Brush.Surface}" />
+      <Path Data="M372,115 V115 M396,98 V132 M420,82 V148 M444,100 V130 M468,90 V140 M492,106 V124 M516,112 V118"
+            Stroke="{StaticResource Art.Violet}" StrokeThickness="10" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+      <!-- a mute badge: you decide -->
+      <Border Canvas.Left="392" Canvas.Top="262" Width="120" Height="120" CornerRadius="60" Background="{DynamicResource Brush.Accent}" BorderBrush="{DynamicResource Brush.Background}" BorderThickness="6">
+        <c:Icon Data="{StaticResource Icon.Mic}" Width="62" Height="62" Foreground="{DynamicResource Brush.OnAccent}" />
+      </Border>
+    </Canvas>
+
+    <!-- 3: camera: the race on the screen, friends in small pictures -->
+    <Canvas Visibility="{Binding Step, Converter={StaticResource Conv.Visible}, ConverterParameter='=2'}">
+      <Border Canvas.Left="10" Canvas.Top="40" Width="470" Height="290" CornerRadius="22" Background="{StaticResource Art.Ink}" />
+      <Border Canvas.Left="26" Canvas.Top="56" Width="438" Height="258" CornerRadius="10">
+        <Border.Background>
+          <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#FF6FC3FF" Offset="0" />
+            <GradientStop Color="#FFBFE6FF" Offset="0.55" />
+            <GradientStop Color="#FF57B36A" Offset="0.56" />
+            <GradientStop Color="#FF3F9A55" Offset="1" />
+          </LinearGradientBrush>
+        </Border.Background>
+      </Border>
+      <!-- the road -->
+      <Path Data="M200,200 L290,200 L420,314 L70,314 Z" Fill="#FF5E6470" />
+      <Path Data="M245,206 V226 M245,246 V272 M245,292 V314" Stroke="White" StrokeThickness="6" StrokeDashCap="Round" />
+      <Border Canvas.Left="250" Canvas.Top="232" Width="74" Height="34" CornerRadius="10" Background="{StaticResource Art.Orange}" />
+      <Ellipse Canvas.Left="256" Canvas.Top="256" Width="22" Height="22" Fill="{StaticResource Art.Ink}" />
+      <Ellipse Canvas.Left="296" Canvas.Top="256" Width="22" Height="22" Fill="{StaticResource Art.Ink}" />
+      <!-- two small camera pictures -->
+      <Border Canvas.Left="330" Canvas.Top="250" Width="196" Height="136" CornerRadius="14" Background="{DynamicResource Brush.Surface}" BorderBrush="{StaticResource Art.Orange}" BorderThickness="6">
+        <ContentControl Width="104" Height="104" VerticalAlignment="Bottom" Foreground="{StaticResource Art.Pink}" />
+      </Border>
+      <Border Canvas.Left="356" Canvas.Top="96" Width="170" Height="120" CornerRadius="14" Background="{DynamicResource Brush.Surface}" BorderBrush="{StaticResource Art.Violet}" BorderThickness="6">
+        <ContentControl Width="92" Height="92" VerticalAlignment="Bottom" Foreground="{StaticResource Art.Green}" />
+      </Border>
+      <Border Canvas.Left="40" Canvas.Top="300" Width="110" Height="110" CornerRadius="55" Background="{DynamicResource Brush.Accent}" BorderBrush="{DynamicResource Brush.Background}" BorderThickness="6">
+        <c:Icon Data="{StaticResource Icon.Camera}" Width="58" Height="58" Foreground="{DynamicResource Brush.OnAccent}" />
+      </Border>
+    </Canvas>
+  </Grid>
+</UserControl>
