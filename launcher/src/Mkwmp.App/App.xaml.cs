@@ -52,7 +52,10 @@ public partial class App : Application
     {
         if (demo)
         {
-            return new DesignLauncher();
+            var args = Environment.GetCommandLineArgs();
+            return new DesignLauncher(args.Contains("--demo-fresh", StringComparer.OrdinalIgnoreCase) ? DemoStart.Fresh
+                : args.Contains("--demo-offline", StringComparer.OrdinalIgnoreCase) ? DemoStart.Offline
+                : DemoStart.Online);
         }
         var folder = LauncherOptions.LauncherFolder;
         return new Launcher(options.ConfigPath ?? LauncherOptions.DefaultConfigPath(folder), folder, options);
@@ -62,7 +65,7 @@ public partial class App : Application
     {
         base.OnStartup(e);
         var args = e.Args;
-        var demo = args.Contains("--demo", StringComparer.OrdinalIgnoreCase);
+        var demo = args.Any(a => a.StartsWith("--demo", StringComparison.OrdinalIgnoreCase));
         var options = LauncherOptions.Parse(CoreArguments(args));
         if (options.ShowVersion || options.ShowHelp || options.SaveLogs || options.Headless)
         {

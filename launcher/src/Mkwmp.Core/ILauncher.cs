@@ -35,6 +35,14 @@ public interface ILauncher : IAsyncDisposable
     /// <summary>The first thing that blocks PLAY (verbatim), or null.</summary>
     string? PlayProblem { get; }
 
+    /// <summary>
+    /// Online features are on: a server address is set (Settings › Online). Off by default on a
+    /// fresh install: the launcher is then a shell for the game (PLAY starts it offline, no seat,
+    /// no server contacted), and friends, seats, voice/camera, reports and the server profile stay
+    /// locked behind "Configure online".
+    /// </summary>
+    bool OnlineEnabled => !string.IsNullOrWhiteSpace(Settings.Server);
+
     /// <summary>Starts the background loops (status, friends, notifications, local API, update check).</summary>
     Task StartAsync(CancellationToken cancel);
 

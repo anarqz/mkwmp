@@ -28,8 +28,31 @@ public sealed class DesignLauncher : ILauncher
 
     public string Version => "1.4.0";
 
+    /// <summary>
+    /// The demo's starting point: <c>--demo</c> = online and set up; <c>--demo-offline</c> = set up,
+    /// no server (online features locked); <c>--demo-fresh</c> = a first start (no profile, no
+    /// game, no server: the welcome flow).
+    /// </summary>
+    public DesignLauncher(DemoStart start = DemoStart.Online)
+    {
+        Start = start;
+        if (start == DemoStart.Offline)
+        {
+            Settings = Settings with { Server = "", Pin = "", AdultConsent = false };
+            Server = new ServerView(ServerState.NotAsked, null, 0, 0, 0, null);
+        }
+        else if (start == DemoStart.Fresh)
+        {
+            Settings = new LauncherSettings { Server = "", Ui = new UiSettings { SetupDone = false } };
+            Server = new ServerView(ServerState.NotAsked, null, 0, 0, 0, null);
+        }
+    }
+
+    public DemoStart Start { get; }
+
     public LauncherSettings Settings { get; private set; } = new()
     {
+        Server = "https://mkw.example.net",
         Name = "Alex",
         Pin = "482913",
         Game = @"C:\Games\Mario Kart World\mkw-recomp",
@@ -854,3 +877,6 @@ public sealed class DesignDeviceLab : IDeviceLab
 
     public void Dispose() => StopMicTest();
 }
+
+/// <summary>Where the demo starts (see <see cref="DesignLauncher(DemoStart)"/>).</summary>
+public enum DemoStart { Online, Offline, Fresh }
