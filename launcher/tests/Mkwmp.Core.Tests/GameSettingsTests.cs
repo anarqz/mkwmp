@@ -535,6 +535,32 @@ public class GameSettingsTests
     // ---- through the launcher -------------------------------------------------------------
 
     [Fact]
+    public async Task The_logic_rate_is_locked_to_60_while_online_and_free_offline()
+    {
+        await using var rig = new Rig(new FakeSeatServer());
+        var exe016 = "mkwmp test mkw.exe 0.1.16"u8.ToArray(); // a runtime that has the logic rate
+        Recomp.TestExes[Mkwmp.Core.Updates.Updater.Sha256Hex(exe016)] = "0.1.16";
+        File.WriteAllBytes(Path.Combine(rig.Game, "mkw.exe"), exe016);
+        File.WriteAllText(Path.Combine(rig.Game, "mkw.ini"), RealIni);
+        await rig.Launcher.ResetGameSettingAsync("volume"); // reads the game
+        Assert.True(((ILauncher)rig.Launcher).OnlineEnabled);
+        var logic = rig.Launcher.GameSettings.Schema!.Find("logic_hz");
+        Assert.NotNull(logic);
+        Assert.Contains("60", logic.Locked, StringComparison.Ordinal);
+
+        var file = File.ReadAllText(Path.Combine(rig.Game, "mkw.ini"));
+        await rig.Launcher.SetGameSettingAsync("logic_hz", "120");
+        Assert.True(rig.Launcher.GameSettings.NoteIsError);
+        Assert.Equal(file, File.ReadAllText(Path.Combine(rig.Game, "mkw.ini")));
+
+        await rig.Launcher.SaveSettingsAsync(rig.Launcher.Settings with { Server = "" });
+        await rig.Launcher.ResetGameSettingAsync("volume");
+        Assert.Null(rig.Launcher.GameSettings.Schema!.Find("logic_hz")!.Locked);
+        await rig.Launcher.SetGameSettingAsync("logic_hz", "120");
+        Assert.Equal("120", rig.Launcher.GameSettings.Value("logic_hz"));
+    }
+
+    [Fact]
     public async Task The_launcher_shows_and_changes_the_targets_settings()
     {
         await using var rig = new Rig(new FakeSeatServer());

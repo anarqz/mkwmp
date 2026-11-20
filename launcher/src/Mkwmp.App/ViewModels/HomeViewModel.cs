@@ -118,6 +118,7 @@ public sealed class HomeViewModel : PageViewModel
         FullscreenCommand = RelayCommand.Async(() => Shell.SetFullscreenAsync(!Shell.IsFullscreen));
         PowerCommand = new RelayCommand(ShowPowerMenu);
         GameMenuCommand = new RelayCommand(() => Shell.LeaveOverlay(toMenu: true));
+        QuitGameCommand = RelayCommand.Async(() => Shell.QuitGameAsync());
         StatusCommand = new RelayCommand(() =>
         {
             if (Problem is { } problem)
@@ -194,6 +195,11 @@ public sealed class HomeViewModel : PageViewModel
     public string GameMenuLabel => S.Format("home.overlay.menu", ("game", TargetName));
 
     public ICommand GameMenuCommand { get; }
+
+    /// <summary>"Quit Game" in the dock, over a game: ends the game itself (it asks first), not only the launcher.</summary>
+    public bool ShowQuitGame => Overlay;
+
+    public ICommand QuitGameCommand { get; }
 
     private string TargetName
     {
@@ -433,7 +439,9 @@ public sealed class HomeViewModel : PageViewModel
 
     private void ShowPowerMenu()
     {
-        var modal = new ModalViewModel { Title = S["power.title"], Body = Locked ? "" : S["quit.body"] }; // no seat to give back without a server
+        var gameRuns = Shell.GameRuns;
+        // over a game the menu is about the game first; the launcher's seat sentence is for a launcher that holds one
+        var modal = new ModalViewModel { Title = S["power.title"], Body = Overlay ? S["power.game_body"] : Locked ? "" : S["quit.body"] }; // no seat to give back without a server
         void Add(string label, Action run, bool isDefault = false) => modal.Actions.Add(new ModalAction(label, () =>
         {
             Shell.CloseModal(modal);
@@ -453,14 +461,39 @@ public sealed class HomeViewModel : PageViewModel
             Add(Shell.IsFullscreen ? S["power.windowed"] : S["power.fullscreen"],
                 () => RelayCommand.Async(() => Shell.SetFullscreenAsync(!Shell.IsFullscreen)).Execute(null), isDefault: modal.Actions.Count == 0);
         }
+        if (gameRuns)
+        {
+            Add(S["power.quit_game"], () => RelayCommand.Async(() => Shell.QuitGameAsync()).Execute(null), isDefault: modal.Actions.Count == 0);
+        }
         Add(S["power.quit"], () => RelayCommand.Async(QuitAsync).Execute(null), isDefault: modal.Actions.Count == 0);
         modal.Bottom = new ModalAction(S["common.cancel"], () => Shell.CloseModal(modal));
         Shell.ShowModal(modal);
     }
 
-    /// <summary>Quits at once; asks first while a session holds a seat (quitting gives it back).</summary>
+    /// <summary>
+    /// Quits at once; asks first while a session holds a seat (quitting gives it back). While a
+    /// game runs the question is which of the two: the launcher alone (the game runs on, without
+    /// its overlay) or the game too.
+    /// </summary>
     private async Task QuitAsync()
     {
+        if (Shell.GameRuns)
+        {
+            var modal = new ModalViewModel { Title = S["quit.game.title"], Body = S["quit.game.body"] };
+            modal.Actions.Add(new ModalAction(S["quit.game.both"], () =>
+            {
+                Shell.CloseModal(modal);
+                RelayCommand.Async(() => Shell.QuitGameAsync(thenQuit: true, confirmed: true)).Execute(null);
+            }, Controls.ButtonKind.Outline, isDefault: true));
+            modal.Actions.Add(new ModalAction(S["quit.game.launcher"], () =>
+            {
+                Shell.CloseModal(modal);
+                Shell.Quit();
+            }));
+            modal.Bottom = new ModalAction(S["common.cancel"], () => Shell.CloseModal(modal));
+            Shell.ShowModal(modal);
+            return;
+        }
         if (!Busy || await Shell.ConfirmAsync(S["quit.title"], S["quit.body"], S["quit.yes"]).ConfigureAwait(true))
         {
             Shell.Quit();

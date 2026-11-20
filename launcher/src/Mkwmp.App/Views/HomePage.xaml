@@ -137,6 +137,9 @@
                       Command="{Binding FullscreenCommand}"
                       Visibility="{Binding CanSwitchFullscreen, Converter={StaticResource Conv.Visible}}" />
         <c:DockButton Icon="{StaticResource Icon.Settings}" Label="{Binding S[home.settings]}" Command="{Binding SettingsCommand}" />
+        <!-- over a game: ends the game itself (it asks first), not only the launcher -->
+        <c:DockButton Icon="{StaticResource Icon.Exit}" Label="{Binding S[home.overlay.quit]}" Tint="#FFE5484D" Command="{Binding QuitGameCommand}"
+                      Visibility="{Binding ShowQuitGame, Converter={StaticResource Conv.Visible}}" />
         <c:DockButton Icon="{StaticResource Icon.Power}" Label="{Binding S[home.power]}" Command="{Binding PowerCommand}" />
       </StackPanel>
     </Border>

@@ -197,6 +197,7 @@ public sealed partial class Launcher
                 Note("you'll get a seat when you go online in the game");
             }
 
+            EnforceOnlineOwned(target, install);
             var launches = LaunchesGame(s) && target.Capabilities.HasFlag(TargetCapabilities.Launch);
             if (launches)
             {

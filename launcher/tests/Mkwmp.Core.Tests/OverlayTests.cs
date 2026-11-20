@@ -260,6 +260,36 @@ public class OverlayTests
     }
 
     [Fact]
+    public async Task Quit_Game_is_an_action_of_the_return_and_the_game_says_whether_it_ends_itself()
+    {
+        using var api = new LocalApi(new Host(), TimeProvider.System);
+        var closed = new List<OverlayReturn>();
+        api.Overlay.Requested += (_, _) => { };
+        api.Overlay.Closed += (_, how) => closed.Add(how);
+        api.Overlay.Enabled = true;
+        // a runtime without the quit entry: the shell closes the window instead of waiting
+        await api.HandleAsync("POST", "/local/v1/overlay/open", "by=hold&pid=7&menu=1", Auth, default, default);
+        Assert.False(api.Overlay.GameHasQuit);
+        Assert.True(api.Overlay.ReturnToGame());
+        // with it: the mod's wait ends with the action "quit"
+        var open = await api.HandleAsync("POST", "/local/v1/overlay/open", "by=hold&pid=7&menu=1&quit=1", Auth, default, default);
+        Assert.Equal((200, """{"open":true,"seq":3,"enabled":true}"""), (open.Status, open.Body));
+        Assert.True(api.Overlay.GameHasQuit);
+        Assert.True(api.Overlay.GameHasMenu);
+        var waiting = api.HandleAsync("GET", "/local/v1/overlay/state", "wait=20&seq=3", Auth, default, default);
+        Assert.True(api.Overlay.ReturnToGame(OverlayReturn.Quit));
+        var done = await waiting.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal((200, """{"open":false,"seq":4,"enabled":true,"action":"quit"}"""), (done.Status, done.Body));
+        Assert.Equal([OverlayReturn.Resume, OverlayReturn.Quit], closed);
+        Assert.False(api.Overlay.ReturnToGame(OverlayReturn.Quit)); // not open: nothing to end
+        // the launcher's own trigger (a game without the mod) and a game that ended: no quit entry
+        Assert.True(api.Overlay.RequestFromLauncher(7, null));
+        Assert.False(api.Overlay.GameHasQuit);
+        api.Overlay.GameExited();
+        Assert.False(api.Overlay.GameHasQuit);
+    }
+
+    [Fact]
     public async Task The_session_file_names_the_launcher_for_a_later_overlay_host()
     {
         var session = new Targets.SessionFile("lobby.test:8905", "Ana", "127.0.0.1:47820", "abc", 8907, null, 1, null);

@@ -77,8 +77,8 @@ game". Design and what each side does: launcher/docs/OVERLAY.md. Both work witho
 | Status | Body | Meaning |
 |---|---|---|
 | 200 | `{"open":false,"seq":0,"enabled":true}` | Closed. `enabled`: the launcher can show itself over a game now; while `false` the mod leaves every button to the game and mkw-recomp. `seq` goes up at every change of `open`. |
-| 200 | `{"open":true,"seq":5,"enabled":true}` | The overlay is up: the mod keeps the game's pad idle. |
-| 200 | `{"open":false,"seq":6,"enabled":true,"action":"resume"}` | The player went back to the game (`action`, after a close): `"resume"`, or `"menu"` = also open mkw-recomp's own menu (plugin API 4 `menu_open`; otherwise as `"resume"`). |
+| 200 | `{"open":true,"seq":5,"enabled":true}` | The overlay is up: the mod keeps the game's pad idle and holds the game as behind a console's HOME menu (plugin API 4 `focus_set`: out of focus, silent, suspended unless the game uses the network). |
+| 200 | `{"open":false,"seq":6,"enabled":true,"action":"resume"}` | The player left the overlay (`action`, after a close): `"resume"` = back to the game; `"menu"` = also open mkw-recomp's own menu (plugin API 4 `menu_open`; otherwise as `"resume"`); `"quit"` = "Quit Game": the mod ends the game through the runtime (plugin API 4 `quit`: the mods' goodbyes, the seat given back, the saves finished). A mod or runtime without that entry treats it as `"resume"` and the launcher closes the game's window. |
 | 400 | `{"state":"invalid","message"}` | `wait` or `seq` is not a number. |
 | 401 | `{"state":"unauthorized"}` | Wrong or missing token. |
 
@@ -89,11 +89,16 @@ no longer N, or S seconds passed (then the same state again): the mod's wait whi
 is up (`wait=2`), repeated. Three failed polls in a row and the mod gives the game back by
 itself.
 
-`POST /local/v1/overlay/open?by=<guide|chord|hold|keys>&pid=<game pid>[&menu=1][&w=<W>&h=<H>&format=rgba]`
+`POST /local/v1/overlay/open?by=<guide|chord|hold|keys>&pid=<game pid>[&menu=1][&quit=1][&w=<W>&h=<H>&format=rgba]`
 
 `menu=1`: this game opens mkw-recomp's own menu when the close says `"action":"menu"` (plugin
 API 4). Only then does the launcher offer "mkw-recomp menu" in the overlay; without it (plugin
 API 3, an older mod) it never answers `"menu"`.
+
+`quit=1`: this game ends itself when the close says `"action":"quit"` (the runtime has the
+`quit` entry). The launcher then waits 8 s for the process to end before it sends WM_CLOSE to
+the game's window; without `quit=1` it sends WM_CLOSE at once. Either way, a game that still
+runs 5 s after the WM_CLOSE is offered to the player for a forced end (the process tree).
 
 The body is the game's picture when the request has one: `W*H*4` bytes, RGBA8, rows top to
 bottom, no padding, at most 1920 x 1080 and at least 16 x 16 (the mod sends at most 1280 x 720,
@@ -112,8 +117,10 @@ take the foreground on Windows.
 | 409 | `{"open":false,"seq":N,"enabled":false}` | Not now (setup, an update being applied, no window to show). The mod gives the button back: mkw-recomp's own menu opens where the mod can ask for it. |
 | 413 | | A body over the limit. |
 
-Closing is the launcher's: its shell calls `OverlayBridge.ReturnToGame()`, the waiting
-`GET .../state` answers `open:false`, and the game reads the pad again once every button is up.
+Closing is the launcher's: its shell calls `OverlayBridge.ReturnToGame()` (or
+`ReturnToGame(OverlayReturn.Menu)` / `ReturnToGame(OverlayReturn.Quit)`), the waiting
+`GET .../state` answers `open:false`, and the game runs again and reads the pad once every
+button is up (after `"quit"` it ends instead).
 There is no `POST /local/v1/overlay/close`: the game is an HTTP client only, and a second
 trigger while the overlay is up means "come to the front again", never "close".
 

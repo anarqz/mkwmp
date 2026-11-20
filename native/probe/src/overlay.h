@@ -9,6 +9,10 @@
 //   - the game reads an idle pad while the overlay is up and, after it closes, until every button is up;
 //   - the picture (plugin API 4 `frame_capture`), handed to the launcher with the request;
 //   - AllowSetForegroundWindow, so the launcher may come to the front on Windows;
+//   - the game behind the overlay as behind a console's HOME menu (plugin API 4 `focus_set`): told it is out of focus,
+//     silent, and suspended when the game itself lets the console suspend it (MKW: always, except while it uses the
+//     network, so an online race runs on). The mod's setting overlay_pause = 0 keeps it running;
+//   - "Quit Game" from the overlay (the launcher's action "quit"): the runtime's own clean end (plugin API 4 `quit`);
 //   - the wait for the launcher's "back to the game".
 // Nothing of it happens without a launcher that answers /local/v1/overlay/state: then every button is the game's and
 // mkw-recomp's, as before.
@@ -65,12 +69,13 @@ OverlayTrigger overlay_gate(OverlayGate *g, OverlayPad *pad, uint64_t now_ms, in
 void overlay_gate_closed(OverlayGate *g);
 
 // The launcher's answer to GET /local/v1/overlay/state and POST /local/v1/overlay/open, as far as the mod reads it:
-// {"open":true|false,"seq":N,"enabled":true|false,"action":"resume"|"menu"}. 1 when "open" is there.
+// {"open":true|false,"seq":N,"enabled":true|false,"action":"resume"|"menu"|"quit"}. 1 when "open" is there.
 typedef struct {
     int open;
     long long seq;
     int enabled;   // the launcher can show itself over the game now (absent: yes)
     int menu;      // action "menu": mkw-recomp's own menu after the return
+    int quit;      // action "quit": the game ends (the player chose Quit Game in the overlay)
 } OverlayState;
 int overlay_parse_state(const char *json, OverlayState *out);
 

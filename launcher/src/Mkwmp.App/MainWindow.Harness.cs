@@ -190,6 +190,25 @@ public partial class MainWindow
             case "confirm":
                 _ = _vm.ConfirmAsync(_vm.S["quit.title"], _vm.S["quit.body"], _vm.S["quit.yes"]);
                 break;
+            // "Quit Game" over a game (with --overlay): the question, the wait, the game that does not end, and
+            // "Quit MKWMP" while a game runs
+            case "quitgame":
+                _ = _vm.QuitGameAsync();
+                break;
+            case "quitgame-closing":
+                _ = _vm.ShowProgress(_vm.S["quitgame.closing"], _vm.S["quitgame.closing_body"]);
+                break;
+            case "quitgame-stuck":
+                _ = _vm.ConfirmAsync(_vm.S["quitgame.stuck.title"], _vm.S["quitgame.stuck.body"], _vm.S["quitgame.force"], _vm.S["quitgame.wait"]);
+                break;
+            case "power":
+                (_vm.Page as HomeViewModel)?.PowerCommand.Execute(null);
+                break;
+            case "quit-which":
+                (_vm.Page as HomeViewModel)?.PowerCommand.Execute(null);
+                await Task.Delay(300).ConfigureAwait(true);
+                _vm.Modal?.Actions.LastOrDefault()?.Command.Execute(null); // "Quit MKWMP", the last of the menu
+                break;
             case "message":
                 _ = _vm.MessageAsync("The game is set up", "Mario Kart World 1.8.0 is ready on this device.");
                 break;

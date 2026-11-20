@@ -68,6 +68,13 @@ public sealed class MkwRecompTarget : IGameTarget
 
     public GameSetupStatus? SetupStatus(GameInstall install) => RecompSetup.Status(install);
 
+    /// <summary>
+    /// The logic rate: 0.1.16 forces 60 Hz only for LAN and time trial, so an online player at 120 Hz
+    /// against 60 Hz peers would run another simulation (the user's call, 2026-11-20: locked online).
+    /// </summary>
+    public IReadOnlyList<(string Id, string Value, string Why)> OnlineOwnedSettings { get; } =
+        [("logic_hz", "60", "Locked to 60 while online: every player in a race must run the game at the same rate.")];
+
     public IReadOnlyList<string> ApplyOwnedSettings(GameInstall install)
     {
         var written = RecompSettings.EnforceOwned(this, install);

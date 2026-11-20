@@ -19,11 +19,11 @@ internal sealed record Listing(string PublicKey, string Name, string Endpoint, s
 internal static class BeholderClient
 {
     /// <summary>
-    /// The release's default beholder. TODO(beholder): EMPTY until the production beholder exists;
-    /// set it to its https URL then. While empty (and with no <c>beholder</c> in client.toml) the
+    /// The release's default beholder: the public directory MKWMP servers announce themselves to
+    /// (live since 2026-11-20). A <c>beholder</c> in client.toml replaces it; with neither, the
     /// launcher lists no servers and only a typed address connects.
     /// </summary>
-    public const string DefaultUrl = "";
+    public const string DefaultUrl = "https://beholder.anarqz.dev";
 
     public const string CacheFileName = "beholder-cache.json";
     public const int MaxItems = 500;

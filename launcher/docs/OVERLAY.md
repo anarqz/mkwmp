@@ -15,11 +15,11 @@ Sources quoted as `fork:` are anarqz/mkw-recomp at tag `v0.1.15-mkwmp`; `SDL:` i
 
 | # | Question | Decision |
 |---|---|---|
-| 1 | Keeping mkw-recomp's menu shut | The mod filters the pad before the runtime's menu shortcut sees it. That needs a small fork change, **plugin API 4** (`input_filter`, `menu_open`, `frame_capture`; patch in `overlay-plugin-api4.patch`). On the released 0.1.15-mkwmp (API 3) the mod can only watch: it leaves the trigger mkw-recomp uses to mkw-recomp. |
+| 1 | Keeping mkw-recomp's menu shut | The mod filters the pad before the runtime's menu shortcut sees it. That needs a small fork change, **plugin API 4** (`input_filter`, `menu_open`, `frame_capture`, then `focus_set` and `quit`; patch in `overlay-plugin-api4.patch`). On the released 0.1.15-mkwmp (API 3) the mod can only watch: it leaves the trigger mkw-recomp uses to mkw-recomp. |
 | 2 | Who sees the button | The mod, on the game's own reading of the pad (after Steam Input). Fallback for a game without the mod's overlay: the launcher's `GuideWatcher` (XInputGetStateEx). |
 | 3 | The picture | In the game, from the swapchain image (API 4 `frame_capture`), RGBA at most 1280 x 720, in the body of the request. Launcher-side capture only as a Windows-desktop fallback; it cannot work under Proton. |
 | 4 | Front and back | One visible window at a time: the launcher's window is hidden while the game is in front, shown for the overlay, hidden again on return. That is what Windows' foreground rules and gamescope's focus choice both accept. |
-| 5 | Pause | No. The game keeps running with an idle pad, as it does behind mkw-recomp's own menu. |
+| 5 | Pause | As a console's HOME menu: the mod tells the runtime the game is out of focus (plugin API 4 `focus_set`), and the runtime suspends the game when the game's own `SetFocusHandlingMode` lets the console do that. MKW asks for it except while it uses the network, so an offline race stops and an online one runs on. "Quit Game" ends the game through the runtime (`quit`). |
 | 6 | Contract | `GET /local/v1/overlay/state` (long poll), `POST /local/v1/overlay/open` (with the picture). Closing is the launcher's: the mod's poll returns. No `close` request. |
 | 7 | Without the launcher | **(b) pre-warm**: the mod starts the launcher at game start as a windowless overlay host; (a) on demand only as the restart when the host is gone. |
 
@@ -46,17 +46,21 @@ So our triggers collide with it whichever value it has: Select+Start in one, Gui
 | A new config value (`menu_shortcut = off`) | One line in the fork, but the mod still cannot hold Select back from the game or make the pad idle, and it needs its own second reading of the pad. |
 | **A pad filter in the plugin API** | Chosen. The mod sees and edits the reading before the runtime's shortcut and the game do. One mechanism gives the trigger, the swallow, the idle pad and "the B that closed it never reaches the game". |
 
-The fork patch (`launcher/docs/overlay-plugin-api4.patch`, made against `v0.1.15-mkwmp`, 145 lines added, **not
-compiled, not pushed**): plugin API version 4 with three entries at the end of the table.
+The fork patch (`launcher/docs/overlay-plugin-api4.patch`, the diff of the fork's branch `overlay-api4` against
+`v0.1.15-mkwmp`; the same two commits are on `overlay-api4-nup`, both built by the fork's CI): plugin API version 4
+with five entries at the end of the table, the last two added after the first live test (section 5).
 
 - `int input_filter(MkwPadFn filter, void *user)`: `filter(MkwPad *pad, user)` at every read of a player's input,
   before `input_menu_gate` and before the game (`input.c` `poll_merged` and `input_poll_player`). `MkwPad` has the 16
   buttons as the game gets them, the sticks, `guide` and the player index.
 - `void menu_open(int open)`: opens or closes the runtime's menu (`menu_toggle` when the state differs).
 - `int frame_capture(int max_w, int max_h, MkwFrameFn cb, void *user)`: section 3.
+- `int focus_set(int in_focus, int suspend)` and `void quit(void)`: section 5.
 
 The mod's header `native/probe/src/mkw_plugin.h` is the patched one; the entries are used only when the runtime's
-table reaches them (`api->size`), so the same mod runs on API 3.
+table reaches them (`api->size`, each checked by itself), so the same mod runs on API 3 and on an API 4 runtime built
+before `focus_set` and `quit` (there the game runs on behind the overlay, and "Quit Game" is the launcher closing the
+game's window).
 
 **The player still reaches mkw-recomp's menu**: F1 and Esc are untouched; with API 4 the overlay can offer a
 "Game settings (mkw-recomp)" button that calls `OverlayBridge.ReturnToGame(OverlayReturn.Menu)`, and the mod then
@@ -184,16 +188,86 @@ The game's input while the overlay is up:
   until the return and the release of every button, whether the focus moved or not.
 - The launcher reads XInput only while its window is active (`Input/GamepadInput.cs`), so the two never both react.
 
-## 5. Pause
+## 5. Pause, and Quit Game
 
-No pause. Online races cannot pause, and mkw-recomp's own menu does not pause either: "While it is open the game gets
-no input and keeps running" (`fork: runtime/ui/menu/menu.h:7-8`). The overlay is the same thing to the game: an idle
-pad. Offline, the player pauses with Start before opening the overlay, as before opening the F1 menu.
+### Why the game ran on in the first live test
 
-A real suspend exists in the runtime (`freeze_set`: the game thread waits in its present, audio and loading go on;
-`fork: runtime/core/hacks/freeze.c:1-20`, the debug commands `pause` / `resume`). It could become an API entry for
-offline play later; it is left out because it must never happen online and the mod's "am I in a room" is not the
-runtime's to know.
+The runtime did tell the game. A window that loses the focus becomes `nn::oe::GetCurrentFocusState() == 2` and the
+`FocusStateChanged` message (15) (`fork: runtime/gfx/nvn/host/gfx_window_sdl.c:202-205` →
+`gfx_present.c` `gfx_window_focus_changed` → `runtime/sdk/ov/ov_system.c` `oe_set_focus`), from the end of the game's
+startup logo on. `MKW_ASSUME_FOCUS=1` pins it to "in focus" (the site's Linux start line sets it; nothing on Windows
+does), and the user's mkw.ini has no such key: the message was delivered.
+
+What the game does with it (1.8.0 `main`, read from the disassembly, 2026-11-20):
+
+- One thread (`main+0x2995710`) pops the notification messages. For message 15 it only stores the state under a
+  mutex: out of focus sets two flags, back in focus sets a one-shot "resumed" flag. It calls nothing of the scene,
+  the pause menu or the audio.
+- The per-frame consumer (`main+0x36ac10`, from the root update `main+0x36ab50`) copies those flags, on "resumed"
+  re-checks the network service account, and **sets `nn::oe::SetFocusHandlingMode` itself**: mode 1 when the predicate
+  `main+0x36adb0` is true, else mode 2 (`main+0x872854` only sets the first 2: the log's `oe: focus handling mode 2`).
+  The predicate reads the object whose code calls `nn::nifm::HandleNetworkRequestErrorResult` and
+  `nn::account::EnsureNetworkServiceAccountAvailable`: the network connection's state.
+- Read as the SDK names them, 2 is SuspendAndNotify and 1 is Notify: **on the console the pause behind HOME is the
+  system suspending the application**, not the game pausing itself, and MKW switches that off while it uses the
+  network. Offline, HOME freezes the game mid-race; online, the race runs on. mkw-recomp answered the mode call and
+  suspended nothing, so the game ran on everywhere.
+
+Established: the handler and the mode switch. Inferred: that the predicate's object is the network connection
+manager, and the meaning of its field values. Not searched: whether anything else reads the copied out-of-focus flag
+(an audio duck, say); nothing visible happened in the live test.
+
+### What is built
+
+Plugin API 4 gains two entries at the end of the table (`fork: runtime/plugin/mkw_plugin.h`, `plugin.c`):
+
+- `int focus_set(int in_focus, int suspend)`. `focus_set(0, s)` is the HOME press: the game is told out of focus
+  whatever the window says and also with `MKW_ASSUME_FOCUS` (`ov_system.c` `oe_hold_focus`; a window change while held
+  is told when the hold ends), and the output is silent (`audio_mixer.c`, as `MKW_BACKGROUND_MUTE` does it). With
+  `suspend` the runtime does the console's part: when the game's focus handling mode is not 1 the game thread waits
+  in its present (`freeze_set`, `runtime/core/hacks/freeze.c`: the picture stays, the game's clock counts presents
+  and stands still, audio and loading threads go on), decided at the hold and again at every `SetFocusHandlingMode`
+  of the game. `focus_set(1, 0)` gives the focus back to the window and the game runs. It returns 1 when the game is
+  suspended now.
+- `void quit(void)`: `gfx_window_request_close()`, what the menu's Quit calls (`runtime/ui/menu/menu.cpp:348`):
+  `plugins_exit` (the mod gives its seat back), `fs_save_flush`, the pipeline cache, `plat_exit(0)`
+  (`gfx_present.c` `gfx_window_closed`). It runs on the window thread, so also while the game is suspended.
+
+So the decision "pause or not" is the game's own, as on the console: nobody has to know whether a race is online.
+The mod does not look at its seat for it. The mod's setting `overlay_pause = 0` asks for no suspension at all.
+
+The mod (`native/probe/src/overlay.c`): `hold(1)` after the picture is taken and before the request (a suspended
+game presents nothing); `hold(0)` in `closed()`, after the gate was told to keep the pad idle, on every way out (the
+return, a refused request, a launcher that stopped answering). The B that returns and whatever is held never reach
+the game: suspended, the game reads no input at all, and the first reading after the resume is already behind the
+gate's "idle until every button is up". On a runtime without `focus_set` nothing changes: an idle pad, the game
+running.
+
+Limits: while the game is suspended the pad filter is not called, so a second trigger cannot bring the launcher back
+if the game's window took the front by itself; the launcher notices that (`OnDeactivated`) and returns. mkw-recomp's
+own menu is drawn by the present, so `"action":"menu"` resumes first. The launcher is not told whether the game is
+suspended: home says "the game is running" either way.
+
+### Quit Game
+
+In overlay mode the dock has "Quit Game" and the Power menu lists it above "Quit MKWMP"; both ask first ("Quit Mario
+Kart World? Progress since the last save is lost.", plus the seat sentence when a server is set). Then
+(`OverlayController.QuitGameAsync`):
+
+1. `OverlayBridge.ReturnToGame(OverlayReturn.Quit)`: the mod's wait ends with `"action":"quit"` and it calls the
+   runtime's `quit()`. The game stays held meanwhile (no frame, no sound). The launcher shows "Closing the game…".
+2. After 8 s (at once when the game did not say `quit=1`, or the overlay is not open): WM_CLOSE to the game's window
+   (`GameWindow.RequestClose`), which ends mkw-recomp the same clean way; 5 s more.
+3. Still running: "The game is not closing" with Force Quit (`GameWindow.Kill`: the process tree, by the pid the mod
+   told, which under Wine is the Wine-side one) or Keep Waiting.
+4. Gone: the bridge forgets the game, overlay mode ends and the window is the ordinary launcher's again. A host the
+   mod started (no window before the trigger) exits with its game, as it always does (`OverlayStartup`). The seat is
+   given back by whoever held it: the mod's `on_exit`, or the launcher's session seeing the game end.
+
+"Quit MKWMP" while a game runs (the overlay, or a game the launcher sees beside it) asks which: "Quit the Game Too"
+(the same steps, then the launcher quits) or "Quit MKWMP Only" (the game runs on, the overlay stops working). The
+tray's Quit still quits the launcher alone. A game of another Proton prefix has no pid in this prefix: it gets no
+overlay (section 8) and so no Quit Game.
 
 ## 6. The contract
 
@@ -205,7 +279,8 @@ runtime's to know.
 - `POST /local/v1/overlay/open?by=..&pid=..[&menu=1][&w=..&h=..&format=rgba]`, body the picture. `200` open, `409`
   not now. `menu=1` (the mod sends it when the runtime has `menu_open`) is `OverlayBridge.GameHasMenu`: the shell
   shows its "mkw-recomp menu" button only then.
-- Closing: `OverlayBridge.ReturnToGame()` ends the mod's wait. `action` `menu` asks for mkw-recomp's menu.
+- Closing: `OverlayBridge.ReturnToGame()` ends the mod's wait. `action` `menu` asks for mkw-recomp's menu, `quit`
+  for the game's end (`quit=1` in the request: the runtime can do it itself).
 - Same bearer as every route; a picture is read only from a caller with the token; buckets of 10 and 20.
 - If the launcher stops answering (three polls), the mod gives the game back by itself.
 
@@ -283,7 +358,7 @@ In the launcher:
 | `src/Mkwmp.Core/Overlay/OverlayHost.cs` | `OverlayHostArgs`, `LauncherRecord`, `SingleInstance`, `OverlayHost` |
 | `src/Mkwmp.Core/Launcher.Overlay.cs` | `Launcher.OverlayBridge`, `.OverlayHost`, `.PublishRecord()`, `.AttachOverlayHost()` |
 | `src/Mkwmp.Core/Net/LocalApi.cs` | the four routes, the query string, the picture's body limit (additive) |
-| `src/Mkwmp.App/Overlay/GameWindow.cs` | `Find`, `IsForeground`, `ShowOver`, `GiveBack`, `ToBitmap`, `Capture` |
+| `src/Mkwmp.App/Overlay/GameWindow.cs` | `Find`, `IsForeground`, `ShowOver`, `GiveBack`, `ToBitmap`, `Capture`; `Alive`, `RequestClose`, `Kill` (Quit Game) |
 | `src/Mkwmp.App/Overlay/GuideWatcher.cs` | the Guide button by XInputGetStateEx |
 | `src/Mkwmp.App/Overlay/OverlayStartup.cs` | single instance and host mode for `App.xaml.cs` |
 | `tests/Mkwmp.Core.Tests/OverlayTests.cs` | the routes over `HandleAsync` and a socket, the host, the record, the instance |
@@ -296,7 +371,7 @@ The shell (what is wired; the screenshots of every moment come from the harness,
 | `src/Mkwmp.App/Overlay/OverlayController.cs` | the bridge's events on the UI thread: request → picture → `EnterOverlay` → the window over the game → the shrink; the way back; `bridge.Enabled`; the launcher's window hidden while its game is in front and shown again when the game ends; the Guide watch |
 | `src/Mkwmp.App/MainWindow.Overlay.cs`, `MainWindow.xaml` (`OverlayFx`) | the animation, and the window borderless over the game's picture (`GameWindow.ClientPixels` / `Place`) |
 | `src/Mkwmp.App/Overlay/OverlayArt.cs` | the card drawn when the game sent no picture; the demo's frame |
-| `src/Mkwmp.App/ViewModels/ShellViewModel.Overlay.cs` | `IsOverlay`, `OverlayThumb`, `OverlayHasMenu`, `EnterOverlay(frame, again)`, `LeaveOverlay(toMenu)`, `EndOverlay()` |
+| `src/Mkwmp.App/ViewModels/ShellViewModel.Overlay.cs` | `IsOverlay`, `OverlayThumb`, `OverlayHasMenu`, `EnterOverlay(frame, again)`, `LeaveOverlay(toMenu)`, `EndOverlay()`; `GameRuns`, `QuitGameAsync(thenQuit, confirmed)` |
 | `src/Mkwmp.App/ViewModels/HomeViewModel.cs`, `Views/HomePage.xaml(.cs)` | the Play tile as "Back to the Game" (wide, the picture, "In game"), B on home, the "mkw-recomp menu" dock button, the parts the animation moves |
 | `src/Mkwmp.Core/Launcher.Overlay.cs`, `Launcher.Background.cs`, `LauncherOptions.cs` | host mode in Core (below); `FindGamePid`, `IsGameProcess`; `launcher_exe` in mkwmp.toml |
 
@@ -311,6 +386,9 @@ How it behaves:
   button or Guide (`GuideWatcher`) go back. PLAY / STOP start and stop nothing. "mkw-recomp menu" (dock) is there when
   the game said `menu=1` and returns with `OverlayReturn.Menu`. Friends and Settings (with Voice & Camera) work as always; the
   game's settings say "close the game" because the target sees it running.
+- **Behind the overlay** the game is held as behind a console's HOME menu, and **Quit Game** (the dock, the Power
+  menu) ends it: section 5. Harness: `--overlay --modal quitgame | quitgame-closing | quitgame-stuck | power |
+  quit-which`.
 - **Back**: the picture grows from the tile over the stage, `GameWindow.GiveBack` hides the launcher and focuses the
   game, `bridge.ReturnToGame`. The launcher's window is then hidden, on Windows too.
 - **Without the animation** the game still gets its pad back: the window was hidden by something else (the tray),
@@ -359,6 +437,21 @@ on the stand-in's client area after the request, and the launcher gone (session 
 killed. Not seen there: the foreground switch (the stand-in was not the foreground window), the way back by a
 button, the motion on a real screen.
 
+0. **Pause and Quit Game** (section 5; built after the first live test on Windows, which showed the triggers, the
+   shrink and the return working; `focus_set` / `quit` compile in the fork's CI and have not run against a game):
+   - offline (a race against the computer, a menu): the overlay opens, the game's picture and sound stop
+     (`mkw.log`: `oe: the game is suspended`; `mkwmp.log`: `out of focus and suspended`); the return resumes on the
+     same frame and neither B nor a held button reaches the game;
+   - online (after Online Play was opened: a lobby, a race): `mkw.log` says `oe: focus handling mode 1` before the
+     trigger and `the game runs on out of focus`; the race goes on and nobody is dropped. If the game is still in
+     mode 2 anywhere a session is alive, that is the risk of the design (the predicate's meaning is inferred): the
+     mod's setting `overlay_pause = 0` is the way out until it is understood;
+   - leaving Online Play while the overlay is not up, then opening it: suspended again;
+   - Quit Game from the dock and from the Power menu: the game ends within a second or two, `mkwmp.log` has
+     `seat: given back`, `mkw.log` ends with `gfx: window closed; exiting`, the hosted launcher is gone with it, a
+     launcher the player had opened shows Home;
+   - Quit MKWMP while the game runs: both answers;
+   - an older runtime (the API 4 build without the two entries): the game runs on, Quit Game closes the window.
 1. **The fork patch.** It was written against the source and never compiled. Build the fork with it, then check: the
    filter sees every read; the menu does not open on Guide or Select+Start; a short Select still does what it did in
    the game; `frame_capture` returns a picture in SDR and HDR, windowed and full screen.

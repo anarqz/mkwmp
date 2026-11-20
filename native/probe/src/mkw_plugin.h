@@ -173,6 +173,21 @@ typedef struct MkwPluginApi {
     // wait. No frame is shown while the window is minimised: then cb is not called. A newer request replaces one not
     // answered yet. 1 asked, 0 refused (a size outside 16..4096).
     int (*frame_capture)(int max_w, int max_h, MkwFrameFn cb, void *user);
+
+    // ---- version 4, added later (each is there when the table reaches it: size): the plugin's overlay covers the
+    // game as a console's HOME menu does
+    // in_focus 0: the game is told it is out of focus (nn::oe::GetCurrentFocusState 2 and the FocusStateChanged
+    // message), whatever the window says and also with MKW_ASSUME_FOCUS, and the game's sound is silent. With suspend
+    // 1 the game is also suspended as the console suspends an application behind HOME, when the game lets it: by its
+    // own nn::oe::SetFocusHandlingMode at that moment and at each change of it (MKW: suspended, except while it uses
+    // the network; then it is only notified and runs on). Suspended, the game thread waits in its present: the
+    // picture stays, the game's clock (it counts frames) stands still, no input is read, so the plugin's pad filter
+    // is not called; loading and audio threads go on. in_focus 1: what the window says again, and the game runs.
+    // Returns 1 when the game is suspended now, else 0. Any thread.
+    int (*focus_set)(int in_focus, int suspend);
+    // Ends the game as the menu's Quit and the window's close button do: the plugins' on_exit, the saves finished,
+    // the pipeline cache written, then the process ends. Returns at once; also while suspended. Any thread.
+    void (*quit)(void);
 } MkwPluginApi;
 
 // Exported by the plugin. api_version is the runtime's (api->version); size tells which fields exist. Return 0 to stay

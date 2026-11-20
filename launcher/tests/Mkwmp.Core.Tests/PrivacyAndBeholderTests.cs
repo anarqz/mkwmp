@@ -194,8 +194,9 @@ public class PrivacyAndBeholderTests
         Assert.Null(BeholderClient.Allowed("ftp://beholder.example.net"));
         Assert.Null(BeholderClient.Allowed(""));
         Assert.Null(BeholderClient.Allowed("not a url"));
-        // The production beholder does not exist yet: no default, so no list.
-        Assert.Equal("", BeholderClient.DefaultUrl);
+        // The production beholder (live since 2026-11-20) is the release default.
+        Assert.Equal("https://beholder.anarqz.dev", BeholderClient.DefaultUrl);
+        Assert.NotNull(BeholderClient.Allowed(BeholderClient.DefaultUrl));
     }
 
     [Fact]
@@ -230,9 +231,9 @@ public class PrivacyAndBeholderTests
         var root = Rig.NewFolder("beholder");
         var path = Path.Combine(root, "client.toml");
         new ClientConfig { Settings = new LauncherSettings { AutoUpdate = false } }.Save(path);
-        await using var l = new Launcher(path, root, new LauncherOptions { BindLocalApi = false, BackgroundLoops = false, Targets = [new MkwRecompTarget("1.4.0")] }, net);
+        await using var l = new Launcher(path, root, new LauncherOptions { BindLocalApi = false, BackgroundLoops = false, Beholder = "", Targets = [new MkwRecompTarget("1.4.0")] }, net);
 
-        // No beholder: no list, and nobody is asked.
+        // No beholder (the release default turned off): no list, and nobody is asked.
         Assert.Equal(ServerListState.Off, l.Servers.State);
         await l.RefreshServersAsync();
         Assert.Equal(ServerListState.Off, l.Servers.State);

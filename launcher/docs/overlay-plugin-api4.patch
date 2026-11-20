@@ -1,8 +1,60 @@
+diff --git a/runtime/audio/audio_mixer.c b/runtime/audio/audio_mixer.c
+index 38200cd..fc43331 100644
+--- a/runtime/audio/audio_mixer.c
++++ b/runtime/audio/audio_mixer.c
+@@ -87,6 +87,7 @@ static float background_gain(void) {
+         seen = ver;
+         on = cfg_int("MKW_BACKGROUND_MUTE") != 0;
+     }
++    if (gfx_window_focus_held()) return 0.0f;   // a plugin's overlay covers the game (MkwPluginApi.focus_set)
+     return on && !gfx_window_focused() ? 0.0f : 1.0f;
+ }
+ static unsigned audio_revision(const AudioRenderer *r) { unsigned byte = r->revision >> 24; return byte >= '0' ? byte - '0' : 0; }
+diff --git a/runtime/gfx/nvn/host/gfx.h b/runtime/gfx/nvn/host/gfx.h
+index cb8766f..be95ecb 100644
+--- a/runtime/gfx/nvn/host/gfx.h
++++ b/runtime/gfx/nvn/host/gfx.h
+@@ -8,6 +8,7 @@
+ enum { OE_MSG_FOCUS_STATE_CHANGED = 15, OE_MSG_OPERATION_MODE_CHANGED = 30, OE_MSG_PERFORMANCE_MODE_CHANGED = 31 };
+ void oe_push_message(uint32_t message);                   // ov_system.c
+ void oe_set_focus(int in_focus);                          // ov_system.c: GetCurrentFocusState; MKW_ASSUME_FOCUS pins 1
++int oe_hold_focus(int out, int suspend);                  // ov_system.c: a plugin holds the game out of focus; 1 suspended
+ typedef struct { uint64_t alloc, free, realloc, user; } OvNvAllocator;
+ typedef struct { OvNvAllocator graphics, devtools; uint64_t memory, memory_size; int initialized; } OvNvState;
+ const OvNvState *ov_nv_state(void);                        // ov_gfx.c
+@@ -23,6 +24,8 @@ void gfx_vsync_bind(uint64_t system_event);                // nn::vi vsync event
+ int gfx_hdr_output(uint16_t *peak, uint16_t *white);       // 1: the window shows HDR10 (peak, paper white nits)
+ void gfx_hdr_to_srgb8(const uint8_t *in, uint8_t *out, size_t px, int a2r);   // 10-bit PQ to sRGB bytes at paper white
+ int gfx_window_focused(void);
++int gfx_window_focus_hold(int out, int suspend);   // MkwPluginApi.focus_set: out of focus and silent while held; 1 suspended
++int gfx_window_focus_held(void);
+ int gfx_window_lines(void);   // lines of the picture the window will show (monitor in fullscreen); 0 unknown
+ int gfx_window_shape(int *w, int *h);   // its width and lines; 0 unknown (w and h then untouched)
+ 
 diff --git a/runtime/gfx/nvn/host/gfx_present.c b/runtime/gfx/nvn/host/gfx_present.c
-index 5bbb8d9..109d24f 100644
+index 5bbb8d9..b20b06a 100644
 --- a/runtime/gfx/nvn/host/gfx_present.c
 +++ b/runtime/gfx/nvn/host/gfx_present.c
-@@ -566,11 +566,11 @@ void vk_present_screen_shot(const char *path) {
+@@ -63,6 +63,18 @@ void gfx_window_focus_changed(int in) {
+     plat_inc32(&g_focus_msgs);
+ }
+ 
++// A plugin's overlay covers the game (MkwPluginApi.focus_set(0, ..)), as the console's HOME menu does: the game hears
++// out of focus until the hold ends and is suspended if it lets the console do that (ov_system.c oe_hold_focus), and
++// the output is silent meanwhile (audio_mixer.c), with any MKW_BACKGROUND_MUTE.
++static volatile int32_t g_focus_hold;
++int gfx_window_focus_hold(int out, int suspend) {
++    out = out != 0;
++    if (plat_xchg32(&g_focus_hold, out) != out)
++        rt_log("gfx: a plugin %s", out ? "holds the game out of focus" : "gives the focus back to the window");
++    return oe_hold_focus(out, suspend);
++}
++int gfx_window_focus_held(void) { return g_focus_hold; }
++
+ // The window was closed: the process ends with it, as in MNG, once a save Commit still running in the background is
+ // done.
+ void gfx_window_closed(void) {
+@@ -566,11 +578,11 @@ void vk_present_screen_shot(const char *path) {
      __atomic_store_n(&g_screen_on, 1, __ATOMIC_RELEASE);
  }
  
@@ -17,7 +69,7 @@ index 5bbb8d9..109d24f 100644
      int bgra = g_sc_fmt == VK_FORMAT_B8G8R8A8_UNORM || g_sc_fmt == VK_FORMAT_B8G8R8A8_SRGB;
      if (g_sc_hdr) gfx_hdr_to_srgb8(g_cap_ptr, px, n / 4, g_sc_fmt == VK_FORMAT_A2R10G10B10_UNORM_PACK32);
      else for (size_t i = 0; i < n; i += 4) {
-@@ -579,6 +579,13 @@ static void save_capture(const char *path) {
+@@ -579,6 +591,13 @@ static void save_capture(const char *path) {
          px[i + 2] = g_cap_ptr[i + (bgra ? 0 : 2)];
          px[i + 3] = 255;
      }
@@ -31,7 +83,7 @@ index 5bbb8d9..109d24f 100644
      rt_write_png(path, px, (uint32_t)g_cap_w, (uint32_t)g_cap_h);
      free(px);
      rt_log("gfx: swapchain shot %s (%dx%d)", path, g_cap_w, g_cap_h);
-@@ -663,7 +670,8 @@ static void present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w
+@@ -663,7 +682,8 @@ static void present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w
      int overlay = src && g_sc_view[idx] &&
                    menu_overlay_frame(__atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED), &mt, &menu_shot);
      if (!menu_shot && __atomic_exchange_n(&g_screen_on, 0, __ATOMIC_ACQ_REL)) menu_shot = g_screen_path;
@@ -41,7 +93,7 @@ index 5bbb8d9..109d24f 100644
      int thumb = src && g_th_n && ensure_thumbs();
  
      VkCommandBuffer cb = g_cb[slot];
-@@ -793,6 +801,11 @@ static void present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w
+@@ -793,6 +813,11 @@ static void present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w
          g_cap_h = (int)g_sc_ext.height;
          g_cap_valid = 1;
          if (menu_shot) save_capture(menu_shot);
@@ -85,7 +137,7 @@ index 3fb5388..d766fb0 100644
      stick_bits(&b, sr[0], sr[1], B_SR_LEFT);
      if (g_block || g_menu) b = 0, sl[0] = sl[1] = sr[0] = sr[1] = 0;
 diff --git a/runtime/plugin/README.md b/runtime/plugin/README.md
-index 740039f..783370c 100644
+index 740039f..727a7b7 100644
 --- a/runtime/plugin/README.md
 +++ b/runtime/plugin/README.md
 @@ -9,7 +9,7 @@ business, and nothing of it lives in this repo. The software keyboard's number p
@@ -93,12 +145,12 @@ index 740039f..783370c 100644
  | File | What it is |
  |---|---|
 -| `mkw_plugin.h` | The API, version 3 (version 1, plus the language, the player, the mod's settings and its options page `MkwPage` in 2, images the plugin fills for the game's native image handles in 3): the one header a plugin includes (it links against nothing of mkw-recomp). Rules for threads, guest memory and what each hook may do are in its comments |
-+| `mkw_plugin.h` | The API, version 4 (version 1, plus the language, the player, the mod's settings and its options page `MkwPage` in 2, images the plugin fills for the game's native image handles in 3, the pad filter, `menu_open` and the shown picture in 4): the one header a plugin includes (it links against nothing of mkw-recomp). Rules for threads, guest memory and what each hook may do are in its comments |
++| `mkw_plugin.h` | The API, version 4 (version 1, plus the language, the player, the mod's settings and its options page `MkwPage` in 2, images the plugin fills for the game's native image handles in 3, the pad filter, `menu_open`, the shown picture, and `focus_set` / `quit` for a plugin's overlay over the game in 4): the one header a plugin includes (it links against nothing of mkw-recomp). Rules for threads, guest memory and what each hook may do are in its comments |
  | `plugin_overlay.cpp` | The plugins' drawings over the picture (`overlay_set`, `overlay_show`): rectangles and text on ImGui's background list in the menu overlay's frame, under the menu, the number pad and the notices |
  | `mod_page_ui.cpp`, `mod_page_ui.h` | A mod's page (`MkwPage`) drawn with ImGui: headings, text, notes, checkboxes, text fields, choices, sliders, buttons, lists with buttons per row, columns, greyed-out sections; bound to the mod's settings. Used by the start screen's options page (`ui/launcher/mod_page.cpp`) and the mods' tabs of the in-game menu's settings (`settings_tab`, `ui/menu/settings_tabs.cpp`) |
  | `mod_settings.c`, `mod_settings.h` | A mod's settings per player: `<player folder>/mod-settings/<mod>.ini`, one `key=value` per line, written atomically. The store behind the API's `setting_get` / `setting_set` (version 2) and the options page's widgets (`ui/launcher/mod_page.cpp`); outside the mod's folder, so updating or importing the mod again keeps them. Test: `tests/runtime/test_mod_settings.py` |
 diff --git a/runtime/plugin/mkw_plugin.h b/runtime/plugin/mkw_plugin.h
-index 7b5d3b7..176b11f 100644
+index 7b5d3b7..648b6fe 100644
 --- a/runtime/plugin/mkw_plugin.h
 +++ b/runtime/plugin/mkw_plugin.h
 @@ -1,4 +1,5 @@
@@ -140,7 +192,7 @@ index 7b5d3b7..176b11f 100644
  typedef struct MkwPluginApi {
      uint32_t size;      // sizeof(MkwPluginApi) of the runtime: a field is there when its offset is below size
      uint32_t version;   // MKW_PLUGIN_API_VERSION of the runtime
-@@ -141,6 +158,21 @@ typedef struct MkwPluginApi {
+@@ -141,6 +158,36 @@ typedef struct MkwPluginApi {
      // only an image the game is not showing (triple buffer as the game's own native images do, with their syncs).
      // 1 done, 0 not one of native_image_create's handles.
      int (*native_image_touch)(uint32_t handle);
@@ -159,14 +211,29 @@ index 7b5d3b7..176b11f 100644
 +    // wait. No frame is shown while the window is minimised: then cb is not called. A newer request replaces one not
 +    // answered yet. 1 asked, 0 refused (a size outside 16..4096).
 +    int (*frame_capture)(int max_w, int max_h, MkwFrameFn cb, void *user);
++
++    // ---- version 4, added later (each is there when the table reaches it: size): the plugin's overlay covers the
++    // game as a console's HOME menu does
++    // in_focus 0: the game is told it is out of focus (nn::oe::GetCurrentFocusState 2 and the FocusStateChanged
++    // message), whatever the window says and also with MKW_ASSUME_FOCUS, and the game's sound is silent. With suspend
++    // 1 the game is also suspended as the console suspends an application behind HOME, when the game lets it: by its
++    // own nn::oe::SetFocusHandlingMode at that moment and at each change of it (MKW: suspended, except while it uses
++    // the network; then it is only notified and runs on). Suspended, the game thread waits in its present: the
++    // picture stays, the game's clock (it counts frames) stands still, no input is read, so the plugin's pad filter
++    // is not called; loading and audio threads go on. in_focus 1: what the window says again, and the game runs.
++    // Returns 1 when the game is suspended now, else 0. Any thread.
++    int (*focus_set)(int in_focus, int suspend);
++    // Ends the game as the menu's Quit and the window's close button do: the plugins' on_exit, the saves finished,
++    // the pipeline cache written, then the process ends. Returns at once; also while suspended. Any thread.
++    void (*quit)(void);
  } MkwPluginApi;
  
  // Exported by the plugin. api_version is the runtime's (api->version); size tells which fields exist. Return 0 to stay
 diff --git a/runtime/plugin/plugin.c b/runtime/plugin/plugin.c
-index 7fd8e9d..58d03a9 100644
+index 7fd8e9d..3a32b96 100644
 --- a/runtime/plugin/plugin.c
 +++ b/runtime/plugin/plugin.c
-@@ -4,6 +4,7 @@
+@@ -4,12 +4,14 @@
  #include <stdarg.h>
  #include <stddef.h>
  #include <stdio.h>
@@ -174,7 +241,14 @@ index 7fd8e9d..58d03a9 100644
  #include <string.h>
  
  #include <SDL3/SDL.h>
-@@ -208,6 +209,83 @@ static int (*const setting_set_slot[MAX_PLUGINS])(const char *, const char *) =
+ 
+ #include "cfg.h"
+ #include "dispatch.h"
++#include "gfx.h"
+ #include "plugin_dispatch.h"
+ #include "host.h"
+ #include "mkw_plugin.h"
+@@ -208,6 +210,91 @@ static int (*const setting_set_slot[MAX_PLUGINS])(const char *, const char *) =
  _Static_assert(MAX_PLUGINS == 32, "one setting_get / setting_set pair per plugin slot");
  
  
@@ -255,16 +329,26 @@ index 7fd8e9d..58d03a9 100644
 +    plat_xchg32(&frame_state, 0);
 +}
 +
++// ---- version 4, later: the plugin's overlay covers the game (focus, with the console's suspension), the game's end
++static int api_focus_set(int in_focus, int suspend) { return gfx_window_focus_hold(!in_focus, suspend); }
++
++static void api_quit(void) {
++    rt_log("plugin: the game's end asked (MkwPluginApi.quit)");
++    gfx_window_request_close();
++}
++
  // gfx/nvn/procs/nvn2.c: images a plugin fills (version 3)
  uint32_t nvn2_native_image_create(int w, int h, void **pixels, int *row_bytes);
  int nvn2_native_image_touch(uint32_t handle);
-@@ -236,6 +314,9 @@ static const MkwPluginApi api_template = {
+@@ -236,6 +323,11 @@ static const MkwPluginApi api_template = {
      .settings_tab = api_settings_tab,
      .native_image_create = nvn2_native_image_create,
      .native_image_touch = nvn2_native_image_touch,
 +    .input_filter = api_input_filter,
 +    .menu_open = api_menu_open,
 +    .frame_capture = api_frame_capture,
++    .focus_set = api_focus_set,
++    .quit = api_quit,
  };
  
  // A plugin that declines or fails to load is told to the player too: the mod they enabled does nothing this run.
@@ -285,3 +369,89 @@ index 1a1111e..b21f566 100644
  #ifdef __cplusplus
  }
  #endif
+diff --git a/runtime/sdk/ov/ov_system.c b/runtime/sdk/ov/ov_system.c
+index d99a60c..eea42c8 100644
+--- a/runtime/sdk/ov/ov_system.c
++++ b/runtime/sdk/ov/ov_system.c
+@@ -180,10 +180,12 @@ static void ov_performance_mode(Cpu *c) { ret_x(c, ov_handheld() ? 0 : 1); }
+ 
+ // void SetFocusHandlingMode(FocusHandlingMode mode): the nnMain checkpoint of --boot
+ static volatile int32_t focus_mode;
++static void hold_apply(void);
+ static void ov_focus_mode(Cpu *c) {
+     int64_t mode = (int32_t)arg_x(c, 0);
+     if (mode < 0 || mode > 3) rt_fatal("nn::oe::SetFocusHandlingMode: unknown mode %lld", (long long)mode);
+     plat_xchg32(&focus_mode, (int32_t)mode);
++    hold_apply();   // a plugin's hold suspends the game or not by this mode
+     if (rt_config()->boot) {
+         rt_boot_event("checkpoint", c, "SetFocusHandlingMode");
+     } else {
+@@ -199,7 +201,27 @@ static void ov_focus_mode(Cpu *c) {
+ // FinishStartupLogo; MKW handles one with a manager it makes later (main+0x26380c4 reads main+0x33e54b0, null
+ // then): a window that lost the focus during the boot ended the run reading 0xd8 (issues #83 #89 #92, 11/11/2026).
+ // Until the logo is done the game sees 1 and no message; the change waiting is told at FinishStartupLogo.
+-static volatile int32_t focus_state = 1, focus_window = 1, logo_done;
++// A plugin's overlay over the game (MkwPluginApi.focus_set, oe_hold_focus) is the console's HOME menu to the game:
++// out of focus while it is held, whatever the window says and also with MKW_ASSUME_FOCUS, which is about the window.
++// The console also suspends the application then, unless the game asked to be only notified (FocusHandlingMode 1,
++// Notify; 0, 2 and 3 suspend). MKW sets the mode itself, frame by frame: 2 (SuspendAndNotify) normally, 1 while it
++// uses the network (1.8.0 main+0x36ac10 with the predicate main+0x36adb0), so a race against the computer stops
++// behind HOME and an online one runs on. A hold that allows it does the same with freeze.c: the game thread waits in
++// its present, by the mode the game has at that moment and at each change of it.
++static volatile int32_t focus_state = 1, focus_window = 1, focus_hold, logo_done;   // focus_hold: 1 held, 2 and may suspend
++static volatile int32_t hold_suspended;
++static PlatMutex hold_lock = PLAT_MUTEX_INIT;
++static void hold_apply(void) {
++    if (!focus_hold && !hold_suspended) return;   // the common case, each SetFocusHandlingMode of the game
++    plat_mutex_lock(&hold_lock);
++    int want = focus_hold == 2 && focus_mode != 1 && __atomic_load_n(&logo_done, __ATOMIC_ACQUIRE);
++    if (plat_xchg32(&hold_suspended, want) != want) {
++        rt_log("oe: the game is %s (a plugin's hold; focus handling mode %d)", want ? "suspended" : "resumed",
++               (int)focus_mode);
++        freeze_set(want, 0);
++    }
++    plat_mutex_unlock(&hold_lock);
++}
+ static int assume_focus(void) {
+     static volatile int32_t v = -1;
+     int32_t a = v;
+@@ -212,10 +234,25 @@ static int assume_focus(void) {
+ }
+ void oe_set_focus(int in_focus) {
+     plat_xchg32(&focus_window, in_focus || assume_focus() ? 1 : 2);
+-    if (!__atomic_load_n(&logo_done, __ATOMIC_ACQUIRE)) return;
++    if (!__atomic_load_n(&logo_done, __ATOMIC_ACQUIRE) || focus_hold) return;   // held: told when the hold ends
+     plat_xchg32(&focus_state, focus_window);
+     oe_push_message(OE_MSG_FOCUS_STATE_CHANGED);
+ }
++// out 1: the game is out of focus until out 0, then what the window says again; the message goes only with a change.
++// suspend 1: and suspended meanwhile when its focus handling mode says so (hold_apply). 1 when it is suspended now.
++int oe_hold_focus(int out, int suspend) {
++    int32_t hold = out ? (suspend ? 2 : 1) : 0;
++    int32_t was = plat_xchg32(&focus_hold, hold);
++    if ((was != 0) != (hold != 0) && __atomic_load_n(&logo_done, __ATOMIC_ACQUIRE)) {
++        int32_t want = hold ? 2 : focus_window;
++        if (plat_xchg32(&focus_state, want) != want) oe_push_message(OE_MSG_FOCUS_STATE_CHANGED);
++    }
++    hold_apply();
++    if (!was && hold && !hold_suspended)
++        rt_log("oe: the game runs on out of focus (a plugin's hold; focus handling mode %d%s)", (int)focus_mode,
++               hold == 2 ? focus_mode == 1 ? ": notified only" : "" : ", no suspension asked");
++    return hold_suspended;
++}
+ static void ov_focus_state(Cpu *c) { ret_x(c, (uint64_t)focus_state); }
+ 
+ static volatile int32_t notify_resume, notify_operation, notify_performance;
+@@ -255,7 +292,11 @@ static void ov_finish_logo(Cpu *c) {
+     (void)c;
+     rt_log("oe: the game finished its startup logo");
+     plat_xchg32(&logo_done, 1);
+-    if (focus_window != 1) oe_set_focus(0);   // the focus lost meanwhile, told now
++    if (focus_hold) {   // a plugin's hold from before the logo's end, told now
++        plat_xchg32(&focus_state, 2);
++        oe_push_message(OE_MSG_FOCUS_STATE_CHANGED);
++        hold_apply();
++    } else if (focus_window != 1) oe_set_focus(0);   // the focus lost meanwhile, told now
+ }
+ 
+ 

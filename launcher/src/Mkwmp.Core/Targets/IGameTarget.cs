@@ -156,6 +156,12 @@ public interface IGameTarget
     /// before a setup; does nothing while the game runs. Returns what it changed, for the log.
     /// </summary>
     IReadOnlyList<string> ApplyOwnedSettings(GameInstall install) => [];
+
+    /// <summary>
+    /// Settings every player of an online race must share: locked in the launcher while a server is
+    /// chosen, and written before an online session. (Id, value, why: shown on the locked row.)
+    /// </summary>
+    IReadOnlyList<(string Id, string Value, string Why)> OnlineOwnedSettings => [];
 }
 
 /// <param name="Name">The file's name in the release and in SHA256SUMS.</param>

@@ -1,4 +1,6 @@
 // Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -208,6 +210,66 @@ public static class GameWindow
         }
     }
 
+    // ── ending the game ("Quit Game", launcher/docs/OVERLAY.md §5) ──
+
+    /// <summary>That process still runs (under Wine: a process of this prefix).</summary>
+    public static bool Alive(int pid)
+    {
+        if (pid <= 0)
+        {
+            return false;
+        }
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return !process.HasExited;
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or Win32Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Asks the game to close as its window's close button does (WM_CLOSE, posted: never waits for
+    /// the game): mkw-recomp then finishes its saves, tells its mods and ends. False when the
+    /// process has no window to ask.
+    /// </summary>
+    public static bool RequestClose(int pid)
+    {
+        var hwnd = Find(pid);
+        return hwnd != IntPtr.Zero && PostMessage(hwnd, 0x0010 /* WM_CLOSE */, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    /// <summary>
+    /// Ends the game's process and the processes it started, at once: nothing is saved. Under
+    /// Wine <paramref name="pid"/> is the Wine-side id (the mod's, or the prefix's process list),
+    /// and the kill is Wine's. False when the process could not be ended (another user's, or gone).
+    /// </summary>
+    public static bool Kill(int pid)
+    {
+        if (pid <= 0 || pid == Environment.ProcessId)
+        {
+            return false;
+        }
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (Exception e) when (e is NotSupportedException or AggregateException or Win32Exception or InvalidOperationException)
+            {
+                process.Kill(); // the tree could not be walked (Wine) or one child refused: the game itself
+            }
+            return true;
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException or Win32Exception or NotSupportedException)
+        {
+            return !Alive(pid);
+        }
+    }
 
     private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
 
@@ -297,6 +359,10 @@ public static class GameWindow
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int width, int height, uint flags);
 
+
+    [DllImport("user32.dll", EntryPoint = "PostMessageW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
 
     [DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();

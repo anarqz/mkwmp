@@ -112,7 +112,9 @@ static void test_state(void) {
     CHECK(overlay_parse_state("{\"open\":false,\"seq\":0,\"enabled\":false}", &s) && !s.open && !s.enabled);
     CHECK(overlay_parse_state("{\"open\":false,\"seq\":0,\"enabled\":true}", &s) && s.enabled);
     CHECK(overlay_parse_state("{\"open\": false, \"seq\": 12, \"action\": \"menu\"}", &s) && !s.open && s.seq == 12 && s.menu);
-    CHECK(overlay_parse_state("{\"open\":false,\"seq\":3,\"action\":\"resume\"}", &s) && !s.open && !s.menu);
+    CHECK(overlay_parse_state("{\"open\":false,\"seq\":3,\"action\":\"resume\"}", &s) && !s.open && !s.menu && !s.quit);
+    CHECK(overlay_parse_state("{\"open\":false,\"seq\":4,\"enabled\":true,\"action\":\"quit\"}", &s) && !s.open && s.quit && !s.menu);
+    CHECK(overlay_parse_state("{\"open\": false, \"seq\": 12, \"action\": \"menu\"}", &s) && !s.quit);
     CHECK(!overlay_parse_state("{\"state\":\"unauthorized\"}", &s));
     CHECK(!overlay_parse_state("{\"open\":1}", &s));
     CHECK(!overlay_parse_state("", &s) && !overlay_parse_state(NULL, &s));

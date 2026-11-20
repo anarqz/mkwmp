@@ -23,6 +23,8 @@ namespace Mkwmp.App.Overlay;
 /// <item>One visible window at a time: while a game the launcher started is in front, the
 /// launcher's window is hidden (on Windows too); it comes back when the game ends.</item>
 /// <item>A game without the mod's overlay: the launcher's own Guide watch opens it.</item>
+/// <item>"Quit Game": the game is asked to end itself (the mod, then its window's close), and
+/// only when it does not, the player may end its process.</item>
 /// </list>
 /// UI thread only; the bridge's events are brought to it.
 /// </summary>
@@ -45,7 +47,12 @@ internal sealed class OverlayController : IDisposable
     private bool _opening;
     private bool _foreign;
     private bool _wasRunning;
+    private bool _quitting;
     private bool _disposed;
+
+    /// <summary>How long the game has to end itself after it was asked, and again after its window was asked.</summary>
+    private static readonly TimeSpan QuitWait = TimeSpan.FromSeconds(8);
+    private static readonly TimeSpan CloseWait = TimeSpan.FromSeconds(5);
 
     /// <param name="launcher">Null in the demo: no game, only the bridge.</param>
     /// <param name="startup">The single instance and host mode; null in the demo.</param>
@@ -61,6 +68,8 @@ internal sealed class OverlayController : IDisposable
         _bridge.Requested += OnBridgeRequested;
         _bridge.Closed += OnBridgeClosed;
         shell.OverlayReturnSink = Return;
+        shell.QuitGameSink = QuitGameAsync;
+        shell.GameRunsProbe = () => KnownGamePid != 0;
         shell.StateChanged += OnShellChanged;
         shell.Nav.PropertyChanged += OnShellChanged;
         _guide.Pressed += (_, _) => OnGuide();
@@ -119,6 +128,8 @@ internal sealed class OverlayController : IDisposable
         _shell.StateChanged -= OnShellChanged;
         _shell.Nav.PropertyChanged -= OnShellChanged;
         _shell.OverlayReturnSink = null;
+        _shell.QuitGameSink = null;
+        _shell.GameRunsProbe = null;
     }
 
     // ── when the overlay may open ──
@@ -170,6 +181,10 @@ internal sealed class OverlayController : IDisposable
         {
             pid = 0;
         }
+        if (_quitting)
+        {
+            return; // "Quit Game" is watching the game itself, and says when it is gone
+        }
         if (pid == 0 && (_gamePid != 0 || (_wasRunning && !session.GameRunning)))
         {
             GameGone();
@@ -202,18 +217,10 @@ internal sealed class OverlayController : IDisposable
         }
     }
 
-    private static bool Alive(int pid)
-    {
-        try
-        {
-            using var process = Process.GetProcessById(pid);
-            return !process.HasExited;
-        }
-        catch (Exception e) when (e is ArgumentException or InvalidOperationException or Win32Exception)
-        {
-            return false;
-        }
-    }
+    private static bool Alive(int pid) => GameWindow.Alive(pid);
+
+    /// <summary>The game "Quit Game" would end: the one that asked for the overlay, else the one the watch found; 0 for none.</summary>
+    private int KnownGamePid => _bridge.GamePid != 0 ? _bridge.GamePid : _gamePid;
 
     /// <summary>The game ended: an open overlay is just the launcher again, and a window hidden for the game comes back.</summary>
     private void GameGone()
@@ -397,6 +404,146 @@ internal sealed class OverlayController : IDisposable
         {
             QuickReturn();
         }
+    }
+
+    // ── "Quit Game" ──
+
+    /// <summary>
+    /// Ends the game for real (the player confirmed). Gracefully first: the mod is told (the
+    /// runtime's own clean end: saves finished, the seat given back), then the game's window is
+    /// asked to close, which ends mkw-recomp the same way; only when neither works within a few
+    /// seconds is the player offered to end the process. The launcher stays where it is meanwhile;
+    /// when the game is gone it is the ordinary launcher again (a host the mod started leaves with
+    /// its game, OverlayStartup), or quits too (<paramref name="thenQuit"/>).
+    /// </summary>
+    private async Task QuitGameAsync(bool thenQuit)
+    {
+        if (_disposed || _quitting)
+        {
+            return;
+        }
+        var pid = KnownGamePid;
+        if (pid == 0 || !Alive(pid))
+        {
+            // nothing behind the picture (the demo), or the game left meanwhile
+            _ = _bridge.ReturnToGame(OverlayReturn.Quit);
+            Finish(thenQuit);
+            return;
+        }
+        _quitting = true;
+        _returning = true; // the picture stays: no way back, no new request, until the game is gone
+        _guide.Stop();
+        var s = _shell.S;
+        var gone = false;
+        try
+        {
+            var progress = _shell.ShowProgress(s["quitgame.closing"], s["quitgame.closing_body"]);
+            try
+            {
+                // the mod ends its wait with "quit"; a runtime without that entry gives the pad back and is closed by its window
+                var asked = _bridge.IsOpen && _bridge.GameHasQuit;
+                _ = _bridge.ReturnToGame(OverlayReturn.Quit);
+                App.Log($"overlay: Quit Game: game {pid} {(asked ? "asked through the mod" : "asked by its window (no quit entry, or not over it)")}");
+                if (!asked)
+                {
+                    _ = GameWindow.RequestClose(pid);
+                }
+                gone = await GoneAsync(pid, QuitWait).ConfigureAwait(true);
+                if (!gone && asked)
+                {
+                    App.Log($"overlay: Quit Game: game {pid} still runs after {QuitWait.TotalSeconds:0} s: closing its window");
+                    _ = GameWindow.RequestClose(pid);
+                    gone = await GoneAsync(pid, CloseWait).ConfigureAwait(true);
+                }
+            }
+            finally
+            {
+                progress.Close();
+            }
+            while (!gone && !_disposed)
+            {
+                var force = await _shell.ConfirmAsync(s["quitgame.stuck.title"], s["quitgame.stuck.body"], s["quitgame.force"], s["quitgame.wait"]).ConfigureAwait(true);
+                if (!Alive(pid))
+                {
+                    gone = true;
+                }
+                else if (force)
+                {
+                    App.Log($"overlay: Quit Game: ending the process tree of game {pid}");
+                    var killed = await Task.Run(() => GameWindow.Kill(pid)).ConfigureAwait(true);
+                    gone = await GoneAsync(pid, CloseWait).ConfigureAwait(true);
+                    if (!gone)
+                    {
+                        App.Log($"overlay: Quit Game: game {pid} could not be ended (kill {(killed ? "sent" : "refused")})");
+                        _shell.ShowToast(s["quitgame.failed"]);
+                        break;
+                    }
+                }
+                else
+                {
+                    var waiting = _shell.ShowProgress(s["quitgame.closing"], s["quitgame.closing_body"]);
+                    try
+                    {
+                        gone = await GoneAsync(pid, QuitWait).ConfigureAwait(true);
+                    }
+                    finally
+                    {
+                        waiting.Close();
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _quitting = false;
+            _returning = false;
+        }
+        if (_disposed)
+        {
+            return;
+        }
+        if (gone)
+        {
+            Finish(thenQuit);
+        }
+        else
+        {
+            // it would not end: the game is the player's again (the mod already gave the pad back)
+            QuickReturn();
+        }
+    }
+
+    /// <summary>The game is gone: out of overlay mode, the window as the ordinary launcher's; then the launcher too, when asked.</summary>
+    private void Finish(bool thenQuit)
+    {
+        var wasOverlay = _shell.IsOverlay;
+        _bridge.GameExited();
+        (_gamePid, _foundPid, _hidFor, _foreign, _hiddenByUs) = (0, 0, 0, false, false);
+        if (wasOverlay)
+        {
+            _window.ResetOverlayFx();
+            _shell.EndOverlay();
+            _window.RestoreAfterOverlay();
+        }
+        UpdateEnabled();
+        if (thenQuit)
+        {
+            _shell.Quit();
+        }
+    }
+
+    private async Task<bool> GoneAsync(int pid, TimeSpan within)
+    {
+        var until = Stopwatch.GetTimestamp() + (long)(within.TotalSeconds * Stopwatch.Frequency);
+        while (Alive(pid))
+        {
+            if (_disposed || Stopwatch.GetTimestamp() >= until)
+            {
+                return false;
+            }
+            await Task.Delay(200).ConfigureAwait(true);
+        }
+        return true;
     }
 
     private void OnWindowClosing(object? sender, CancelEventArgs e)

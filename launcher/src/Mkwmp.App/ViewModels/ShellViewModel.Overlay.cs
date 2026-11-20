@@ -44,6 +44,44 @@ public sealed partial class ShellViewModel
     public Action<bool>? OverlayReturnSink { get; set; }
 
     /// <summary>
+    /// "Quit Game" (Overlay/OverlayController): ends the running game, cleanly first; the argument
+    /// is "and then quit the launcher too". Null where no game can be ended (the harness).
+    /// </summary>
+    public Func<bool, Task>? QuitGameSink { get; set; }
+
+    /// <summary>A game the launcher can end runs now (set by the controller); over a game it always does.</summary>
+    public Func<bool>? GameRunsProbe { get; set; }
+
+    /// <summary>A game runs that "Quit Game" can end: the one under the overlay, or one the launcher sees beside it.</summary>
+    public bool GameRuns => IsOverlay || GameRunsProbe?.Invoke() == true;
+
+    /// <summary>
+    /// "Quit Game": asks first (what is not saved is lost; online, the seat is given back), then
+    /// ends the game for real, not only the launcher. <paramref name="thenQuit"/>: the launcher
+    /// quits after it. <paramref name="confirmed"/>: the question was already asked.
+    /// </summary>
+    public async Task QuitGameAsync(bool thenQuit = false, bool confirmed = false)
+    {
+        if (!GameRuns)
+        {
+            return;
+        }
+        var body = Launcher.OnlineEnabled ? S["quitgame.body"] + " " + S["quitgame.seat"] : S["quitgame.body"];
+        if (!confirmed && !await ConfirmAsync(S["quitgame.title"], body, S["quitgame.yes"]).ConfigureAwait(true))
+        {
+            return;
+        }
+        if (QuitGameSink is { } sink)
+        {
+            await sink(thenQuit).ConfigureAwait(true);
+        }
+        else
+        {
+            EndOverlay(); // nothing behind the picture (the harness)
+        }
+    }
+
+    /// <summary>
     /// The game asked for the launcher: home, with the Play tile as "Back to the game" showing
     /// <paramref name="frame"/>. <paramref name="again"/>: it was already up and only comes to
     /// the front again, so the player stays where they were.

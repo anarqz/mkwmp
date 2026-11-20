@@ -101,7 +101,7 @@ int overlay_parse_state(const char *json, OverlayState *out) {
     else if (strncmp(v, "false", 5)) return 0;
     if ((v = json_value(json, "seq"))) out->seq = strtoll(v, NULL, 10);
     out->enabled = !(v = json_value(json, "enabled")) || !strncmp(v, "true", 4);
-    if ((v = json_value(json, "action"))) out->menu = !strncmp(v, "\"menu\"", 6);
+    if ((v = json_value(json, "action"))) out->menu = !strncmp(v, "\"menu\"", 6), out->quit = !strncmp(v, "\"quit\"", 6);
     return 1;
 }
 
@@ -120,6 +120,9 @@ static const MkwPluginApi *g_api;
 static void (*g_menu_open)(int open);
 static int (*g_capture)(int max_w, int max_h,
                         void (*cb)(const uint8_t *rgba, int w, int h, int row_bytes, void *user), void *user);
+static int (*g_focus_set)(int in_focus, int suspend);   // the game behind the overlay as behind HOME (API 4, later)
+static void (*g_quit)(void);                            // the runtime's own clean end (API 4, later)
+static int g_suspend = 1;    // the mod's setting overlay_pause: 0 keeps the game running behind the overlay
 static int g_filtered;       // the runtime calls pad_filter (plugin API 4)
 
 static PlatEvent *g_wake;    // a trigger: the thread looks now
@@ -362,10 +365,25 @@ static void sdl_watch(void) {
 }
 
 // ---- one opening: the picture, the request, the wait for "back to the game"
+// The game behind the overlay, as behind a console's HOME menu: out of focus, silent and, where the game lets the
+// console do it, suspended (MKW asks not to be while it uses the network: an online race is never stopped here).
+// Without the entry (an older runtime) the game runs on with an idle pad, as before.
+static int g_held;
+static void hold(int on) {
+    if (!g_focus_set || g_held == on) return;
+    g_held = on;
+    int suspended = g_focus_set(!on, on && g_suspend);
+    if (on) mkwmp_log("overlay: the game is out of focus and %s", suspended ? "suspended" : !g_suspend
+                      ? "runs on (overlay_pause = 0)" : "runs on (it uses the network, or is still starting)");
+}
+
+// The idle pad first, then the game runs again: the B that closed the overlay and whatever is held stay with the gate
+// until every button is up.
 static void closed(void) {
     plat_store(&g_closed, 1);
     overlay_gate_closed(&g_watch);
     plat_store(&g_open, 0);
+    hold(0);
 }
 
 static int ask_open(OverlayTrigger by, int with_frame, OverlayState *st) {
@@ -379,8 +397,9 @@ static int ask_open(OverlayTrigger by, int with_frame, OverlayState *st) {
         g_frame = NULL;
         plat_unlock(&g_frame_lock);
     }
-    // menu=1: this runtime opens its own menu when asked (plugin API 4), so the launcher may offer it
-    const char *menu = g_menu_open ? "&menu=1" : "";
+    // menu=1: this runtime opens its own menu when asked (plugin API 4), so the launcher may offer it;
+    // quit=1: and ends itself cleanly when asked (the launcher's "Quit Game" then waits for that before a WM_CLOSE)
+    const char *menu = g_menu_open ? g_quit ? "&menu=1&quit=1" : "&menu=1" : g_quit ? "&quit=1" : "";
     if (frame)
         snprintf(path, sizeof path, "/local/v1/overlay/open?by=%s&pid=%lu%s&w=%d&h=%d&format=rgba", trigger_name(by),
                  plat_process_id(), menu, w, h);
@@ -403,6 +422,7 @@ static void session(OverlayTrigger by) {
         plat_event_reset(g_framed);
         framed = g_capture(FRAME_W, FRAME_H, frame_arrived, NULL) && plat_event_wait(g_framed, FRAME_WAIT_MS);
     }
+    hold(1);   // after the picture: a suspended game presents nothing
     OverlayState st;
     int status = ask_open(by, 1, &st);
     if (status != 200 || !st.open) {
@@ -426,7 +446,7 @@ static void session(OverlayTrigger by) {
             st = now;
         } else if (++fails >= 3) {   // the launcher went away: the game is the player's again
             mkwmp_log("overlay: the launcher stopped answering (HTTP %d): back to the game", status);
-            st.open = 0, st.menu = 0;
+            st.open = 0, st.menu = 0, st.quit = 0;
         } else {
             plat_sleep_ms(300);
         }
@@ -436,8 +456,21 @@ static void session(OverlayTrigger by) {
             if (ask_open((OverlayTrigger)again, 0, &re) == 200) st = re;
         }
     }
+    if (st.quit) {
+        // Quit Game: the runtime ends as by its menu's Quit (the mod's on_exit gives the seat back, the saves finish).
+        // The game stays held meanwhile: no frame more, no sound. Without the entry the launcher closes the window,
+        // which ends the game the same way.
+        mkwmp_log("overlay: closed (Quit Game asked): %s", g_quit ? "the game ends" : "this mkw-recomp has no quit "
+                  "entry, the launcher closes the window");
+        if (g_quit) {
+            g_quit();
+            plat_sleep_ms(15000);   // the process ends within this; the launcher closes the window after 8 s
+            mkwmp_log("overlay: the game did not end: it is the player's again");
+        }
+    }
     closed();
     plat_xchg(&g_trigger, 0);
+    if (st.quit) return;
     mkwmp_log("overlay: closed%s", st.menu ? " (mkw-recomp's menu asked)" : "");
     if (st.menu && g_menu_open) g_menu_open(1);
 }
@@ -504,7 +537,20 @@ void overlay_install(const MkwPluginApi *api) {
         g_capture = api->frame_capture;
         g_filtered = api->input_filter && api->input_filter(pad_filter, NULL);
     }
+    // ... and the two added to version 4 later (a runtime without them: the game runs on behind the overlay, and
+    // "Quit Game" is the launcher closing the window)
+    if (api->size >= offsetof(MkwPluginApi, focus_set) + sizeof api->focus_set) g_focus_set = api->focus_set;
+    if (api->size >= offsetof(MkwPluginApi, quit) + sizeof api->quit) g_quit = api->quit;
+    char pause[8] = "";
+    if (api->size >= offsetof(MkwPluginApi, setting_set) + sizeof api->setting_set && api->setting_get &&
+        api->setting_get("overlay_pause", pause, sizeof pause) && !strcmp(pause, "0"))
+        g_suspend = 0;
     mkwmp_log("overlay: %s; %s", g_filtered ? "the pad goes through the mod (plugin API 4)" : "plugin API 3: watching only",
               g_hosted ? "the mod starts the launcher as its overlay host" : "the launcher that started the game answers");
+    mkwmp_log("overlay: behind it the game %s; Quit Game %s",
+              !g_focus_set ? "runs on (this mkw-recomp has no focus_set)" : g_suspend
+              ? "is out of focus and suspended where the game allows it (not while it uses the network)"
+              : "is out of focus and runs on (overlay_pause = 0)",
+              g_quit ? "ends it through the runtime" : "is the launcher closing the window");
     if (!plat_thread_start(overlay_main, NULL)) mkwmp_log("overlay: off: no thread");
 }

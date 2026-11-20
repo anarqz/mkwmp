@@ -28,6 +28,7 @@ public sealed partial class Launcher
         var s = Settings;
         var target = _targets.Get(s.Target);
         var view = BuildGameSettings(target, GameFinder.Detect(target, s.Game));
+        view = view with { Schema = WithOnlineLocks(target, view.Schema) };
         lock (_gate)
         {
             if (_gameSettingsError is { } error)
@@ -74,6 +75,89 @@ public sealed partial class Launcher
         }
     }
 
+    private GameSettingsSchema? _lockSource;
+    private bool _lockOnline;
+    private GameSettingsSchema? _lockResult;
+
+    private bool OnlineOn => ((ILauncher)this).OnlineEnabled;
+
+    /// <summary>
+    /// The target's settings that every player of an online race must share (mkw-recomp: the logic
+    /// rate, 60 Hz) show as locked while a server is chosen. The same object is returned while
+    /// nothing changed, so the two-second refresh stays quiet.
+    /// </summary>
+    private GameSettingsSchema? WithOnlineLocks(IGameTarget target, GameSettingsSchema? schema)
+    {
+        if (schema is null)
+        {
+            return null;
+        }
+        var online = OnlineOn;
+        lock (_gate)
+        {
+            if (ReferenceEquals(schema, _lockSource) && online == _lockOnline && _lockResult is not null)
+            {
+                return _lockResult;
+            }
+        }
+        var owned = target.OnlineOwnedSettings;
+        var result = !online || owned.Count == 0 ? schema : schema with
+        {
+            Categories = [.. schema.Categories.Select(c => c with
+            {
+                Settings = [.. c.Settings.Select(x => x.Locked is null && owned.FirstOrDefault(o => string.Equals(o.Id, x.Id, StringComparison.OrdinalIgnoreCase)) is { Id: not null } o
+                    ? x with { Locked = o.Why }
+                    : x)],
+            })],
+        };
+        lock (_gate)
+        {
+            (_lockSource, _lockOnline, _lockResult) = (schema, online, result);
+        }
+        return result;
+    }
+
+    /// <summary>A change to an online-owned setting is refused while online (a reset to the default is fine when that is the owned value).</summary>
+    private void RefuseOnlineOwned(IGameTarget target, IReadOnlyDictionary<string, string?> edits)
+    {
+        if (!OnlineOn)
+        {
+            return;
+        }
+        foreach (var (id, value, why) in target.OnlineOwnedSettings)
+        {
+            if (edits.TryGetValue(id, out var wanted) && wanted is not null && wanted != value)
+            {
+                throw new LauncherException(why);
+            }
+        }
+    }
+
+    /// <summary>Before an online session: the online-owned settings get their value in the game's file.</summary>
+    private void EnforceOnlineOwned(IGameTarget target, GameInstall install)
+    {
+        var owned = target.OnlineOwnedSettings;
+        if (owned.Count == 0 || target.IsRunning(install))
+        {
+            return;
+        }
+        try
+        {
+            var current = target.ReadGameSettings(install);
+            var edits = owned.Where(o => current.TryGetValue(o.Id, out var v) && v != o.Value)
+                .ToDictionary(o => o.Id, o => (string?)o.Value, StringComparer.OrdinalIgnoreCase);
+            if (edits.Count > 0)
+            {
+                target.WriteGameSettings(install, edits);
+                Note($"game settings: {string.Join(", ", edits.Select(e => $"{e.Key} = {e.Value}"))} for online play");
+            }
+        }
+        catch (Exception e) when (e is LauncherException or IOException or UnauthorizedAccessException)
+        {
+            Note($"game settings: online values not written: {e.Message}");
+        }
+    }
+
     /// <summary>For <see cref="RefreshGame"/>: the settings follow the game folder's two-second look.</summary>
     private void FollowGameSettings()
     {
@@ -117,7 +201,9 @@ public sealed partial class Launcher
                 {
                     throw new LauncherException(Strings.GameSettingsNone(target.DisplayName));
                 }
-                target.WriteGameSettings(install, changes(schema));
+                var edits = changes(WithOnlineLocks(target, schema)!);
+                RefuseOnlineOwned(target, edits);
+                target.WriteGameSettings(install, edits);
             }
             catch (Exception e) when (e is LauncherException or IOException or UnauthorizedAccessException)
             {
