@@ -252,6 +252,13 @@ impl Registry {
         if !has_kind {
             conn.execute_batch("ALTER TABLE reports ADD COLUMN kind TEXT NOT NULL DEFAULT 'voice';")?;
         }
+        // Consent to the server's privacy policy (1.4.0): the SHA-256 of the text accepted, and when.
+        let has_privacy: bool = conn
+            .query_row("SELECT COUNT(*) FROM pragma_table_info('profiles') WHERE name = 'privacy_version'", [], |r| r.get::<_, i64>(0))?
+            > 0;
+        if !has_privacy {
+            conn.execute_batch("ALTER TABLE profiles ADD COLUMN privacy_version TEXT; ALTER TABLE profiles ADD COLUMN privacy_at INTEGER;")?;
+        }
         let r = Self {
             db: Mutex::new(conn),
             path: db_path,
@@ -623,6 +630,32 @@ impl Registry {
         }
         out.retain(|(k, _)| keys.contains(k));
         Ok(out)
+    }
+
+    /// The privacy policy version this profile accepted and when (seconds), if it did.
+    pub fn privacy(&self, name: &str) -> Option<(String, u64)> {
+        let db = self.db.lock().unwrap();
+        db.query_row(
+            "SELECT privacy_version, privacy_at FROM profiles WHERE key = ?1 AND privacy_version IS NOT NULL",
+            [names::key(name)],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?.unwrap_or(0) as u64)),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
+    /// Record consent to `version` at `now`, or (`None`) withdraw it.
+    pub fn set_privacy(&self, name: &str, version: Option<&str>, now: u64) -> Result<(), RegistryError> {
+        let db = self.db.lock().unwrap();
+        let n = db.execute(
+            "UPDATE profiles SET privacy_version = ?2, privacy_at = ?3 WHERE key = ?1",
+            params![names::key(name), version, version.map(|_| now as i64)],
+        )?;
+        if n == 0 {
+            return Err(RegistryError::NotFound);
+        }
+        Ok(())
     }
 
     /// The PIN hash of a profile (tokens are bound to it).

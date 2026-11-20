@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 config.workspace = true
 seat = { path = "../seat" }
+beholder = { path = "../beholder" }
 lobby = { path = "../lobby" }
 gateway = { path = "../gateway" }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }

@@ -70,7 +70,9 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn std::error:
         ),
         None => None,
     };
-    let state = AppState::new(roster, registry, lobby_tokens.clone(), admin_token, system_clock());
+    let policy = crate::privacy::Policy::load(&cfg.privacy)?;
+    let announce = crate::announce::Settings::from_config(cfg)?;
+    let state = AppState::new(roster, registry, lobby_tokens.clone(), admin_token, system_clock()).with_privacy(policy);
 
     // Sweep silent sessions even when no request arrives.
     let sweeper = state.clone();
@@ -101,6 +103,16 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn std::error:
         "registry: {profiles} profiles in {}",
         db.unwrap_or_else(|| "memory (no [registry] file!)".to_string())
     );
+    let p = state.privacy();
+    println!(
+        "privacy policy {} ({}), consent {}",
+        &p.version[..12],
+        cfg.privacy.file.as_ref().map_or("built-in".to_string(), |f| f.display().to_string()),
+        if p.enforce { "enforced" } else { "not enforced" }
+    );
+    if let Some(a) = announce {
+        crate::announce::spawn(a, state.clone());
+    }
     axum::serve(listener, router(state).into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;

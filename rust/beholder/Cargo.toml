@@ -1,0 +1,21 @@
+# The public server directory (docs/contracts/BEHOLDER_API.md): seat servers announce
+# themselves (Ed25519-signed), launchers list them. In memory only, no outbound request.
+# The seat server uses the wire half (`wire`) to sign its own announces.
+[package]
+name = "beholder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true, features = ["net", "signal", "time"] }
+axum = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ed25519-dalek = "2"
+base64 = "0.22"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tokio = { workspace = true, features = ["net", "time", "macros", "rt-multi-thread"] }

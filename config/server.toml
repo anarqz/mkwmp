@@ -64,6 +64,19 @@ gamesync_host = "gamesync.npln.nintendo.net"  # advertised; the patch redirects 
 # rejoin = true                # a lobby between events takes new searchers (verified live; false = never)
 # join_window_secs = 0         # an assigned lobby still takes players this long (0 = never)
 
+[privacy]
+# The policy served at GET /privacy (Markdown); its SHA-256 is the version players accept.
+# file = "privacy.md"          # absent: the built-in policy for self-hosted servers
+enforce = false                # true: seats, friends and reports need consent to the current version
+
+[announce]
+# List this server in a beholder (docs/contracts/BEHOLDER_API.md). Empty URL: not listed.
+beholder_url = ""
+# endpoint = "https://mkw.example.net"   # public seat API base URL (required to announce)
+# name = ""                    # empty: [server] name
+# region = "sa-east"
+# key_file = "../scratch/keys/beholder-ed25519.key"  # made on first start; default: next to the ticket key
+
 [tls]
 # Shared by both endpoints. Paths relative to this file.
 cert = "../scratch/certs/capture-cert.pem"

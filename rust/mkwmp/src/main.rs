@@ -4,6 +4,7 @@
 //!   mkwmp lobby  [config/server.toml]   the game-facing lobby (matches)
 //!   mkwmp host [--public-ip IP] ...     both parts in one process, set up
 //!                                       on first run (also: no arguments)
+//!   mkwmp beholder [config/beholder.toml] the public server directory
 //!   mkwmp keygen [kid]                  print a new ticket signing key
 //!   mkwmp admin <list|register|reset-pin|release> [name] [--config config.toml]
 //!   mkwmp admin reports [open|closed|all] | close-report <id> [outcome...] | delete-report <id>
@@ -13,7 +14,7 @@
 mod host;
 mod lobby;
 
-const USAGE: &str = "usage: mkwmp host [options] (see mkwmp host --help) | mkwmp <server|lobby> [config.toml] | mkwmp keygen [kid] | mkwmp admin <list|register|reset-pin|release> [name] [--config file] | mkwmp admin <reports [open|closed|all]|close-report <id> [outcome...]|delete-report <id>> [--config file]";
+const USAGE: &str = "usage: mkwmp host [options] (see mkwmp host --help) | mkwmp <server|lobby> [config.toml] | mkwmp beholder [beholder.toml] | mkwmp keygen [kid] | mkwmp admin <list|register|reset-pin|release> [name] [--config file] | mkwmp admin <reports [open|closed|all]|close-report <id> [outcome...]|delete-report <id>> [--config file]";
 
 #[tokio::main]
 async fn main() {
@@ -29,6 +30,10 @@ async fn main() {
             Ok(())
         }
         Some("admin") => admin(&args[1..]).await,
+        Some("beholder") => match config::BeholderConfig::load(arg.unwrap_or("config/beholder.toml")) {
+            Ok(b) => beholder::http::serve(&b.bind, b.trust_cf_connecting_ip).await,
+            Err(e) => Err(e.into()),
+        },
         Some("server") | Some("lobby") => match config::ServerConfig::load(arg.unwrap_or("config/server.toml")) {
             Ok(cfg) if cmd == Some("server") => seat::serve(&cfg).await,
             Ok(cfg) => {

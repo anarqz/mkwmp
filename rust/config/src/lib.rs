@@ -36,6 +36,63 @@ pub struct ServerConfig {
     pub registry: RegistryCfg,
     pub lobby: Lobby,
     pub tls: Tls,
+    #[serde(default)]
+    pub privacy: PrivacyCfg,
+    #[serde(default)]
+    pub announce: AnnounceCfg,
+}
+
+/// The server's privacy policy (`GET /privacy`) and whether consent gates play.
+#[derive(Debug, Default, Deserialize)]
+pub struct PrivacyCfg {
+    /// Markdown file served at `GET /privacy`; its SHA-256 is the policy version. Absent: the
+    /// built-in policy for self-hosted servers.
+    #[serde(default)]
+    pub file: Option<PathBuf>,
+    /// Refuse seats, friends and reports (403 PRIVACY_REQUIRED) until the profile accepted the
+    /// current version. Off: launchers that only ask locally (1.3.0) keep working.
+    #[serde(default)]
+    pub enforce: bool,
+}
+
+/// Announcing this seat server to a beholder (docs/contracts/BEHOLDER_API.md).
+#[derive(Debug, Default, Deserialize)]
+pub struct AnnounceCfg {
+    /// Beholder base URL, e.g. https://beholder.example.net. Empty: don't announce.
+    #[serde(default)]
+    pub beholder_url: String,
+    /// Public seat API base URL players use (http(s)://host[:port], no path). Required to announce.
+    #[serde(default)]
+    pub endpoint: String,
+    /// Name in the server list. Empty: [server] name.
+    #[serde(default)]
+    pub name: String,
+    /// Short region tag, [A-Za-z0-9-], up to 16 (e.g. sa-east).
+    #[serde(default)]
+    pub region: String,
+    /// The announce key (base64url Ed25519 seed), made on first start. Absent:
+    /// beholder-ed25519.key next to [ticket] private_key_file.
+    #[serde(default)]
+    pub key_file: Option<PathBuf>,
+}
+
+/// `mkwmp beholder [config/beholder.toml]`: the public server directory.
+#[derive(Debug, Deserialize)]
+pub struct BeholderConfig {
+    #[serde(default = "d_beholder_bind")]
+    pub bind: String,
+    /// Believe CF-Connecting-IP for the per-address limits. Only behind a Cloudflare tunnel
+    /// (anyone can send the header to a directly reachable beholder).
+    #[serde(default)]
+    pub trust_cf_connecting_ip: bool,
+}
+
+fn d_beholder_bind() -> String { "127.0.0.1:7100".into() }
+
+impl BeholderConfig {
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
+        parse(path.as_ref())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -247,6 +304,11 @@ impl ServerConfig {
         cfg.seats.lobby_tokens_file = cfg.seats.lobby_tokens_file.map(|p| resolve(base, &p));
         cfg.registry.file = cfg.registry.file.map(|p| resolve(base, &p));
         cfg.registry.admin_token_file = cfg.registry.admin_token_file.map(|p| resolve(base, &p));
+        cfg.privacy.file = cfg.privacy.file.map(|p| resolve(base, &p));
+        cfg.announce.key_file = cfg.announce.key_file.map(|p| resolve(base, &p));
+        if !cfg.announce.beholder_url.is_empty() && cfg.announce.endpoint.is_empty() {
+            return Err(ConfigError::Invalid("announce.endpoint must be set to announce to a beholder"));
+        }
         if cfg.seats.capacity == 0 {
             return Err(ConfigError::Invalid("seats.capacity must be > 0"));
         }
@@ -297,6 +359,15 @@ mod tests {
         assert_eq!(cfg.lobby.relay_range().unwrap(), None);
         assert_eq!(cfg.lobby.voice_port, 8907);
         assert!(cfg.tls.cert.ends_with("capture-cert.pem"));
+    }
+
+    #[test]
+    fn privacy_announce_and_beholder_defaults() {
+        let cfg = ServerConfig::load(format!("{REPO}/config/server.toml")).unwrap();
+        assert!(!cfg.privacy.enforce && cfg.privacy.file.is_none());
+        assert!(cfg.announce.beholder_url.is_empty());
+        let b = BeholderConfig::load(format!("{REPO}/config/beholder.toml")).unwrap();
+        assert_eq!((b.bind.as_str(), b.trust_cf_connecting_ip), ("127.0.0.1:7100", false));
     }
 
     #[test]
