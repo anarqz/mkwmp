@@ -41,7 +41,7 @@ Errors are `{"error": {"code", "message"}}`. Session answers carry `Cache-Contro
 | `POST /seat/v1/sessions` | `{name, pin}` → `201 View + sessionKey` | Checks the profile's PIN, then seats the player at once if a seat is free, else queues them. Errors: `404 PROFILE_NOT_FOUND`, `401 PIN_WRONG`, `429 RATE_LIMITED`, `409 NAME_TAKEN` (that profile is already online: its session heartbeated within its poll interval + 5 s; a session silent longer, e.g. a killed launcher, is taken over by this join, which keeps its seat or place in line under a new session id; clients retry 409 later), `503 QUEUE_FULL` (with `Retry-After: 30`). |
 | `GET /seat/v1/sessions/{id}` | → `View` | The poll while queued and the heartbeat while seated. Repeat within `nextPollMs`. |
 | `DELETE /seat/v1/sessions/{id}` | → `204` | Frees the seat or the place in line. Idempotent. |
-| `POST /seat/v1/lobby/roster` | `{sessionIds: string[] (≤256), lobbies?: {mode: count}}` → `{bootId, sessions: RosterEntry[]}` | Lobby only. `lobbies` takes at most 16 modes, and mode names are `[A-Za-z0-9_-]{1,32}`. `Authorization: Bearer <lobby token>`. The tokens come from `[seats] lobby_tokens_file`. Without that file: `403 ROSTER_DISABLED`. Wrong token: `401`. |
+| `POST /seat/v1/lobby/roster` | `{sessionIds: string[] (≤256), lobbies?: {mode: count}, rooms?: {sessionId: {lobby, ussid, ussids}}}` → `{bootId, sessions: RosterEntry[]}` | Lobby only. `rooms` (1.4.0): each listed seat's lobby room; a listed seat missing from it is in no room; without `rooms` nothing changes. The seat server shows a room to that seat's own launcher only (`View.room`). `lobbies` takes at most 16 modes, and mode names are `[A-Za-z0-9_-]{1,32}`. `Authorization: Bearer <lobby token>`. The tokens come from `[seats] lobby_tokens_file`. Without that file: `403 ROSTER_DISABLED`. Wrong token: `401`. |
 
 ```ts
 View = {
@@ -52,6 +52,7 @@ View = {
   seatsTotal, seatsFree, queued,
   nextPollMs,        // seated: heartbeat (20 s); queued: poll (5 s)
   ticket?: { token, expiresAt /* unix s */, lobby /* NPLN host:port */ },
+  room: { lobby /* lobby uuid */, ussid, ussids /* ascending: the first is the mesh host */, at /* ms, when the lobby said */ } | null,  // 1.4.0; null: no room, unknown, or older than 60 s
 }
 RosterEntry = {
   sessionId,

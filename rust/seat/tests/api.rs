@@ -165,6 +165,47 @@ async fn join_queue_heartbeat_promote() {
 }
 
 #[tokio::test]
+async fn lobby_reported_rooms_reach_only_their_own_seat() {
+    let h = Harness::new(5);
+    let (_, a) = h.join("ana", &[]).await;
+    let (_, b) = h.join("bia", &[]).await;
+    let ((a_sid, a_key), (b_sid, b_key)) = (sid_key(&a), sid_key(&b));
+    assert_eq!(a["room"], Value::Null, "no room until the lobby says");
+
+    let poll = |sid: String, key: String| {
+        let h = &h;
+        async move { h.call("GET", &format!("/seat/v1/sessions/{sid}"), Some(&key), None).await.1 }
+    };
+    let lobby = "80379bc5-c904-43af-b02d-cfd4f1452697";
+    let body = json!({
+        "sessionIds": [a_sid, b_sid],
+        "rooms": {a_sid.clone(): {"lobby": lobby, "ussid": 12, "ussids": [16, 3, 12, 3]}},
+    });
+    let (st, _) = h.call("POST", "/seat/v1/lobby/roster", Some("lobby-secret"), Some(body)).await;
+    assert_eq!(st, StatusCode::OK);
+    let room = &poll(a_sid.clone(), a_key.clone()).await["room"];
+    assert_eq!((room["lobby"].as_str(), room["ussid"].as_u64()), (Some(lobby), Some(12)));
+    assert_eq!(room["ussids"], json!([3, 12, 16]), "sorted, deduplicated");
+    assert_eq!(poll(b_sid.clone(), b_key.clone()).await["room"], Value::Null, "Bia is in no room");
+
+    // Ana leaves the room: listed without a room.
+    let body = json!({"sessionIds": [a_sid], "rooms": {}});
+    h.call("POST", "/seat/v1/lobby/roster", Some("lobby-secret"), Some(body)).await;
+    assert_eq!(poll(a_sid.clone(), a_key.clone()).await["room"], Value::Null);
+
+    // A lobby that stops reporting: the room goes stale after 60 s. An old lobby (no `rooms`)
+    // changes nothing.
+    let body = json!({"sessionIds": [a_sid], "rooms": {a_sid.clone(): {"lobby": lobby, "ussid": 12, "ussids": [12]}}});
+    h.call("POST", "/seat/v1/lobby/roster", Some("lobby-secret"), Some(body)).await;
+    h.call("POST", "/seat/v1/lobby/roster", Some("lobby-secret"), Some(json!({"sessionIds": [a_sid]}))).await;
+    assert_eq!(poll(a_sid.clone(), a_key.clone()).await["room"]["ussid"], 12);
+    h.advance(30_000);
+    assert_eq!(poll(a_sid.clone(), a_key.clone()).await["room"]["ussid"], 12);
+    h.advance(31_000);
+    assert_eq!(poll(a_sid, a_key).await["room"], Value::Null);
+}
+
+#[tokio::test]
 async fn lobby_roster_reports_liveness_and_mutual_friends() {
     let h = Harness::new(5);
     let (_, a) = h.join("ana", &[]).await;

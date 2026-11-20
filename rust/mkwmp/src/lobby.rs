@@ -201,12 +201,21 @@ async fn roster_sync(core: lobby::Core, url: String, token: String, every: u64) 
         let lobbies: std::collections::BTreeMap<String, usize> =
             core.counts().into_iter().map(|(mode, c)| (mode, c.lobbies)).collect();
         let sids = core.live_sessions();
+        let rooms = core.rooms();
         let mut entries = vec![];
         let mut ok = true;
         // The seat server takes at most 256 ids per call; counts ride on the first.
         let chunks: Vec<&[String]> = if sids.is_empty() { vec![&[]] } else { sids.chunks(256).collect() };
         for (i, chunk) in chunks.into_iter().enumerate() {
-            let mut body = serde_json::json!({ "sessionIds": chunk });
+            // Each seat's room (SEAT_API.md §2: rooms), for the seats of this chunk only.
+            let chunk_rooms: serde_json::Map<String, serde_json::Value> = chunk
+                .iter()
+                .filter_map(|sid| {
+                    let (lobby, ussid, ussids) = rooms.get(sid)?;
+                    Some((sid.clone(), serde_json::json!({"lobby": lobby, "ussid": ussid, "ussids": ussids})))
+                })
+                .collect();
+            let mut body = serde_json::json!({ "sessionIds": chunk, "rooms": chunk_rooms });
             if i == 0 {
                 body["lobbies"] = serde_json::json!(lobbies);
             }

@@ -394,6 +394,24 @@ impl Core {
         })
     }
 
+    /// For the roster call: each live seat session in a lobby -> (lobby id, its ussid, every
+    /// member's ussid ascending). The seat server hands it to that seat's own launcher, so the
+    /// game's crash records can name their room.
+    pub fn rooms(&self) -> HashMap<String, (String, u32, Vec<u32>)> {
+        self.run(|s, _| {
+            let online: HashSet<&str> = s.conn_user.values().map(|u| users::tail(u)).collect();
+            let mut out = HashMap::new();
+            for (uid, sid) in s.seat_sessions.iter().filter(|(uid, _)| online.contains(uid.as_str())) {
+                let Some(lobby) = s.mm.lobby_of(uid).and_then(|id| s.mm.lobbies.get(&id)) else { continue };
+                let Some(me) = lobby.seat(uid) else { continue };
+                let mut ussids: Vec<u32> = lobby.seats.iter().map(|x| x.ussid).collect();
+                ussids.sort_unstable();
+                out.insert(sid.clone(), (lobby.id.to_string(), me.ussid, ussids));
+            }
+            out
+        })
+    }
+
     /// The seat roster's answer for [`Core::live_sessions`]: friend lists become the mutual
     /// friends (others' presence and rooms are no longer shown to a player), and a seat that
     /// is no longer alive leaves its lobby.
