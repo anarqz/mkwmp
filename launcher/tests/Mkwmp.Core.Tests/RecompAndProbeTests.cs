@@ -17,7 +17,7 @@ public class RecompTests
         Assert.Equal(RecompKind.Unknown, unknown.Kind);
         Assert.False(unknown.Ok);
         Assert.Contains("0.1.13", unknown.Problem, StringComparison.Ordinal);
-        Assert.Contains("0.1.11: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp", new RecompId(RecompKind.Other, "0.1.11").Problem, StringComparison.Ordinal);
+        Assert.Contains("0.1.11: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp or 0.1.16", new RecompId(RecompKind.Other, "0.1.11").Problem, StringComparison.Ordinal);
         Assert.Equal(RecompKind.Unknown, Recomp.IdentifyBytes([]).Kind);
         var ok = new RecompId(RecompKind.Supported, "0.1.10");
         Assert.True(ok.Ok);
@@ -27,6 +27,12 @@ public class RecompTests
         Assert.All(Recomp.Known, k => Assert.Equal(64, k.Sha256.Length));
         Assert.Contains(Recomp.Recommended, Recomp.Supported);
         Assert.EndsWith(Recomp.Recommended, Recomp.Download, StringComparison.Ordinal);
+        // upstream 0.1.16: the mkw.exe of mkw-recomp-0.1.16-windows-x64.zip (zip sha256 e5d26c2f...8288), which loads mods
+        Assert.Contains(("0.1.16", "e1829a08a7e24ab0f54425fd5e6a400a6fe5c54798757a80a104268e6c18e029"), Recomp.Known);
+        Assert.Contains("0.1.16", Recomp.Supported);
+        Assert.Contains("0.1.16", Recomp.ModRuntimes);
+        Assert.Equal(Recomp.Known.Length, Recomp.Known.Select(k => k.Sha256).Distinct().Count());
+        Assert.All(Recomp.ModRuntimes, v => Assert.Contains(v, Recomp.Supported));
     }
 
     [Fact]
@@ -105,6 +111,8 @@ public class RecompTests
         Assert.Null(Recomp.RebuildProblemFor(S("0.1.15"), null)); // unknown is allowed
         Assert.Null(Recomp.RebuildProblemFor(S("0.1.15-mkwmp"), Id13)); // the fork keeps 0.1.13's id
         Assert.NotNull(Recomp.RebuildProblemFor(S("0.1.15-mkwmp"), Id15)); // coming from official 0.1.15
+        Assert.Null(Recomp.RebuildProblemFor(S("0.1.16"), Id15)); // 0.1.16 kept 0.1.15's id: no rebuild after that update
+        Assert.NotNull(Recomp.RebuildProblemFor(S("0.1.16"), Id13)); // coming from 0.1.13 or from 0.1.15-mkwmp
         Assert.Null(Recomp.RebuildProblemFor(S("0.1.10"), "anything")); // no id known for 0.1.10
         Assert.Null(Recomp.RebuildProblemFor(new RecompId(RecompKind.Unknown, null), Id13));
         Assert.Equal(Id15, Recomp.IdWord("C9BBCB75A9AC9A49\n"));

@@ -59,7 +59,11 @@ internal sealed record RecompSetupHost
 /// </summary>
 internal static partial class RecompSetup
 {
-    /// <summary>The runtimes whose setup this driver knows (arguments, events, error codes: checked at each bump).</summary>
+    /// <summary>
+    /// The runtimes whose setup this driver knows (arguments, events, error codes: checked at each
+    /// bump; 0.1.16's prepare.py takes the same arguments and writes the same events as 0.1.15's,
+    /// research/docs/RECOMP-0.1.16.md).
+    /// </summary>
     public static readonly IReadOnlyList<string> Runtimes = [RecompRuntime.Pinned.Version];
 
     /// <summary>prepare.py <c>PREP_VERSION</c>: a state file with another one counts as empty there.</summary>

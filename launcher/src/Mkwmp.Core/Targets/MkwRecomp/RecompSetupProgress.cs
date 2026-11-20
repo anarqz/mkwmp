@@ -14,7 +14,12 @@ namespace Mkwmp.Core.Targets.MkwRecomp;
 /// done                      everything finished (exit 0)
 /// error &lt;code&gt; &lt;detail...&gt;  exit 1, or 2 for a bad command line and "source"
 /// </code>
-/// A line that is none of these is ignored (the script is free to say more).
+/// A line that is none of these is ignored (the script is free to say more). The same in 0.1.15
+/// and 0.1.16; from 0.1.16 the lines are UTF-8 (before: the system's code page), which
+/// <see cref="RecompSetup.Decode"/> takes either way. 0.1.16's HDR tone mapper programs
+/// (<c>spirv-renodx/</c>, the key <c>tonemap</c> in setup-state.json) are no step: prepare.py makes
+/// them in a few seconds when the warm step's turn comes, before its <c>step warm</c> line, also
+/// when warm itself is then skipped, and says nothing on its standard output.
 /// <para>
 /// The steps have no common unit, so the whole is weighed in seconds of a reference machine
 /// (launcher/docs/RECOMP_INTEGRATION.md 1.6: 16 threads, game 1.8.0, the data linked): compile

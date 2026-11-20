@@ -7,8 +7,8 @@ namespace Mkwmp.Core.Targets.MkwRecomp;
 
 /// <summary>
 /// mkw-recomp's own settings, as its menu shows them (runtime/core/base/cfg.c <c>metas</c>,
-/// runtime/ui/menu/settings_tabs.cpp; texts from i18n/ui/mkw.pot, mkw-recomp 0.1.15): the Screen,
-/// Graphics, Sound, Controls, General and Advanced tabs. They live in <c>&lt;data dir&gt;/mkw.ini</c>
+/// runtime/ui/menu/settings_tabs.cpp; texts from i18n/ui/mkw.pot, mkw-recomp 0.1.15 and 0.1.16):
+/// the Screen, Graphics, Sound, Controls, General and Advanced tabs. They live in <c>&lt;data dir&gt;/mkw.ini</c>
 /// (beside mkw.exe unless <c>game_dir</c> moved the installation; the same on Windows, under
 /// Proton and in the Linux build), one <c>key = value</c> line each, absent while at its default.
 /// <para>
@@ -16,8 +16,10 @@ namespace Mkwmp.Core.Targets.MkwRecomp;
 /// <c>game_dir</c>, <c>mods</c>, <c>mods_played</c>, <c>mods_ack</c>, <c>player</c>,
 /// <c>shortcut_asked</c>), which the game and MKWMP's install depend on; the Hacks tab (turbo,
 /// unlock everything...), which has no place in online races; <c>lan</c> (LAN play turns the
-/// title menu's Wireless Play into LAN Play, which may conflict with MKWMP's online play); and
-/// what only the game can offer:
+/// title menu's Wireless Play into LAN Play, which may conflict with MKWMP's online play) and
+/// with it 0.1.16's <c>lan_ip</c> (the LAN network row, a list of this PC's adapters); what the
+/// game writes for itself (<c>hdr_system</c>) and the keys with no menu row (<c>wb_par</c>,
+/// <c>dsu</c>'s server and slot aside); and what only the game can offer:
 /// the graphics card (a list of Vulkan devices), the key and button bindings (<c>bind_*</c>),
 /// input recording (a path) and the buttons (Best settings for this PC, Reset all).
 /// </para>
@@ -34,8 +36,30 @@ public static partial class RecompSettings
     public const string NextStart = "Changes apply the next time the game starts.";
     public const string Quality = "quality";
 
-    /// <summary>The runtimes whose settings this table describes (others name or read some keys differently).</summary>
-    public static readonly IReadOnlyList<string> Runtimes = ["0.1.15", "0.1.15-mkwmp"];
+    /// <summary>
+    /// The runtimes whose settings this table describes (others name or read some keys differently).
+    /// 0.1.16-mkwmp is the fork's next build: upstream 0.1.16's menu, unchanged.
+    /// </summary>
+    public static readonly IReadOnlyList<string> Runtimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp"];
+
+    /// <summary>
+    /// The Logic rate row came right after upstream 0.1.15 (the fork's 0.1.15-mkwmp is built from
+    /// that later source, so it has the row; the official 0.1.15 does not know the key).
+    /// </summary>
+    internal static bool HasLogicRate(string version) => version != "0.1.15";
+
+    /// <summary>0.1.16's rows: the HDR tone mapper with its peak and paper white, Keyboard and mouse, NSFW mods.</summary>
+    internal static bool Has016Rows(string version) => version is "0.1.16" or "0.1.16-mkwmp";
+
+    /// <summary>
+    /// Where the setup puts the HDR tone mapper's programs (prepare.py <c>tonemap</c>, from 0.1.16).
+    /// Without the folder the game greys the row out: a game set up by an older runtime has none
+    /// until it is set up again.
+    /// </summary>
+    public const string TonemapFolder = "spirv-renodx";
+
+    /// <summary>mkw.pot UI_MENU_HDR_TONEMAP_MISSING.</summary>
+    public const string TonemapMissing = "Its programs are made by the setup. Set the game up again (an update does it) to add them.";
 
     /// <summary>The settings a Quality preset sets, and the Steam Deck's defaults (cfg.c DECK).</summary>
     private static readonly string[] QualityRows = ["aniso", "tex_quality", "detail_distance", "shadow_size"];
@@ -46,13 +70,13 @@ public static partial class RecompSettings
     private static readonly Dictionary<string, string> Sections = new(StringComparer.Ordinal)
     {
         ["FULLSCREEN"] = "display", ["WINDOW_SIZE"] = "display", ["PERF_OVERLAY"] = "display", ["VK_PRESENT"] = "display", ["UPSCALER"] = "display",
-        ["HDR"] = "display", ["SHARPNESS"] = "display", ["PICTURE_FIT"] = "display", ["RESOLUTION"] = "display", ["ASPECT"] = "display",
+        ["HDR"] = "display", ["HDR_TONEMAP"] = "display", ["HDR_PEAK"] = "display", ["HDR_WHITE"] = "display", ["SHARPNESS"] = "display", ["PICTURE_FIT"] = "display", ["RESOLUTION"] = "display", ["ASPECT"] = "display",
         ["HUD_POSITION"] = "display", ["FPS"] = "display", ["LOGIC_HZ"] = "display", ["FRAMEGEN"] = "display", ["VRR"] = "display", ["LOW_LATENCY"] = "display",
         ["QUALITY"] = "graphics", ["ANISO"] = "graphics", ["TEX_QUALITY"] = "graphics", ["DETAIL_DISTANCE"] = "graphics", ["SHADOW_SIZE"] = "graphics",
         ["MENU_LANG"] = "language", ["LANG"] = "language", ["OPERATION_MODE"] = "language",
         ["VOLUME"] = "audio", ["AUDIO_CHANNELS"] = "audio", ["BACKGROUND_MUTE"] = "audio",
         ["MOTION"] = "input", ["RUMBLE_STRENGTH"] = "input", ["RUMBLE_CURVE"] = "input", ["RUMBLE_TRIGGERS"] = "input", ["PAD_LAYOUT"] = "input",
-        ["BUTTON_ICONS"] = "input", ["MENU_SHORTCUT"] = "input", ["MOUSE_SENS"] = "input", ["STICK_DEADZONE"] = "input", ["SWITCH2"] = "input",
+        ["BUTTON_ICONS"] = "input", ["MENU_SHORTCUT"] = "input", ["MOUSE_SENS"] = "input", ["KEYBOARD_MOUSE"] = "input", ["STICK_DEADZONE"] = "input", ["SWITCH2"] = "input",
         ["DSU"] = "input", ["DSU_SERVER"] = "input", ["DSU_SLOT"] = "input",
         ["ASYNC_PREEMPT"] = "performance", ["REPLAY_ASYNC"] = "performance", ["FREE_CORES"] = "performance", ["TIMER_1MS"] = "performance",
         ["PIPE_WAIT"] = "performance", ["PIPE_SKIP"] = "performance", ["PIPE_PREBUILD"] = "performance", ["GPL"] = "performance", ["ASTC"] = "performance",
@@ -61,7 +85,7 @@ public static partial class RecompSettings
         ["PUSH_SKIP"] = "performance", ["SPLIT_DRAWS"] = "performance", ["VK_VALIDATION"] = "performance", ["VK_DYN_VERTEX"] = "performance",
         ["VK_SUBGROUP_PIN"] = "performance",
         ["TRACE"] = "diagnostics", ["FLIGHT"] = "diagnostics", ["FLIGHT_SPIKE_MS"] = "diagnostics",
-        ["UPDATE_CHECK"] = "launcher", ["START_SCREEN"] = "launcher", ["DISCORD"] = "launcher",
+        ["UPDATE_CHECK"] = "launcher", ["START_SCREEN"] = "launcher", ["DISCORD"] = "launcher", ["GB_MATURE"] = "launcher",
     };
 
     private static readonly ConcurrentDictionary<string, GameSettingsSchema> Schemas = new(StringComparer.Ordinal);
@@ -121,16 +145,20 @@ public static partial class RecompSettings
         var size = file.GetValueOrDefault("WINDOW_SIZE") is { } s && WindowSize().IsMatch(s) ? s : "";
         var locked = Sections.Keys.Where(key => env("MKW_" + key) is not null).Select(key => key.ToLowerInvariant()).Order(StringComparer.Ordinal).ToArray();
         var owned = RecompSetup.Drives(install);
-        return Schemas.GetOrAdd($"{deck}|{console}|{size}|{string.Join(',', locked)}|{owned}", _ =>
+        var version = install.Version!;
+        // cfg.c reads MKW_SPIRV too (a developer's other shader folder); the launcher only knows the install's own.
+        var noTonemap = Has016Rows(version) && !Directory.Exists(Path.Combine(Path.GetDirectoryName(path)!, TonemapFolder));
+        return Schemas.GetOrAdd($"{version}|{deck}|{console}|{size}|{string.Join(',', locked)}|{owned}|{noTonemap}", _ =>
         {
-            var all = Build(deck, console, size);
-            return locked.Length == 0 && !owned ? all : all with
+            var all = Build(version, deck, console, size);
+            return locked.Length == 0 && !owned && !noTonemap ? all : all with
             {
                 Categories = [.. all.Categories.Select(c => c with
                 {
                     Settings = [.. c.Settings.Select(x =>
                         locked.Contains(x.Id) ? x with { Locked = $"Set by the environment variable MKW_{x.Id.ToUpperInvariant()}" }
                         : owned && Owned.FirstOrDefault(o => o.Id == x.Id).Why is { } why ? x with { Locked = why }
+                        : noTonemap && x.Id == "hdr_tonemap" ? x with { Locked = TonemapMissing }
                         : x)],
                 })],
             };
@@ -309,10 +337,30 @@ public static partial class RecompSettings
         return [.. sizes.OrderBy(Area).Select(s => O(s, s.Replace("x", " × ", StringComparison.Ordinal)))];
     }
 
-    private static GameSettingsSchema Build(bool deck, bool console, string windowSize)
+    /// <summary>
+    /// A row the game shows as a slider with Automatic below its lowest value (option_rows.cpp
+    /// <c>opt_slider_auto</c>): "auto" or a whole number of nits, which <paramref name="pattern"/> bounds.
+    /// </summary>
+    private static GameSetting Nits(string id, string label, string description, string pattern) =>
+        GameSetting.Text(id, label, description, "auto", Live, 5, pattern) with { Group = "Picture", VisibleWhen = When("hdr_tonemap", "psychov") };
+
+    private static GameSettingsSchema Build(string version, bool deck, bool console, string windowSize)
     {
-        var screen = new[]
-        {
+        var new016 = Has016Rows(version);
+        GameSetting[] hdr = !new016 ? [] :
+        [
+            GameSetting.Choice("hdr_tonemap", "HDR tone mapper",
+                "How the scene's brightness is fitted to the display in HDR. Vanilla is the game's own curve, which never goes above 1.5 times paper white. PsychoV35 is RenoDX's: the same mid-tones and colour grade, with highlights that roll off smoothly up to the display's peak. Applies after a restart, as do peak and paper white changes while it is on.",
+                "vanilla", Restart, O("vanilla", "Vanilla"), O("psychov", "PsychoV35")) with { Group = "Picture", VisibleWhen = When("hdr", "auto") },
+            Nits("hdr_peak", "HDR peak brightness",
+                "The brightest the game draws, in nits (100 to 10000). Automatic (auto) uses the display's peak as Windows reports it. Only with the PsychoV35 tone mapper.",
+                "auto|[1-9][0-9]{2,3}|10000"),
+            Nits("hdr_white", "HDR paper white",
+                "How bright white menus and the scene's mid-tones are, in nits (40 to 1000). Automatic (auto) uses Windows' SDR content brightness, which is often much brighter than a game wants; 203 nits is the HDR reference. Lower values leave the highlights more room. Only with the PsychoV35 tone mapper.",
+                "auto|[4-9][0-9]|[1-9][0-9]{2}|1000"),
+        ];
+        GameSetting[] screen =
+        [
             GameSetting.Toggle("fullscreen", "Fullscreen", "Fills the screen with the game; F11 toggles it.", false, Live),
             GameSetting.Choice("window_size", "Window size", "Size of the game window when not fullscreen.", "1920x1080", Live, Sizes(deck, windowSize))
                 with { VisibleWhen = When("fullscreen", "0") },
@@ -330,9 +378,10 @@ public static partial class RecompSettings
             GameSetting.Choice("hdr", "HDR",
                 "Automatic shows the game's own HDR picture when the display is in HDR (on Windows, Settings > Display > Use HDR), as the console does; its brightness follows the system's HDR settings. Off always shows the standard picture.",
                 "auto", Live, O("auto", "Automatic"), O("off", "Off")) with { Group = "Picture" },
-        };
+            .. hdr,
+        ];
 
-        var graphics = new[]
+        var graphics = new List<GameSetting>
         {
             GameSetting.Choice(Quality, "Quality",
                 "Sets the four settings below at once. Console looks like the Switch 2; Low and Medium are lighter for the graphics card, High and Very high sharper. Changing one of them makes it Custom. The internal resolution is what changes the frame rate most.",
@@ -384,6 +433,11 @@ public static partial class RecompSettings
                 "off", Live, O("off", "Off"), O("fps", "FPS"), O("full", "Full")) with { Group = "Performance" },
         };
 
+        if (!HasLogicRate(version))
+        {
+            graphics.RemoveAll(s => s.Id == "logic_hz");
+        }
+
         var sound = new[]
         {
             GameSetting.Range("volume", "Volume", "Master volume of the game.", 100, Live, 0, 100, 5, "%"),
@@ -393,7 +447,7 @@ public static partial class RecompSettings
             GameSetting.Toggle("background_mute", "Mute in background", "No sound while the game window is not in front.", false, Live),
         };
 
-        var controls = new[]
+        var controls = new List<GameSetting>
         {
             GameSetting.Choice("pad_layout", "Button layout",
                 "Which button is A. Nintendo: the right one, as on a Switch. Xbox: the bottom one, as labelled on an Xbox controller (cross on a PlayStation controller). Automatic picks Nintendo for controllers with Nintendo labels and Xbox for the others.",
@@ -421,8 +475,15 @@ public static partial class RecompSettings
                 "How far a stick must tilt before it counts. Raise it if the kart drifts with the stick at rest.", 8, Live, 0, 40, 1, "%"),
             GameSetting.Range("mouse_sens", "Mouse camera sensitivity", "How fast the mouse turns the camera.", 1, Live, 0, 10, 0.1),
         };
+        if (new016)
+        {
+            // settings_tabs.cpp tab_controls: between the stick dead zone and the mouse sensitivity
+            controls.Insert(controls.Count - 1, GameSetting.Toggle("keyboard_mouse", "Keyboard and mouse",
+                "Off: the game ignores the keyboard and the mouse (controllers only) and the mouse cursor stays free. Esc still opens this menu.",
+                true, Live));
+        }
 
-        var general = new[]
+        var general = new List<GameSetting>
         {
             GameSetting.Choice("lang", "Game language", "Language of the game's text and voices. Polish and Thai need a game update that ships them.", "", Restart,
                 O("", "Automatic"), O("en-US", "English"), O("ja", "日本語"), O("fr", "Français"), O("de", "Deutsch"), O("it", "Italiano"), O("es", "Español"),
@@ -443,6 +504,13 @@ public static partial class RecompSettings
                 "While the game runs, your Discord profile shows that you are playing, for how long, and whether you are racing or in the menus. Your Discord friends see it too.",
                 false, Live),
         };
+        if (new016)
+        {
+            // Not a row of the settings menu: the switch on the GameBanana tab of the start screen's Mods page.
+            general.Add(GameSetting.Choice("gb_mature", "NSFW mods",
+                "On the GameBanana tab of mkw-recomp's Mods page, mods that GameBanana rates as NSFW are blurred (Obfuscate) or shown. A blurred mod still names its content ratings.",
+                "obfuscate", Live, O("obfuscate", "Obfuscate"), O("show", "Show")));
+        }
 
         GameSetting Adv(string group, GameSetting s) => s with { Group = group };
         var optimisation = "Optimisation: ";

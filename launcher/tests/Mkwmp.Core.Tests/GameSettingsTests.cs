@@ -8,6 +8,11 @@ namespace Mkwmp.Core.Tests;
 public class GameSettingsTests
 {
     private static readonly Func<string, string?> NoEnv = _ => null;
+    private static readonly string[] PeakTaken = ["auto", "100", "1000", "9999", "10000"];
+    private static readonly string[] PeakRefused = ["99", "10001", "20000", "0", "1e3", "Auto", "100 nits"];
+    private static readonly string[] WhiteTaken = ["auto", "40", "203", "999", "1000"];
+    private static readonly string[] WhiteRefused = ["39", "1001", "5", "-40"];
+    private static readonly string[] NeverIn016 = ["lan", "lan_ip", "lan_peers", "hdr_system", "wb_par", "mem_spill", "logic_hz_tt", "screen_raw"];
 
     /// <summary>The real mkw.ini of a 0.1.15 install, with the game's CRLF line ends (the repository keeps it with LF).</summary>
     private static string RealIni => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "mkw.ini")).Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\n", "\r\n", StringComparison.Ordinal);
@@ -87,6 +92,83 @@ public class GameSettingsTests
             Assert.Null(schema.Find(never));
         }
         Assert.Same(schema, t.GameSettings(install)); // the same object while nothing changed
+    }
+
+    [Fact]
+    public void The_schema_follows_the_runtime_version()
+    {
+        var (_, install, ini, _) = Game();
+        GameSettingsSchema For(string version) => RecompSettings.Schema(install with { Version = version }, NoEnv)!;
+        Assert.Equal(["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp"], RecompSettings.Runtimes);
+        string[] rows016 = ["hdr_tonemap", "hdr_peak", "hdr_white", "keyboard_mouse", "gb_mature"];
+
+        // upstream 0.1.15: no Logic rate (it came right after that release) and none of 0.1.16's rows
+        var v15 = For("0.1.15");
+        Assert.Null(v15.Find("logic_hz"));
+        Assert.All(rows016, id => Assert.Null(v15.Find(id)));
+        // the fork's 0.1.15-mkwmp is built from the later source: Logic rate, and still none of 0.1.16's
+        var fork15 = For("0.1.15-mkwmp");
+        Assert.Equal(("60", true), (fork15.Find("logic_hz")!.Default, fork15.Find("logic_hz")!.RequiresRestart));
+        Assert.All(rows016, id => Assert.Null(fork15.Find(id)));
+        Assert.Equal(v15.Settings.Count() + 1, fork15.Settings.Count());
+
+        foreach (var version in new[] { "0.1.16", "0.1.16-mkwmp" })
+        {
+            var s = For(version);
+            Assert.NotNull(s.Find("logic_hz"));
+            Assert.Equal(fork15.Settings.Count() + rows016.Length, s.Settings.Count());
+            // cfg.c metas: defaults, and what is read only at start
+            var tonemap = s.Find("hdr_tonemap")!;
+            Assert.Equal((GameSettingKind.Choice, "vanilla", true, "HDR tone mapper"), (tonemap.Kind, tonemap.Default, tonemap.RequiresRestart, tonemap.Label));
+            Assert.Equal(["vanilla", "psychov"], tonemap.Options.Select(o => o.Value));
+            Assert.Equal(["Vanilla", "PsychoV35"], tonemap.Options.Select(o => o.Label));
+            Assert.Equal(("hdr", "auto"), (tonemap.VisibleWhen!.Setting, tonemap.VisibleWhen.Values.Single()));
+            var peak = s.Find("hdr_peak")!;
+            var white = s.Find("hdr_white")!;
+            Assert.Equal((GameSettingKind.Text, "auto", false), (peak.Kind, peak.Default, peak.RequiresRestart));
+            Assert.Equal((GameSettingKind.Text, "auto", false), (white.Kind, white.Default, white.RequiresRestart));
+            Assert.All(new[] { peak, white }, x => Assert.Equal(("hdr_tonemap", "psychov"), (x.VisibleWhen!.Setting, x.VisibleWhen.Values.Single())));
+            Assert.All(PeakTaken, v => Assert.Equal(v, peak.Normalize(v)));
+            Assert.All(PeakRefused, v => Assert.Throws<LauncherException>(() => peak.Normalize(v)));
+            Assert.All(WhiteTaken, v => Assert.Equal(v, white.Normalize(v)));
+            Assert.All(WhiteRefused, v => Assert.Throws<LauncherException>(() => white.Normalize(v)));
+            var keys = s.Find("keyboard_mouse")!;
+            Assert.Equal((GameSettingKind.Toggle, "1", false, "Keyboard and mouse"), (keys.Kind, keys.Default, keys.RequiresRestart, keys.Label));
+            var nsfw = s.Find("gb_mature")!;
+            Assert.Equal(("obfuscate", false, "NSFW mods"), (nsfw.Default, nsfw.RequiresRestart, nsfw.Label));
+            Assert.Equal(["obfuscate", "show"], nsfw.Options.Select(o => o.Value));
+            // where the game's menu has them: after HDR on Screen, before the mouse sensitivity on Controls, on General
+            var screen = s.Categories.Single(c => c.Id == "screen").Settings.Select(x => x.Id).ToList();
+            Assert.Equal(["hdr", "hdr_tonemap", "hdr_peak", "hdr_white"], screen[^4..]);
+            var controls = s.Categories.Single(c => c.Id == "controls").Settings.Select(x => x.Id).ToList();
+            Assert.Equal(["stick_deadzone", "keyboard_mouse", "mouse_sens"], controls[^3..]);
+            Assert.Equal("gb_mature", s.Categories.Single(c => c.Id == "general").Settings[^1].Id);
+            // LAN play stays out, with 0.1.16's LAN network row; so do the keys the game keeps for itself
+            Assert.All(NeverIn016, id => Assert.Null(s.Find(id)));
+            Assert.Equal(s.Settings.Count(), s.Settings.Select(x => x.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+            Assert.All(s.Settings, x => Assert.Equal(x.Default, x.Normalize(x.Default)));
+            // a game set up before 0.1.16 has no tone mapper programs yet: the row is locked, as the game greys it out
+            Assert.Equal(RecompSettings.TonemapMissing, tonemap.Locked);
+            Assert.All(s.Settings.Where(x => x.Id != "hdr_tonemap"), x => Assert.Null(x.Locked));
+        }
+
+        var target = new MkwRecompTarget("1.4.0") { RunningOverride = () => false };
+        var v16 = install with { Version = "0.1.16" };
+        Assert.Contains("made by the setup", Assert.Throws<LauncherException>(() => RecompSettings.Write(target, v16, One("hdr_tonemap", "psychov"), NoEnv)).Message, StringComparison.Ordinal);
+        Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(ini)!, RecompSettings.TonemapFolder));
+        Assert.Null(RecompSettings.Schema(v16, NoEnv)!.Find("hdr_tonemap")!.Locked);
+        // written under the sections cfg.c gives them
+        RecompSettings.Write(target, v16, new Dictionary<string, string?> { ["hdr_tonemap"] = "psychov", ["hdr_peak"] = "1200", ["keyboard_mouse"] = "0", ["gb_mature"] = "show" }, NoEnv);
+        var text = File.ReadAllText(ini).Replace("\r\n", "\n", StringComparison.Ordinal);
+        Assert.Contains("[display]\nhdr_tonemap = psychov\nhdr_peak = 1200\n", text, StringComparison.Ordinal);
+        Assert.Contains("[input]\nkeyboard_mouse = 0\n", text, StringComparison.Ordinal);
+        Assert.Contains("[launcher]\ngb_mature = show\n", text, StringComparison.Ordinal);
+        var read = RecompSettings.Read(v16, NoEnv);
+        Assert.Equal(("psychov", "1200", "0", "show"), (read["hdr_tonemap"], read["hdr_peak"], read["keyboard_mouse"], read["gb_mature"]));
+        // the same file under upstream 0.1.15: those keys are not its settings
+        Assert.False(RecompSettings.Read(install with { Version = "0.1.15" }, NoEnv).ContainsKey("keyboard_mouse"));
+        Assert.Throws<LauncherException>(() => RecompSettings.Write(target, install with { Version = "0.1.15" }, One("logic_hz", "120"), NoEnv));
+        RecompSettings.Write(target, install with { Version = "0.1.15-mkwmp" }, One("logic_hz", "120"), NoEnv);
     }
 
     [Fact]

@@ -22,6 +22,11 @@ What it prints, for OLD and NEW side by side:
   10. RT_GAME_ID (the 16-hex id of the game code mkw.exe accepts; a change means mkwgame.dll must be rebuilt
       before `mkw.exe --play` works) and, with --game-dir, the folder's mkwgame.id / mkwgame.dll imports
   11. the MKW_* keys MKWMP sets, as strings of mkw.exe (cfg.c known[])
+  12. the native plugin API (runtime/plugin/plugin.c api_template: its size and version) against the mod's
+      mkw_plugin.h (the MKWMP mod is the probe built as a plugin, backend_plugin.c): which of the versions the mod
+      uses the runtime has (2 options page and settings, 3 native images for the camera, 4 the overlay's pad filter,
+      menu_open and frame capture). Upstream may be behind the mod (those parts stay off); MKWMP's own release
+      line (a version ending in -mkwmp) should carry the mod's version (a WARN when it does not)
 
 Usage (from the repo root; -I keeps Python from importing anything next to the inputs):
 
@@ -387,6 +392,22 @@ class Probe:
                 self.mkw_keys.update(re.findall(r"\b(MKW_[A-Z0-9_]{3,})\b", extra.read_text("utf-8", "replace")))
         self.sdl_names = {n for n in self.sdl_names if not n.isupper()}  # hints (SDL_HINT_...) are not exports
         self.mkw_keys -= {"MKW_LAUNCHED", "MKW_NO_LAUNCHER"}  # read with getenv in main.c, not cfg.c keys
+
+        # the plugin build of the probe (backend_plugin.c, overlay.c): the API header it was written against. Every
+        # member of MkwPluginApi after size and version is a pointer, so its size is 8 + 8 * members
+        self.plugin_version, self.plugin_members, self.plugin_v4_used = 0, 0, []
+        if (src / "mkw_plugin.h").is_file():
+            hdr = strip_comments(rd("mkw_plugin.h"))
+            m = re.search(r"#define\s+MKW_PLUGIN_API_VERSION\s+(\d+)", hdr)
+            self.plugin_version = int(m.group(1)) if m else 0
+            m = re.search(r"typedef struct MkwPluginApi \{(.*?)\}\s*MkwPluginApi\s*;", hdr, flags=re.S)
+            fields = [f for f in (m.group(1).split(";") if m else []) if f.strip()]
+            if len(fields) > 2 and all("uint32_t" in f and "(" not in f for f in fields[:2]) \
+                    and all("*" in f for f in fields[2:]):
+                self.plugin_members = len(fields) - 2
+            uses = "".join(strip_comments(f.read_text("utf-8", "replace")) for f in sorted(src.glob("*.c")))
+            self.plugin_v4_used = [n for n in ("input_filter", "menu_open", "frame_capture")
+                                   if re.search(rf"\bapi->{n}\b", uses)]
 
         rs = repo / "rust/client/src/recomp.rs"
         self.known, self.supported = {}, []
@@ -867,6 +888,61 @@ def main() -> int:
             warn(f"{key}: the string {bare!r} was in OLD and is not in NEW (key renamed or dropped?)")
         else:
             note(f"{key}: {bare!r} is in neither exe as a whole string (read some other way)")
+
+    # 12 --------------------------------------------------------------------------------------------------------
+    out("\n[12] native plugin API (plugin.c api_template) against the mod's mkw_plugin.h")
+
+    def plugin_api(pe: PE):
+        """(size, version) of the table every plugin gets, None when the exe has none or several."""
+        f = pe.find("api_template")
+        d = pe.read(f[0][1], 8) if len(f) == 1 else b""
+        return struct.unpack("<II", d) if len(d) == 8 else None
+
+    v4_runtime = ("plugins_input_filter", "plugins_frame_wanted", "plugins_frame_captured")  # input.c, gfx_present.c
+    ao, an = plugin_api(o), plugin_api(n)
+    want_size = 8 + 8 * probe.plugin_members if probe.plugin_members else 0
+    for tag, a in (("old", ao), ("new", an)):
+        out(f"  {tag}  " + (f"version {a[1]}, {a[0]} bytes ({(a[0] - 8) // 8} members)" if a else "no api_template"))
+    out(f"  mod  mkw_plugin.h version {probe.plugin_version}" + (f", {want_size} bytes" if want_size else "")
+        + (f"; version 4 members used: {' '.join(probe.plugin_v4_used)}" if probe.plugin_v4_used else ""))
+    own_line = any(v.endswith("-mkwmp") for v in port_versions(n))  # MKWMP's release line of mkw-recomp
+    if not probe.plugin_version:
+        note("the probe has no mkw_plugin.h (no plugin build): nothing to compare")
+    elif an is None:
+        if n.find("plugins_load"):
+            warn("NEW has plugins_load but no single api_template symbol: read runtime/plugin/plugin.c")
+        else:
+            note("NEW has no plugin loader: the mod cannot load there, winmm.dll is in charge")
+    else:
+        size, version = an
+        if ao and (version < ao[1] or size < ao[0]):
+            fail(f"the plugin API went back: version {ao[1]} ({ao[0]} bytes) -> {version} ({size} bytes)")
+        if (size - 8) % 8:
+            fail(f"api_template is {size} bytes: not two uint32_t and pointers, the mod's offsets do not hold")
+        if version >= probe.plugin_version:
+            if want_size and size < want_size:
+                fail(f"NEW says version {version} but its table is {size} bytes; the mod's version "
+                     f"{probe.plugin_version} table is {want_size}")
+            else:
+                ok(f"NEW has the mod's plugin API (version {version} >= {probe.plugin_version})")
+        else:
+            off = [what for v, what in ((2, "the options page, the mod's settings, the in-game tabs, on_exit"),
+                                        (3, "native images (the GameChat camera)"),
+                                        (4, "the overlay (pad filter, menu_open, frame capture)"))
+                   if version < v <= probe.plugin_version]
+            msg = f"NEW has plugin API {version}, the mod is written for {probe.plugin_version}: off there: {'; '.join(off)}"
+            if own_line:
+                warn(msg + " (MKWMP's own release line should carry the mod's version)")
+            else:
+                note(msg + " (the mod checks api->size and goes on without them)")
+        if version >= 4:
+            missing = [nm for nm in v4_runtime if len(n.find(nm)) != 1]
+            if missing:
+                fail(f"plugin API {version} without exactly one symbol each of {missing} (input.c / gfx_present.c call them)")
+            else:
+                ok("version 4's runtime side is linked in: " + " ".join(v4_runtime))
+        elif any(n.find(nm) for nm in v4_runtime):
+            warn(f"NEW has version 4's functions but says version {version}")
 
     # ----------------------------------------------------------------------------------------------------------
     out("\nSummary")

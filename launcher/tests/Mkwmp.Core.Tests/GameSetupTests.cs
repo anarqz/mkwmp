@@ -326,6 +326,25 @@ public class SetupProgressTests
     }
 
     [Fact]
+    public void The_grammar_of_0_1_16_is_the_same_and_its_tone_mapper_is_no_step()
+    {
+        // prepare.py STEPS at v0.1.16, unchanged from 0.1.15. The tone mapper's programs (renodx.py) are made inside the
+        // warm step's turn, before the prewarm, with no event of their own; a failure only writes to stderr.
+        Assert.Equal(["check", "exefs", "romfs", "generate", "compile", "shaders", "warm", "cleanup"], RecompSetupProgress.Steps);
+        var p = new RecompSetupProgress(false);
+        Assert.False(p.Line("tonemap: renodx.py: failed (the HDR tone mapper stays the game's)", S(0)));
+        // An update from 0.1.15-mkwmp: the build and the warm-up run again, the shaders are kept. Events come as UTF-8
+        // from 0.1.16 on (a version line with a path is read the same).
+        Feed(p, (0, "step check"), (4, "version 1.8.0"), (4, "skip exefs"), (4, "skip romfs"), (4, "step generate"), (164, "step compile"),
+            (350, "skip shaders"), (350, "step warm"), (350, "progress 0 1"), (426, "progress 1 1"), (426, "step cleanup"), (450, "done"));
+        Assert.True(p.Finished);
+        Assert.Equal("1.8.0", p.GameVersion);
+        Assert.Equal(["check", "generate", "compile", "warm", "cleanup"], p.Ran);
+        Assert.Equal(["exefs", "romfs", "shaders"], p.Skipped);
+        Assert.Equal("Caminho é válido", RecompSetup.Decode(System.Text.Encoding.Latin1.GetString(System.Text.Encoding.UTF8.GetBytes("Caminho é válido"))));
+    }
+
+    [Fact]
     public void The_warm_step_takes_its_count_from_the_runtimes_own_log()
     {
         var p = Feed(new RecompSetupProgress(false), (0, "step warm"), (0, "progress 0 1"));
@@ -427,6 +446,9 @@ public class SetupGateTests
         Assert.Null(RecompSetup.StateIn("{ not json"));
         // Before 0.1.5 the mode was only in the romfs step's key.
         Assert.True(RecompSetup.StateIn("""{"done":{"romfs":"copy 1.8.0"},"source":"D:\\dump","version":1}""")!.Copy);
+        // 0.1.16 keeps one more key under "done" (the HDR tone mapper's programs), which is not a step.
+        var with016 = RecompSetup.StateIn("""{"done":{"exefs":"1.8.0","romfs":"link 1.8.0","generate":"c9bbcb75a9ac9a49 1.8.0 b05897af8b40fec6","compile":"c9bbcb75a9ac9a49 1.8.0 windows 41829b71d97ad65a","shaders":"1.8.0 6b8e0b1447f058ce","tonemap":"1.8.0 6b8e0b1447f058ce renodx 0123456789abcdef","warm":"c9bbcb75a9ac9a49 1.8.0 6b8e0b1447f058ce pairs3 pack2","cleanup":""},"source":"D:\\dumps\\game.nup","romfs_mode":"link","version":1,"port":"0.1.16"}""")!;
+        Assert.Equal(("0.1.16", @"D:\dumps\game.nup", false), (with016.Port, with016.Source, with016.Copy));
     }
 
     [Fact]
