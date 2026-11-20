@@ -329,7 +329,14 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
         }
         return await seat.WantAsync(cancel).ConfigureAwait(false) switch
         {
-            SeatAnswer.Seated s => new LocalResponse(200, JsonSerializer.Serialize(new { state = "seated", ticket = s.Ticket, lobby = s.Lobby, name = s.Name })),
+            SeatAnswer.Seated s => new LocalResponse(200, JsonSerializer.Serialize(new
+            {
+                state = "seated",
+                ticket = s.Ticket,
+                lobby = s.Lobby,
+                name = s.Name,
+                room = s.Room is { } r ? new { lobby = r.Lobby, ussid = r.Ussid, ussids = r.Ussids, at = r.At } : null,
+            })),
             SeatAnswer.Queued q => new LocalResponse(200, JsonSerializer.Serialize(new { state = "queued", position = q.Position, seatsTotal = q.SeatsTotal })),
             SeatAnswer.Refused x => State(409, "refused", x.Message),
             SeatAnswer.Unavailable x => State(503, "unavailable", x.Message),

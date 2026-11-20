@@ -11,7 +11,7 @@
     <Style x:Key="KeyboardKey" TargetType="Button">
       <Setter Property="FocusVisualStyle" Value="{x:Null}" />
       <Setter Property="OverridesDefaultStyle" Value="True" />
-      <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
+      <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
       <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
       <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
       <Setter Property="Height" Value="82" />

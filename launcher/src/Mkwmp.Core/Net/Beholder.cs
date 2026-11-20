@@ -99,7 +99,7 @@ internal static class BeholderClient
         }
         catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
         {
-            throw ApiException.Transient(Strings.CannotReach("timed out"));
+            throw ApiException.Transient(Strings.CannotReach(Strings.TimedOut));
         }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException)
         {

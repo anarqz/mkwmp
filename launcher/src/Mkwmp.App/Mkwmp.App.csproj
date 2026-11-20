@@ -23,7 +23,8 @@
   <ItemGroup>
     <Resource Include="Assets\**\*.png;Assets\**\*.jpg;Assets\**\*.ico;Assets\Fonts\*.ttf" />
     <Content Include="Assets\mkwmp-256.png" Link="mkwmp-launcher.png" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Assets\mkwmp-256.png')" />
-    <Content Include="Assets\Fonts\Nunito-LICENSE.txt" Link="licenses\Nunito-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Nunito, and the CJK fallback fonts (Noto Sans JP, KR, SC, TC: subsets made by tools/make-cjk-fonts.py), each with its OFL text -->
+    <Content Include="Assets\Fonts\*-LICENSE.txt" Link="licenses\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

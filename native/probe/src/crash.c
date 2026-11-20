@@ -483,7 +483,15 @@ static void write_record(const Job *j) {
     if (in_room) {
         char list[160], ussid[16], age[24];
         fmt(ussid, sizeof ussid, "%u", (unsigned)room.ussid);
-        fmt(age, sizeof age, "%llu", (unsigned long long)(plat_ms() - room.ms));
+        if (room.at) {
+            // since the lobby reported the room (the seat server's clock against this PC's: negative if this one is behind)
+            FILETIME ft;
+            GetSystemTimeAsFileTime(&ft);
+            uint64_t unix_ms = ((uint64_t)ft.dwHighDateTime << 32 | ft.dwLowDateTime) / 10000 - 11644473600000ull;
+            fmt(age, sizeof age, "%lld", (long long)(unix_ms - room.at));
+        } else {
+            fmt(age, sizeof age, "%llu", (unsigned long long)(plat_ms() - room.ms));   // a launcher without "at": since told
+        }
         out("room: lobby=%s ussid=%s uid=%s host=%s players=%s ussids=%s age_ms=%s", room.lobby, ussid, uid, host, b,
             crumb_room_list(&room, list, sizeof list), age);
     } else {

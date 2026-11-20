@@ -10,7 +10,7 @@
   <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
     <Grid VerticalAlignment="Center">
       <!-- the digits keep their room while hidden, so nothing moves when the eye is pressed -->
-      <TextBlock x:Name="Digits" FontFamily="{StaticResource Font.Ui}" FontWeight="ExtraBold" Foreground="{DynamicResource Brush.Accent}"
+      <TextBlock x:Name="Digits" FontFamily="{DynamicResource Font.Ui}" FontWeight="ExtraBold" Foreground="{DynamicResource Brush.Accent}"
                  FontSize="{Binding DigitSize, ElementName=Self}" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Hidden" />
       <StackPanel x:Name="Dots" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center" />
     </Grid>

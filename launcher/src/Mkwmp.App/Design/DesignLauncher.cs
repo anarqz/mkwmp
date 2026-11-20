@@ -688,7 +688,9 @@ public sealed class DesignLauncher : ILauncher
         Change(() => Update = found with { State = found.AvailableVersion is null ? UpdateState.UpToDate : UpdateState.Available });
     }
 
-    public async Task ApplyUpdateAsync(CancellationToken cancel)
+    private const long DemoUpdateBytes = 78L * 1024 * 1024;
+
+    public async Task DownloadUpdateAsync(CancellationToken cancel)
     {
         const int Steps = 160;
         try
@@ -697,12 +699,14 @@ public sealed class DesignLauncher : ILauncher
             {
                 var fraction = (double)i / Steps;
                 var left = TimeSpan.FromSeconds((Steps - i) * 0.05 * 60); // pretend minutes, so the text is worth reading
-                Change(() => Update = Update with { State = UpdateState.Downloading, Progress = fraction, Remaining = left, Status = "Downloading 1.4.1…" });
+                Change(() => Update = Update with
+                {
+                    State = UpdateState.Downloading, Progress = fraction, Remaining = left, Status = "Downloading 1.4.1…",
+                    Received = (long)(fraction * DemoUpdateBytes), Total = DemoUpdateBytes, BytesPerSecond = 2.4 * 1024 * 1024,
+                });
                 await Task.Delay(50, cancel).ConfigureAwait(false);
             }
-            Change(() => Update = Update with { State = UpdateState.Restarting, Progress = 1, Remaining = null, Status = "Verified. The launcher restarts now (not in the demo)." });
-            await Task.Delay(2500, cancel).ConfigureAwait(false);
-            Change(() => Update = new UpdateView(UpdateState.UpToDate, null, null, 0, null, "Up to date"));
+            ReadyToInstall();
         }
         catch (OperationCanceledException)
         {
@@ -710,9 +714,44 @@ public sealed class DesignLauncher : ILauncher
         }
     }
 
+    public async Task ApplyUpdateAsync(CancellationToken cancel)
+    {
+        if (Update.State != UpdateState.ReadyToInstall)
+        {
+            await DownloadUpdateAsync(cancel).ConfigureAwait(false);
+        }
+        if (Update.State != UpdateState.ReadyToInstall)
+        {
+            return;
+        }
+        if (Session.Busy || Session.GameRunning)
+        {
+            Change(() => Update = Update with { GameBlocks = true, Status = "Ready to install: close the game first" });
+            return;
+        }
+        Change(() => Update = Update with { State = UpdateState.Restarting, Progress = 1, Remaining = null, Status = "Installing 1.4.1; MKWMP restarts… (not in the demo)" });
+        await Task.Delay(2500, CancellationToken.None).ConfigureAwait(false);
+        Change(() => Update = new UpdateView(UpdateState.UpToDate, null, null, 0, null, "Up to date"));
+    }
+
+    public void InstallUpdateAfterGame(bool on) =>
+        Change(() => Update = Update with { AfterGame = on, GameBlocks = on || Session.Busy || Session.GameRunning, Status = on ? "Will be installed when the game closes" : "Version 1.4.1 is downloaded and ready to install" });
+
     /// <summary>For screenshots: the download frozen at a fraction.</summary>
     public void FreezeDownloadAt(double fraction) =>
-        Change(() => Update = Update with { State = UpdateState.Downloading, Progress = fraction, Remaining = TimeSpan.FromMinutes(13), Status = "Downloading 1.4.1…" });
+        Change(() => Update = Update with
+        {
+            State = UpdateState.Downloading, Progress = fraction, Remaining = TimeSpan.FromSeconds(20), Status = "Downloading 1.4.1…",
+            Received = (long)(fraction * DemoUpdateBytes), Total = DemoUpdateBytes, BytesPerSecond = 2.4 * 1024 * 1024,
+        });
+
+    /// <summary>For screenshots: the update downloaded and verified (<paramref name="gameRuns"/>: with a game running).</summary>
+    public void ReadyToInstall(bool gameRuns = false) =>
+        Change(() => Update = Update with
+        {
+            State = UpdateState.ReadyToInstall, Progress = 1, Remaining = null, GameBlocks = gameRuns, AfterGame = false,
+            Status = gameRuns ? "Ready to install: close the game first" : "Version 1.4.1 is downloaded and ready to install",
+        });
 
     public async Task<string> SaveBugReportAsync()
     {

@@ -41,6 +41,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     {
         Launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
         S = strings ?? throw new ArgumentNullException(nameof(strings));
+        UseLanguage(S); // the culture, the core's texts and the fonts, before any page makes a text
         _dispatcher = Dispatcher.CurrentDispatcher;
         _isFullscreen = launcher.Settings.Ui.Fullscreen;
         Nav = new Navigator();
@@ -134,7 +135,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     public string AboutTitle => $"MKWMP Launcher {Launcher.Version}";
 
-    public static string AboutBasedOn => "Based on Infinity Launcher - https://github.com/anarqz/InfinityHorizon";
+    public string AboutBasedOn => S["settings.about.based_on_line"] + " - https://github.com/anarqz/InfinityHorizon";
 
     public static string AboutLicense => "GPL-3.0-or-later";
 
@@ -569,11 +570,13 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     {
         Interlocked.Exchange(ref _changePending, 0);
         ApplyTheme(Launcher.Settings.Ui.Theme);
+        ApplyLanguage(); // another language in the settings: switched here, with no restart
         RaiseAll();
         Page?.OnStateChanged();
         FriendsPanel.OnStateChanged();
         _sheet?.OnStateChanged();
         _modal?.OnStateChanged();
+        WatchUpdate(); // a download that finished behind another page (ShellViewModel.Update.cs)
         OfferCrash(); // the game crashed and the player has not answered yet (ShellViewModel.Crash.cs)
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -593,7 +596,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     private void Tick()
     {
-        ClockText = DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture);
+        ClockText = DateTime.Now.ToString("t", S.Culture); // 15:07, or 3:07 PM where the language writes it so
         if (DateTime.UtcNow >= _nextBatteryRead)
         {
             ReadBattery();

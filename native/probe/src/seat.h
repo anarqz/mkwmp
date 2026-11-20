@@ -30,10 +30,11 @@ typedef struct {
 void seat_parse(int http_status, const char *body, SeatReply *out);
 
 // The room as the lobby numbers it, when a seat reply carries the optional object
-//   "room": {"lobby": "<lobby uuid>", "ussid": 3, "ussids": [3, 5, 12]}     ("room": null: in no room)
-// (lobby NULL: in none). The loader sets the sink (probe.c: breadcrumbs.h's crumb_room, for the crash record);
-// seat_parse_room reads a reply body and calls it, and does nothing for a reply without the key.
-typedef void (*SeatRoomSink)(const char *lobby, uint32_t ussid, const uint32_t *ussids, int n);
+//   "room": {"lobby": "<lobby uuid>", "ussid": 3, "ussids": [3, 5, 12], "at": <ms since 1970>}   ("room": null: none)
+// (lobby NULL: in none). ussids is ascending (the first is the mesh host); at is when the lobby reported the room (0
+// when a launcher before it leaves it out). The loader sets the sink (probe.c: breadcrumbs.h's crumb_room, for the crash
+// record); seat_parse_room reads a reply body and calls it, and does nothing for a reply without the key.
+typedef void (*SeatRoomSink)(const char *lobby, uint32_t ussid, const uint32_t *ussids, int n, uint64_t at);
 void seat_set_room_sink(SeatRoomSink sink);
 void seat_parse_room(const char *body);
 

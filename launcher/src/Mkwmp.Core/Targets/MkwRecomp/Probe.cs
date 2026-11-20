@@ -133,14 +133,14 @@ internal static class Probe
 
     public static string Summary(IntegrationState state, string version) => state switch
     {
-        IntegrationState.Installed => $"Patches installed (v{version})",
-        IntegrationState.Unverified => "Patches installed (not verified: offline)",
-        IntegrationState.Missing => "Not installed: press INSTALL",
-        IntegrationState.Outdated => "Outdated (other version): press INSTALL to update",
-        IntegrationState.Damaged => "Modified or damaged: press INSTALL to repair",
-        IntegrationState.HostMissing => "winmm_host.dll missing: press INSTALL",
-        IntegrationState.Dev => $"Dev probe kept ({DevProbeEnv}=1)",
-        _ => "MKWMP runs as a mod in this game",
+        IntegrationState.Installed => Strings.PatchState("installed", version),
+        IntegrationState.Unverified => Strings.PatchState("unverified"),
+        IntegrationState.Missing => Strings.PatchState("missing"),
+        IntegrationState.Outdated => Strings.PatchState("outdated"),
+        IntegrationState.Damaged => Strings.PatchState("damaged"),
+        IntegrationState.HostMissing => Strings.PatchState("host_missing"),
+        IntegrationState.Dev => Strings.PatchState("dev", env: DevProbeEnv),
+        _ => Strings.PatchState("mod"),
     };
 
     /// <summary>Is <c>&lt;game&gt;/winmm.dll</c> the probe we wrote (its hash is in <c>.mkwmp-probe</c>)?</summary>
@@ -377,11 +377,11 @@ internal static class Probe
     {
         if (running)
         {
-            throw new LauncherException("Close the game first");
+            throw new LauncherException(Strings.RecompCloseGameFirst);
         }
         if (!File.Exists(Path.Combine(game, Recomp.Exe)))
         {
-            throw new LauncherException("Set the game folder (the one with mkw.exe)");
+            throw new LauncherException(Strings.SetGameFolder(Strings.RecompFolderHint));
         }
         var done = new List<string>();
         if (ProbeIsOurs(game))
@@ -416,7 +416,7 @@ internal static class Probe
         }
         if (running)
         {
-            throw new LauncherException("close the game first: MKWMP runs as a mod, and the launcher's game patch must go");
+            throw new LauncherException(Strings.RecompCloseForMod);
         }
         var done = new List<string>();
         if (ours)

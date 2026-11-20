@@ -32,8 +32,8 @@ namespace Mkwmp.Core.Targets.MkwRecomp;
 public static partial class RecompSettings
 {
     public const string IniName = "mkw.ini";
-    public const string GameIsRunning = "Close the game first: it reads these settings when it starts";
-    public const string NextStart = "Changes apply the next time the game starts.";
+    public static string GameIsRunning => Strings.GameSettingsRunning;
+    public static string NextStart => Strings.GameSettingsNextStart;
     public const string Quality = "quality";
 
     /// <summary>
@@ -59,7 +59,7 @@ public static partial class RecompSettings
     public const string TonemapFolder = "spirv-renodx";
 
     /// <summary>mkw.pot UI_MENU_HDR_TONEMAP_MISSING.</summary>
-    public const string TonemapMissing = "Its programs are made by the setup. Set the game up again (an update does it) to add them.";
+    public static string TonemapMissing => Strings.GameSettingsTonemapMissing;
 
     /// <summary>The settings a Quality preset sets, and the Steam Deck's defaults (cfg.c DECK).</summary>
     private static readonly string[] QualityRows = ["aniso", "tex_quality", "detail_distance", "shadow_size"];
@@ -148,15 +148,16 @@ public static partial class RecompSettings
         var version = install.Version!;
         // cfg.c reads MKW_SPIRV too (a developer's other shader folder); the launcher only knows the install's own.
         var noTonemap = Has016Rows(version) && !Directory.Exists(Path.Combine(Path.GetDirectoryName(path)!, TonemapFolder));
-        return Schemas.GetOrAdd($"{version}|{deck}|{console}|{size}|{string.Join(',', locked)}|{owned}|{noTonemap}", _ =>
+        // the texts are in the language in use: another language, another schema
+        return Schemas.GetOrAdd($"{Strings.Generation}|{version}|{deck}|{console}|{size}|{string.Join(',', locked)}|{owned}|{noTonemap}", _ =>
         {
-            var all = Build(version, deck, console, size);
+            var all = Localize(Build(version, deck, console, size));
             return locked.Length == 0 && !owned && !noTonemap ? all : all with
             {
                 Categories = [.. all.Categories.Select(c => c with
                 {
                     Settings = [.. c.Settings.Select(x =>
-                        locked.Contains(x.Id) ? x with { Locked = $"Set by the environment variable MKW_{x.Id.ToUpperInvariant()}" }
+                        locked.Contains(x.Id) ? x with { Locked = Strings.GameSettingsLockedByEnv("MKW_" + x.Id.ToUpperInvariant()) }
                         : owned && Owned.FirstOrDefault(o => o.Id == x.Id).Why is { } why ? x with { Locked = why }
                         : noTonemap && x.Id == "hdr_tonemap" ? x with { Locked = TonemapMissing }
                         : x)],
@@ -173,10 +174,10 @@ public static partial class RecompSettings
     /// started by hand or from Steam goes straight in, as it does from the launcher
     /// (<c>mkw.exe --play</c> never shows that screen, whatever this says).
     /// </summary>
-    internal static readonly (string Id, string Value, string Why)[] Owned =
+    internal static (string Id, string Value, string Why)[] Owned =>
     [
-        ("update_check", "0", "Kept off by MKWMP: it installs and updates mkw-recomp itself, one tested version at a time"),
-        ("start_screen", "skip", "Kept on Skip by MKWMP: the launcher sets the game up and starts it"),
+        ("update_check", "0", Strings.GameSettingsOwnedUpdateCheck),
+        ("start_screen", "skip", Strings.GameSettingsOwnedStartScreen),
     ];
 
     /// <summary>
@@ -219,12 +220,12 @@ public static partial class RecompSettings
             var folder = Path.GetDirectoryName(path)!;
             if (!Directory.Exists(folder))
             {
-                throw new LauncherException($"The game's folder is gone: {folder}");
+                throw new LauncherException(Strings.GameSettingsFolderGone(folder));
             }
             var exists = File.Exists(path);
             if (exists && File.GetAttributes(path).HasFlag(FileAttributes.ReadOnly))
             {
-                throw new LauncherException($"{IniName} is read-only: the game's settings are locked");
+                throw new LauncherException(Strings.GameSettingsReadOnly(IniName));
             }
             var before = exists ? RecompIni.Decode(File.ReadAllBytes(path)) : "";
             var after = RecompIni.Apply(before, edits, key => Sections.GetValueOrDefault(key));
@@ -239,7 +240,7 @@ public static partial class RecompSettings
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            throw new LauncherException($"saving the game's settings: {e.Message}", e);
+            throw new LauncherException(Strings.GameSettingsSaveFailed(e.Message), e);
         }
     }
 
@@ -288,15 +289,15 @@ public static partial class RecompSettings
         ArgumentNullException.ThrowIfNull(changes);
         if (PathFor(install, env) is not { } path || Schema(install, env) is not { } schema)
         {
-            throw new LauncherException("This game has no settings the launcher can change");
+            throw new LauncherException(Strings.GameSettingsNoneHere);
         }
         var edits = new List<KeyValuePair<string, string?>>();
         foreach (var (id, value) in changes)
         {
-            var setting = schema.Find(id) ?? throw new LauncherException($"not a setting of this game: {id}");
+            var setting = schema.Find(id) ?? throw new LauncherException(Strings.GameSettingsNotASetting(id));
             if (setting.Locked is { } why)
             {
-                throw new LauncherException($"{setting.Label}: {why}");
+                throw new LauncherException(Strings.GameSettingLocked(setting.Label, why));
             }
             edits.Add(new(setting.Id, string.IsNullOrEmpty(value) ? null : setting.Normalize(value)));
         }
@@ -310,6 +311,88 @@ public static partial class RecompSettings
         }
         Save(path, edits);
     }
+
+    // ---- the texts in the player's language ------------------------------------------------
+
+    /// <summary>A heading's key part: "Shaders and pipelines" is "shaders_and_pipelines".</summary>
+    private static string Slug(string text) => NotWord().Replace(text.ToLowerInvariant(), "_").Trim('_');
+
+    [GeneratedRegex("[^a-z0-9]+", RegexOptions.CultureInvariant)]
+    private static partial Regex NotWord();
+
+    /// <summary>"2x", "16:9", "1080p", "60 Hz", "120 fps": the same in every language.</summary>
+    [GeneratedRegex(@"^[\d\s.:x×]*(p|Hz|fps)?$", RegexOptions.CultureInvariant)]
+    private static partial Regex Figures();
+
+    private static readonly HashSet<string> Names = new(StringComparer.Ordinal)
+        { "FPS", "HDR", "CPU", "AMD FSR 1", "Nintendo", "Xbox", "PlayStation", "PsychoV35", "VSync" };
+
+    /// <summary>An option whose label is a figure, a product's name or a language's own name is not translated.</summary>
+    private static bool Translatable(GameSetting setting, GameSettingOption option) =>
+        !Figures().IsMatch(option.Label) && !Names.Contains(option.Label) && !(setting.Id is "lang" or "menu_lang" && option.Value.Length > 0);
+
+    /// <summary>
+    /// The catalog keys of a schema's texts (<c>gs.*</c> in <c>i18n/*.json</c>) with their English:
+    /// <c>gs.page.&lt;page&gt;</c> and <c>.note</c>, <c>gs.group.&lt;heading&gt;</c>, <c>gs.&lt;id&gt;</c>,
+    /// <c>gs.&lt;id&gt;.desc</c> and <c>gs.&lt;id&gt;.opt.&lt;value&gt;</c> ("auto" for the empty value).
+    /// </summary>
+    internal static IEnumerable<(string Key, string English)> Texts(GameSettingsSchema schema)
+    {
+        foreach (var page in schema.Categories)
+        {
+            yield return ($"gs.page.{page.Id}", page.Title);
+            if (page.Note is { } note)
+            {
+                yield return ($"gs.page.{page.Id}.note", note);
+            }
+            foreach (var s in page.Settings)
+            {
+                if (s.Group is { } group)
+                {
+                    yield return ($"gs.group.{Slug(group)}", group);
+                }
+                yield return ($"gs.{s.Id}", s.Label);
+                yield return ($"gs.{s.Id}.desc", s.Description);
+                foreach (var o in s.Options.Where(o => Translatable(s, o)))
+                {
+                    yield return (OptionKey(s, o), o.Label);
+                }
+            }
+        }
+    }
+
+    /// <summary>Every text of every schema this table builds (each runtime, the Steam Deck or not), once per key.</summary>
+    internal static IReadOnlyDictionary<string, string> AllTexts()
+    {
+        var all = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var version in Runtimes)
+        {
+            foreach (var (key, english) in Texts(Build(version, deck: false, console: false, "")))
+            {
+                all[key] = english;
+            }
+        }
+        return all;
+    }
+
+    private static string OptionKey(GameSetting s, GameSettingOption o) => $"gs.{s.Id}.opt.{(o.Value.Length == 0 ? "auto" : o.Value)}";
+
+    /// <summary>The schema with its texts in the language in use (<see cref="Strings.T(string, string)"/>: English where the catalog has none).</summary>
+    private static GameSettingsSchema Localize(GameSettingsSchema schema) => schema with
+    {
+        Categories = [.. schema.Categories.Select(page => page with
+        {
+            Title = Strings.T($"gs.page.{page.Id}", page.Title),
+            Note = page.Note is { } note ? Strings.T($"gs.page.{page.Id}.note", note) : null,
+            Settings = [.. page.Settings.Select(s => s with
+            {
+                Label = Strings.T($"gs.{s.Id}", s.Label),
+                Description = Strings.T($"gs.{s.Id}.desc", s.Description),
+                Group = s.Group is { } group ? Strings.T($"gs.group.{Slug(group)}", group) : null,
+                Options = [.. s.Options.Select(o => Translatable(s, o) ? o with { Label = Strings.T(OptionKey(s, o), o.Label) } : o)],
+            })],
+        })],
+    };
 
     // ---- the table ------------------------------------------------------------------------
 

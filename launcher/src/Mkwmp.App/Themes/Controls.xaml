@@ -130,7 +130,7 @@
   <!-- ───────── ConsoleButton ───────── -->
   <Style TargetType="c:ConsoleButton">
     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-    <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
+    <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
     <Setter Property="FontSize" Value="{StaticResource Size.Body}" />
     <Setter Property="FontWeight" Value="SemiBold" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
@@ -252,7 +252,7 @@
   <!-- ───────── ConsoleCheck ───────── -->
   <Style TargetType="c:ConsoleCheck">
     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-    <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
+    <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
     <Setter Property="FontSize" Value="{StaticResource Size.Body}" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
     <Setter Property="Height" Value="96" />
@@ -291,7 +291,7 @@
   <!-- ───────── SettingsRow ───────── -->
   <Style TargetType="c:SettingsRow">
     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-    <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
+    <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
     <Setter Property="FontSize" Value="32" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
     <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -378,7 +378,7 @@
 
   <Style TargetType="c:ConsoleSlider">
     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-    <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
+    <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
     <Setter Property="FontSize" Value="32" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
     <Setter Property="Focusable" Value="True" />
@@ -488,7 +488,7 @@
           <StackPanel Background="Transparent">
             <Border x:Name="Sep" Height="1.5" Margin="38,10,38,10" Background="{DynamicResource Brush.Rule}" Visibility="Collapsed" />
             <!-- a group heading above the entry (CategoryEntry.Heading) -->
-            <TextBlock Text="{Binding Heading}" FontFamily="{StaticResource Font.Ui}" FontSize="23" FontWeight="SemiBold"
+            <TextBlock Text="{Binding Heading}" FontFamily="{DynamicResource Font.Ui}" FontSize="23" FontWeight="SemiBold"
                        Foreground="{DynamicResource Brush.TextMuted}" Margin="38,22,24,4" TextTrimming="CharacterEllipsis"
                        Visibility="{Binding Heading, Converter={StaticResource Conv.Visible}}" />
             <Grid Height="110" Margin="0,6">
@@ -502,7 +502,7 @@
                 <!-- locked online (CategoryEntry.Locked): the category needs a server -->
                 <c:Icon DockPanel.Dock="Right" Data="{StaticResource Icon.Lock}" Width="30" Height="30" Margin="14,0,0,0" StrokeThickness="2"
                         Opacity="0.6" Visibility="{Binding Locked, Converter={StaticResource Conv.Visible}}" />
-                <TextBlock Text="{Binding Title}" FontFamily="{StaticResource Font.Ui}" FontSize="32"
+                <TextBlock Text="{Binding Title}" FontFamily="{DynamicResource Font.Ui}" FontSize="32"
                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
               </DockPanel>
             </Grid>
@@ -548,7 +548,7 @@
   <!-- ───────── Tile ───────── -->
   <Style TargetType="c:Tile">
     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-    <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
+    <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
     <Setter Property="Width" Value="372" />
     <Setter Property="Height" Value="372" />
     <Setter Property="Margin" Value="14,0" />
@@ -667,7 +667,7 @@
 
   <Style TargetType="c:DockButton">
     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-    <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
+    <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
     <Setter Property="Width" Value="104" />
     <Setter Property="Height" Value="104" />
     <Setter Property="Margin" Value="8,0" />
@@ -715,7 +715,7 @@
     <Setter Property="Focusable" Value="False" />
     <Setter Property="Width" Value="88" />
     <Setter Property="Height" Value="88" />
-    <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
+    <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="c:Avatar">
@@ -787,7 +787,7 @@
   <Style x:Key="CardButton" TargetType="Button">
     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     <Setter Property="OverridesDefaultStyle" Value="True" />
-    <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
+    <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
     <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
     <Setter Property="Padding" Value="28,22" />
@@ -886,7 +886,7 @@
   <Style TargetType="TextBox">
     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     <Setter Property="OverridesDefaultStyle" Value="True" />
-    <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
+    <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
     <Setter Property="FontSize" Value="{StaticResource Size.Body}" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
     <Setter Property="CaretBrush" Value="{DynamicResource Brush.Accent}" />

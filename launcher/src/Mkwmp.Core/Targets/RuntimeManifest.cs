@@ -123,4 +123,11 @@ public sealed record RuntimeManifest
 /// <param name="License">The license's short name ("MIT").</param>
 /// <param name="Notice">The copyright and permission notice, in full, as the license requires with every copy.</param>
 /// <param name="LicensesFolder">The folder of the install that holds this notice and those of the libraries the runtime ships.</param>
-public sealed record RuntimeCredit(string Summary, string Project, Uri ProjectUrl, Uri SourceUrl, string License, string Notice, string LicensesFolder);
+public sealed record RuntimeCredit(string Summary, string Project, Uri ProjectUrl, Uri SourceUrl, string License, string Notice, string LicensesFolder)
+{
+    /// <summary>The catalog key of <see cref="Summary"/> (which is its English), when it has one.</summary>
+    public string? SummaryKey { get; init; }
+
+    /// <summary>This credit with its summary in the language in use.</summary>
+    public RuntimeCredit Localized() => SummaryKey is { } key && Strings.T(key, Summary) is var text && text != Summary ? this with { Summary = text } : this;
+}

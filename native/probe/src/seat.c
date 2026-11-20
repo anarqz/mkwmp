@@ -61,9 +61,10 @@ void seat_parse(int http_status, const char *body, SeatReply *out) {
 }
 
 // The seat reply's optional "room" object: the room as the lobby numbers it,
-//   "room": {"lobby": "<lobby uuid>", "ussid": 3, "ussids": [3, 5, 12]}     (or "room": null: in none)
+//   "room": {"lobby": "<lobby uuid>", "ussid": 3, "ussids": [3, 5, 12], "at": 1763647200123}   (or "room": null: none)
 // which the game process cannot read itself (Gamesync is TLS inside the guest). Handed to the sink (probe.c: the
-// crash record's breadcrumbs). A reply without the key says nothing and changes nothing.
+// crash record's breadcrumbs). A reply without the key says nothing and changes nothing; a room without "at" (a
+// launcher before it) is still the room, with at 0.
 static SeatRoomSink g_room_sink;
 
 void seat_set_room_sink(SeatRoomSink sink) { g_room_sink = sink; }
@@ -74,7 +75,7 @@ void seat_parse_room(const char *body) {
     if (!sink || !p) return;
     p += 6;
     while (*p == ' ' || *p == ':') p++;
-    if (*p != '{') { sink(NULL, 0, NULL, 0); return; }
+    if (*p != '{') { sink(NULL, 0, NULL, 0, 0); return; }
     const char *end = strchr(p, '}');
     if (!end || end - p >= 1024) return;
     char object[1024];
@@ -91,7 +92,14 @@ void seat_parse_room(const char *body) {
         if (*q < '0' || *q > '9') break;
         ussids[n++] = (uint32_t)strtoul(q, (char **)&q, 10);
     }
-    sink(lobby, (uint32_t)ussid, ussids, n);
+    uint64_t at = 0;
+    const char *t = strstr(object, "\"at\"");
+    t = t ? strchr(t + 4, ':') : NULL;
+    if (t) {
+        while (*++t == ' ') {}
+        if (*t >= '0' && *t <= '9') at = strtoull(t, NULL, 10);
+    }
+    sink(lobby, (uint32_t)ussid, ussids, n, at);
 }
 
 static int seat_post_once(SeatReply *out);static PlatLock g_ticket_lock = PLAT_LOCK_INIT;

@@ -50,7 +50,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         RepoCommand = new RelayCommand(() => Links.Open(Shell, Links.Repo));
         BasedOnCommand = new RelayCommand(() => Links.Open(Shell, Links.BasedOn));
         ThemeCommand = RelayCommand.Async(() => Shell.SetThemeAsync(Shell.IsDark ? "light" : "dark"));
-        LanguageCommand = RelayCommand.Async(PickLanguageAsync);
+        LanguageCommand = RelayCommand.Async(Shell.PickLanguageAsync);
         CheckUpdateCommand = RelayCommand.Async(() => Launcher.CheckForUpdatesAsync(), () => Launcher.Update.State is not (UpdateState.Checking or UpdateState.Downloading or UpdateState.Restarting));
         UpdateCommand = new RelayCommand(Shell.ShowUpdateModal);
         SaveLogsCommand = RelayCommand.Async(SaveLogsAsync, () => !_savingLogs);
@@ -278,32 +278,17 @@ public sealed partial class SettingsViewModel : PageViewModel
         set => RelayCommand.Async(() => Shell.SetFullscreenAsync(value)).Execute(null);
     }
 
-    public string LanguageName => Launcher.Settings.Ui.Locale switch
-    {
-        "en" => "English",
-        "pt-BR" => "Português (Brasil)",
-        _ => S["settings.automatic"],
-    };
+    /// <summary>The saved language in its own name, or "System default" (the selector and the switch itself: ShellViewModel.Language.cs).</summary>
+    public string LanguageName => Shell.LanguageName;
 
-    public string LanguageCaption => Launcher.Settings.Ui.Locale is "en" or "pt-BR" && Launcher.Settings.Ui.Locale != S.Locale
-        ? S["settings.language.restart"]
+    public string LanguageCaption => Shell.LanguageSetting.Length == 0
+        ? S.Format("settings.language.system_caption", ("name", ShellViewModel.SystemLanguageName))
         : S["settings.language.caption"];
 
     public ICommand LanguageCommand { get; }
 
-    private async Task PickLanguageAsync()
-    {
-        var picked = await Choice.AskAsync(Shell, S["settings.language"], S["settings.language.caption"],
-        [
-            new ChoiceOption("", S["settings.automatic"], S["settings.language.auto_caption"]),
-            new ChoiceOption("en", "English"),
-            new ChoiceOption("pt-BR", "Português (Brasil)"),
-        ], Launcher.Settings.Ui.Locale is "en" or "pt-BR" ? Launcher.Settings.Ui.Locale : "").ConfigureAwait(true);
-        if (picked is not null)
-        {
-            await Shell.UpdateSettingsAsync(s => s with { Ui = s.Ui with { Locale = picked } }).ConfigureAwait(true);
-        }
-    }
+    /// <summary>The language changed: Settings again, on the same category.</summary>
+    public override PageViewModel? Recreate() => new SettingsViewModel(Shell).At(_category.Key);
 
     // ── updates ──
 
@@ -313,9 +298,9 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     public bool UpdateBusy => Launcher.Update.State is UpdateState.Checking or UpdateState.Downloading or UpdateState.Restarting;
 
-    public bool UpdateAvailable => Launcher.Update.State is UpdateState.Available or UpdateState.Downloading or UpdateState.Failed && Launcher.Update.AvailableVersion is not null;
+    public bool UpdateAvailable => Launcher.Update.State is UpdateState.Available or UpdateState.Downloading or UpdateState.ReadyToInstall or UpdateState.Failed && Launcher.Update.AvailableVersion is not null;
 
-    public string UpdateInstallLabel => S.Format("settings.updates.install", ("version", Launcher.Update.AvailableVersion ?? ""));
+    public string UpdateInstallLabel => S.Format(Launcher.Update.State == UpdateState.ReadyToInstall ? "settings.updates.ready" : "settings.updates.install", ("version", Launcher.Update.AvailableVersion ?? ""));
 
     public string UpdateNotes => Launcher.Update.Notes ?? "";
 
@@ -344,7 +329,7 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     public ICommand BasedOnCommand { get; }
 
-    public string StarsText => Launcher.GitHubStars > 0 ? S.Format("settings.support.stars", ("n", Launcher.GitHubStars.ToString(CultureInfo.CurrentCulture))) : "";
+    public string StarsText => Launcher.GitHubStars > 0 ? S.Format("settings.support.stars", ("n", Launcher.GitHubStars.ToString("N0", CultureInfo.CurrentCulture))) : "";
 
     /// <summary>The Rust window's SAVE LOGS FOR A BUG REPORT: a zip without PIN or ticket, then the folder it is in.</summary>
     private async Task SaveLogsAsync()

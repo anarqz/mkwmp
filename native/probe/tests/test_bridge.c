@@ -370,6 +370,29 @@ int main(void) {
     seat_parse(0, NULL, &sr);
     assert(sr.state == SEAT_UNAVAILABLE);
 
+    // The seated reply's "room" (launcher 1.4.0), as the launcher writes it, into the crash record's breadcrumbs.
+    const char *seated_room = "{\"state\":\"seated\",\"ticket\":\"mkw1.p.s\",\"lobby\":\"216.128.169.210:8905\",\"name\":\"Ana\","
+                              "\"room\":{\"lobby\":\"0b4e7a10-1111-4222-8333-444455556666\",\"ussid\":12,\"ussids\":[3,12,16],"
+                              "\"at\":1763647200123}}";
+    seat_parse(200, seated_room, &sr);   // the top-level lobby, not the room's
+    assert(sr.state == SEAT_SEATED && !strcmp(sr.lobby, "216.128.169.210:8905"));
+    seat_set_room_sink(crumb_room);
+    seat_parse_room(seated_room);
+    CrumbRoom cr;
+    assert(crumb_room_get(&cr) && !strcmp(cr.lobby, "0b4e7a10-1111-4222-8333-444455556666") && cr.ussid == 12);
+    assert(cr.n == 3 && cr.ussids[0] == 3 && cr.ussids[2] == 16 && cr.at == 1763647200123ull);
+    assert(!crumb_room_host(&cr));   // the host is ussids[0], 3
+    seat_parse_room("{\"state\":\"seated\",\"room\":{\"lobby\":\"0b4e7a10-1111-4222-8333-444455556666\",\"ussid\":3,"
+                    "\"ussids\":[3,12,16],\"at\":1763647260000}}");
+    assert(crumb_room_get(&cr) && cr.ussid == 3 && crumb_room_host(&cr) && cr.at == 1763647260000ull);
+    seat_parse_room("{\"state\":\"seated\",\"ticket\":\"t\"}");   // no key (an older launcher): nothing changes
+    assert(crumb_room_get(&cr) && cr.ussid == 3);
+    seat_parse_room("{\"state\":\"seated\",\"room\":{\"lobby\":\"aa\",\"ussid\":5,\"ussids\":[5]}}");   // without "at"
+    assert(crumb_room_get(&cr) && cr.ussid == 5 && cr.at == 0 && crumb_room_host(&cr));
+    seat_parse_room("{\"state\":\"seated\",\"room\":null}");   // in no room
+    assert(!crumb_room_get(&cr));
+    seat_set_room_sink(NULL);
+
     // Notification queue: FIFO, drain, and oldest-dropped-on-overflow.
     Notification nbuf[32];
     notify_push(NOTIFY_SUCCESS, "Connected to MKWMP");

@@ -297,12 +297,46 @@ Sheets, the friends panel and modals derive from `LayerViewModel` (`Hints`, `OnB
 
 ## 7. Strings
 
-`i18n/en.json` and `i18n/pt-BR.json`: flat `"key": "text"` with `{name}` placeholders, copied beside the
-exe. A key missing in pt-BR falls back to English, then shows the key. In XAML: `{Binding S[settings.title]}`
-(pages and layers expose `S`). The locale is `UiSettings.Locale`, else the OS culture (`--locale pt-BR`
-forces one). Texts that come from `ILauncher` (status, notes, problems) are shown verbatim.
-Add your keys to **both** files; prefix them with your area (`home.`, `settings.`, `setup.`, `friends.`,
-`online.`).
+`i18n/<locale>.json`, one per language: flat `"key": "text"` with `{name}` placeholders, copied beside the
+exe. A key missing in a language falls back to English, then shows the key. In XAML:
+`{Binding S[settings.title]}` (pages and layers expose `S`).
+
+**Languages** (`Mkwmp.Core/Locales.cs`, the one list): en, de, es, fr, it, nl, pl, pt-BR, pt-PT, tr, ru, ja,
+ko, zh-Hans, zh-Hant. The language is `UiSettings.Locale`, else the closest to the system's
+(`Locales.Closest`: pt-BR only for Brazil, zh-Hant for Taiwan / Hong Kong / Macao, every Spanish is es),
+else English; `--locale ja` forces one for a run. Arabic is not there: the stage has no right-to-left layout.
+
+**Everything the player reads is in the catalogs, the core's texts too.** `Mkwmp.Core.Strings` holds no
+English: each text is a key (`core.*`), looked up when it is asked for. The English catalog is embedded in
+Mkwmp.Core (so headless and the tests speak English, and the tests pin it); the window gives the core the
+player's language with `CoreStrings.Use(S.Find, culture)`. The game's own settings (`gs.*`) are the table
+in `RecompSettings.Build` (ids and English there, pinned by the tests) localized on the way out; their
+translations come from mkw-recomp's own `i18n/ui/*.po` where it has them. Not localized on purpose: the
+session log and bug reports (for the maintainers), and what the game's mod shows from the local API
+(plain ASCII). The server's privacy policy is shown as served.
+
+**A change of language needs no restart** (`ShellViewModel.Language.cs`): `S` is one object that switches
+in place and raises `Item[]`, so every `S[key]` binding reads again; the core raises `Strings.Changed` and
+the launcher rebuilds its views; the open pages are made again (`PageViewModel.Recreate()`: return the
+same page in the same place, or null to drop it), because view models hold texts they built. So: never
+keep a text in a `static` or compare a core text with `is` (they are not constants); a page that can be
+open under Settings or the welcome implements `Recreate`.
+
+**Formats.** Numbers, dates and times use `S.Culture` (also the thread's culture): `S.Number(n)`,
+`CoreStrings.Size(bytes)`, `ToString("t", S.Culture)`. Counts have no plural forms: write the text so it
+reads for any number ("Online: {n}").
+
+**Fonts** (`Themes/Fonts.cs`, `Assets/Fonts`): Nunito covers Latin and Cyrillic; behind it Noto Sans JP /
+KR / SC / TC (OFL; subsets made by `tools/make-cjk-fonts.py`: the everyday characters of each language
+plus every character of the catalogs, Regular and Bold) so Japanese, Korean and Chinese read the same on
+Windows and under Wine/Proton. The chain's order follows the language (Han characters differ by region),
+so use `{DynamicResource Font.Ui}`, never `StaticResource`. Run the script again when a catalog gains
+characters outside the everyday sets (it reads `i18n/`).
+
+**Adding keys:** add them to en.json and to **every** other catalog (`CatalogTests` fails on a missing key,
+another set of placeholders or an empty text); prefix them with your area (`home.`, `settings.`, `setup.`,
+`friends.`, `online.`, `core.` for Mkwmp.Core). **Adding a language:** a line in `Locales.All`, its
+`i18n/<id>.json`, and the font chain if it needs glyphs Nunito lacks.
 
 ## 8. Who owns what
 

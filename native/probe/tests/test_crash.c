@@ -52,10 +52,14 @@ __declspec(dllexport) int crashtest_install(const char *dir, int before_runtime)
     return crash_ready();
 }
 
-// The room as the seat reply would tell it: this player (ussid 3) is the lowest, so the host.
+// The room as the seat reply would tell it: this player (ussid 3) is the first, so the host. The lobby reported it
+// 1.5 s ago ("at", ms since 1970): the record's age_ms counts from then.
 __declspec(dllexport) void crashtest_room(void) {
-    const uint32_t ussids[] = {12, 5, 3};
-    crumb_room("0b4e7a10-1111-4222-8333-444455556666", 3, ussids, 3);
+    const uint32_t ussids[] = {3, 5, 12};
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    uint64_t now = ((uint64_t)ft.dwHighDateTime << 32 | ft.dwLowDateTime) / 10000 - 11644473600000ull;
+    crumb_room("0b4e7a10-1111-4222-8333-444455556666", 3, ussids, 3, now - 1500);
 }
 
 #else
@@ -275,8 +279,11 @@ static void test_lib(void) {
     CHECK(strstr(r, " test_crash.exe+0x") != NULL);   // the caller, a frame up
     CHECK(strstr(field(r, "guest:"), "none") != NULL);
     CHECK(strstr(field(r, "summary:"), "(players=3, host=1, mesh=created)") != NULL);
-    CHECK(!strncmp(field(r, "room:"), "lobby=0b4e7a10-1111-4222-8333-444455556666 ussid=3 uid=6f1c2d3e-0000-5000-8000-00000000abcd host=1 players=3 ussids=12,5,3 age_ms=", 130));
-    CHECK(strstr(r, " room: lobby=0b4e7a10-1111-4222-8333-444455556666 ussid=3 host=1 players=3 ussids=12,5,3\r\n") != NULL);
+    const char *room = field(r, "room:");
+    CHECK(!strncmp(room, "lobby=0b4e7a10-1111-4222-8333-444455556666 ussid=3 uid=6f1c2d3e-0000-5000-8000-00000000abcd host=1 players=3 ussids=3,5,12 age_ms=", 130));
+    long long age = strlen(room) > 130 ? atoll(room + 130) : -1;
+    CHECK(age >= 1500 && age < 60000);   // from the lobby's "at", 1.5 s before the crash
+    CHECK(strstr(r, " room: lobby=0b4e7a10-1111-4222-8333-444455556666 ussid=3 host=1 players=3 ussids=3,5,12\r\n") != NULL);
     CHECK(dump_ok("lib", r));
 }
 

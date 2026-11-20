@@ -53,7 +53,7 @@ public sealed partial class ShellViewModel
 
     private string CrashText(CrashView crash)
     {
-        var culture = CultureInfo.GetCultureInfo(S.Locale);
+        var culture = S.Culture;
         var lines = new List<string> { crash.What, S.Format("crash.when", ("time", crash.Time.ToLocalTime().ToString("g", culture))) };
         if (crash.Players is { } players)
         {

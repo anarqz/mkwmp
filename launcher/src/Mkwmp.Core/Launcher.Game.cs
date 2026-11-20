@@ -280,7 +280,7 @@ public sealed partial class Launcher
             {
                 if (asset.Required)
                 {
-                    throw new LauncherException($"the release lists no {asset.Label}");
+                    throw new LauncherException(Strings.ReleaseListsNo(asset.Label));
                 }
                 continue;
             }
@@ -290,7 +290,7 @@ public sealed partial class Launcher
             }
             catch (LauncherException e)
             {
-                throw new LauncherException($"{asset.Label} download failed: {e.Message}", e);
+                throw new LauncherException(Strings.AssetDownloadFailed(asset.Label, e.Message), e);
             }
         }
         foreach (var where in new[] { folder, Path.Combine(Path.GetTempPath(), "mkwmp-launcher", $"game-{Version}") })
@@ -314,7 +314,7 @@ public sealed partial class Launcher
                 Note($"keeping the game patch in {where}: {e.Message}");
             }
         }
-        throw new LauncherException("the downloaded game patch could not be saved");
+        throw new LauncherException(Strings.PatchNotSaved);
     }
 
     /// <summary>

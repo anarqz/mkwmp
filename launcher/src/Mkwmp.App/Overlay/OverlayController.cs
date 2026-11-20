@@ -153,7 +153,7 @@ internal sealed class OverlayController : IDisposable
         // finish setting up). A launcher the player opened waits for the welcome as before.
         var ready = settings.Ui.SetupDone || HostedPid != 0;
         _bridge.Enabled = !_foreign && ready && (HostedPid != 0 || _shell.Page is not SetupViewModel)
-            && _shell.Update.State is not (UpdateState.Downloading or UpdateState.Restarting);
+            && _shell.Update.State is not UpdateState.Restarting; // a download goes on behind a game; only the hand-over to the helper is the end
     }
 
     // ── the game the launcher is beside ──

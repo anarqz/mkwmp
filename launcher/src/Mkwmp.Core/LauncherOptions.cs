@@ -100,6 +100,9 @@ public sealed record LauncherOptions
     /// <summary>What ends the process after a self-update (tests: nothing).</summary>
     internal Action<int>? Exit { get; init; }
 
+    /// <summary>What starts the update helper (its path, its arguments) instead of a process; false: it could not be started.</summary>
+    internal Func<string, IReadOnlyList<string>, bool>? StartUpdateHelper { get; init; }
+
     /// <summary>Where a report's zip goes instead of the Desktop.</summary>
     internal string? DesktopFolder { get; init; }
 

@@ -12,7 +12,7 @@ namespace Mkwmp.Core.Tests;
 /// <summary>A release host inside the test: one file at one address, with Range, and the ways a download goes wrong.</summary>
 internal sealed class FakeReleaseHost : HttpMessageHandler
 {
-    public const string Url = "http://runtime.test/anarqz/mkw-recomp/releases/download/v0.1.15-mkwmp/runtime.zip";
+    public const string Url = "http://runtime.test/anarqz/mkw-recomp/releases/download/v0.1.16-mkwmp/runtime.zip";
 
     public byte[] File { get; set; } = [];
 
@@ -101,16 +101,21 @@ internal sealed class FakeReleaseHost : HttpMessageHandler
 /// <summary>A folder, a fake release and an installer on it. The "runtime" is a few small files; mkw.exe stand-ins are known to <see cref="Recomp"/> by hash.</summary>
 internal sealed class RuntimeRig : IDisposable
 {
-    public const string Pinned = "0.1.15-mkwmp";
+    public const string Pinned = "0.1.16-mkwmp";
+
+    /// <summary>The pin before this one, whose manifest kept setup\ whole on an update.</summary>
+    public const string PreviousPin = "0.1.15-mkwmp";
 
     public static readonly byte[] NewExe = "mkw.exe of the pinned fork build"u8.ToArray();
     public static readonly byte[] OldForkExe = "mkw.exe of an older fork build"u8.ToArray();
+    public static readonly byte[] PreviousPinExe = "mkw.exe of the previous pin, 0.1.15-mkwmp"u8.ToArray();
     public static readonly byte[] UpstreamExe = "mkw.exe of upstream 0.1.15"u8.ToArray();
 
     static RuntimeRig()
     {
         Recomp.TestExes[Updater.Sha256Hex(NewExe)] = Pinned;
         Recomp.TestExes[Updater.Sha256Hex(OldForkExe)] = "0.1.14-mkwmp";
+        Recomp.TestExes[Updater.Sha256Hex(PreviousPinExe)] = PreviousPin;
         Recomp.TestExes[Updater.Sha256Hex(UpstreamExe)] = "0.1.15";
     }
 
@@ -248,15 +253,18 @@ public class RuntimeManifestTests
     public void The_pinned_runtime_is_one_release_of_the_fork_and_never_the_latest()
     {
         var m = RecompRuntime.Pinned;
-        Assert.Equal("0.1.15-mkwmp", m.Version);
+        Assert.Equal("0.1.16-mkwmp", m.Version);
         Assert.Equal("anarqz/mkw-recomp", m.Repository);
-        Assert.Equal("v0.1.15-mkwmp", m.Tag);
-        Assert.Equal("mkw-recomp-0.1.15-mkwmp-windows-x64.zip", m.Asset);
-        Assert.Equal(217_227_522, m.Size);
-        Assert.Equal("2a5ae5b856692d4a6eae357fcc80e63dd12f5b7725429a05c77117f043d472df", m.Sha256);
-        Assert.Equal(728_495_266, m.InstalledSize);
+        Assert.Equal("v0.1.16-mkwmp", m.Tag);
+        Assert.Equal("mkw-recomp-0.1.16-mkwmp-windows-x64.zip", m.Asset);
+        Assert.Equal(221_144_444, m.Size);
+        Assert.Equal("cf41cb0cdab4af58a2aff586e9be3d09ef00f4a85699319675fb443928fc365d", m.Sha256);
+        Assert.Equal("73997d10f8cca878e9654b174c194833053a529ec04ff3b03be587c1e592eb8f", m.ExecutableSha256);
+        Assert.Equal(738_675_063, m.InstalledSize);
+        Assert.Equal(3_500_000_000, m.SetupSpace);
+        Assert.Equal("https://github.com/anarqz/mkw-recomp/tree/v0.1.16-mkwmp", m.Credit.SourceUrl.ToString());
         // The address names the tag and the file: no "latest", no API that lists releases.
-        Assert.Equal("https://github.com/anarqz/mkw-recomp/releases/download/v0.1.15-mkwmp/mkw-recomp-0.1.15-mkwmp-windows-x64.zip", m.Url.ToString());
+        Assert.Equal("https://github.com/anarqz/mkw-recomp/releases/download/v0.1.16-mkwmp/mkw-recomp-0.1.16-mkwmp-windows-x64.zip", m.Url.ToString());
         Assert.DoesNotContain("latest", m.Url.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("api.github.com", m.Url.ToString(), StringComparison.OrdinalIgnoreCase);
     }
@@ -267,7 +275,7 @@ public class RuntimeManifestTests
         var m = RecompRuntime.Pinned;
         Assert.Equal(Recomp.Recommended, m.Version);
         Assert.Contains(m.Version, Recomp.Supported);
-        Assert.Equal(Recomp.Known.Single(k => k.Version == m.Version).Sha256, m.ExecutableSha256);
+        Assert.Contains((m.Version, m.ExecutableSha256), Recomp.Known);
         Assert.Equal(Recomp.Exe, m.Executable);
         Assert.EndsWith(m.Tag, Recomp.Download, StringComparison.Ordinal);
         Assert.Same(m, new MkwRecompTarget("1.4.0").Runtime);
@@ -291,8 +299,9 @@ public class RuntimeManifestTests
     }
 
     [Theory]
-    [InlineData("setup/zig/zig.exe", true)]
-    [InlineData("SETUP\\python\\python.exe", true)]
+    [InlineData("setup/zig/zig.exe", false)] // setup\ changed from 0.1.15-mkwmp to 0.1.16-mkwmp: the runtime's, replaced
+    [InlineData("SETUP\\python\\python.exe", false)]
+    [InlineData("setup-work/obj/a.o", true)]
     [InlineData("setup-state.json", true)]
     [InlineData("mkw.ini", true)]
     [InlineData("profile/save.bin", true)]
@@ -306,13 +315,13 @@ public class RuntimeManifestTests
     [InlineData("SDL3.dll", false)]
     [InlineData("licenses/SDL3/LICENSE.txt", false)]
     [InlineData("setupx/file", false)]
-    public void An_update_keeps_the_toolchain_the_players_files_and_what_was_built_from_their_game(string path, bool preserved) =>
+    public void An_update_keeps_the_players_files_and_what_was_built_from_their_game(string path, bool preserved) =>
         Assert.Equal(preserved, RecompRuntime.Pinned.IsPreserved(path));
 }
 
 public class RuntimeInstallerTests
 {
-    private static readonly string[] Swapped = ["SDL3.dll", "mkw.exe"];
+    private static readonly string[] Swapped = ["SDL3.dll", "mkw.exe", Path.Combine("setup", "python", "python.exe")];
 
     [Fact]
     public async Task A_new_install_asks_only_for_the_pinned_asset_and_is_recognised()
@@ -493,24 +502,27 @@ public class RuntimeInstallerTests
         Assert.Equal(Encoding.UTF8.GetString(RuntimeRig.NewExe), after["mkw.exe"]);
         Assert.Equal("new sdl", after["SDL3.dll"]);
         Assert.Equal("MIT", after["licenses/mkw-recomp-LICENSE"]);
-        // The toolchain, the setup's state, settings, saves, mods, logs and everything built from the game: untouched,
-        // even where the zip has a file of that name (setup/python/python.exe, mkw.ini).
+        // The toolchain is the runtime's: what differs is replaced, what is new is added.
+        Assert.Equal("new python", after["setup/python/python.exe"]);
+        Assert.Equal("new script", after["setup/src/recompile.py"]);
+        // The setup's state, settings, saves, mods, logs and everything built from the game: untouched,
+        // even where the zip has a file of that name (mkw.ini).
         foreach (var kept in new[]
         {
-            "setup/python/python.exe", "setup-state.json", "mkw.ini", "profile/save.bin", "mods/mkwmp/plugin/mkwmp.dll", "logs/mkw.log",
+            "setup-state.json", "mkw.ini", "profile/save.bin", "mods/mkwmp/plugin/mkwmp.dll", "logs/mkw.log",
             "mkwgame.dll", "mkwgame.id", "pipeline-cache.bin", "spirv/a.spv", "libopus-0.dll",
         })
         {
             Assert.Equal(before[kept], after[kept]);
         }
-        Assert.False(after.ContainsKey("setup/src/recompile.py")); // setup\ exists: kept whole, nothing added to it
         // What was replaced is in the backup, and only that.
         Assert.Equal(Path.Combine(rig.Folder, RuntimeInstaller.BackupFolder), result.Backup);
         Assert.Equal(
             Swapped,
             Directory.EnumerateFiles(result.Backup!, "*", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(result.Backup!, f)).Order(StringComparer.Ordinal));
         Assert.Equal(Encoding.UTF8.GetString(RuntimeRig.OldForkExe), File.ReadAllText(Path.Combine(result.Backup!, "mkw.exe")));
-        Assert.Equal((1, 2), (result.Added, result.Replaced)); // the license is new; the exe and SDL3 differed
+        Assert.Equal("old python", File.ReadAllText(Path.Combine(result.Backup!, "setup", "python", "python.exe")));
+        Assert.Equal((2, 3), (result.Added, result.Replaced)); // the license and a setup script are new; the exe, SDL3 and python differed
         Assert.False(Directory.Exists(rig.At(RuntimeInstaller.WorkFolder)));
         Assert.Equal(RuntimeRig.Pinned, RuntimeInstaller.ManagedVersion(rig.Folder));
     }
@@ -522,12 +534,12 @@ public class RuntimeInstallerTests
         await rig.Install();
         // The next launcher pins a build without SDL3.dll and with another exe.
         var newer = "mkw.exe of the next fork build"u8.ToArray();
-        Recomp.TestExes[Updater.Sha256Hex(newer)] = "0.1.16-mkwmp";
+        Recomp.TestExes[Updater.Sha256Hex(newer)] = "0.1.17-mkwmp";
         var zip = RuntimeRig.MakeZip([("mkw-recomp/mkw.exe", Encoding.UTF8.GetString(newer)), ("mkw-recomp/libopus-0.dll", "opus")]);
         rig.Host.File = zip;
         rig.Put("mkwgame.dll", "built here");
         var next = new RuntimeInstaller(
-            rig.Manifest with { Version = "0.1.16-mkwmp", Size = zip.Length, Sha256 = Updater.Sha256Hex(zip), ExecutableSha256 = Updater.Sha256Hex(newer) },
+            rig.Manifest with { Version = "0.1.17-mkwmp", Size = zip.Length, Sha256 = Updater.Sha256Hex(zip), ExecutableSha256 = Updater.Sha256Hex(newer) },
             rig.Http, "mkwmp-test", rig.Cache, new RuntimeHost { Identify = rig.Identify });
 
         var result = await next.InstallAsync(rig.Folder, null, null, default);
@@ -535,8 +547,122 @@ public class RuntimeInstallerTests
         Assert.Null(rig.Read("SDL3.dll"));
         Assert.Equal("new sdl", File.ReadAllText(Path.Combine(result.Backup!, "SDL3.dll")));
         Assert.Equal("built here", rig.Read("mkwgame.dll"));
-        Assert.Equal("new python", rig.Read("setup/python/python.exe"));
-        Assert.Equal("0.1.16-mkwmp", RuntimeInstaller.ManagedVersion(rig.Folder));
+        // setup\ is the runtime's too: a file the new build dropped leaves with the rest.
+        Assert.Null(rig.Read("setup/python/python.exe"));
+        Assert.Equal("new python", File.ReadAllText(Path.Combine(result.Backup!, "setup", "python", "python.exe")));
+        Assert.Equal("0.1.17-mkwmp", RuntimeInstaller.ManagedVersion(rig.Folder));
+    }
+
+    /// <summary>
+    /// The new pin's zip, beside the one the 0.1.15-mkwmp pin installed: setup\ changed in between
+    /// (python and a script differ, a tool is new, the zig toolchain is the same).
+    /// </summary>
+    private static readonly (string Name, string Text)[] Release016 =
+    [
+        .. RuntimeRig.Release,
+        ("mkw-recomp/setup/zig/zig.exe", "zig"),
+        ("mkw-recomp/setup/glslc/spirv-cross.exe", "new tool"),
+    ];
+
+    /// <summary>An install as the 0.1.15-mkwmp pin left it (its manifest kept setup\ whole), then played.</summary>
+    private static async Task InstallPreviousPin(RuntimeRig rig)
+    {
+        var zip = RuntimeRig.MakeZip(
+        [
+            ("mkw-recomp/mkw.exe", Encoding.UTF8.GetString(RuntimeRig.PreviousPinExe)),
+            ("mkw-recomp/SDL3.dll", "old sdl"),
+            ("mkw-recomp/libopus-0.dll", "opus"),
+            ("mkw-recomp/licenses/mkw-recomp-LICENSE", "MIT"),
+            ("mkw-recomp/setup/python/python.exe", "old python"),
+            ("mkw-recomp/setup/src/recompile.py", "old script"),
+            ("mkw-recomp/setup/zig/zig.exe", "zig"),
+            ("mkw-recomp/mkw.ini", "shipped = 1\n"),
+        ]);
+        var previous = rig.Manifest with
+        {
+            Version = RuntimeRig.PreviousPin,
+            Tag = "v0.1.15-mkwmp",
+            Asset = "previous.zip",
+            Size = zip.Length,
+            Sha256 = Updater.Sha256Hex(zip),
+            ExecutableSha256 = Updater.Sha256Hex(RuntimeRig.PreviousPinExe),
+            Preserved = ["setup", .. rig.Manifest.Preserved],
+        };
+        var shipped = rig.Host.File;
+        rig.Host.File = zip;
+        await new RuntimeInstaller(previous, rig.Http, "mkwmp-test", rig.Cache, new RuntimeHost { Identify = rig.Identify }).InstallAsync(rig.Folder, null, null, default);
+        rig.Host.File = shipped;
+        Assert.Equal(RuntimeRig.PreviousPin, RuntimeInstaller.ManagedVersion(rig.Folder));
+        // Played: the setup ran, the player changed settings and has saves, mods and shaders.
+        rig.Put("setup-state.json", """{"done":{"generate":"c0dd6cf12c07c23a 1.8.0 x"},"port":"0.1.15-mkwmp","version":1}""");
+        rig.Put("setup-work/obj/a.o", "object");
+        rig.Put("mkw.ini", "[launcher]\nmods = mkwmp\n");
+        rig.Put("profile/save.bin", "save");
+        rig.Put("mods/mkwmp/plugin/mkwmp.dll", "mod");
+        rig.Put("mkwgame.dll", "built from the player's game");
+        rig.Put("mkwgame.id", "c0dd6cf12c07c23a");
+        rig.Put("spirv/a.spv", "shader");
+        rig.Put("spirv-renodx/b.spv", "tone map");
+        rig.Put("pipeline-cache.bin", "cache");
+    }
+
+    [Fact]
+    public async Task An_update_from_the_015_pin_replaces_the_changed_setup_files_and_keeps_the_players_state()
+    {
+        using var rig = new RuntimeRig(Release016);
+        await InstallPreviousPin(rig);
+        Assert.Equal(RuntimeFolderKind.Managed, rig.Installer.Classify(rig.Folder));
+        var before = rig.Snapshot();
+
+        var result = await rig.Install();
+
+        Assert.True(result.Updated);
+        Assert.Equal(RuntimeRig.Pinned, RuntimeInstaller.ManagedVersion(rig.Folder));
+        Assert.Equal(RuntimeRig.Pinned, Recomp.Identify(rig.Folder).Version);
+        var after = rig.Snapshot();
+        // setup\ is the new build's: changed files replaced, the new one added, the same one left as it was.
+        Assert.Equal("new python", after["setup/python/python.exe"]);
+        Assert.Equal("new script", after["setup/src/recompile.py"]);
+        Assert.Equal("new tool", after["setup/glslc/spirv-cross.exe"]);
+        Assert.Equal("zig", after["setup/zig/zig.exe"]);
+        // The player's state and what the setup built from their game: untouched.
+        foreach (var kept in new[]
+        {
+            "setup-state.json", "setup-work/obj/a.o", "mkw.ini", "profile/save.bin", "mods/mkwmp/plugin/mkwmp.dll",
+            "mkwgame.dll", "mkwgame.id", "spirv/a.spv", "spirv-renodx/b.spv", "pipeline-cache.bin",
+        })
+        {
+            Assert.Equal(before[kept], after[kept]);
+        }
+        // The backup holds what was replaced, setup\ included, and nothing that was the same.
+        var backup = Directory.EnumerateFiles(result.Backup!, "*", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(result.Backup!, f).Replace('\\', '/')).Order(StringComparer.Ordinal).ToArray();
+        Assert.Equal(["SDL3.dll", "mkw.exe", "mkwmp-runtime.json", "setup/python/python.exe", "setup/src/recompile.py"], backup);
+        Assert.Equal("old python", File.ReadAllText(Path.Combine(result.Backup!, "setup", "python", "python.exe")));
+        Assert.Equal((1, 4), (result.Added, result.Replaced));
+        // From now on the marker lists setup\ as the launcher's: a later pin that drops a setup file removes it.
+        Assert.Contains("setup/zig/zig.exe", rig.Read(RuntimeInstaller.Marker), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task An_update_from_the_015_pin_that_fails_puts_setup_back_as_it_was()
+    {
+        using var rig = new RuntimeRig(Release016);
+        await InstallPreviousPin(rig);
+        var before = rig.Snapshot();
+        LauncherException e;
+        // The files are placed in the zip's order: mkw.exe, SDL3.dll and python are already swapped when the script is.
+        using (new FileStream(rig.At("setup/src/recompile.py"), FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            e = await Assert.ThrowsAsync<LauncherException>(() => rig.Install());
+        }
+        Assert.Contains("put back as it was", e.Message, StringComparison.Ordinal);
+        Assert.Equal(before, rig.Snapshot());
+        Assert.Equal(RuntimeRig.PreviousPin, Recomp.Identify(rig.Folder).Version);
+
+        await rig.Install();
+        Assert.Equal("new script", rig.Read("setup/src/recompile.py"));
+        Assert.Equal(RuntimeRig.Pinned, RuntimeInstaller.ManagedVersion(rig.Folder));
     }
 
     [Fact]
@@ -633,7 +759,8 @@ public class RuntimeInstallerTests
         var result = await rig.Install(new RuntimeInstallOptions { ReplaceForeign = true });
         Assert.Equal(RuntimeRig.Pinned, Recomp.Identify(rig.Folder).Version);
         Assert.Equal(Encoding.UTF8.GetString(RuntimeRig.UpstreamExe), File.ReadAllText(Path.Combine(result.Backup!, "mkw.exe")));
-        Assert.Equal("old python", rig.Read("setup/python/python.exe"));
+        Assert.Equal("new python", rig.Read("setup/python/python.exe"));
+        Assert.Equal("old python", File.ReadAllText(Path.Combine(result.Backup!, "setup", "python", "python.exe")));
         Assert.Equal("save", rig.Read("profile/save.bin"));
     }
 
@@ -742,7 +869,7 @@ public class LauncherRuntimeTests
         view = home.Launcher.Runtime;
         Assert.Equal(RuntimeState.Installed, view.State);
         Assert.Equal((RuntimeRig.Pinned, home.Files.Folder, false), (view.InstalledVersion, view.Folder, view.Foreign));
-        Assert.Equal("mkw-recomp 0.1.15-mkwmp installed", view.Note);
+        Assert.Equal("mkw-recomp 0.1.16-mkwmp installed", view.Note);
         Assert.False(view.Busy);
         // The window was shown each phase, with bytes.
         var seen = home.States.Select(s => s.State).Distinct().ToList();
@@ -796,9 +923,9 @@ public class LauncherRuntimeTests
         await home.Launcher.InstallRuntimeAsync(null, default);
 
         view = home.Launcher.Runtime;
-        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, "mkw-recomp updated to 0.1.15-mkwmp"), (view.State, view.InstalledVersion, view.Note));
+        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, "mkw-recomp updated to 0.1.16-mkwmp"), (view.State, view.InstalledVersion, view.Note));
         Assert.Equal(mine, home.Launcher.Settings.Game);
-        Assert.Equal("old python", File.ReadAllText(Path.Combine(mine, "setup", "python", "python.exe")));
+        Assert.Equal("new python",File.ReadAllText(Path.Combine(mine, "setup", "python", "python.exe")));
         Assert.Equal("save", File.ReadAllText(Path.Combine(mine, "profile", "save.bin")));
         Assert.False(Directory.Exists(home.Files.Folder)); // nothing went to the default folder
     }

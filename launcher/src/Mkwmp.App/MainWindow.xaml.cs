@@ -49,6 +49,9 @@ public partial class MainWindow : Window
         Activated += (_, _) => _gamepad.Enabled = true;
         Deactivated += (_, _) => _gamepad.Enabled = false;
 
+        // xml:lang: how bindings format, and which glyph variants the system's fallback fonts give
+        Language = System.Windows.Markup.XmlLanguage.GetLanguage(shell.S.Culture.IetfLanguageTag);
+        shell.LanguageChanged += (_, _) => Language = System.Windows.Markup.XmlLanguage.GetLanguage(shell.S.Culture.IetfLanguageTag);
         shell.PropertyChanged += OnShellPropertyChanged;
         shell.QuitRequested += (_, _) => Close();
         shell.ButtonSink = button =>

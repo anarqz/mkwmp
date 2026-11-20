@@ -70,7 +70,7 @@ public sealed record GameSettingsSchema(IReadOnlyList<GameSettingsCategory> Cate
     public IReadOnlyDictionary<string, string?> Changes(string id, string? value)
     {
         ArgumentNullException.ThrowIfNull(id);
-        var setting = Find(id) ?? throw new LauncherException($"not a setting of this game: {id}");
+        var setting = Find(id) ?? throw new LauncherException(Strings.GameSettingsNotASetting(id));
         var changes = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         if (value is null)
         {
@@ -87,7 +87,7 @@ public sealed record GameSettingsSchema(IReadOnlyList<GameSettingsCategory> Cate
         {
             foreach (var (other, v) in sets)
             {
-                changes[other] = (Find(other) ?? throw new LauncherException($"not a setting of this game: {other}")).Normalize(v);
+                changes[other] = (Find(other) ?? throw new LauncherException(Strings.GameSettingsNotASetting(other))).Normalize(v);
             }
         }
         return changes;
@@ -122,9 +122,9 @@ public sealed record GameSetting
     /// <summary>Stable id, unique in the schema (for mkw-recomp: the mkw.ini key, "fullscreen").</summary>
     public string Id { get; }
 
-    public string Label { get; }
+    public string Label { get; init; }
 
-    public string Description { get; }
+    public string Description { get; init; }
 
     public GameSettingKind Kind { get; }
 
@@ -209,33 +209,33 @@ public sealed record GameSetting
         switch (Kind)
         {
             case GameSettingKind.Toggle:
-                return value is "0" or "1" ? value : throw Refused(value, "it is on (1) or off (0)");
+                return value is "0" or "1" ? value : throw Refused(value, Strings.GameSettingRefusedToggle);
             case GameSettingKind.Choice:
-                return Options.Any(o => o.Value == value) ? value : throw Refused(value, $"choose one of: {string.Join(", ", Options.Select(o => o.Value.Length == 0 ? "\"\"" : o.Value))}");
+                return Options.Any(o => o.Value == value) ? value : throw Refused(value, Strings.GameSettingRefusedChoice(string.Join(", ", Options.Select(o => o.Value.Length == 0 ? "\"\"" : o.Value))));
             case GameSettingKind.Range:
                 if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) || !double.IsFinite(number))
                 {
-                    throw Refused(value, "it is a number");
+                    throw Refused(value, Strings.GameSettingRefusedNumber);
                 }
                 // compared after rounding to the step's decimals, so 1.5000001 from a slider is 1.5
                 number = Math.Round(number, Decimals);
-                return number >= Min && number <= Max ? Format(number) : throw Refused(value, $"it goes from {Format(Min)} to {Format(Max)}");
+                return number >= Min && number <= Max ? Format(number) : throw Refused(value, Strings.GameSettingRefusedRange(Format(Min), Format(Max)));
             default:
                 if (value.Length > MaxLength)
                 {
-                    throw Refused(value, $"at most {MaxLength} characters");
+                    throw Refused(value, Strings.GameSettingRefusedLength(MaxLength));
                 }
                 if (value.Any(char.IsControl) || value != value.Trim() || (value.Length >= 2 && value[0] == '"' && value[^1] == '"'))
                 {
-                    throw Refused(value, "one line, without spaces or quotes around it");
+                    throw Refused(value, Strings.GameSettingRefusedLine);
                 }
                 if (value.Length > 0 && Pattern is { } pattern && !Regex.IsMatch(value, $"^(?:{pattern})$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)))
                 {
-                    throw Refused(value, "not in the form this setting takes");
+                    throw Refused(value, Strings.GameSettingRefusedForm);
                 }
                 return value;
         }
     }
 
-    private LauncherException Refused(string value, string why) => new($"{Label}: \"{value}\" is not accepted ({why})");
+    private LauncherException Refused(string value, string why) => new(Strings.GameSettingRefused(Label, value, why));
 }

@@ -15,6 +15,8 @@ public sealed record Release(string Tag, bool Draft, string? Notes, IReadOnlyLis
 {
     public SemVer? Version => Tag.StartsWith('v') ? SemVer.TryParse(Tag[1..]) : null;
 
+    public bool Has(string name) => Assets.Any(a => a.Name == name);
+
     internal Uri Url(string name) => Assets.FirstOrDefault(a => a.Name == name)?.Url ?? throw new LauncherException($"release {Tag} has no {name}");
 }
 
@@ -33,11 +35,15 @@ public sealed record Release(string Tag, bool Draft, string? Notes, IReadOnlyLis
 public sealed class Updater
 {
     public const string Repo = "anarqz/mkwmp";
+    /// <summary>The launcher alone: what a launcher from before the zip-with-helper downloads (and the 1.3.0 Rust launcher).</summary>
     public const string LauncherAsset = "mkwmp-launcher-x86_64-windows.exe";
+
+    /// <summary>The release's zip for Windows (tools/release/make_zips.py): every file of the launcher, the helper included.</summary>
+    public static string ZipAsset(string version) => $"mkwmp-{version}-windows-x64.zip";
     public const string DefaultApi = "https://api.github.com";
 
     /// <summary>Public release keys (<c>kid:base64url</c>). The private half never leaves the release machine.</summary>
-    public static IReadOnlyList<string> ReleaseKeys { get; } = ["release1:Zuvb-AuF9DcXEzXRSu49EFrb2ilCQnJl1e4ApQJI9Dw"];
+    public static IReadOnlyList<string> ReleaseKeys => Mkwmp.Update.ReleaseSums.ReleaseKeys;
 
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
     private readonly HttpClient _http;
@@ -183,6 +189,76 @@ public sealed class Updater
         }
     }
 
+    /// <summary>
+    /// Downloads <paramref name="url"/> into <paramref name="path"/>, through <c>&lt;path&gt;.part</c>. A part
+    /// left by an earlier try (the launcher was closed, the line dropped) is continued with an HTTP
+    /// Range request; a server that ignores the range sends the whole file and the part starts over.
+    /// The caller checks the result against SHA256SUMS: a part that was continued wrongly fails there.
+    /// </summary>
+    public async Task DownloadAsync(Uri url, string path, IProgress<(long Got, long? Total)>? progress, CancellationToken cancel)
+    {
+        ArgumentNullException.ThrowIfNull(url);
+        ArgumentNullException.ThrowIfNull(path);
+        var part = path + ".part";
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        limit.CancelAfter(Timeout);
+        try
+        {
+            for (var attempt = 0; ; attempt++)
+            {
+                var have = File.Exists(part) ? new FileInfo(part).Length : 0;
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
+                if (have > 0)
+                {
+                    req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(have, null);
+                }
+                using var res = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, limit.Token).ConfigureAwait(false);
+                if (res.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable && attempt == 0)
+                {
+                    File.Delete(part); // longer than the file: not this file's part
+                    continue;
+                }
+                if (!res.IsSuccessStatusCode)
+                {
+                    throw new LauncherException($"download {url}: HTTP {(int)res.StatusCode}");
+                }
+                var resumed = have > 0 && res.StatusCode == System.Net.HttpStatusCode.PartialContent;
+                var start = resumed ? have : 0;
+                var total = res.Content.Headers.ContentLength is { } length ? start + length : (long?)null;
+                using var body = await res.Content.ReadAsStreamAsync(limit.Token).ConfigureAwait(false);
+                using (var file = new FileStream(part, resumed ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.Read))
+                {
+                    var buffer = new byte[81920];
+                    var got = start;
+                    progress?.Report((got, total));
+                    int n;
+                    while ((n = await body.ReadAsync(buffer, limit.Token).ConfigureAwait(false)) > 0)
+                    {
+                        await file.WriteAsync(buffer.AsMemory(0, n), limit.Token).ConfigureAwait(false);
+                        got += n;
+                        limit.CancelAfter(Timeout);
+                        progress?.Report((got, total));
+                    }
+                    if (total is { } all && got != all)
+                    {
+                        throw new LauncherException($"download {url}: the connection closed early"); // the part stays: the next try continues it
+                    }
+                }
+                File.Move(part, path, overwrite: true);
+                return;
+            }
+        }
+        catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
+        {
+            throw new LauncherException($"download {url}: timed out");
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or UnauthorizedAccessException)
+        {
+            throw new LauncherException($"download {url}: {e.InnerException?.Message ?? e.Message}", e);
+        }
+    }
+
     public async Task<IReadOnlyList<Release>> ReleasesAsync(CancellationToken cancel)
     {
         var body = await GetAsync(new Uri($"{_api}/repos/{Repo}/releases?per_page=20"), null, cancel).ConfigureAwait(false);
@@ -242,56 +318,7 @@ public sealed class Updater
         return (release, await SumsAsync(release, cancel).ConfigureAwait(false));
     }
 
-    /// <summary>
-    /// Replaces the executable with <paramref name="bytes"/>. The old one is kept as
-    /// <c>&lt;exe&gt;.old</c>: a running .exe on Windows can be renamed, not overwritten.
-    /// </summary>
-    public static void ReplaceExecutable(string exe, ReadOnlySpan<byte> bytes)
-    {
-        var (fresh, old) = (exe + ".new", exe + ".old");
-        try
-        {
-            File.WriteAllBytes(fresh, bytes);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            throw new LauncherException($"write {fresh}: {e.Message}", e);
-        }
-        try
-        {
-            File.Delete(old);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            // still there from the last update: the move below says why
-        }
-        try
-        {
-            File.Move(exe, old);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            throw new LauncherException($"move {exe} aside: {e.Message}", e);
-        }
-        try
-        {
-            File.Move(fresh, exe);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            try
-            {
-                File.Move(old, exe);
-            }
-            catch (Exception back) when (back is IOException or UnauthorizedAccessException)
-            {
-                // nothing more to try
-            }
-            throw new LauncherException($"install the new launcher: {e.Message}", e);
-        }
-    }
-
-    /// <summary>Removes the <c>&lt;exe&gt;.old</c> left by the last update.</summary>
+    /// <summary>Removes the <c>&lt;exe&gt;.old</c> left by an update of a launcher from before the helper (it renamed the running executable aside).</summary>
     public static void CleanOld(string exe)
     {
         try

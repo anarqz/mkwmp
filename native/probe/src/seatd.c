@@ -257,8 +257,8 @@ static void fetch_status(void) {
 // The answer seat.c understands for a view (seat_parse).
 static int view_reply(const SeatApiView *v, char *buf, size_t cap, const char **body) {
     if (!strcmp(v->state, "seated") && v->ticket[0])
-        return reply(buf, cap, body, 200, "{\"state\":\"seated\",\"ticket\":\"%s\",\"lobby\":\"%s\",\"name\":\"%s\"}",
-                     v->ticket, v->ticket_lobby, C.name);
+        return reply(buf, cap, body, 200, "{\"state\":\"seated\",\"ticket\":\"%s\",\"lobby\":\"%s\",\"name\":\"%s\",\"room\":%s}",
+                     v->ticket, v->ticket_lobby, C.name, v->room[0] ? v->room : "null");
     return reply(buf, cap, body, 200, "{\"state\":\"queued\",\"position\":%d,\"seatsTotal\":%d}", v->position,
                  v->seats_total);
 }

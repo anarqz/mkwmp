@@ -325,12 +325,12 @@ public sealed class RuntimeInstaller
                 File.Delete(PartPath);
                 if (attempt > 0)
                 {
-                    throw new LauncherException(Strings.RuntimeDownloadFailed(_manifest.Asset, "the server refused the request"));
+                    throw new LauncherException(Strings.RuntimeDownloadFailed(_manifest.Asset, Strings.ServerRefused));
                 }
             }
             if (new FileInfo(PartPath).Length < _manifest.Size)
             {
-                throw new LauncherException(Strings.RuntimeDownloadFailed(_manifest.Asset, "the connection closed early"));
+                throw new LauncherException(Strings.RuntimeDownloadFailed(_manifest.Asset, Strings.ClosedEarly));
             }
             if (!await VerifyAsync(PartPath, progress, cancel).ConfigureAwait(false))
             {
@@ -407,7 +407,7 @@ public sealed class RuntimeInstaller
         }
         catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
         {
-            throw new LauncherException(Strings.RuntimeDownloadFailed(_manifest.Asset, "timed out"));
+            throw new LauncherException(Strings.RuntimeDownloadFailed(_manifest.Asset, Strings.TimedOut));
         }
         catch (HttpRequestException e)
         {

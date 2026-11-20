@@ -48,21 +48,22 @@ public static class RecompRuntime
         + "copy, on your device; MKWMP is not affiliated with mkw-recomp or with Nintendo.";
 
     /// <summary>
-    /// The pinned build: mkw-recomp 0.1.15-mkwmp, the Windows zip (also what runs under Proton).
+    /// The pinned build: mkw-recomp 0.1.16-mkwmp, the Windows zip (also what runs under Proton).
+    /// The release's no-AVX2 zip is not installed by the launcher; its mkw.exe is in <see cref="Recomp.Known"/>.
     /// </summary>
     public static RuntimeManifest Pinned { get; } = new()
     {
         Name = "mkw-recomp",
-        Version = "0.1.15-mkwmp",
+        Version = "0.1.16-mkwmp",
         Repository = "anarqz/mkw-recomp",
-        Tag = "v0.1.15-mkwmp",
-        Asset = "mkw-recomp-0.1.15-mkwmp-windows-x64.zip",
-        Size = 217_227_522,
-        Sha256 = "2a5ae5b856692d4a6eae357fcc80e63dd12f5b7725429a05c77117f043d472df",
+        Tag = "v0.1.16-mkwmp",
+        Asset = "mkw-recomp-0.1.16-mkwmp-windows-x64.zip",
+        Size = 221_144_444,
+        Sha256 = "cf41cb0cdab4af58a2aff586e9be3d09ef00f4a85699319675fb443928fc365d",
         Executable = Recomp.Exe,
-        ExecutableSha256 = "c6d732115683fff57ab1cd7e68414934c4fa132b2a5afc48247a8826797d58b9",
-        // 23,300 files under one "mkw-recomp/" folder; 688,561,638 bytes of them are setup/ (clang, zig, glslc, python).
-        InstalledSize = 728_495_266,
+        ExecutableSha256 = "73997d10f8cca878e9654b174c194833053a529ec04ff3b03be587c1e592eb8f",
+        // 23,344 files under one "mkw-recomp/" folder; 698,604,837 bytes of them are setup/ (clang, zig, glslc, python).
+        InstalledSize = 738_675_063,
         // Measured on an install of game 1.8.0 set up with "link" (the game's data is not copied):
         // spirv 1.80 GB, pipeline cache 0.49 GB, setup-work 0.37 GB, mkwgame.dll 0.23 GB, exefs,
         // sm86 and python's caches 0.07 GB: 2.96 GB, rounded up.
@@ -71,11 +72,10 @@ public static class RecompRuntime
         FolderName = "mkw-recomp",
         Preserved =
         [
-            // The bundled toolchain (95% of the download): kept once it is there, by the project's rule for swapping
-            // builds of one release. It is only right while setup\ is the same in both builds: setup\src is hashed
-            // into the setup's step keys and the game id (launcher/docs/RECOMP_INTEGRATION.md, 1.5). A pin whose
-            // setup\ differs from the previous pin's must take "setup" out of this list.
-            "setup",
+            // Not "setup": the bundled toolchain and the setup's sources are the runtime's, and setup\ changed from
+            // 0.1.15-mkwmp to 0.1.16-mkwmp (setup\src is hashed into the setup's step keys and the game id,
+            // launcher/docs/RECOMP_INTEGRATION.md, 1.5). An update compares its files one by one and replaces only
+            // those that changed, with the backup and rollback of any other file.
             // the setup's state and work
             "setup-state.json", "setup.lock", "setup-work",
             // the player's settings, saves, mods and logs
@@ -89,9 +89,9 @@ public static class RecompRuntime
             CreditSummary,
             "mkw-recomp",
             new Uri("https://github.com/adriadam10/mkw-recomp"),
-            new Uri("https://github.com/anarqz/mkw-recomp/tree/v0.1.15-mkwmp"),
+            new Uri("https://github.com/anarqz/mkw-recomp/tree/v0.1.16-mkwmp"),
             "MIT",
             Notice,
-            "licenses"),
+            "licenses") { SummaryKey = "core.recomp.credit" },
     };
 }

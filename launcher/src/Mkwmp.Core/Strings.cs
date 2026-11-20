@@ -4,131 +4,205 @@ using System.Globalization;
 namespace Mkwmp.Core;
 
 /// <summary>
-/// Every text the player can read that the core produces, in one place so the window can
-/// localize it later. The English is the Rust launcher's, verbatim: the server's refusals are
-/// matched against some of these (<see cref="NotRegistered"/>), and the tests pin them.
+/// Every text the player can read that the core produces. Each one is a key of the launcher's
+/// catalogs (<c>Mkwmp.App/i18n/*.json</c>, the <c>core.*</c> keys): the English catalog is built
+/// into this assembly, so the core speaks English by itself (headless, and in the tests, which pin
+/// that English), and the window gives it the player's language with <see cref="Use"/>.
+/// The English is the Rust launcher's, verbatim.
+/// <para>
+/// A text is looked up when it is asked for: the views the launcher rebuilds (the status pill,
+/// problems, the game's settings) follow a language change at once (<see cref="Changed"/>); a
+/// note already shown, such as the answer to the last action, stays as it was written.
+/// </para>
+/// <para>
+/// Not localized on purpose: the session log and bug reports (read by the maintainers), and what
+/// the game shows from the local API (<see cref="OnlineOffInGame"/>: plain ASCII).
+/// </para>
 /// </summary>
 public static class Strings
 {
+    private static readonly Lazy<IReadOnlyDictionary<string, string>> BuiltIn = new(() => Catalogs.BuiltIn(Locales.English));
+    private static Func<string, string?>? _lookup;
+    private static CultureInfo _culture = CultureInfo.InvariantCulture;
+    private static int _generation;
+
+    /// <summary>The English catalog built into the core (every key, the window's too).</summary>
+    public static IReadOnlyDictionary<string, string> English => BuiltIn.Value;
+
+    /// <summary>How numbers inside the texts are written ("1.5 GB" or "1,5 GB"): invariant until <see cref="Use"/> says otherwise.</summary>
+    public static CultureInfo Culture => _culture;
+
+    /// <summary>Goes up with each <see cref="Use"/>: what was built from the texts is stale when it differs.</summary>
+    public static int Generation => Volatile.Read(ref _generation);
+
+    /// <summary>After <see cref="Use"/>: rebuild what holds texts.</summary>
+    public static event Action? Changed;
+
+    /// <summary>
+    /// Gives the core the player's language: <paramref name="lookup"/> answers a key with its text,
+    /// or null to keep the English. Null <paramref name="lookup"/>: English again.
+    /// </summary>
+    public static void Use(Func<string, string?>? lookup, CultureInfo? culture)
+    {
+        Volatile.Write(ref _lookup, lookup);
+        Volatile.Write(ref _culture, culture ?? CultureInfo.InvariantCulture);
+        Interlocked.Increment(ref _generation);
+        Changed?.Invoke();
+    }
+
+    /// <summary>The text of a catalog key in the language in use, else in English, else the key.</summary>
+    public static string T(string key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        return Volatile.Read(ref _lookup)?.Invoke(key) ?? (BuiltIn.Value.TryGetValue(key, out var text) ? text : key);
+    }
+
+    /// <summary>The text of a key that may not be in the catalogs (a game setting's label): <paramref name="english"/> then.</summary>
+    public static string T(string key, string english)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        return Volatile.Read(ref _lookup)?.Invoke(key) ?? english;
+    }
+
+    /// <summary>The text of <paramref name="key"/> with each <c>{name}</c> replaced.</summary>
+    public static string F(string key, params (string Name, string? Value)[] args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        var text = T(key);
+        foreach (var (name, value) in args)
+        {
+            text = text.Replace("{" + name + "}", value ?? "", StringComparison.Ordinal);
+        }
+        return text;
+    }
+
+    /// <summary>A whole number as the language in use writes it.</summary>
+    public static string N(long number) => number.ToString(Culture);
+
+    /// <summary>A size for the player: "1.4 GB" from a gigabyte on, whole megabytes below ("217 MB"), as the language in use writes them.</summary>
+    public static string Size(long bytes) => bytes >= 1_000_000_000
+        ? Gigabytes(bytes)
+        : F("core.megabytes", ("n", Math.Round(bytes / 1e6).ToString("0", Culture)));
+
+    /// <summary>Upper case by the rules of the language in use (the status pill).</summary>
+    public static string Upper(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        return text.ToUpper(Culture);
+    }
+
     // ---- seat API -------------------------------------------------------------------------
-    public const string Unreachable = "Server unreachable: retry";
-    public const string WrongPin = "Wrong PIN for this gamertag";
-    public const string NotRegistered = "Register this gamertag first";
-    public const string NoConsent = "Confirm you're 18 or older and accept the privacy policy (SETTINGS > ONLINE)";
+    public static string Unreachable => T("core.unreachable");
+    public static string WrongPin => T("core.wrong_pin");
+    public static string NotRegistered => T("core.not_registered");
+    public static string NoConsent => T("core.no_consent");
     public const string PrivacyUrl = "https://anarqz.github.io/mkwmp/#privacy";
     public const string GuideUrl = "https://anarqz.github.io/mkwmp/";
-    public const string InUse = "This gamertag is in use (another launcher, or a seat not expired yet): retrying";
-    public const string QueueFull = "The server and its queue are full: retrying";
-    public const string SessionExpired = "session expired";
-    public const string Taken = "that gamertag is already registered";
-    public const string SignedOut = "signed out";
-    public const string ServerError = "server error";
-    public const string BadAnswer = "bad answer";
-    public const string CouldNotRegister = "could not register";
-    public const string CouldNotDelete = "could not delete the profile";
-    public const string ServerTooOld = "the server is too old (no lobbyEndpoint)";
-    public const string CantReachNow = "can't reach the server right now";
-    public const string RegisterFirst = "register your gamertag first";
-    public const string NotConnectedYet = "not connected to the server yet";
+    public static string InUse => T("core.in_use");
+    public static string QueueFull => T("core.queue_full");
+    public static string SessionExpired => T("core.session_expired");
+    public static string Taken => T("core.taken");
+    public static string SignedOut => T("core.signed_out");
+    public static string ServerError => T("core.server_error");
+    public static string BadAnswer => T("core.bad_answer");
+    public static string CouldNotRegister => T("core.could_not_register");
+    public static string CouldNotDelete => T("core.could_not_delete");
+    public static string ServerTooOld => T("core.server_too_old");
+    public static string CantReachNow => T("core.cant_reach_now");
+    public static string RegisterFirst => T("core.register_first");
+    public static string NotConnectedYet => T("core.not_connected_yet");
 
-    public static string CannotReach(string why) => $"cannot reach the server: {why}";
-    public static string ServerAnswered(int status) => $"server answered {status.ToString(CultureInfo.InvariantCulture)}";
-    public static string NotAnMkwmpServer(string why) => $"not an mkwmp server: {why}";
-    public static string BadAnswerWhy(string why) => $"bad answer: {why}";
-    public static string Limited(long seconds) => $"too many tries; wait {WaitText(seconds)}";
+    public static string CannotReach(string why) => F("core.cannot_reach", ("why", why));
+    public static string ServerAnswered(int status) => F("core.server_answered", ("status", status.ToString(CultureInfo.InvariantCulture)));
+    public static string NotAnMkwmpServer(string why) => F("core.not_an_mkwmp_server", ("why", why));
+    public static string BadAnswerWhy(string why) => F("core.bad_answer_why", ("why", why));
+    public static string Limited(long seconds) => F("core.limited", ("wait", WaitText(seconds)));
+
+    /// <summary>Why a request did not get through, inside <see cref="CannotReach"/> and <see cref="RuntimeDownloadFailed"/>.</summary>
+    public static string TimedOut => T("core.why.timed_out");
+    public static string ServerRefused => T("core.why.refused");
+    public static string ClosedEarly => T("core.why.closed_early");
 
     /// <summary>"45 s" under a minute and a half, whole minutes (rounded up) after.</summary>
     public static string WaitText(long seconds) => seconds < 90
-        ? $"{Math.Max(1, seconds).ToString(CultureInfo.InvariantCulture)} s"
-        : $"{((seconds + 59) / 60).ToString(CultureInfo.InvariantCulture)} min";
+        ? F("core.wait_seconds", ("n", N(Math.Max(1, seconds))))
+        : F("core.wait_minutes", ("n", N((seconds + 59) / 60)));
 
     // ---- what blocks PLAY -----------------------------------------------------------------
-    public const string PickGamertag = "Pick a gamertag: 3-16 letters, digits, - or _ (no spaces)";
-    public const string NeedPin = "Register your gamertag, or enter its 6-digit PIN";
-    public const string SetServer = "Set the server URL";
-    public const string InstallPatchFirst = "Install the game patch first: SETTINGS, GAME PATCH, INSTALL";
-    public const string StopBeforeDelete = "Stop playing before deleting the profile";
-    public const string PressStopFirst = "Press STOP first";
+    public static string PickGamertag => T("core.pick_gamertag");
+    public static string NeedPin => T("core.need_pin");
+    public static string SetServer => T("core.set_server");
+    public static string InstallPatchFirst => T("core.install_patch_first");
+    public static string StopBeforeDelete => T("core.stop_before_delete");
+    public static string PressStopFirst => T("core.press_stop_first");
 
     /// <summary>PLAY while the launcher stands by for a game that signed in by itself (the overlay host).</summary>
-    public const string GameRunsAlready = "The game is already running and holds its own seat: close it to PLAY from here";
+    public static string GameRunsAlready => T("core.game_runs_already");
 
     /// <summary>"Set the game folder (the one with mkw.exe)": the hint is the target's.</summary>
-    public static string SetGameFolder(string folderHint) => $"Set the game folder ({folderHint})";
+    public static string SetGameFolder(string folderHint) => F("core.set_game_folder", ("hint", folderHint));
 
-    public static string NotAGameFolder(string folderHints) => $"No game in that folder: pick {folderHints}";
+    public static string NotAGameFolder(string folderHints) => F("core.not_a_game_folder", ("hints", folderHints));
 
-    public static string AnotherLauncher(int port) =>
-        $"Another MKWMP launcher is running (port {port.ToString(CultureInfo.InvariantCulture)} is in use): close it";
+    public static string AnotherLauncher(int port) => F("core.another_launcher", ("port", port.ToString(CultureInfo.InvariantCulture)));
 
-    public static string ExpiredAndTaken(string name) =>
-        $"{name} expired on the server and someone else registered it: pick another gamertag";
+    public static string ExpiredAndTaken(string name) => F("core.expired_and_taken", ("name", name));
 
     // ---- offline first: no server chosen ---------------------------------------------------
     /// <summary>An online action asked for while no server is set (register, friends, reports).</summary>
-    public const string OnlineOff = "Online is off: connect to a server first (SETTINGS > ONLINE)";
+    public static string OnlineOff => T("core.online_off");
 
     /// <summary>What the game's Online Play gets from the launcher while no server is set (shown by the mod as a notice).</summary>
-    /// <remarks>Plain ASCII without quotes, &lt;, &gt; or &amp;: the mod reads it out of the JSON as it is written, and keeps 127 characters.</remarks>
+    /// <remarks>Plain ASCII without quotes, &lt;, &gt; or &amp;: the mod reads it out of the JSON as it is written, and keeps 127 characters. So it stays English.</remarks>
     public const string OnlineOffInGame = "Online is off: connect to a server in the MKWMP launcher (Settings, Online)";
 
     /// <summary>The profile card while offline: the name is only on this device.</summary>
-    public const string LocalNameOnly = "This is your name on this device. Connect to a server to register it there.";
+    public static string LocalNameOnly => T("core.local_name_only");
 
-    public const string PickLocalName = "Pick your name: 3-16 letters, digits, - or _ (no spaces).";
+    public static string PickLocalName => T("core.pick_local_name");
 
     // ---- asking a server who it is (Connect) ----------------------------------------------
-    public const string ProbeInvalid = "Type the server's address, like mkw.example.net or 192.168.0.10:8080";
-    public const string ProbeUnreachable = "Nothing answered at that address: check it, and that the server is up";
-    public const string ProbeNotMkwmp = "That address answered, but it is not an MKWMP server";
-    public const string ProbeTooOld = "That MKWMP server is too old for this launcher: its host must update it";
+    public static string ProbeInvalid => T("core.probe_invalid");
+    public static string ProbeUnreachable => T("core.probe_unreachable");
+    public static string ProbeNotMkwmp => T("core.probe_not_mkwmp");
+    public static string ProbeTooOld => T("core.probe_too_old");
 
     /// <summary>"MKWMP server · 20/32 seats free" (and the queue, when there is one).</summary>
     public static string ProbeOk(ServerProbe probe)
     {
         ArgumentNullException.ThrowIfNull(probe);
-        return string.Create(CultureInfo.InvariantCulture, $"MKWMP server · {probe.SeatsFree}/{probe.SeatsTotal} seats free")
-            + (probe.Queued > 0 ? string.Create(CultureInfo.InvariantCulture, $" · {probe.Queued} in queue") : "");
+        return F(probe.Queued > 0 ? "core.probe_ok_queue" : "core.probe_ok",
+            ("free", N(probe.SeatsFree)), ("total", N(probe.SeatsTotal)), ("queued", N(probe.Queued)));
     }
 
     // ---- the server list (the beholder) and the privacy policy ----------------------------
-    public const string BeholderUnreachable = "The server list could not be read right now";
-    public const string BeholderTooLarge = "the server list is too large";
-    public const string PrivacyUnreachable = "The server's own privacy policy could not be read right now: this is MKWMP's";
-    public const string ConsentNotStored = "The server could not store your answer right now: try again";
-    public const string PrivacyChanged = "The server's privacy policy changed: read it again, then accept";
+    public static string BeholderUnreachable => T("core.beholder_unreachable");
+    public static string BeholderTooLarge => T("core.beholder_too_large");
+    public static string PrivacyUnreachable => T("core.privacy_unreachable");
+    public static string ConsentNotStored => T("core.consent_not_stored");
+    public static string PrivacyChanged => T("core.privacy_changed");
 
     /// <summary>MKWMP's own short policy, shown for a server that publishes none (the Rust window's three paragraphs).</summary>
-    public const string PrivacyFallbackMarkdown =
-        "# Privacy\n\n"
-        + "MKWMP's online play, friends and voice chat are for adults: you must be **18 or older**.\n\n"
-        + "## What the server keeps\n\n"
-        + "- your gamertag\n- a hash of your PIN (never the PIN itself)\n- your friends\n- any report you file\n\n"
-        + "Unused gamertags are deleted after a month. You can delete yours at any time in *Settings, Online*.\n\n"
-        + "## Voice and camera\n\n"
-        + "Voice chat works only in private rooms, relayed live to the players in your room. A camera you turn on is shown only to mutual friends there. "
-        + "Neither is ever recorded.\n\n"
-        + "## The full policy\n\n"
-        + "The server you play on may have its own policy; the project's is at [anarqz.github.io/mkwmp](https://anarqz.github.io/mkwmp/#privacy).\n";
+    public static string PrivacyFallbackMarkdown => T("core.privacy_fallback");
 
     // ---- the status pill (the session's state machine) ------------------------------------
-    public const string Ready = "READY · PRESS PLAY";
-    public const string ReadyOffline = "READY · PLAY OFFLINE";
-    public const string StartingGame = "STARTING THE GAME…";
-    public const string PlayingOffline = "PLAYING OFFLINE";
-    public const string Connecting = "CONNECTING…";
-    public const string TakingASeat = "TAKING A SEAT…";
-    public const string StartFromSteam = "START THE GAME FROM STEAM";
-    public const string PickOnlinePlay = "IN GAME · PICK ONLINE PLAY";
-    public const string SeatedStartFromSteam = "SEATED · START THE GAME FROM STEAM";
-    public const string SeatedHaveFun = "SEATED · HAVE FUN!";
+    public static string Ready => T("core.status.ready");
+    public static string ReadyOffline => T("core.status.ready_offline");
+    public static string StartingGame => T("core.status.starting_game");
+    public static string PlayingOffline => T("core.status.playing_offline");
+    public static string Connecting => T("core.status.connecting");
+    public static string TakingASeat => T("core.status.taking_a_seat");
+    public static string StartFromSteam => T("core.status.start_from_steam");
+    public static string PickOnlinePlay => T("core.status.pick_online_play");
+    public static string SeatedStartFromSteam => T("core.status.seated_start_from_steam");
+    public static string SeatedHaveFun => T("core.status.seated_have_fun");
 
-    public static string Queued(int position) => $"SERVER FULL · YOU ARE #{position.ToString(CultureInfo.InvariantCulture)} IN THE QUEUE";
+    public static string Queued(int position) => F("core.status.queued", ("position", N(position)));
 
     // ---- the server pill ------------------------------------------------------------------
-    public const string CheckingServer = "CHECKING THE SERVER…";
-    public const string NotConnected = "NOT CONNECTED";
-    public const string ServerOffline = "SERVER OFFLINE";
+    public static string CheckingServer => T("core.server.checking");
+    public static string NotConnected => T("core.server.not_connected");
+    public static string ServerOffline => T("core.server.offline");
 
     /// <summary>The server pill, as the Rust window wrote it.</summary>
     public static string ServerPill(ServerView server)
@@ -139,177 +213,211 @@ public static class Strings
             ServerState.Checking => CheckingServer,
             ServerState.NotAsked => NotConnected,
             ServerState.Offline => ServerOffline,
-            _ => string.Create(CultureInfo.InvariantCulture, $"ONLINE · {server.SeatsFree}/{server.SeatsTotal} SEATS FREE")
-                + (server.Queued > 0 ? string.Create(CultureInfo.InvariantCulture, $" · {server.Queued} IN QUEUE") : ""),
+            _ => F(server.Queued > 0 ? "core.server.online_queue" : "core.server.online",
+                ("free", N(server.SeatsFree)), ("total", N(server.SeatsTotal)), ("queued", N(server.Queued))),
         };
     }
 
     // ---- profile card ---------------------------------------------------------------------
-    public const string NameRule = "3-16 letters, digits, - or _ (no spaces)";
-    public const string ProfileDeleted = "Profile deleted. Pick a gamertag to create a new one.";
-    public const string NameIsRegistered = "That gamertag is registered. If it's yours, enter its PIN.";
-    public const string KeepYourPin = "Your PIN: keep it to use this gamertag on another device.";
-    public const string RegisterToPlay = "Register a gamertag to play. You'll get a 6-digit PIN.";
+    public static string NameRule => T("core.name_rule");
+    public static string ProfileDeleted => T("core.profile_deleted");
+    public static string NameIsRegistered => T("core.name_is_registered");
+    public static string KeepYourPin => T("core.keep_your_pin");
+    public static string RegisterToPlay => T("core.register_to_play");
 
     // ---- friends --------------------------------------------------------------------------
-    public const string RegisterToAddFriends = "Register your gamertag to add friends.";
-    public const string LoadingFriends = "Loading your friends…";
-    public const string FriendsAreOnServer = "Friends are kept on the server, and are your friends in the game.";
-    public const string SignedOutTryAgain = "signed out; try again";
+    public static string RegisterToAddFriends => T("core.register_to_add_friends");
+    public static string LoadingFriends => T("core.loading_friends");
+    public static string FriendsAreOnServer => T("core.friends_are_on_server");
+    public static string SignedOutTryAgain => T("core.signed_out_try_again");
 
-    public static string FriendsNow(string name) => $"You and {name} are friends now.";
-    public static string RequestSent(string name) => $"Request sent to {name}.";
-    public static string RequestDeclined(string name) => $"Request from {name} declined.";
-    public static string RequestCancelled(string name) => $"Request to {name} cancelled.";
-    public static string FriendRemoved(string name) => $"{name} removed from your friends.";
+    public static string FriendsNow(string name) => F("core.friends_now", ("name", name));
+    public static string RequestSent(string name) => F("core.request_sent", ("name", name));
+    public static string RequestDeclined(string name) => F("core.request_declined", ("name", name));
+    public static string RequestCancelled(string name) => F("core.request_cancelled", ("name", name));
+    public static string FriendRemoved(string name) => F("core.friend_removed", ("name", name));
 
     // ---- reports --------------------------------------------------------------------------
-    public const string ReportWithdrawn = "Report withdrawn.";
-    public const string ReportChecking = "Checking…";
-    public const string ReportCantCheck = "Can't check right now.";
+    public static string ReportWithdrawn => T("core.report_withdrawn");
+    public static string ReportChecking => T("core.report_checking");
+    public static string ReportCantCheck => T("core.report_cant_check");
     public const int ReportDetailsMax = 500;
 
-    public static string ReportSent(string reported) => $"Report about {reported} sent. The server's host will review it.";
+    public static string ReportSent(string reported) => F("core.report_sent", ("name", reported));
 
     /// <summary>Why a player can be reported (the server's codes), with what the launcher shows.</summary>
-    public static IReadOnlyList<ReportReason> ReportReasons { get; } =
+    public static IReadOnlyList<ReportReason> ReportReasons =>
     [
-        new("harassment", "Harassment or bullying"),
-        new("hate", "Hate speech or slurs"),
-        new("sexual", "Sexual content"),
-        new("threats", "Threats or doxxing"),
-        new("disruption", "Loud noise, music or spam"),
-        new("other", "Something else"),
+        new("harassment", T("core.report.harassment")),
+        new("hate", T("core.report.hate")),
+        new("sexual", T("core.report.sexual")),
+        new("threats", T("core.report.threats")),
+        new("disruption", T("core.report.disruption")),
+        new("other", T("core.report.other")),
     ];
 
     // ---- notifications --------------------------------------------------------------------
-    public const string FriendOnlineBody = "Your friend just opened MKWMP.";
-    public const string FriendPlayingBody = "Your friend is in Mario Kart World online.";
-    public const string FriendRequestBody = "Open MKWMP to accept or decline.";
-    public const string TrayHintTitle = "MKWMP is still running";
-    public const string TrayHintBody = "It's in the system tray, so friends can see you online. Quit from the tray icon.";
-    public const string TestToastTitle = "Ana is online";
-    public const string TestToastBody = "This is how news about your friends will look.";
-    public const string LogsSavedTitle = "Logs saved";
+    public static string FriendOnlineBody => T("core.friend_online_body");
+    public static string FriendPlayingBody => T("core.friend_playing_body");
+    public static string FriendRequestBody => T("core.friend_request_body");
+    public static string TrayHintTitle => T("core.tray_hint_title");
+    public static string TrayHintBody => T("core.tray_hint_body");
+    public static string TestToastTitle => T("core.test_toast_title");
+    public static string TestToastBody => T("core.test_toast_body");
+    public static string LogsSavedTitle => T("core.logs_saved_title");
 
-    public static string IsOnline(string name) => $"{name} is online";
-    public static string IsPlaying(string name) => $"{name} is playing";
-    public static string WantsToBeFriend(string name) => $"{name} wants to be your friend";
-    public static string Saved(string path) => $"Saved {path}";
+    public static string IsOnline(string name) => F("core.is_online", ("name", name));
+    public static string IsPlaying(string name) => F("core.is_playing", ("name", name));
+    public static string WantsToBeFriend(string name) => F("core.wants_to_be_friend", ("name", name));
+    public static string Saved(string path) => F("core.saved", ("path", path));
 
     // ---- updates --------------------------------------------------------------------------
-    public const string UpdatesOff = "updates off";
-    public const string CheckingForUpdates = "checking for updates…";
-    public const string UpdatedRestarting = "updated; restarting…";
-    public const string UpToDate = "up to date";
-    public const string CannotUpdateItself = "this build of the launcher cannot update itself";
+    public static string UpdatesOff => T("core.updates_off");
+    public static string CheckingForUpdates => T("core.checking_for_updates");
+    public static string UpdatedRestarting => T("core.updated_restarting");
+    public static string UpToDate => T("core.up_to_date");
+    public static string CannotUpdateItself => T("core.cannot_update_itself");
 
-    public static string UpdateAvailable(string version) => $"version {version} is available";
-    public static string Downloading(string version) => $"downloading {version}…";
-    public static string UpdateFailed(string why) => $"update failed: {why}";
+    public static string UpdateAvailable(string version) => F("core.update_available", ("version", version));
+    public static string Downloading(string version) => F("core.downloading", ("version", version));
+    public static string UpdateFailed(string why) => F("core.update_failed", ("why", why));
+    public static string UpdateReady(string version) => F("core.update_ready", ("version", version));
+    public static string UpdateInstalling(string version) => F("core.update_installing", ("version", version));
+    public static string UpdateNeedsNoGame => T("core.update_needs_no_game");
+    public static string UpdateAfterGame => T("core.update_after_game");
+    public static string UpdateNotInstalled(string why) => F("core.update_not_installed", ("why", why));
 
     // ---- the game's integration (generic part) --------------------------------------------
-    public const string PatchInstalled = "Game patch installed.";
-    public const string PatchRemoved = "Removed. PLAY needs INSTALL again.";
-    public const string PatchWorking = "Working on the game patch…";
-    public const string NoBundleAndUpdatesOff = "no game/ folder next to the launcher, and updates are off";
+    public static string PatchInstalled => T("core.patch_installed");
+    public static string PatchRemoved => T("core.patch_removed");
+    public static string PatchWorking => T("core.patch_working");
+    public static string NoBundleAndUpdatesOff => T("core.no_bundle_and_updates_off");
+    public static string PatchNotSaved => T("core.patch_not_saved");
+
+    /// <summary>What the game reads from the local API: English, as <see cref="OnlineOffInGame"/>.</summary>
     public const string PressPlayInLauncher = "press PLAY in the mkwmp launcher";
     public const string FriendsStillLoading = "friends are still loading: retry";
 
+    public static string ReleaseListsNo(string what) => F("core.release_lists_no", ("what", what));
+    public static string AssetDownloadFailed(string what, string why) => F("core.asset_download_failed", ("what", what), ("why", why));
+    public static string AutostartFailed(string why) => F("core.autostart_failed", ("why", why));
+
     // ---- devices --------------------------------------------------------------------------
-    public const string SystemDefault = "System default";
-    public const string CameraDllMissing = "mkwmp-camera.dll was not found next to the launcher or in the game's MKWMP mod";
+    public static string SystemDefault => T("core.system_default");
+    public static string CameraDllMissing => T("core.camera_dll_missing");
 
-    public static string CameraDllOtherAbi(int abi) =>
-        $"mkwmp-camera.dll speaks another version ({abi.ToString(CultureInfo.InvariantCulture)}): update MKWMP";
+    public static string CameraDllOtherAbi(int abi) => F("core.camera_dll_other_abi", ("abi", abi.ToString(CultureInfo.InvariantCulture)));
 
-    public static string CameraDllBroken(string why) => $"mkwmp-camera.dll could not be loaded: {why}";
+    public static string CameraDllBroken(string why) => F("core.camera_dll_broken", ("why", why));
 
     // ---- the game's own settings ----------------------------------------------------------
-    public const string GameSettingsCloseGame = "Close the game to change its settings";
+    public static string GameSettingsCloseGame => T("core.gs.close_game");
+    public static string GameSettingsNoneHere => T("core.gs.none_here");
+    public static string GameSettingsRunning => T("core.gs.game_is_running");
+    public static string GameSettingsNextStart => T("core.gs.next_start");
+    public static string GameSettingsTonemapMissing => T("core.gs.tonemap_missing");
+    public static string GameSettingsOwnedUpdateCheck => T("core.gs.owned_update_check");
+    public static string GameSettingsOwnedStartScreen => T("core.gs.owned_start_screen");
+    public static string GameSettingsOwnedLogicHz => T("core.gs.owned_logic_hz");
+    public static string GameSettingRefusedToggle => T("core.gs.refused_toggle");
+    public static string GameSettingRefusedNumber => T("core.gs.refused_number");
+    public static string GameSettingRefusedLine => T("core.gs.refused_line");
+    public static string GameSettingRefusedForm => T("core.gs.refused_form");
+    public static string ModSettingsRunning => T("core.mod.game_is_running");
+    public static string ModSettingsNoProfileYet => T("core.mod.no_profile_yet");
 
-    public static string GameSettingsNone(string game) => $"{game} has no settings the launcher can change";
+    public static string GameSettingsNone(string game) => F("core.gs.none", ("game", game));
+    public static string GameSettingsLockedByEnv(string name) => F("core.gs.locked_env", ("name", name));
+    public static string GameSettingsFolderGone(string folder) => F("core.gs.folder_gone", ("folder", folder));
+    public static string GameSettingsReadOnly(string file) => F("core.gs.read_only", ("file", file));
+    public static string GameSettingsSaveFailed(string why) => F("core.gs.save_failed", ("why", why));
+    public static string GameSettingsNotASetting(string id) => F("core.gs.not_a_setting", ("id", id));
+    public static string GameSettingLocked(string label, string why) => F("core.gs.locked", ("label", label), ("why", why));
+    public static string GameSettingRefused(string label, string value, string why) => F("core.gs.refused", ("label", label), ("value", value), ("why", why));
+    public static string GameSettingRefusedChoice(string options) => F("core.gs.refused_choice", ("options", options));
+    public static string GameSettingRefusedRange(string min, string max) => F("core.gs.refused_range", ("min", min), ("max", max));
+    public static string GameSettingRefusedLength(int max) => F("core.gs.refused_length", ("max", max.ToString(CultureInfo.InvariantCulture)));
+    public static string ModSettingsNotASetting(string key) => F("core.mod.not_a_setting", ("key", key));
 
     // ---- installing the game's runtime (the pinned build) ---------------------------------
-    public const string RuntimeFolderOccupied = "That folder has other files in it: pick an empty folder, or a new one";
-    public const string RuntimePaused = "Download paused: it continues from where it stopped";
-    public const string RuntimeNone = "This game has no runtime the launcher can install";
+    public static string RuntimeFolderOccupied => T("core.runtime.folder_occupied");
+    public static string RuntimePaused => T("core.runtime.paused");
+    public static string RuntimeNone => T("core.runtime.none");
 
-    public static string RuntimeFolderForeign(string name, string? found) =>
-        $"That folder holds {(found is null ? $"a {name} MKWMP does not know" : $"{name} {found}")}, which MKWMP did not install. "
-        + "MKWMP leaves it alone: pick another folder and MKWMP's build goes beside it";
+    public static string RuntimeFolderForeign(string name, string? found) => found is null
+        ? F("core.runtime.folder_foreign_unknown", ("name", name))
+        : F("core.runtime.folder_foreign", ("name", name), ("version", found));
 
-    public static string RuntimeCloseGame(string name) => $"Close the game to update {name}";
+    public static string RuntimeCloseGame(string name) => F("core.runtime.close_game", ("name", name));
 
     public static string RuntimeNoSpace(string drive, long need, long free) =>
-        $"Not enough free space on {drive}: {Gigabytes(need)} needed, {Gigabytes(free)} free";
+        F("core.runtime.no_space", ("drive", drive), ("need", Gigabytes(need)), ("free", Gigabytes(free)));
 
-    public static string RuntimeDownloadFailed(string asset, string why) => $"download {asset}: {why}";
+    public static string RuntimeDownloadFailed(string asset, string why) => F("core.runtime.download_failed", ("asset", asset), ("why", why));
 
-    public static string RuntimeBadDownload(string asset) =>
-        $"{asset} is not the file this MKWMP expects (size or checksum mismatch): it was thrown away, try again";
+    public static string RuntimeBadDownload(string asset) => F("core.runtime.bad_download", ("asset", asset));
 
-    public static string RuntimeUnsafeArchive(string entry) => $"the download holds a file with an unsafe name ({entry}): nothing was installed";
+    public static string RuntimeUnsafeArchive(string entry) => F("core.runtime.unsafe_archive", ("entry", entry));
 
-    public static string RuntimeArchiveLacks(string file) => $"the download holds no {file}: nothing was installed";
+    public static string RuntimeArchiveLacks(string file) => F("core.runtime.archive_lacks", ("file", file));
 
-    public static string RuntimeNotRecognised(string name, string version) =>
-        $"what was installed is not {name} {version}: everything was put back as it was";
+    public static string RuntimeNotRecognised(string name, string version) => F("core.runtime.not_recognised", ("name", name), ("version", version));
 
-    public static string RuntimeInstallFailed(string name, string why) => $"installing {name} failed, everything was put back as it was: {why}";
+    public static string RuntimeInstallFailed(string name, string why) => F("core.runtime.install_failed", ("name", name), ("why", why));
 
-    public static string RuntimeInstalled(string name, string version) => $"{name} {version} installed";
+    public static string RuntimeInstalled(string name, string version) => F("core.runtime.installed", ("name", name), ("version", version));
 
-    public static string RuntimeUpdated(string name, string version) => $"{name} updated to {version}";
+    public static string RuntimeUpdated(string name, string version) => F("core.runtime.updated", ("name", name), ("version", version));
 
     // ---- setting the game up (the runtime's setup, run by the launcher) --------------------
-    public const string SetupNotSetUp = "Set the game up: MKWMP builds it on this device from your own copy of the game";
-    public const string SetupUnfinished = "The game's setup did not finish: continue it";
-    public const string SetupGameMismatch = "The game was built for another version of its runtime: it must be built again";
-    public const string SetupRunning = "The game is being set up";
-    public const string SetupDone = "The game is set up";
-    public const string SetupCancelled = "Setup stopped: it continues from where it stopped";
-    public const string SetupNone = "This game needs no setup from the launcher";
-    public const string SetupCloseGame = "Close the game to set it up";
-    public const string SetupAlreadyRunning = "A setup of this game is already running";
-    public const string SetupWaitForInstall = "Wait for the install to finish, then set the game up";
-    public const string SetupStarting = "Starting the setup";
-    public const string SetupWaitingForLock = "Waiting for another setup of this game to finish";
-    public const string SetupPickDump = "Pick your copy of the game: a .nup or .nx file, or the folder that holds exefs and romfs";
-    public const string SetupToolsMissing = "The setup tools are missing from the game folder: install the game's runtime again";
-    public const string SetupCpu = "This processor cannot run the game: it needs AVX2, FMA and BMI2 (Intel from 2013, AMD from 2015)";
-    public const string SetupShadersOnline = "This step downloads a tool from NVIDIA the first time: check the internet connection and try again";
-    public const string SetupShadersProton = "This step is not confirmed to work under Proton yet: send the log with a bug report";
+    public static string SetupNotSetUp => T("core.setup.not_set_up");
+    public static string SetupUnfinished => T("core.setup.unfinished");
+    public static string SetupGameMismatch => T("core.setup.game_mismatch");
+    public static string SetupRunning => T("core.setup.running");
+    public static string SetupDone => T("core.setup.done");
+    public static string SetupCancelled => T("core.setup.cancelled");
+    public static string SetupNone => T("core.setup.none");
+    public static string SetupCloseGame => T("core.setup.close_game");
+    public static string SetupAlreadyRunning => T("core.setup.already_running");
+    public static string SetupWaitForInstall => T("core.setup.wait_for_install");
+    public static string SetupStarting => T("core.setup.starting");
+    public static string SetupWaitingForLock => T("core.setup.waiting_for_lock");
+    public static string SetupPickDump => T("core.setup.pick_dump");
+    public static string SetupToolsMissing => T("core.setup.tools_missing");
+    public static string SetupCpu => T("core.setup.cpu");
+    public static string SetupShadersOnline => T("core.setup.shaders_online");
+    public static string SetupShadersProton => T("core.setup.shaders_proton");
 
-    public static string SetupRuntimeChanged(string name, string version) =>
-        $"{name} {version} is new here: the game is set up again for it (only what changed)";
+    public static string SetupRuntimeChanged(string name, string version) => F("core.setup.runtime_changed", ("name", name), ("version", version));
 
-    public static string SetupDumpGone(string path) => $"Your copy of the game is no longer at {path}: pick it again";
+    public static string SetupDumpGone(string path) => F("core.setup.dump_gone", ("path", path));
 
-    public static string SetupDumpNotFound(string path) => $"Nothing at {path}: pick your copy of the game again";
+    public static string SetupDumpNotFound(string path) => F("core.setup.dump_not_found", ("path", path));
 
-    public static string SetupDumpNotAGame(string path) =>
-        $"{path} is not a copy of the game: pick a .nup or .nx file, or the folder that holds exefs and romfs";
+    public static string SetupDumpNotAGame(string path) => F("core.setup.dump_not_a_game", ("path", path));
 
-    public static string SetupPathTooLong(string folder, int limit) =>
-        $"The game folder's path is too long ({folder.Length.ToString(CultureInfo.InvariantCulture)} characters, at most {limit.ToString(CultureInfo.InvariantCulture)}): install the game in a folder with a shorter path";
+    public static string SetupPathTooLong(string folder, int limit)
+    {
+        ArgumentNullException.ThrowIfNull(folder);
+        return F("core.setup.path_too_long", ("length", N(folder.Length)), ("limit", N(limit)));
+    }
 
     public static string SetupNoSpace(string drive, long need, long free) =>
-        $"Not enough free space on {drive} to set the game up: {Gigabytes(need)} needed, {Gigabytes(free)} free";
+        F("core.setup.no_space", ("drive", drive), ("need", Gigabytes(need)), ("free", Gigabytes(free)));
 
-    public static string SetupWorking(string step) => $"Working ({step})";
+    public static string SetupWorking(string step) => F("core.setup.working", ("step", step));
 
     /// <summary>A step of the setup, for the player (mkw-recomp's prepare.py: check, exefs, romfs, generate, compile, shaders, warm, cleanup).</summary>
     public static string SetupStep(string step, bool copy) => step switch
     {
-        "check" => "Reading your game",
-        "exefs" => "Copying the game's program",
-        "romfs" => copy ? "Copying the game's data" : "Finding the game's data",
-        "generate" => "Translating the game",
-        "compile" => "Building the game",
-        "shaders" => "Preparing shaders",
-        "warm" => "Warming up the graphics",
-        "cleanup" => "Finishing up",
+        "check" => T("core.setup.step.check"),
+        "exefs" => T("core.setup.step.exefs"),
+        "romfs" => T(copy ? "core.setup.step.romfs_copy" : "core.setup.step.romfs_find"),
+        "generate" => T("core.setup.step.generate"),
+        "compile" => T("core.setup.step.compile"),
+        "shaders" => T("core.setup.step.shaders"),
+        "warm" => T("core.setup.step.warm"),
+        "cleanup" => T("core.setup.step.cleanup"),
         "" => SetupStarting,
         _ => SetupWorking(step),
     };
@@ -322,26 +430,67 @@ public static class Strings
     public static string SetupError(string code, string? detail, string? step, int? exitCode)
     {
         var d = string.IsNullOrWhiteSpace(detail) ? null : detail.Trim();
+        var exit = exitCode?.ToString(CultureInfo.InvariantCulture);
         return code switch
         {
             "source" when d is null || d.StartsWith("no earlier setup", StringComparison.Ordinal) => SetupPickDump,
-            "source" => $"{d} could not be unpacked: the file may be damaged or incomplete",
-            "moved" => SetupDumpGone(d ?? "the folder the last setup used"),
+            "source" => F("core.setup.err.source", ("detail", d)),
+            "moved" => SetupDumpGone(d ?? T("core.setup.dump_gone_last")),
             "nogame" => d is null ? SetupPickDump : SetupDumpNotAGame(d),
-            "encrypted" => "This copy of the game is still encrypted: the setup needs a decrypted one" + (d is null ? "" : $" ({d})"),
-            "version" => $"This version of the game is not supported{(d is null ? "" : $" (build {d})")}: the setup knows 1.0.0 and 1.8.0",
-            "romfs" => $"This copy of the game is incomplete: its data has only {d ?? "some"} of the game's files",
-            "mismatch" => $"This copy mixes two versions of the game{(d is null ? "" : $" ({d})")}: the program and the data must be from the same one",
-            "space" => $"Not enough free disk space: the setup needs {d ?? "more room"}",
-            "failed" => $"{(step is null ? "The setup" : $"\"{step}\"")} failed: {d ?? "no reason given"}. Try again: it continues from where it stopped",
-            "io" => $"A file could not be read or written: {d ?? "no reason given"}. Try again: it continues from where it stopped",
+            "encrypted" => d is null ? T("core.setup.err.encrypted") : F("core.setup.err.encrypted_detail", ("detail", d)),
+            "version" => d is null ? T("core.setup.err.version") : F("core.setup.err.version_detail", ("detail", d)),
+            "romfs" => d is null ? T("core.setup.err.romfs_some") : F("core.setup.err.romfs", ("detail", d)),
+            "mismatch" => d is null ? T("core.setup.err.mismatch") : F("core.setup.err.mismatch_detail", ("detail", d)),
+            "space" => d is null ? T("core.setup.err.space_some") : F("core.setup.err.space", ("detail", d)),
+            "failed" => F(step is null ? "core.setup.err.failed" : "core.setup.err.failed_step", ("step", step), ("detail", d ?? T("core.setup.err.no_reason"))),
+            "io" => F("core.setup.err.io", ("detail", d ?? T("core.setup.err.no_reason"))),
             "no_setup" => SetupToolsMissing,
             "cancelled" => SetupCancelled,
-            "stopped" => $"The setup ended unexpectedly{(step is null ? "" : $" during \"{step}\"")}"
-                + $"{(exitCode is { } exit ? $" (exit code {exit.ToString(CultureInfo.InvariantCulture)})" : "")}. Try again: it continues from where it stopped",
-            _ => d ?? $"The setup failed ({code})",
+            "stopped" => F((step, exit) switch
+            {
+                (null, null) => "core.setup.err.stopped",
+                (null, _) => "core.setup.err.stopped_exit",
+                (_, null) => "core.setup.err.stopped_step",
+                _ => "core.setup.err.stopped_step_exit",
+            }, ("step", step), ("exit", exit)),
+            _ => d ?? F("core.setup.err.unknown", ("code", code)),
         };
     }
 
-    private static string Gigabytes(long bytes) => (bytes / 1e9).ToString("0.0", CultureInfo.InvariantCulture) + " GB";
+    // ---- mkw-recomp (the first game target) -------------------------------------------------
+    public static string RecompFolderHint => T("core.recomp.folder_hint");
+    public static string RecompAssetPatch => T("core.recomp.asset_patch");
+    public static string RecompAssetVoice => T("core.recomp.asset_voice");
+    public static string RecompExplainMissing => T("core.recomp.explain_missing");
+    public static string RecompRebuild => T("core.recomp.rebuild");
+    public static string RecompCredit => T("core.recomp.credit");
+    public static string RecompCloseForPatch => T("core.recomp.close_for_patch");
+    public static string RecompCloseForVoice => T("core.recomp.close_for_voice");
+    public static string RecompStartNoProcess => T("core.recomp.start_no_process");
+    public static string RecompCloseGameFirst => T("core.recomp.close_game_first");
+    public static string RecompCloseForMod => T("core.recomp.close_for_mod");
+
+    public static string RecompProblemOther(string? version, string supported) => F("core.recomp.problem_other", ("version", version), ("supported", supported));
+    public static string RecompProblemUnknown(string supported) => F("core.recomp.problem_unknown", ("supported", supported));
+    public static string RecompExplainSupported(string? version) => F("core.recomp.explain_supported", ("version", version));
+
+    public static string RecompExplainOther(string supported, string recommended, string download) =>
+        F("core.recomp.explain_other", ("supported", supported), ("recommended", recommended), ("download", download));
+
+    /// <summary>"Game 1.2.0: MKWMP supports game 1.0.0 or 1.8.0 (a newer MKWMP may support 1.2.0)".</summary>
+    public static string RecompGameProblem(string version, IEnumerable<string> supported) =>
+        F("core.recomp.game_problem", ("version", version), ("supported", string.Join(T("core.recomp.or"), supported)));
+
+    public static string RecompChecksum(string name) => F("core.recomp.checksum", ("name", name));
+    public static string RecompInstallFailed(string what, string why) => F("core.recomp.install_failed", ("what", what), ("why", why));
+    public static string RecompInstallPatchFailed(string why) => F("core.recomp.install_patch_failed", ("why", why));
+    public static string RecompInstallVoiceFailed(string why) => F("core.recomp.install_voice_failed", ("why", why));
+    public static string RecompWriteTomlFailed(string why) => F("core.recomp.write_toml_failed", ("why", why));
+    public static string RecompStartFailed(string why) => F("core.recomp.start_failed", ("why", why));
+
+    /// <summary>The state of the online play files in the game folder, in a line.</summary>
+    public static string PatchState(string state, string version = "", string env = "") =>
+        F("core.patch." + state, ("version", version), ("env", env));
+
+    private static string Gigabytes(long bytes) => F("core.gigabytes", ("n", (bytes / 1e9).ToString("0.0", Culture)));
 }

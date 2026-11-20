@@ -14,6 +14,17 @@
     <PackageReference Include="NSec.Cryptography" />
   </ItemGroup>
 
+  <!-- The window's catalogs, built in (Catalogs.cs): en.json is the core's own English (Strings.cs), and with the
+       others a launcher that is alone in its folder still speaks the player's language. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\Mkwmp.App\i18n\*.json" LogicalName="Mkwmp.Core.%(Filename).json" Link="i18n\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The plan, the verified swap and its rollback: shared with mkwmp-updater.exe (docs/UPDATES.md). -->
+    <ProjectReference Include="..\Mkwmp.Update\Mkwmp.Update.csproj" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Mkwmp.Core.Tests" />
   </ItemGroup>

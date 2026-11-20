@@ -92,7 +92,7 @@ public sealed partial class Launcher
             manifest.Size,
             manifest.Size + manifest.InstalledSize + manifest.SetupSpace,
             _runtimeNote?.Text,
-            manifest.Credit);
+            manifest.Credit.Localized());
     }
 
     public async Task InstallRuntimeAsync(string? folder, CancellationToken cancel)

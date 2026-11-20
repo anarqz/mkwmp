@@ -48,7 +48,15 @@ internal sealed class ApiException(ApiError kind, string message, long seconds =
 
 internal sealed record SeatTicket(string Token, long ExpiresAt, string Lobby);
 
-internal sealed record SeatView(string BootId, string SessionId, string Name, string? SessionKey, string State, int? Position, int SeatsTotal, int SeatsFree, long NextPollMs, SeatTicket? Ticket);
+/// <summary>
+/// The lobby room the seat is in, as the lobby last reported it (SEAT_API.md §2, <c>View.room</c>).
+/// <paramref name="Ussids"/> is ascending: the first is the mesh host. <paramref name="At"/>: when the lobby said, ms since 1970.
+/// </summary>
+internal sealed record SeatRoom(string Lobby, long Ussid, IReadOnlyList<long> Ussids, long At);
+
+/// <param name="Room">The seat's lobby room; null when there is none, or from a server older than rooms.</param>
+internal sealed record SeatView(string BootId, string SessionId, string Name, string? SessionKey, string State, int? Position, int SeatsTotal, int SeatsFree, long NextPollMs, SeatTicket? Ticket,
+    SeatRoom? Room = null);
 
 /// <param name="VoicePort">UDP port of the lobby's voice relay (0 = voice off); servers older than voice leave it out (8907).</param>
 /// <param name="PrivacyVersion">The version of the server's privacy policy (SEAT_API.md §2c); null from a server before 1.4.0.</param>
@@ -105,7 +113,7 @@ internal sealed class SeatApi(HttpClient http, string baseUrl, string userAgent)
         }
         catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
         {
-            throw ApiException.Transient(Strings.CannotReach("timed out"));
+            throw ApiException.Transient(Strings.CannotReach(Strings.TimedOut));
         }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException or UriFormatException)
         {
@@ -164,7 +172,27 @@ internal sealed class SeatApi(HttpClient http, string baseUrl, string userAgent)
             }
             ticket = new SeatTicket(token, t.At("expiresAt").Long() ?? 0, lobby);
         }
-        return new SeatView(boot, sid, name, v.At("sessionKey").Str(), state, (int?)v.At("position").Long(), (int)total, (int)free, poll, ticket);
+        return new SeatView(boot, sid, name, v.At("sessionKey").Str(), state, (int?)v.At("position").Long(), (int)total, (int)free, poll, ticket, ParseRoom(v.At("room")));
+    }
+
+    /// <summary>The view's <c>room</c>: absent, null or not a room's shape all mean no room (it only feeds crash records).</summary>
+    internal static SeatRoom? ParseRoom(JsonElement? r)
+    {
+        if (r.At("lobby").Str() is not { Length: > 0 } lobby || r.At("ussid").Long() is not { } ussid || r.At("at").Long() is not { } at
+            || r.At("ussids") is not { ValueKind: JsonValueKind.Array } list)
+        {
+            return null;
+        }
+        var ussids = new List<long>();
+        foreach (var u in list.EnumerateArray())
+        {
+            if (((JsonElement?)u).Long() is not { } id)
+            {
+                return null;
+            }
+            ussids.Add(id);
+        }
+        return new SeatRoom(lobby, ussid, ussids, at);
     }
 
     /// <summary>The server's public status.</summary>
@@ -398,7 +426,7 @@ internal sealed class SeatApi(HttpClient http, string baseUrl, string userAgent)
         }
         catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
         {
-            throw ApiException.Transient(Strings.CannotReach("timed out"));
+            throw ApiException.Transient(Strings.CannotReach(Strings.TimedOut));
         }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException or UriFormatException)
         {

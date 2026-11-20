@@ -69,6 +69,12 @@ public abstract class PageViewModel : ObservableObject
     /// <summary>The launcher's state changed (UI thread). The default re-reads every binding.</summary>
     public virtual void OnStateChanged() => RaiseAll();
 
+    /// <summary>
+    /// The language changed: a new page that stands where this one stood (the same place in it, as far
+    /// as it matters), with its texts made again. Null: the page is dropped (the one under it shows).
+    /// </summary>
+    public virtual PageViewModel? Recreate() => null;
+
     /// <summary>B / Esc. True when the page used it (closed its own sub-step); false lets the shell go back.</summary>
     public virtual bool OnBack() => false;
 
@@ -147,6 +153,39 @@ public sealed class Navigator : ObservableObject
         _stack.Add(page);
         Changed(old, NavKind.Replace);
         foreach (var gone in dropped)
+        {
+            Removed?.Invoke(this, gone);
+        }
+    }
+
+    /// <summary>
+    /// The same stack with every page made again (<see cref="PageViewModel.Recreate"/>), after a
+    /// change of language. Pages that cannot be made again leave it, the bottom one aside.
+    /// </summary>
+    public void Rebuild()
+    {
+        if (_stack.Count == 0)
+        {
+            return;
+        }
+        var old = _stack.ToList();
+        var fresh = new List<PageViewModel>();
+        for (var i = 0; i < old.Count; i++)
+        {
+            if (old[i].Recreate() is { } page)
+            {
+                fresh.Add(page);
+            }
+            else if (i == 0)
+            {
+                fresh.Add(old[i]); // never an empty stack
+            }
+        }
+        var current = Current;
+        _stack.Clear();
+        _stack.AddRange(fresh);
+        Changed(current, NavKind.Replace);
+        foreach (var gone in old.Except(fresh))
         {
             Removed?.Invoke(this, gone);
         }

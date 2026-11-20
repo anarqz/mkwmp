@@ -36,15 +36,15 @@ public sealed class MkwRecompTarget : IGameTarget
 
     public string DisplayName => "mkw-recomp";
 
-    public string FolderHint => "the one with mkw.exe";
+    public string FolderHint => Strings.RecompFolderHint;
 
     public TargetCapabilities Capabilities =>
         TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch;
 
-    public IReadOnlyList<PackageAsset> PackageAssets { get; } =
+    public IReadOnlyList<PackageAsset> PackageAssets =>
     [
-        new(Probe.ProbeDll, Required: true, "game patch"),
-        new(Probe.Voice, Required: false, "voice chat"),
+        new(Probe.ProbeDll, Required: true, Strings.RecompAssetPatch),
+        new(Probe.Voice, Required: false, Strings.RecompAssetVoice),
     ];
 
     public bool KeepsOwnIntegration => Probe.DevProbe;
@@ -72,8 +72,8 @@ public sealed class MkwRecompTarget : IGameTarget
     /// The logic rate: 0.1.16 forces 60 Hz only for LAN and time trial, so an online player at 120 Hz
     /// against 60 Hz peers would run another simulation (the user's call, 2026-11-20: locked online).
     /// </summary>
-    public IReadOnlyList<(string Id, string Value, string Why)> OnlineOwnedSettings { get; } =
-        [("logic_hz", "60", "Locked to 60 while online: every player in a race must run the game at the same rate.")];
+    public IReadOnlyList<(string Id, string Value, string Why)> OnlineOwnedSettings =>
+        [("logic_hz", "60", Strings.GameSettingsOwnedLogicHz)];
 
     public IReadOnlyList<string> ApplyOwnedSettings(GameInstall install)
     {
@@ -298,18 +298,18 @@ public sealed class MkwRecompTarget : IGameTarget
         try
         {
             var bytes = File.ReadAllBytes(path);
-            return Updater.Sha256Hex(bytes) == want ? bytes : throw new LauncherException($"{name}: checksum mismatch");
+            return Updater.Sha256Hex(bytes) == want ? bytes : throw new LauncherException(Strings.RecompChecksum(name));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            throw new LauncherException($"installing the {label} failed: {e.Message}", e);
+            throw new LauncherException(Strings.RecompInstallFailed(label, e.Message), e);
         }
     }
 
     private void InstallBundle(string game, IntegrationPackage package, bool running)
     {
         var tag = $"v{package.Version}";
-        var probe = Verified(package, Probe.ProbeDll, "game patch") ?? throw new LauncherException("the release lists no game patch");
+        var probe = Verified(package, Probe.ProbeDll, Strings.RecompAssetPatch) ?? throw new LauncherException(Strings.ReleaseListsNo(Strings.RecompAssetPatch));
         try
         {
             switch (Probe.InstallProbe(game, probe, running, out var backup))
@@ -322,16 +322,16 @@ public sealed class MkwRecompTarget : IGameTarget
                     }
                     break;
                 case ProbeAction.GameRunning:
-                    throw new LauncherException("close the game first: a game patch update is ready");
+                    throw new LauncherException(Strings.RecompCloseForPatch);
                 default:
                     break;
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            throw new LauncherException($"installing the game patch failed: {e.Message}", e);
+            throw new LauncherException(Strings.RecompInstallPatchFailed(e.Message), e);
         }
-        if (Verified(package, Probe.Voice, "voice chat") is { } voice)
+        if (Verified(package, Probe.Voice, Strings.RecompAssetVoice) is { } voice)
         {
             try
             {
@@ -341,14 +341,14 @@ public sealed class MkwRecompTarget : IGameTarget
                         _note($"installed voice chat {tag}");
                         break;
                     case ProbeAction.GameRunning:
-                        throw new LauncherException("close the game first: a voice chat update is ready");
+                        throw new LauncherException(Strings.RecompCloseForVoice);
                     default:
                         break;
                 }
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                throw new LauncherException($"installing voice chat failed: {e.Message}", e);
+                throw new LauncherException(Strings.RecompInstallVoiceFailed(e.Message), e);
             }
         }
         if (Probe.EnsureHost(game) is { } message)
@@ -391,7 +391,7 @@ public sealed class MkwRecompTarget : IGameTarget
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            throw new LauncherException($"writing mkwmp.toml: {e.Message}", e);
+            throw new LauncherException(Strings.RecompWriteTomlFailed(e.Message), e);
         }
     }
 
@@ -426,11 +426,11 @@ public sealed class MkwRecompTarget : IGameTarget
         start.UseShellExecute = false;
         try
         {
-            return System.Diagnostics.Process.Start(start) is { } process ? new GameProcess(process) : throw new LauncherException("starting mkw.exe: no process");
+            return System.Diagnostics.Process.Start(start) is { } process ? new GameProcess(process) : throw new LauncherException(Strings.RecompStartFailed(Strings.RecompStartNoProcess));
         }
         catch (Exception e) when (e is Win32Exception or IOException or InvalidOperationException)
         {
-            throw new LauncherException($"starting mkw.exe: {e.Message}", e);
+            throw new LauncherException(Strings.RecompStartFailed(e.Message), e);
         }
     }
 

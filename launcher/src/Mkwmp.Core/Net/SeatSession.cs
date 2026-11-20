@@ -6,7 +6,8 @@ namespace Mkwmp.Core.Net;
 /// <summary>What the local API answers the game.</summary>
 internal abstract record SeatAnswer
 {
-    public sealed record Seated(string Ticket, string Lobby, string Name) : SeatAnswer;
+    /// <param name="Room">The seat's lobby room, as the seat server last said (null: none).</param>
+    public sealed record Seated(string Ticket, string Lobby, string Name, SeatRoom? Room = null) : SeatAnswer;
 
     public sealed record Queued(int Position, int SeatsTotal) : SeatAnswer;
 
@@ -83,7 +84,7 @@ internal sealed class SeatSession(SeatApi api, SeatMode mode, string name, strin
 
     private SeatAnswer Answer() => _view switch
     {
-        { Ticket: { } t } v => new SeatAnswer.Seated(t.Token, t.Lobby, v.Name),
+        { Ticket: { } t } v => new SeatAnswer.Seated(t.Token, t.Lobby, v.Name, v.Room),
         { } v => new SeatAnswer.Queued(v.Position ?? 0, v.SeatsTotal),
         null => new SeatAnswer.Unavailable(Strings.NotConnectedYet),
     };

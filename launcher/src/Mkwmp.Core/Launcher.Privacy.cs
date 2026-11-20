@@ -144,7 +144,7 @@ public sealed partial class Launcher
             catch (Exception e) when (e is ApiException or OperationCanceledException)
             {
                 Note($"consent: {e.Message}");
-                var changed = e is ApiException { Message: Strings.PrivacyChanged };
+                var changed = e is ApiException && e.Message == Strings.PrivacyChanged;
                 bool enforced;
                 lock (_gate)
                 {

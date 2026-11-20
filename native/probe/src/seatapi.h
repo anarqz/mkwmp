@@ -65,6 +65,7 @@ typedef struct {
     int position, seats_total;
     int next_poll_ms;
     char ticket[520], ticket_lobby[128];     // seated
+    char room[400];                          // the view's "room" object as the server wrote it; "" for null or none
 } SeatApiView;
 SeatApiResult seatapi_join(const char *base, const char *name, const char *pin, SeatApiView *out);
 SeatApiResult seatapi_poll(const char *base, const char *session_id, const char *session_key, SeatApiView *out);

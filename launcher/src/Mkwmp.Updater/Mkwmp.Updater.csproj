@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- mkwmp-updater.exe: the small helper that swaps the launcher's files after a download, with a small window
+       saying what it does (docs/UPDATES.md). Infinity Launcher's design (Infinity.Updater): one native executable,
+       Native AOT, that carries only Mkwmp.Update and an Ed25519 check; no .NET runtime to unpack, so it starts at once
+       and also under Wine/Proton. Its window is plain Win32 + GDI+ (user32, gdiplus: both in Wine), not WPF: WPF
+       cannot be compiled ahead of time and would make the helper as big as the launcher it replaces. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>mkwmp-updater</AssemblyName>
+    <!-- Not Mkwmp.Updater: that name would hide Core's Updater class from every Mkwmp.* namespace that sees this assembly. -->
+    <RootNamespace>Mkwmp.UpdateHelper</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- asInvoker: without a manifest Windows takes an exe named "updater" for an installer and asks for elevation. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="Exists('..\Mkwmp.App\Assets\mkwmp.ico')">..\Mkwmp.App\Assets\mkwmp.ico</ApplicationIcon>
+    <!-- RID builds only (publish.ps1 publishes -r win-x64): a plain `dotnet build` and the tests stay managed.
+         Trim and AOT analysis warnings are errors (TreatWarningsAsErrors). -->
+    <PublishAot Condition="'$(RuntimeIdentifier)' != ''">true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <!-- An AOT exe links its runtime: it carries the patched one (GHSA-p3jp-9v83-76w9, Brotli) even while the SDK band
+         still bundles 10.0.12; this also selects ILCompiler 10.0.14. RID builds only, as in Infinity Launcher. -->
+    <RuntimeFrameworkVersion Condition="'$(RuntimeIdentifier)' != ''">10.0.14</RuntimeFrameworkVersion>
+    <!-- Small: no culture data (the strings come from the catalogs), no stack trace text, size over speed. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <StackTraceSupport>false</StackTraceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <DebuggerSupport>false</DebuggerSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mkwmp.Update\Mkwmp.Update.csproj" />
+    <!-- Ed25519 (RFC 8032) only: .NET has none, and NSec's libsodium is a second file. Trimmed to that by the AOT compiler. -->
+    <PackageReference Include="BouncyCastle.Cryptography" />
+  </ItemGroup>
+
+  <!-- The launcher's mark and two weights of its font (Nunito, OFL: licenses/Nunito-LICENSE.txt ships with the launcher). -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\Mkwmp.App\Assets\mkwmp-256.png" LogicalName="mark.png" />
+    <EmbeddedResource Include="..\Mkwmp.App\Assets\Fonts\Nunito-Regular.ttf" LogicalName="Nunito-Regular.ttf" />
+    <EmbeddedResource Include="..\Mkwmp.App\Assets\Fonts\Nunito-Bold.ttf" LogicalName="Nunito-Bold.ttf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- BouncyCastle is linked into the exe: its licence ships beside it, with the launcher's others. -->
+    <Content Include="BouncyCastle-LICENSE.md" Link="licenses\BouncyCastle-LICENSE.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Mkwmp.Core.Tests" />
+  </ItemGroup>
+
+</Project>

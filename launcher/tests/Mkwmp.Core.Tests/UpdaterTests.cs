@@ -49,16 +49,67 @@ internal sealed class FakeGitHub : HttpMessageHandler
         {
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
+        if (Down)
+        {
+            throw new HttpRequestException("no route to github.test");
+        }
         if (path == "/repos/anarqz/mkwmp/releases")
         {
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(_releases)) });
         }
+        if (Down)
+        {
+            throw new HttpRequestException("no route to github.test");
+        }
         if (_files.TryGetValue(path, out var bytes))
         {
             Downloads++;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) });
+            Requests.Add((Path.GetFileName(path), request.Headers.Range?.Ranges.FirstOrDefault()?.From));
+            var from = 0;
+            var status = HttpStatusCode.OK;
+            if (Ranges && request.Headers.Range?.Ranges.FirstOrDefault()?.From is { } start)
+            {
+                if (start >= bytes.Length)
+                {
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.RequestedRangeNotSatisfiable));
+                }
+                (from, status) = ((int)start, HttpStatusCode.PartialContent);
+            }
+            // The line drops once, after CutAfter bytes of this file: the body ends early, as a closed connection does.
+            var cut = CutOnce is { } once && path.EndsWith(once.Name, StringComparison.Ordinal) ? once.After : (int?)null;
+            if (cut is not null)
+            {
+                CutOnce = null;
+            }
+            HttpContent content = cut is { } after
+                ? new StreamContent(new CutStream(bytes.AsSpan(from, Math.Min(after, bytes.Length - from)).ToArray()))
+                : new ByteArrayContent(bytes, from, bytes.Length - from);
+            content.Headers.ContentLength = bytes.Length - from;
+            return Task.FromResult(new HttpResponseMessage(status) { Content = content });
         }
         return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+    }
+
+    /// <summary>GitHub cannot be reached at all.</summary>
+    public bool Down { get; set; }
+
+    /// <summary>Range requests are honoured (GitHub's download servers do).</summary>
+    public bool Ranges { get; set; } = true;
+
+    /// <summary>The next download of the asset with this name breaks after that many bytes.</summary>
+    public (string Name, int After)? CutOnce { get; set; }
+
+    /// <summary>Every asset request: its name and the offset it asked to continue from.</summary>
+    public List<(string Name, long? From)> Requests { get; } = [];
+
+    /// <summary>A body that ends with an error after its bytes.</summary>
+    private sealed class CutStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var n = Read(buffer.Span);
+            return n > 0 ? ValueTask.FromResult(n) : ValueTask.FromException<int>(new IOException("the connection was closed"));
+        }
     }
 }
 
@@ -130,19 +181,6 @@ public class UpdaterTests
     private sealed class Sink(Action<(long, long?)> report) : IProgress<(long Got, long? Total)>
     {
         public void Report((long Got, long? Total) value) => report(value);
-    }
-
-    [Fact]
-    public void Replace_keeps_the_old_executable_aside()
-    {
-        var dir = Rig.NewFolder("replace");
-        var exe = Path.Combine(dir, "mkwmp-launcher.exe");
-        File.WriteAllText(exe, "old");
-        File.WriteAllText(exe + ".old", "older");
-        Updater.ReplaceExecutable(exe, "new"u8);
-        Assert.Equal(("new", "old", false), (File.ReadAllText(exe), File.ReadAllText(exe + ".old"), File.Exists(exe + ".new")));
-        Updater.CleanOld(exe);
-        Assert.False(File.Exists(exe + ".old"));
     }
 
     [Fact]
@@ -245,11 +283,14 @@ public class UpdaterTests
                     states.Add(launcher.Update);
                 }
             };
+            // Headless (and a release with only the executable, as before the zip carried the helper): downloaded,
+            // verified, swapped in by this process, the old one kept in the staging folder's backup.
             await launcher.ApplyUpdateAsync(default);
             Assert.Equal((UpdateState.Restarting, Strings.UpdatedRestarting, 1.0), (launcher.Update.State, launcher.Update.Status, launcher.Update.Progress));
             Assert.Contains(states, s => s.State == UpdateState.Downloading);
+            Assert.Contains(states, s => s.State == UpdateState.ReadyToInstall);
             Assert.Equal(fresh, File.ReadAllBytes(exe));
-            Assert.Equal("this launcher", File.ReadAllText(exe + ".old"));
+            Assert.Equal("this launcher", File.ReadAllText(Path.Combine(Path.GetDirectoryName(exe)!, ".mkwmp-selfupdate", "1.5.0", "backup", "mkwmp-launcher.exe")));
         }
     }
 

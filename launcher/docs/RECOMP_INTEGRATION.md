@@ -294,11 +294,12 @@ ask for 5 GB free itself (27 GB for copy mode).
 
 Notes for `RuntimeInstaller`:
 
-- As implemented, `RecompRuntime.Pinned.Preserved` lists `setup`: an existing `setup\` is kept whole on an update
-  (the project's rule for swapping builds of one release). That is correct only while both builds carry the same
-  `setup\`; 0.1.15-mkwmp is the first pin, so no cross-version update exists yet. The first pin whose `setup\`
-  differs must take `setup` out of the list (the installer then compares every file and replaces only those that
-  changed, with a backup) and add the `FILES` clean-up below.
+- The 0.1.15-mkwmp pin listed `setup` in `RecompRuntime.Pinned.Preserved` (an existing `setup\` kept whole). The
+  0.1.16-mkwmp pin takes it out: `setup\` changed between the two (python scripts in `setup\src\tools\prepare\`,
+  `setup\src\runtime\cpu\dispatch.*`, `setup\lib\crt\`, spirv-cross added under `setup\glslc\`; nothing removed), so
+  the installer compares every file there and replaces only those that changed, with its backup and rollback. An
+  install made by the 0.1.15-mkwmp pin has no `setup\` files in its marker; from 0.1.16-mkwmp on they are listed, so
+  a file a later pin drops from `setup\` goes to the backup like any other.
 
 - `setup\src\FILES` lists the shipped sources, and the keys count only those (`shaderstep.py` `shipped`), so a file
   left by an older package does not change a key. It can still be imported by Python. Delete what is under

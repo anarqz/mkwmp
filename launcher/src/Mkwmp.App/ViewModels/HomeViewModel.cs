@@ -97,6 +97,9 @@ public sealed class HomeViewModel : PageViewModel
     private readonly HomeTile _update;
     private HomeTile? _selected;
 
+    /// <summary>The language changed: home again.</summary>
+    public override PageViewModel? Recreate() => new HomeViewModel(Shell);
+
     public HomeViewModel(ShellViewModel shell)
         : base(shell)
     {
@@ -217,7 +220,7 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>The Steam Deck's Game Mode has one full-screen window: nothing to switch.</summary>
     public bool CanSwitchFullscreen => !Desktop.DesktopEnvironment.IsGameMode && !Overlay; // over a game the window covers the game
 
-    public bool HasUpdate => Launcher.Update.State is UpdateState.Available or UpdateState.Downloading or UpdateState.Failed;
+    public bool HasUpdate => Launcher.Update.State is UpdateState.Available or UpdateState.Downloading or UpdateState.ReadyToInstall or UpdateState.Failed;
 
     public bool HasRequests => !Locked && Launcher.Friends.Incoming.Count > 0;
 
@@ -357,12 +360,13 @@ public sealed class HomeViewModel : PageViewModel
         {
             UpdateState.Available => S.Format("home.update_available", ("version", update.AvailableVersion ?? "")),
             UpdateState.Downloading => S["home.update_downloading"],
+            UpdateState.ReadyToInstall => S.Format("home.update_ready", ("version", update.AvailableVersion ?? "")),
             UpdateState.Restarting => S["update.restarting"],
             UpdateState.Checking => S["update.checking"],
             UpdateState.Failed => S["update.failed"],
             _ => S.Format("home.update_current", ("version", Launcher.Version)),
         };
-        _update.Badge = update.State == UpdateState.Available ? S["home.update_new"] : "";
+        _update.Badge = update.State switch { UpdateState.Available => S["home.update_new"], UpdateState.ReadyToInstall => S["home.update_ready_badge"], _ => "" };
         _update.Progress = update.State == UpdateState.Downloading ? update.Progress : double.NaN;
     }
 
@@ -409,7 +413,8 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>Where a problem is fixed: the profile (or the first-run setup), the game's settings, or a page in the browser.</summary>
     private (string Label, Action Go)? FixFor(string problem, TargetCheck? check)
     {
-        if (problem is CoreStrings.NoConsent or CoreStrings.PickGamertag or CoreStrings.NeedPin or CoreStrings.SetServer)
+        // the core's texts are in the player's language: compared as they are now, not as constants
+        if (problem == CoreStrings.NoConsent || problem == CoreStrings.PickGamertag || problem == CoreStrings.NeedPin || problem == CoreStrings.SetServer)
         {
             if (!Launcher.Settings.Ui.SetupDone)
             {

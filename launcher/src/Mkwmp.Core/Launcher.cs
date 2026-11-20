@@ -98,6 +98,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         _http.Timeout = Timeout.InfiniteTimeSpan;
         Log = new SessionLog(launcherFolder, _clock, echo: true);
         AppDomain.CurrentDomain.UnhandledException += OnCrash;
+        Strings.Changed += OnLanguageChanged;
         _config = ClientConfig.LoadOrDefault(configPath);
         _targets = new TargetRegistry(_options.Targets ?? [new MkwRecompTarget(Version, Log.Note)]);
         _targetInfos = _targets.Infos;
@@ -393,7 +394,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         var offlinePlay = _offlineSession;
         var (status, tone) = _sessionState switch
         {
-            SessionState.Idle => configProblem is null ? (online ? Strings.Ready : Strings.ReadyOffline, "plain") : (configProblem.ToUpperInvariant(), "warn"),
+            SessionState.Idle => configProblem is null ? (online ? Strings.Ready : Strings.ReadyOffline, "plain") : (Strings.Upper(configProblem), "warn"),
             SessionState.Starting => (offlinePlay ? Strings.StartingGame : Strings.Connecting, "info"),
             SessionState.Failed => (_sessionError ?? "", "bad"),
             _ when offlinePlay => _gameRunning ? (Strings.PlayingOffline, "good") : (steam ? Strings.StartFromSteam : Strings.StartingGame, "info"),
@@ -643,6 +644,31 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
     private SeatApi Api() => Api(Settings.Server);
 
 
+    /// <summary>
+    /// The player chose another language (<see cref="Strings.Use"/>): the views are rebuilt with
+    /// its texts, and what is read from the game folder (the patch's state, the setup's plan, the
+    /// game's settings) is read again.
+    /// </summary>
+    private void OnLanguageChanged()
+    {
+        if (_life.IsCancellationRequested)
+        {
+            return;
+        }
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                Mutate(() => { });
+                RefreshGame();
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or ObjectDisposedException or InvalidOperationException)
+            {
+                // the two-second refresh does it
+            }
+        });
+    }
+
     /// <summary>A crash is the first thing a bug report needs: it goes to the session log before the process dies.</summary>
     private void OnCrash(object sender, UnhandledExceptionEventArgs e) => Log.Line($"PANIC: {e.ExceptionObject}");
 
@@ -653,6 +679,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
             return;
         }
         AppDomain.CurrentDomain.UnhandledException -= OnCrash;
+        Strings.Changed -= OnLanguageChanged;
         // Window closed: free the seat and show offline before leaving.
         await WaitIdleAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
         await _life.CancelAsync().ConfigureAwait(false);

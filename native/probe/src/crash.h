@@ -56,9 +56,11 @@
 //     mkwmp= loader= recomp= game= name= account= lobby= online= mesh= ...
 //   room: lobby=<uuid|?> ussid=<n|?> uid=<uuid|?> host=<1|0|?> players=<n|~n|?> ussids=<a,b,c|?> age_ms=<n|?>
 //         the lobby's own numbers (its log: "room order lobby=<uuid> ... by_ussid=3*:<uid>,..."); host=1 when ours
-//         is the lowest ussid. uid is always there once the player's name is known (uuid5 of it, as the lobby
-//         derives it); the rest only when the seat reply carried a "room" object (seat.c), else "?" and players
-//         is "~n" from the Pia endpoints or "?". age_ms: how long before the crash the room was last told.
+//         is the first of the (ascending) ussids. uid is always there once the player's name is known (uuid5 of it,
+//         as the lobby derives it); the rest only when the seat reply carried a "room" object (seat.c), else "?"
+//         and players is "~n" from the Pia endpoints or "?". age_ms: the crash's UTC time minus the room's "at"
+//         (when the lobby reported it; the server's clock against this PC's, so it can be negative); from a
+//         launcher without "at", how long before the crash the room was last told.
 //   peers: <n>                                       remote Pia endpoints with traffic in the last 15 s
 //   module: <name> base=0x.. size=0x.. time=0x<PE timestamp>     (mkw.exe, mkwgame.dll, ours, the faulting one)
 //   registers:  rax=.. (four a line)

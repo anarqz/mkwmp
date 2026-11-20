@@ -55,12 +55,14 @@ typedef struct {
     char lobby[40];                  // the lobby's UUID as the server prints it; "" = in no room
     uint32_t ussid;                  // this player's
     int n;                           // ussids in the room, this player's among them
-    uint32_t ussids[CRUMB_ROOM_MAX];
+    uint32_t ussids[CRUMB_ROOM_MAX]; // ascending, as the seat server sends them: the first is the mesh host
     uint64_t ms;                     // plat_ms() when it was last told
+    uint64_t at;                     // when the lobby reported it, ms since 1970 (the seat server's "at"); 0 = not said
 } CrumbRoom;
-// The room now (lobby NULL or "": left). A change is also an event: "room: lobby=... ussid=... host=... players=...".
-void crumb_room(const char *lobby, uint32_t ussid, const uint32_t *ussids, int n);
-// 1 and the room when one is known. The host is the lowest ussid: crumb_room_host says whether that is this player.
+// The room now (lobby NULL or "": left), with the lobby's "at" (0 when the reply had none). A change of the room (not
+// of "at" alone) is also an event: "room: lobby=... ussid=... host=... players=...".
+void crumb_room(const char *lobby, uint32_t ussid, const uint32_t *ussids, int n, uint64_t at);
+// 1 and the room when one is known. The host is the first ussid: crumb_room_host says whether that is this player.
 int crumb_room_get(CrumbRoom *out);
 int crumb_room_host(const CrumbRoom *room);
 // "3,5,12" (in the order given); returns out.

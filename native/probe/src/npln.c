@@ -316,7 +316,7 @@ static void ov_nifm_cancel(Cpu *c) {
     crumb_state("mesh", "%s", "");
     plat_xchg(&g_mesh_role, 0);
     crumb_peers_reset();
-    crumb_room(NULL, 0, NULL, 0);
+    crumb_room(NULL, 0, NULL, 0, 0);
     voice_offline();
 }
 // In-game player name: the launcher's `name` (mkw-recomp hardcodes "Local").

@@ -27,8 +27,8 @@ internal sealed class TrayIcon : IDisposable
 
     private readonly HwndSource _source;
     private readonly string _tooltip;
-    private readonly string _openText;
-    private readonly string _quitText;
+    private string _openText;
+    private string _quitText;
     private readonly uint _taskbarCreated;
     private nint _icon;
     private bool _ownsIcon;
@@ -54,6 +54,9 @@ internal sealed class TrayIcon : IDisposable
     }
 
     /// <summary>The icon was clicked (or its notification, or "Open" in its menu).</summary>
+    /// <summary>The menu's two entries in another language (the menu is built when it opens).</summary>
+    public void SetTexts(string openText, string quitText) => (_openText, _quitText) = (openText, quitText);
+
     public event EventHandler? OpenRequested;
 
     /// <summary>"Quit" in its menu.</summary>

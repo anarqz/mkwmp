@@ -19,8 +19,8 @@ public static class ModSettings
     /// <summary>"1": I see my friends' cameras.</summary>
     public const string CameraView = "camera_view";
 
-    public const string GameIsRunning = "Close the game first: it keeps these settings while it runs";
-    public const string NoProfileYet = "Start the game once first: it has no player folder yet";
+    public static string GameIsRunning => Strings.ModSettingsRunning;
+    public static string NoProfileYet => Strings.ModSettingsNoProfileYet;
 
     /// <summary>The settings file of this install's first player; null when this is not mkw-recomp or the folder is redirected.</summary>
     public static string? PathFor(GameInstall install)
@@ -84,7 +84,7 @@ public static class ModSettings
         }
         if (!ValidKey(key) || value is not null && value.AsSpan().IndexOfAny('\r', '\n') >= 0)
         {
-            throw new LauncherException($"not a setting the game can keep: {key}");
+            throw new LauncherException(Strings.ModSettingsNotASetting(key));
         }
         if (target.IsRunning(install))
         {
@@ -132,7 +132,7 @@ public static class ModSettings
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            throw new LauncherException($"saving the game's settings: {e.Message}", e);
+            throw new LauncherException(Strings.GameSettingsSaveFailed(e.Message), e);
         }
     }
 

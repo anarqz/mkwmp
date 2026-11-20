@@ -218,6 +218,11 @@ static void parse_view(const char *out, SeatApiView *v) {
         seatapi_json_str(ticket, "token", v->ticket, sizeof v->ticket);
         seatapi_json_str(ticket, "lobby", v->ticket_lobby, sizeof v->ticket_lobby);
     }
+    // {lobby, ussid, ussids, at} (SEAT_API.md 2): passed on whole to seat.c, which reads it for the crash record
+    if (seatapi_json_span(out, "room", &b, &e) && *b == '{' && (size_t)(e - b) < sizeof v->room) {
+        memcpy(v->room, b, (size_t)(e - b));
+        v->room[e - b] = 0;
+    }
 }
 
 SeatApiResult seatapi_join(const char *base, const char *name, const char *pin, SeatApiView *v) {

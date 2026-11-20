@@ -28,7 +28,7 @@
                   Visibility="{Binding ShowSpinner, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
           <c:Spinner Width="84" Height="84" Foreground="#FFE6E8EC" HorizontalAlignment="Center"
                      Visibility="{Binding ShowSpinner, Converter={StaticResource Conv.Visible}}" />
-          <TextBlock Text="{Binding StatusText}" FontFamily="{StaticResource Font.Ui}" FontSize="36" Foreground="#FFE6E8EC"
+          <TextBlock Text="{Binding StatusText}" FontFamily="{DynamicResource Font.Ui}" FontSize="36" Foreground="#FFE6E8EC"
                      TextWrapping="Wrap" TextAlignment="Center" LineHeight="52" Margin="0,30,0,0" />
         </StackPanel>
       </Grid>

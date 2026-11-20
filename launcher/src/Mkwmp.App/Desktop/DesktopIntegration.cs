@@ -42,6 +42,7 @@ internal sealed class DesktopIntegration : IDisposable
         {
             _tray.OpenRequested += (_, _) => Open();
             _tray.QuitRequested += (_, _) => _shell.Quit();
+            _shell.LanguageChanged += (_, _) => _tray.SetTexts(_shell.S["tray.open"], _shell.S["tray.quit"]);
         }
         shell.TrayAvailable = _tray is not null;
         shell.HideRequested += (_, _) => Hide();

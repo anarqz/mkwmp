@@ -22,7 +22,7 @@
   <sys:Double x:Key="Radius.Control">12</sys:Double>
 
   <Style x:Key="Text.Base" TargetType="TextBlock">
-    <Setter Property="FontFamily" Value="{StaticResource Font.Ui}" />
+    <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
     <Setter Property="FontSize" Value="{StaticResource Size.Body}" />
     <Setter Property="TextTrimming" Value="CharacterEllipsis" />

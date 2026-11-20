@@ -13,8 +13,12 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <ProjectReference Include="..\..\src\Mkwmp.Core\Mkwmp.Core.csproj" />
+    <!-- The update helper's own signature check and arguments (SelfUpdateTests); its swap is Mkwmp.Update's, through Core. -->
+    <ProjectReference Include="..\..\src\Mkwmp.Updater\Mkwmp.Updater.csproj" />
     <!-- Copies of real game files the tests edit (mkw.ini from an mkw-recomp 0.1.15 install, paths made generic). -->
     <None Update="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The window's catalogs, for CatalogTests: every language has English's keys and placeholders. -->
+    <None Include="..\..\src\Mkwmp.App\i18n\*.json" Link="i18n\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -99,6 +99,15 @@ public partial class App : Application
             options = options with { OverlayHost = true, Tray = false };
             ShutdownMode = ShutdownMode.OnExplicitShutdown; // a window that was never shown ends nothing
         }
+        // The system's language and formats, before the launcher's own choice replaces the thread's culture.
+        ShellViewModel.SystemCulture = CultureInfo.CurrentUICulture;
+        ShellViewModel.SystemFormats = CultureInfo.CurrentCulture;
+        var catalogs = Path.Combine(AppContext.BaseDirectory, "i18n");
+        if (demo)
+        {
+            // the fake launcher writes its texts once, when it is made: in the language of this run
+            ShellViewModel.UseLanguage(Strings.Load(catalogs, Locales.For(Option(args, "--locale"), ShellViewModel.SystemCulture), ShellViewModel.SystemFormats));
+        }
         try
         {
             _launcher = CreateLauncher(demo, options);
@@ -114,9 +123,10 @@ public partial class App : Application
             return;
         }
 
-        var locale = Strings.LocaleFor(Option(args, "--locale") ?? _launcher.Settings.Ui.Locale, CultureInfo.CurrentUICulture);
-        var strings = Strings.Load(Path.Combine(AppContext.BaseDirectory, "i18n"), locale);
-        var shell = new ShellViewModel(_launcher, strings);
+        // The language: --locale for this run, else the saved one, else the closest to the system's (Mkwmp.Core.Locales).
+        var locale = Locales.For(Option(args, "--locale") ?? _launcher.Settings.Ui.Locale, ShellViewModel.SystemCulture);
+        var strings = Strings.Load(catalogs, locale, ShellViewModel.SystemFormats);
+        var shell = new ShellViewModel(_launcher, strings) { ForcedLocale = Locales.Find(Option(args, "--locale"))?.Id };
         var window = new MainWindow(shell, args);
         MainWindow = window;
         // tray, close-to-tray, system notifications (nothing of it in the screenshot harness, nor for a host)

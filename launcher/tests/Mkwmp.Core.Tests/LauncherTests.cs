@@ -93,8 +93,8 @@ public class LauncherTests
     }
 
     [Theory]
-    [InlineData(401, "PIN_WRONG", Strings.WrongPin)]
-    [InlineData(404, "PROFILE_NOT_FOUND", Strings.NotRegistered)]
+    [InlineData(401, "PIN_WRONG", "Wrong PIN for this gamertag")]
+    [InlineData(404, "PROFILE_NOT_FOUND", "Register this gamertag first")]
     public async Task Play_refused_does_not_start_the_game(int status, string code, string message)
     {
         // PROFILE_NOT_FOUND at sign-in means "expired": the launcher registers it again, and the second sign-in is what refuses.
@@ -191,8 +191,8 @@ public class LauncherTests
     }
 
     [Theory]
-    [InlineData(SeatMood.Refused, Strings.WrongPin)]
-    [InlineData(SeatMood.Down, Strings.Unreachable)]
+    [InlineData(SeatMood.Refused, "Wrong PIN for this gamertag")]
+    [InlineData(SeatMood.Down, "Server unreachable: retry")]
     [InlineData(SeatMood.Seated, null)]
     public async Task Play_online_checks_the_profile_first(SeatMood mood, string? want)
     {
@@ -217,7 +217,7 @@ public class LauncherTests
         var server = new FakeSeatServer { Mood = SeatMood.TakenFor, Count = 1 };
         await using var rig = new Rig(server);
         await rig.Launcher.PlayAsync();
-        await Rig.Until("the busy phase", () => rig.Launcher.Session is { Phase: SeatPhase.Busy, Status: Strings.InUse, Tone: "warn" });
+        await Rig.Until("the busy phase", () => rig.Launcher.Session is { Phase: SeatPhase.Busy, Tone: "warn" } busy && busy.Status == Strings.InUse);
         Assert.False(rig.Started); // not while the name is in use
         await Rig.Until("the game, seated on the retry", () => rig.Started);
         Assert.Equal(2, server.Joins);
@@ -345,8 +345,8 @@ public class LauncherTests
         File.WriteAllBytes(Path.Combine(rig.Game, "mkw.exe"), "some other build"u8);
         await l.SaveSettingsAsync(l.Settings with { Slot = 2 });
         await l.FindGameAsync();
-        Assert.Equal("Unknown mkw-recomp: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp or 0.1.16", l.PlayProblem);
-        Assert.Equal((TargetStatus.Unsupported, "GET 0.1.15-mkwmp"), (l.Game.Check!.Status, l.Game.Check.FixLabel));
+        Assert.Equal("Unknown mkw-recomp: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp or 0.1.16 or 0.1.16-mkwmp", l.PlayProblem);
+        Assert.Equal((TargetStatus.Unsupported, "GET 0.1.16-mkwmp"), (l.Game.Check!.Status, l.Game.Check.FixLabel));
     }
 
     [Fact]

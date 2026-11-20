@@ -13,7 +13,7 @@ namespace Mkwmp.App;
 /// <summary>
 /// The screenshot harness (see docs/DESIGN.md, "Checking your page"):
 /// <c>mkwmp-launcher --demo --shot out.png [--page home|settings|setup|gallery] [--category key]
-/// [--modal update|available|confirm|message|progress|crash|crash-report|bug-report] [--state crashed|crashed-solo|crashed-exit] [--friends] [--toast]
+/// [--modal update|available|ready|ready-game|confirm|message|progress|crash|crash-report|bug-report] [--state crashed|crashed-solo|crashed-exit] [--friends] [--toast]
 /// [--press right,down,a,…] [--size 1920x1080] [--theme dark] [--battery 93] [--input keyboard] [--locale pt-BR]
 /// [--overlay [--overlay-frame png|none] [--overlay-no-menu] [--overlay-progress 0..1 | --overlay-return 0..1]]</c>
 /// renders the stage at that size once everything has settled, saves the PNG and exits. The window
@@ -187,6 +187,12 @@ public partial class MainWindow
             case "available":
                 _vm.ShowUpdateModal();
                 break;
+            // downloaded and verified: "Install and Restart"; and the same with a game running
+            case "ready":
+            case "ready-game":
+                (_vm.Launcher as DesignLauncher)?.ReadyToInstall(gameRuns: App.Option(args, "--modal") == "ready-game");
+                _vm.ShowUpdateModal();
+                break;
             case "confirm":
                 _ = _vm.ConfirmAsync(_vm.S["quit.title"], _vm.S["quit.body"], _vm.S["quit.yes"]);
                 break;
@@ -208,6 +214,10 @@ public partial class MainWindow
                 (_vm.Page as HomeViewModel)?.PowerCommand.Execute(null);
                 await Task.Delay(300).ConfigureAwait(true);
                 _vm.Modal?.Actions.LastOrDefault()?.Command.Execute(null); // "Quit MKWMP", the last of the menu
+                break;
+            // Settings > Appearance > Language, open (also from the welcome's first page)
+            case "language":
+                _ = _vm.PickLanguageAsync();
                 break;
             case "message":
                 _ = _vm.MessageAsync("The game is set up", "Mario Kart World 1.8.0 is ready on this device.");
@@ -232,6 +242,13 @@ public partial class MainWindow
         if (args.Contains("--toast"))
         {
             _vm.Launcher.ShowTestToast();
+        }
+        // --switch ja: the language changes now, with the page already up (what the selector does, without saving)
+        if (App.Option(args, "--switch") is { } other)
+        {
+            _vm.ForcedLocale = other;
+            _vm.ApplyLanguage();
+            await Task.Delay(400).ConfigureAwait(true);
         }
         await Task.Delay(300).ConfigureAwait(true);
         SyncFocus();

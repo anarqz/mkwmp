@@ -13,7 +13,7 @@
       <ColumnDefinition Width="Auto" />
     </Grid.ColumnDefinitions>
     <Grid>
-      <PasswordBox x:Name="Masked" MaxLength="6" PasswordChar="•" FontFamily="{StaticResource Font.Ui}" FontWeight="ExtraBold"
+      <PasswordBox x:Name="Masked" MaxLength="6" PasswordChar="•" FontFamily="{DynamicResource Font.Ui}" FontWeight="ExtraBold"
                    input:TextEntry.Charset="Digits" input:TextEntry.Title="{Binding Title, ElementName=Self}" PasswordChanged="OnMasked" />
       <TextBox x:Name="Plain" MaxLength="6" InputScope="Number" Visibility="Collapsed"
                input:TextEntry.Charset="Digits" input:TextEntry.Title="{Binding Title, ElementName=Self}" TextChanged="OnPlain" />

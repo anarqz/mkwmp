@@ -18,8 +18,8 @@ internal static class OverlayArt
     private const int Width = 1280;
     private const int Height = 720;
 
-    private static readonly Typeface Face = new(new FontFamily(new Uri("pack://application:,,,/"), "./Assets/Fonts/#Nunito"),
-        FontStyles.Normal, FontWeights.ExtraBold, FontStretches.Normal);
+    /// <summary>The launcher's font chain (Nunito, then the CJK fonts in the language's order): the caption is in the player's language.</summary>
+    private static Typeface Face => Fonts.Face(FontWeights.ExtraBold);
 
     /// <summary>A dark card with a kart and the game's name: what shrinks into the Play tile when there is no picture.</summary>
     public static BitmapSource Placeholder(string title, string caption)

@@ -122,10 +122,29 @@ public interface ILauncher : IAsyncDisposable
     Task SendReportAsync(string name, string reason, string? details);
     Task WithdrawReportAsync();
 
-    // Updates (modal with progress)
+    // Updates (modal with progress; launcher/docs/UPDATES.md)
     Task CheckForUpdatesAsync();
-    /// <summary>Downloads and verifies, then restarts into the new launcher. Progress in <see cref="Update"/>.</summary>
+
+    /// <summary>
+    /// Downloads the available release into the staging folder (continuing a download that was cut
+    /// short) and verifies it against its signed SHA256SUMS; then <see cref="Update"/> says
+    /// <see cref="UpdateState.ReadyToInstall"/>. Nothing installed is touched, the launcher keeps running.
+    /// </summary>
+    Task DownloadUpdateAsync(CancellationToken cancel);
+
+    /// <summary>
+    /// "Install and restart": hands the downloaded release to the helper (mkwmp-updater.exe), frees
+    /// the seat and ends this launcher; the helper swaps the files and starts the new one. Downloads
+    /// first when that was not done (<c>--headless</c>). Refused while a game runs
+    /// (<see cref="UpdateView.GameBlocks"/>): a game is never interrupted.
+    /// </summary>
     Task ApplyUpdateAsync(CancellationToken cancel);
+
+    /// <summary>
+    /// True: the downloaded update is installed by itself as soon as no game runs any more
+    /// (<see cref="UpdateView.AfterGame"/>). False takes that back.
+    /// </summary>
+    void InstallUpdateAfterGame(bool on);
 
     /// <summary>Collects logs into a zip; returns its path (or throws IOException with the reason).</summary>
     Task<string> SaveBugReportAsync();
@@ -435,7 +454,18 @@ public sealed record OpenReport(string Reported, string Reason, string? Details,
 /// <param name="Loaded">null: not asked / not signed; false: checking or failed (see Note).</param>
 public sealed record ReportView(bool? Loaded, OpenReport? Open, IReadOnlyList<ReportReason> Reasons, string? Note, bool NoteIsError, bool Busy);
 
-public enum UpdateState { Off, Checking, UpToDate, Available, Downloading, Restarting, Failed }
+/// <summary>
+/// <see cref="ReadyToInstall"/>: the release is downloaded and verified, waiting for "Install and
+/// restart" (also after the launcher was closed and opened again). <see cref="Restarting"/>: the
+/// helper has the update and this launcher is closing.
+/// </summary>
+public enum UpdateState { Off, Checking, UpToDate, Available, Downloading, ReadyToInstall, Restarting, Failed }
 
 /// <param name="Progress">0..1 while downloading.</param>
-public sealed record UpdateView(UpdateState State, string? AvailableVersion, string? Notes, double Progress, TimeSpan? Remaining, string Status);
+/// <param name="Received">Bytes downloaded so far, of <paramref name="Total"/> (0: not known).</param>
+/// <param name="BytesPerSecond">The download's speed over the last seconds.</param>
+/// <param name="GameBlocks">Ready, but a game runs: installing would restart the launcher under it.</param>
+/// <param name="AfterGame">Ready, and it is installed when the game closes (<see cref="ILauncher.InstallUpdateAfterGame"/>).</param>
+public sealed record UpdateView(
+    UpdateState State, string? AvailableVersion, string? Notes, double Progress, TimeSpan? Remaining, string Status,
+    long Received = 0, long Total = 0, double BytesPerSecond = 0, bool GameBlocks = false, bool AfterGame = false);

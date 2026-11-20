@@ -35,7 +35,7 @@ public sealed class RegistryAutostart : IAutostart
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException)
         {
-            throw new LauncherException($"start with the system: {e.Message}", e);
+            throw new LauncherException(Strings.AutostartFailed(e.Message), e);
         }
     }
 }

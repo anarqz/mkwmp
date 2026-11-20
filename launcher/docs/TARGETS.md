@@ -117,7 +117,7 @@ an install which is not the same fork (`LineageSuffix`) and was not installed by
 with `InstallRuntimeAsync(folder, cancel)` and `CancelRuntimeInstall()`; after an install the
 target's own `Detect` must name the pinned version, and the folder becomes client.toml's `game`.
 
-**mkw-recomp**: `Targets/MkwRecomp/RecompRuntime.cs` (0.1.15-mkwmp, the Windows zip of
+**mkw-recomp**: `Targets/MkwRecomp/RecompRuntime.cs` (0.1.16-mkwmp, the Windows zip of
 github.com/anarqz/mkw-recomp). What its setup then does with the player's game, and how the
 launcher can drive it: `RECOMP_INTEGRATION.md`.
 

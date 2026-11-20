@@ -72,6 +72,7 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         SecondaryCommand = RelayCommand.Async(SecondaryAsync, () => ShowSecondary);
         PolicyCommand = new RelayCommand(() => Links.Open(Shell, CoreStrings.PrivacyUrl));
         PrivacyCommand = new RelayCommand(() => Shell.Navigate(new PrivacyViewModel(Shell)));
+        LanguageCommand = RelayCommand.Async(Shell.PickLanguageAsync);
         InitGame();
         _step = start ?? (connectOnly ? SetupStep.Server : FirstOpenStep());
         if (address is { Length: > 0 })
@@ -98,6 +99,17 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
     public ICommand PrivacyCommand { get; }
 
     public bool IsFirstRun => !_connectOnly;
+
+    /// <summary>The welcome's first page offers the language, before there is anything to read.</summary>
+    public bool ShowLanguage => _step == SetupStep.Welcome;
+
+    /// <summary>"Language · English": the word in the language in use, the language in its own name.</summary>
+    public string LanguageLabel => S["setup.welcome.language"] + " · " + (Locales.Find(S.Locale)?.Name ?? S.Locale);
+
+    public ICommand LanguageCommand { get; }
+
+    /// <summary>The language changed: the welcome again, where it stands (its first page offers the selector). The connect pages are left.</summary>
+    public override PageViewModel? Recreate() => _connectOnly ? null : new SetupViewModel(Shell);
 
     public void Dispose()
     {
@@ -645,7 +657,5 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         ? s.Format("update.minutes_left", ("n", Math.Round(left.TotalMinutes).ToString(CultureInfo.CurrentCulture)))
         : s.Format("update.seconds_left", ("n", Math.Max(1, Math.Round(left.TotalSeconds)).ToString(CultureInfo.CurrentCulture)));
 
-    internal static string Bytes(long bytes) => bytes >= 1_000_000_000
-        ? (bytes / 1e9).ToString("0.0", CultureInfo.InvariantCulture) + " GB"
-        : Math.Round(bytes / 1e6).ToString("0", CultureInfo.InvariantCulture) + " MB";
+    internal static string Bytes(long bytes) => CoreStrings.Size(bytes);
 }

@@ -135,7 +135,8 @@ public class LocalApiTests
         var host = new Host { Seat = seated, FriendsOrNull = friends };
         using var api = new LocalApi(host, TimeProvider.System);
         var answer = await api.HandleAsync("POST", "/local/v1/seat", "Bearer t0ken", default, default);
-        Assert.Equal((200, """{"state":"seated","ticket":"mkw1.ticket.sig","lobby":"lobby.test:8905","name":"Ana"}"""), (answer.Status, answer.Body));
+        // A seat server older than rooms leaves View.room out: the game is told "room": null.
+        Assert.Equal((200, """{"state":"seated","ticket":"mkw1.ticket.sig","lobby":"lobby.test:8905","name":"Ana","room":null}"""), (answer.Status, answer.Body));
         answer = await api.HandleAsync("GET", "/local/v1/friends", "Bearer t0ken", default, default);
         var list = JsonNode.Parse(answer.Body!)!["friends"]!.AsArray();
         Assert.Equal(LocalApi.MaxFriends, list.Count);
@@ -148,6 +149,55 @@ public class LocalApiTests
         Assert.Equal((409, JsonSerializer.Serialize(new { state = "refused", message = Strings.WrongPin })), (answer.Status, answer.Body));
         Assert.Equal(401, (await api.HandleAsync("POST", "/local/v1/seat", "Bearer t0ken ", default, default)).Status);
         Assert.Equal(401, (await api.HandleAsync("POST", "/local/v1/seat", "t0ken", default, default)).Status);
+    }
+
+    [Fact]
+    public async Task The_seated_answer_carries_the_lobby_room_the_seat_server_reports()
+    {
+        const string Room = """{"lobby":"0b4e7a10-1111-4222-8333-444455556666","ussid":12,"ussids":[3,12,16],"at":1763647200123}""";
+        var server = new FakeSeatServer { RoomJson = "null" };
+        using var http = new HttpClient(server);
+        using var seat = new SeatSession(new SeatApi(http, FakeSeatServer.Url, "test"), SeatMode.Online, "Ana", "123456", _ => { }, TimeProvider.System);
+        using var api = new LocalApi(new Host { Seat = seat }, TimeProvider.System);
+        async Task<string> Seated() =>
+            JsonNode.Parse((await api.HandleAsync("POST", "/local/v1/seat", "Bearer t0ken", default, default)).Body!)!.AsObject().TryGetPropertyValue("room", out var room)
+                ? room?.ToJsonString() ?? "null"
+                : "absent";
+
+        // Joined, in no room yet.
+        Assert.Equal("null", await Seated());
+
+        // The lobby put the seat in a room: the next heartbeat brings it, and the game gets it as the server said it.
+        server.RoomJson = Room;
+        await Task.Delay(1100); // the fake's nextPollMs (1 s)
+        await seat.TickAsync();
+        Assert.Equal(Room, await Seated());
+
+        // The room ended (or the lobby's report went stale): null again.
+        server.RoomJson = "null";
+        await Task.Delay(1100);
+        await seat.TickAsync();
+        Assert.Equal("null", await Seated());
+        Assert.True(server.Polls >= 2);
+    }
+
+    [Theory]
+    [InlineData(null, null)] // absent: a server older than rooms
+    [InlineData("null", null)]
+    [InlineData("""{"lobby":"L","ussid":12,"ussids":[3,12,16],"at":1763647200123}""", "L 12 3,12,16 1763647200123")]
+    [InlineData("""{"lobby":"L","ussid":3,"ussids":[3],"at":5}""", "L 3 3 5")]
+    [InlineData("""{"lobby":"","ussid":12,"ussids":[12],"at":1}""", null)] // not a room's shape: no room, never a failure
+    [InlineData("""{"lobby":"L","ussids":[12],"at":1}""", null)]
+    [InlineData("""{"lobby":"L","ussid":12,"ussids":[12]}""", null)]
+    [InlineData("""{"lobby":"L","ussid":12,"ussids":"12","at":1}""", null)]
+    [InlineData("""{"lobby":"L","ussid":12,"ussids":[12,"x"],"at":1}""", null)]
+    [InlineData("[]", null)]
+    public async Task The_view_s_room_is_read_whatever_the_server_sends(string? room, string? expected)
+    {
+        using var http = new HttpClient(new FakeSeatServer { RoomJson = room });
+        var view = await new SeatApi(http, FakeSeatServer.Url, "test").JoinAsync("Ana", "123456", default);
+        Assert.Equal("mkw1.ticket.sig", view.Ticket?.Token); // the rest of the view is read as before
+        Assert.Equal(expected, view.Room is { } r ? $"{r.Lobby} {r.Ussid} {string.Join(',', r.Ussids)} {r.At}" : null);
     }
 
     [Fact]

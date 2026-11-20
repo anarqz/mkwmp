@@ -29,19 +29,17 @@ internal readonly record struct RecompId(RecompKind Kind, string? Version)
     public string? Problem => Kind switch
     {
         RecompKind.Supported => null,
-        RecompKind.Other => $"mkw-recomp {Version}: MKWMP needs {Recomp.SupportedList}",
-        RecompKind.Unknown => $"Unknown mkw-recomp: MKWMP needs {Recomp.SupportedList}",
-        _ => "Set the game folder (the one with mkw.exe)",
+        RecompKind.Other => Strings.RecompProblemOther(Version, Recomp.SupportedList),
+        RecompKind.Unknown => Strings.RecompProblemUnknown(Recomp.SupportedList),
+        _ => Strings.SetGameFolder(Strings.RecompFolderHint),
     };
 
     /// <summary>Why, and what to do (details, logs).</summary>
     public string Explain => Kind switch
     {
-        RecompKind.Supported => $"mkw-recomp {Version}: supported by this MKWMP.",
-        RecompKind.Missing => "No mkw.exe in this folder.",
-        _ => $"The MKWMP game patch hooks specific mkw-recomp releases ({Recomp.SupportedList}); other versions crash or can't "
-            + $"connect. Install the Windows build of mkw-recomp {Recomp.Recommended} ({Recomp.Download}) with your game "
-            + "files, and pick that folder.",
+        RecompKind.Supported => Strings.RecompExplainSupported(Version),
+        RecompKind.Missing => Strings.RecompExplainMissing,
+        _ => Strings.RecompExplainOther(Recomp.SupportedList, Recomp.Recommended, Recomp.Download),
     };
 
     /// <summary>As the Rust launcher's bug reports wrote it (<c>Supported("0.1.15")</c>), so old and new reports read alike.</summary>
@@ -59,8 +57,8 @@ internal readonly record struct RecompId(RecompKind Kind, string? Version)
 /// symbols, fiber and host-function layout), so MKWMP runs only with the releases in
 /// <see cref="Supported"/>. Each release's mkw.exe (the Windows build, also what runs under
 /// Proton) is identified by its SHA-256, taken from the release zips: the official ones and
-/// MKWMP's fork, 0.1.15-mkwmp (github.com/anarqz/mkw-recomp), which added the camera to the
-/// plugin API before upstream took it in 0.1.16. The patch also hooks one game version (guest addresses): <see cref="Games"/>
+/// MKWMP's fork (github.com/anarqz/mkw-recomp): 0.1.15-mkwmp, which added the camera to the
+/// plugin API before upstream took it in 0.1.16, and 0.1.16-mkwmp. The patch also hooks one game version (guest addresses): <see cref="Games"/>
 /// lists the ones it has tables for, read from mkw-recomp's setup-state.json.
 /// </summary>
 internal static class Recomp
@@ -68,11 +66,11 @@ internal static class Recomp
     public const string Exe = "mkw.exe";
 
     /// <summary>The runtimes the game patch supports.</summary>
-    public static readonly string[] Supported = ["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16"];
+    public static readonly string[] Supported = ["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp"];
 
     /// <summary>What the window recommends installing.</summary>
-    public const string Recommended = "0.1.15-mkwmp";
-    public const string Download = "https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.15-mkwmp";
+    public const string Recommended = "0.1.16-mkwmp";
+    public const string Download = "https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp";
 
     /// <summary>mkw.exe SHA-256 per mkw-recomp release (mkw-recomp-&lt;v&gt;-windows-x64.zip).</summary>
     internal static readonly (string Version, string Sha256)[] Known =
@@ -84,6 +82,9 @@ internal static class Recomp
         ("0.1.15", "511148040eac4f71cc3f003ace2d100fef784f1756339d88ca939896016d86e9"),
         ("0.1.15-mkwmp", "c6d732115683fff57ab1cd7e68414934c4fa132b2a5afc48247a8826797d58b9"),
         ("0.1.16", "e1829a08a7e24ab0f54425fd5e6a400a6fe5c54798757a80a104268e6c18e029"),
+        ("0.1.16-mkwmp", "73997d10f8cca878e9654b174c194833053a529ec04ff3b03be587c1e592eb8f"),
+        // the same release's build for CPUs without AVX2 (mkw-recomp-0.1.16-mkwmp-windows-x64-noavx2.zip)
+        ("0.1.16-mkwmp", "0bceb91d6156af779f5fad48963908fc39e4bf0d477f826e0d7106ec4605a34f"),
     ];
 
     /// <summary>MKWMP's mod folder name, under mkw-recomp's <c>mods/</c>.</summary>
@@ -91,9 +92,9 @@ internal static class Recomp
 
     /// <summary>
     /// The supported releases that load mods (MKW_MODS): plugin API 1 in 0.1.15, 3 in 0.1.15-mkwmp
-    /// and 0.1.16. The mod asks the runtime which version it has and leaves out what is missing.
+    /// and 0.1.16, and the fork's 0.1.16-mkwmp. The mod asks the runtime which version it has and leaves out what is missing.
     /// </summary>
-    public static readonly string[] ModRuntimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16"];
+    public static readonly string[] ModRuntimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp"];
 
     /// <summary>
     /// Game versions the game patch has guest-address tables for. On any other version its hooks
@@ -114,11 +115,12 @@ internal static class Recomp
         ("0.1.15", "c9bbcb75a9ac9a49"),
         ("0.1.15-mkwmp", "c0dd6cf12c07c23a"),
         ("0.1.16", "c9bbcb75a9ac9a49"), // unchanged from 0.1.15: a game set up by it needs no rebuild
+        ("0.1.16-mkwmp", "c9bbcb75a9ac9a49"), // 0.1.16's: an update from 0.1.15-mkwmp builds the game again
     ];
 
     private static readonly string[] ModLibraries = ["mkwmp.dll", "libmkwmp.so", "mkwmp.so"];
 
-    public const string RebuildProblem = "mkw-recomp was updated: open mkw-recomp once and let it finish its setup, then press PLAY again";
+    public static string RebuildProblem => Strings.RecompRebuild;
 
     public static string SupportedList => string.Join(" or ", Supported);
 
@@ -376,7 +378,7 @@ internal static class Recomp
 
     internal static string? GameProblemFor(string? version) => version is null || Games.Contains(version)
         ? null
-        : $"Game {version}: MKWMP supports game {string.Join(" or ", Games)} (a newer MKWMP may support {version})";
+        : Strings.RecompGameProblem(version, Games);
 
     /// <summary>Why PLAY is refused for this game version, or because the game must be set up again for this runtime; null when fine or unknown.</summary>
     public static string? GameProblem(string game) => GameProblemFor(GameVersion(game)) ?? RebuildProblemFor(Identify(game), GameId(game));

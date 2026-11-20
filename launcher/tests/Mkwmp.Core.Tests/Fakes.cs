@@ -81,13 +81,24 @@ internal sealed class FakeSeatServer : HttpMessageHandler
     private static HttpResponseMessage Error(int status, string code) =>
         Json(status, JsonSerializer.Serialize(new { error = new { code, message = $"{code} from the fake" } }));
 
-    private static HttpResponseMessage View(string state, int? position)
+    /// <summary>
+    /// The view's <c>room</c> (SEAT_API.md 2, 1.4.0) as raw JSON: null leaves the key out (a server older than rooms),
+    /// <c>"null"</c> is in no room, an object is the room.
+    /// </summary>
+    public string? RoomJson { get; set; }
+
+    private HttpResponseMessage View(string state, int? position)
     {
         object? ticket = state == "seated" ? new { token = "mkw1.ticket.sig", expiresAt = 9_999_999_999L, lobby = "lobby.test:8905" } : null;
-        return Json(200, JsonSerializer.Serialize(new
+        var view = JsonSerializer.SerializeToNode(new
         {
             bootId = "b1", sessionId = "s1", name = "Ana", sessionKey = "k1", state, position, seatsTotal = 2, seatsFree = 0, nextPollMs = 1000, ticket,
-        }));
+        })!.AsObject();
+        if (RoomJson is { } room)
+        {
+            view["room"] = JsonNode.Parse(room);
+        }
+        return Json(200, view.ToJsonString());
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

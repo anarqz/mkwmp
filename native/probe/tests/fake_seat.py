@@ -61,11 +61,15 @@ class Handler(BaseHTTPRequestHandler):
         a = self.headers.get("Authorization") or ""
         return a[7:] if a.startswith("Bearer ") else ""
 
-    def view(self, sid):
+    def view(self, sid, room=None):
         s = SESSIONS[sid]
         return {"bootId": "boot", "sessionId": sid, "name": s["name"], "state": "seated", "seatsTotal": 24,
                 "seatsFree": 23, "queued": 0, "nextPollMs": 20000,
-                "ticket": {"token": "mkw1.fake." + sid[:8], "expiresAt": 0, "lobby": "lobby.example:443"}}
+                "ticket": {"token": "mkw1.fake." + sid[:8], "expiresAt": 0, "lobby": "lobby.example:443"},
+                "room": room}
+
+    # What a heartbeat sees once the lobby has put the seat in a room (SEAT_API.md 2, View.room); a join sees none.
+    ROOM = {"lobby": "0b4e7a10-1111-4222-8333-444455556666", "ussid": 12, "ussids": [3, 12, 16], "at": 1763647200123}
 
     def do_GET(self):
         with LOCK:
@@ -84,7 +88,7 @@ class Handler(BaseHTTPRequestHandler):
                 s = SESSIONS.get(m.group(1))
                 if not s or s["key"] != self.bearer():
                     return self.error(404, "SESSION_NOT_FOUND")
-                return self.send(200, self.view(m.group(1)))
+                return self.send(200, self.view(m.group(1), self.ROOM))
             if p.startswith("/seat/v1/friends"):
                 me = PRESENCE.get(self.bearer())
                 if not me:

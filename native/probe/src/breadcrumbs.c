@@ -104,10 +104,7 @@ static volatile uint32_t g_room_seq;
 static PlatLock g_room_lock = PLAT_LOCK_INIT;
 
 int crumb_room_host(const CrumbRoom *room) {
-    if (!room->n || !room->ussid) return 0;
-    for (int i = 0; i < room->n; i++)
-        if (room->ussids[i] < room->ussid) return 0;
-    return 1;
+    return room->n > 0 && room->ussid && room->ussids[0] == room->ussid;   // ussids ascending: the first hosts the mesh
 }
 
 const char *crumb_room_list(const CrumbRoom *room, char *out, size_t cap) {
@@ -118,11 +115,12 @@ const char *crumb_room_list(const CrumbRoom *room, char *out, size_t cap) {
     return out;
 }
 
-void crumb_room(const char *lobby, uint32_t ussid, const uint32_t *ussids, int n) {
+void crumb_room(const char *lobby, uint32_t ussid, const uint32_t *ussids, int n, uint64_t at) {
     CrumbRoom next = {0};
     if (lobby && *lobby) {
         snprintf(next.lobby, sizeof next.lobby, "%s", lobby);
         next.ussid = ussid;
+        next.at = at;
         if (n > CRUMB_ROOM_MAX) n = CRUMB_ROOM_MAX;
         for (int i = 0; i < n && ussids; i++) next.ussids[next.n++] = ussids[i];
     }

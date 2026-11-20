@@ -25,12 +25,20 @@ Send `Authorization: Bearer <launcher_token>` with no body. The listener is boun
 
 | Answer | Meaning |
 | --- | --- |
-| `200 {"state":"seated","ticket","lobby","name"}` | Use `ticket` as the account token. `lobby` overrides `server`. |
+| `200 {"state":"seated","ticket","lobby","name","room"}` | Use `ticket` as the account token. `lobby` overrides `server`. `room` is below. |
 | `200 {"state":"queued","position","seatsTotal"}` | Poll every 2 s and show the position. |
 | `409 {"state":"refused","message"}` | Show the message. Retrying won't help; the player fixes `client.toml` (name taken, invalid). |
 | `503 {"state":"unavailable","message"}` | The seat server is unreachable; stay offline. |
 | `401` | Wrong or missing token: re-read mkwmp.toml once. |
 | connection refused | The launcher isn't running; stay offline. |
+
+**`room`** (launcher 1.4.0): the lobby room the seat is in, as the seat server's `View.room` gives it (SEAT_API.md §2),
+or `null` when there is none (no room, the lobby has not said, its report is older than 60 s, or a seat server older
+than rooms). Shape: `{"lobby":"<lobby uuid>","ussid":12,"ussids":[3,12,16],"at":<ms since 1970>}`. `ussids` is
+ascending, so `ussids[0]` is the mesh host; `at` is when the lobby reported the room. The launcher refreshes it with
+its seat heartbeat (20 s), so it can lag the game by that much. The mod uses it only for its crash records (`room:`
+line: lobby, ussid, host = `ussid == ussids[0]`, players = the count, `age_ms` = crash time minus `at`). A launcher
+older than 1.4.0 leaves the key out: read absent as `null`.
 
 **Keepalive.** Each POST also keeps the seat. While online, the probe POSTs at least every 20 s.
 

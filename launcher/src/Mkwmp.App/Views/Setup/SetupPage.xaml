@@ -380,6 +380,10 @@
     </StackPanel>
 
     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,18,0,40" input:FocusNav.IsGroup="True">
+      <!-- the first page only: the language, before there is anything to read (a globe and the language's own name) -->
+      <c:ConsoleButton Kind="Secondary" MinWidth="400" Height="112" Margin="0,0,24,0" Icon="{StaticResource Icon.Globe}"
+                       Content="{Binding LanguageLabel}" Command="{Binding LanguageCommand}"
+                       Visibility="{Binding ShowLanguage, Converter={StaticResource Conv.Visible}}" />
       <c:ConsoleButton Kind="Secondary" Width="400" Height="112" Margin="0,0,24,0" Content="{Binding SecondaryLabel}" Command="{Binding SecondaryCommand}"
                        Visibility="{Binding ShowSecondary, Converter={StaticResource Conv.Visible}}" />
       <c:ConsoleButton x:Name="Primary" Kind="Secondary" MinWidth="650" Height="112" Content="{Binding PrimaryLabel}"
