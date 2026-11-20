@@ -7,7 +7,7 @@
              Focusable="False">
   <!-- DataContext: ServerPicker. The servers the beholder lists, the five nearest first: latency (bars and ms,
        measured to the server itself), name, region and version, players and queue. A on a row connects to it;
-       Y on it (the hint bar says so), or its "…" for the mouse and touch, offers to hide it: the next nearest
+       Y on it (the hint bar says so), or its "…" (Right then A, or the mouse and touch), offers to hide it: the next nearest
        takes its place. "Show more" adds five. Collapsed as a whole when there is no beholder (HasList). -->
   <StackPanel input:FocusNav.IsGroup="True">
     <ItemsControl x:Name="RowsHost" ItemsSource="{Binding Rows}" Focusable="False">
@@ -43,8 +43,8 @@
                 <c:Icon Grid.Column="3" Data="{StaticResource Icon.ChevronRight}" Width="30" Height="30" Foreground="{DynamicResource Brush.TextMuted}" />
               </Grid>
             </Button>
-            <!-- "…": the row's menu for the mouse and touch. Not a stop of the D-pad: a controller has Y. -->
-            <Button Grid.Column="1" Style="{StaticResource ChromeButton}" Focusable="False" Width="64" Margin="8,0,0,0" Padding="0"
+            <!-- "…": the row's menu, a D-pad stop too (Right from the row; A opens it). Y on the row still opens it. -->
+            <Button Grid.Column="1" Style="{StaticResource ChromeButton}" Width="64" Margin="8,0,0,0" Padding="0"
                     VerticalAlignment="Stretch" Command="{Binding MenuCommand}" ToolTip="{Binding MenuLabel}"
                     AutomationProperties.Name="{Binding MenuLabel}">
               <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
