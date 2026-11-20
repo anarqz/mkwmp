@@ -214,3 +214,6 @@ int plat_key_down(int key) { (void)key; return 0; }
 
 // ---- process
 void plat_no_error_dialogs(void) {}
+unsigned long plat_process_id(void) { return (unsigned long)getpid(); }
+void plat_allow_foreground(void) {}
+int plat_spawn(const char *exe, const char *args) { (void)exe; (void)args; return 0; }

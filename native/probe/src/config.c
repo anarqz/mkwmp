@@ -68,6 +68,8 @@ void mkwmp_config_parse(const char *text, MkwmpConfig *out) {
             }
         } else if (klen == 14 && !strncmp(line, "launcher_token", 14)) {
             store_str(out->launcher_token, sizeof out->launcher_token, val, eol);
+        } else if (klen == 12 && !strncmp(line, "launcher_exe", 12)) {
+            store_str(out->launcher_exe, sizeof out->launcher_exe, val, eol);
         } else if (klen == 8 && !strncmp(line, "lobby_ca", 8)) {
             store_str(out->lobby_ca, sizeof out->lobby_ca, val, eol);
         } else if (klen == 10 && !strncmp(line, "voice_port", 10)) {

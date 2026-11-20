@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using Mkwmp.Core.Overlay;
 
 namespace Mkwmp.Core.Net;
 
@@ -41,6 +42,9 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
     private const int MaxHead = 16 * 1024;
     private const int MaxBody = 256 * 1024;
 
+    /// <summary>The overlay's picture (POST /local/v1/overlay/open): 1920 x 1080 RGBA, read only from a caller with the token.</summary>
+    private const int MaxFrameBody = OverlayFrame.MaxWidth * OverlayFrame.MaxHeight * 4;
+
     /// <summary>How long GET /local/v1/friends waits for the first friends fetch.</summary>
     internal TimeSpan FriendsWait { get; init; } = TimeSpan.FromSeconds(3);
 
@@ -49,8 +53,17 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
     private readonly TokenBucket _friends = new(10, 1, clock);
     private readonly TokenBucket _voice = new(10, 2, clock);
     private readonly TokenBucket _voicePost = new(20, 2, clock);
-    private readonly CancellationTokenSource _stop = new();
+    // The overlay: a state poll every 2 s while it is open and every 10 s otherwise; an open per button press.
+    private readonly TokenBucket _overlayOpen = new(10, 2, clock);
+    private readonly TokenBucket _overlayState = new(20, 2, clock);
+    private readonly TokenBucket _instance = new(5, 1, clock);    private readonly CancellationTokenSource _stop = new();
     private TcpListener? _listener;
+
+    /// <summary>The console-style overlay (/local/v1/overlay/...; launcher/docs/OVERLAY.md).</summary>
+    public OverlayBridge Overlay { get; } = new(clock);
+
+    /// <summary>Standing by for a game the launcher did not start, and a second launcher's requests (/local/v1/instance/...).</summary>
+    public OverlayHost Instance { get; } = new();
 
     /// <summary>The port being served (0: not listening).</summary>
     public int Port { get; private set; }
@@ -135,7 +148,9 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
                         return;
                     }
                     var length = 0;
-                    if (headers.TryGetValue("Content-Length", out var cl) && (!int.TryParse(cl, NumberStyles.None, CultureInfo.InvariantCulture, out length) || length > MaxBody))
+                    // Only the overlay's picture is larger than MaxBody, and only the game (the token) may send one.
+                    var maxBody = request[1].StartsWith("/local/v1/overlay/open", StringComparison.Ordinal) && Authorized(headers.GetValueOrDefault("Authorization")) ? MaxFrameBody : MaxBody;
+                    if (headers.TryGetValue("Content-Length", out var cl) && (!int.TryParse(cl, NumberStyles.None, CultureInfo.InvariantCulture, out length) || length > maxBody))
                     {
                         await WriteAsync(stream, new LocalResponse(413), close: true, idle.Token).ConfigureAwait(false);
                         return;
@@ -160,7 +175,7 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
 
                     var path = request[1];
                     var query = path.IndexOf('?', StringComparison.Ordinal);
-                    var response = await HandleAsync(request[0], query < 0 ? path : path[..query], headers.GetValueOrDefault("Authorization"), body, cancel).ConfigureAwait(false);
+                    var response = await HandleAsync(request[0], query < 0 ? path : path[..query], query < 0 ? "" : path[(query + 1)..], headers.GetValueOrDefault("Authorization"), body, cancel).ConfigureAwait(false);
                     var close = request[2] == "HTTP/1.0" || string.Equals(headers.GetValueOrDefault("Connection"), "close", StringComparison.OrdinalIgnoreCase);
                     await WriteAsync(stream, response, close, cancel).ConfigureAwait(false);
                     if (close)
@@ -225,7 +240,11 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
     // ---- the routes -----------------------------------------------------------------------
 
     /// <summary>One request. The token bucket is asked before the token is checked: a wrong token cannot be guessed faster than the limit.</summary>
-    public async Task<LocalResponse> HandleAsync(string method, string path, string? authorization, ReadOnlyMemory<byte> body, CancellationToken cancel)
+    public Task<LocalResponse> HandleAsync(string method, string path, string? authorization, ReadOnlyMemory<byte> body, CancellationToken cancel) =>
+        HandleAsync(method, path, "", authorization, body, cancel);
+
+    /// <summary>The same with the query string (after the '?', may be empty): the overlay and instance routes read it.</summary>
+    public async Task<LocalResponse> HandleAsync(string method, string path, string query, string? authorization, ReadOnlyMemory<byte> body, CancellationToken cancel)
     {
         (string Method, TokenBucket Bucket)? route = path switch
         {
@@ -234,6 +253,10 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
             "/local/v1/voice" => ("GET", _voice),
             "/local/v1/voice/devices" => ("POST", _voicePost),
             "/local/v1/voice/mute" => ("POST", _voicePost),
+            "/local/v1/overlay/open" => ("POST", _overlayOpen),
+            "/local/v1/overlay/state" => ("GET", _overlayState),
+            "/local/v1/instance/show" => ("POST", _instance),
+            "/local/v1/instance/host" => ("POST", _instance),
             _ => null,
         };
         if (route is not { } r)
@@ -248,18 +271,40 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
         {
             return new LocalResponse(429, """{"state":"limited"}""", RetryAfter: true);
         }
-        if (authorization is null || !authorization.StartsWith("Bearer ", StringComparison.Ordinal) || !FixedTimeEquals(authorization["Bearer ".Length..], host.Token))
+        if (!Authorized(authorization))
         {
             return new LocalResponse(401, """{"state":"unauthorized"}""");
         }
         return path switch
         {
+            "/local/v1/overlay/open" => Overlay.Open(Query(query), body),
+            "/local/v1/overlay/state" => await Overlay.StateAsync(Query(query), cancel).ConfigureAwait(false),
+            "/local/v1/instance/show" => Instance.Show(),
+            "/local/v1/instance/host" => Instance.Host(Query(query), Port, host.Token),
             "/local/v1/seat" => await SeatAsync(cancel).ConfigureAwait(false),
             "/local/v1/friends" => await FriendsAsync(cancel).ConfigureAwait(false),
             "/local/v1/voice" => new LocalResponse(200, VoiceJson(host.Config)),
             "/local/v1/voice/devices" => VoiceDevices(body),
             _ => VoiceMute(body),
         };
+    }
+
+    private bool Authorized(string? authorization) =>
+        authorization is not null && authorization.StartsWith("Bearer ", StringComparison.Ordinal) && FixedTimeEquals(authorization["Bearer ".Length..], host.Token);
+
+    /// <summary><c>a=1&amp;b=two</c> as a dictionary (percent-decoded; a repeated key keeps its last value).</summary>
+    internal static Dictionary<string, string> Query(string query)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = pair.IndexOf('=', StringComparison.Ordinal);
+            if (eq > 0)
+            {
+                map[Uri.UnescapeDataString(pair[..eq])] = Uri.UnescapeDataString(pair[(eq + 1)..].Replace('+', ' '));
+            }
+        }
+        return map;
     }
 
     private static bool FixedTimeEquals(string a, string b) =>
@@ -401,6 +446,7 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
         _stop.Cancel();
         _listener?.Stop();
         _listener?.Dispose();
+        Instance.Dispose();
         _stop.Dispose();
     }
 }

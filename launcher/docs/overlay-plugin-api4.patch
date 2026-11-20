@@ -1,0 +1,287 @@
+diff --git a/runtime/gfx/nvn/host/gfx_present.c b/runtime/gfx/nvn/host/gfx_present.c
+index 5bbb8d9..109d24f 100644
+--- a/runtime/gfx/nvn/host/gfx_present.c
++++ b/runtime/gfx/nvn/host/gfx_present.c
+@@ -566,11 +566,11 @@ void vk_present_screen_shot(const char *path) {
+     __atomic_store_n(&g_screen_on, 1, __ATOMIC_RELEASE);
+ }
+ 
+-// The captured swapchain image as a PNG (the menu's test hook), RGBA with opaque alpha.
+-static void save_capture(const char *path) {
++// The captured swapchain image as RGBA with opaque alpha (sRGB also on an HDR display); the caller frees it.
++static uint8_t *capture_rgba(void) {
+     size_t n = (size_t)g_cap_w * (size_t)g_cap_h * 4;
+     uint8_t *px = malloc(n);
+-    if (!px) return;
++    if (!px) return NULL;
+     int bgra = g_sc_fmt == VK_FORMAT_B8G8R8A8_UNORM || g_sc_fmt == VK_FORMAT_B8G8R8A8_SRGB;
+     if (g_sc_hdr) gfx_hdr_to_srgb8(g_cap_ptr, px, n / 4, g_sc_fmt == VK_FORMAT_A2R10G10B10_UNORM_PACK32);
+     else for (size_t i = 0; i < n; i += 4) {
+@@ -579,6 +579,13 @@ static void save_capture(const char *path) {
+         px[i + 2] = g_cap_ptr[i + (bgra ? 0 : 2)];
+         px[i + 3] = 255;
+     }
++    return px;
++}
++
++// The captured swapchain image as a PNG (the menu's test hook).
++static void save_capture(const char *path) {
++    uint8_t *px = capture_rgba();
++    if (!px) return;
+     rt_write_png(path, px, (uint32_t)g_cap_w, (uint32_t)g_cap_h);
+     free(px);
+     rt_log("gfx: swapchain shot %s (%dx%d)", path, g_cap_w, g_cap_h);
+@@ -663,7 +670,8 @@ static void present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w
+     int overlay = src && g_sc_view[idx] &&
+                   menu_overlay_frame(__atomic_load_n(&gfx_counters.frames, __ATOMIC_RELAXED), &mt, &menu_shot);
+     if (!menu_shot && __atomic_exchange_n(&g_screen_on, 0, __ATOMIC_ACQ_REL)) menu_shot = g_screen_path;
+-    int cap = src && (g_capture || menu_shot) && ensure_capture_buffer();
++    int plugin_shot = plugins_frame_wanted();   // MkwPluginApi.frame_capture: this frame, as the player sees it
++    int cap = src && (g_capture || menu_shot || plugin_shot) && ensure_capture_buffer();
+     int thumb = src && g_th_n && ensure_thumbs();
+ 
+     VkCommandBuffer cb = g_cb[slot];
+@@ -793,6 +801,11 @@ static void present_image(VkImage src, VkImageLayout layout, VkFormat fmt, int w
+         g_cap_h = (int)g_sc_ext.height;
+         g_cap_valid = 1;
+         if (menu_shot) save_capture(menu_shot);
++        if (plugin_shot) {
++            uint8_t *px = capture_rgba();
++            if (px) plugins_frame_captured(px, g_cap_w, g_cap_h);
++            free(px);
++        }
+     }
+ out:
+     plat_rmutex_unlock(&g_pl);
+diff --git a/runtime/input/input.c b/runtime/input/input.c
+index 3fb5388..d766fb0 100644
+--- a/runtime/input/input.c
++++ b/runtime/input/input.c
+@@ -22,6 +22,7 @@
+ #include "input_wsys.h"
+ #include "switch2.h"
+ #include "nvn_api.h"
++#include "plugin.h"
+ #include "ui/menu/menu.h"
+ #include "vk.h"
+ #include "platform/platform.h"
+@@ -390,6 +391,8 @@ static void poll_merged(uint64_t *buttons, int32_t *lx, int32_t *ly, int32_t *rx
+     static int combo_held;
+     int32_t st[4] = {sl[0], sl[1], sr[0], sr[1]};
+     int guide = state == 1 && pad && SDL_GamepadConnected(pad) && SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_GUIDE);
++    // A plugin's filter first (MkwPluginApi.input_filter): what it takes reaches neither the shortcut below nor the game
++    plugins_input_filter(0, &b, st, &guide);
+     int toggle = input_menu_gate(&combo_held, menu_is_open(), &b, st, guide);
+     static int overlay_held;   // L3+R3 step the performance overlay (F10)
+     int overlay = input_overlay_gate(&overlay_held, &b);
+@@ -471,6 +474,9 @@ void input_poll_player(int player, uint64_t *buttons, int32_t *lx, int32_t *ly,
+     }
+     plat_mutex_unlock(&lock);
+     script_apply(&b, sl, sr, player);
++    int32_t st[4] = {sl[0], sl[1], sr[0], sr[1]};
++    plugins_input_filter(player, &b, st, NULL);
++    sl[0] = st[0], sl[1] = st[1], sr[0] = st[2], sr[1] = st[3];
+     stick_bits(&b, sl[0], sl[1], B_SL_LEFT);
+     stick_bits(&b, sr[0], sr[1], B_SR_LEFT);
+     if (g_block || g_menu) b = 0, sl[0] = sl[1] = sr[0] = sr[1] = 0;
+diff --git a/runtime/plugin/README.md b/runtime/plugin/README.md
+index 740039f..783370c 100644
+--- a/runtime/plugin/README.md
++++ b/runtime/plugin/README.md
+@@ -9,7 +9,7 @@ business, and nothing of it lives in this repo. The software keyboard's number p
+ 
+ | File | What it is |
+ |---|---|
+-| `mkw_plugin.h` | The API, version 3 (version 1, plus the language, the player, the mod's settings and its options page `MkwPage` in 2, images the plugin fills for the game's native image handles in 3): the one header a plugin includes (it links against nothing of mkw-recomp). Rules for threads, guest memory and what each hook may do are in its comments |
++| `mkw_plugin.h` | The API, version 4 (version 1, plus the language, the player, the mod's settings and its options page `MkwPage` in 2, images the plugin fills for the game's native image handles in 3, the pad filter, `menu_open` and the shown picture in 4): the one header a plugin includes (it links against nothing of mkw-recomp). Rules for threads, guest memory and what each hook may do are in its comments |
+ | `plugin_overlay.cpp` | The plugins' drawings over the picture (`overlay_set`, `overlay_show`): rectangles and text on ImGui's background list in the menu overlay's frame, under the menu, the number pad and the notices |
+ | `mod_page_ui.cpp`, `mod_page_ui.h` | A mod's page (`MkwPage`) drawn with ImGui: headings, text, notes, checkboxes, text fields, choices, sliders, buttons, lists with buttons per row, columns, greyed-out sections; bound to the mod's settings. Used by the start screen's options page (`ui/launcher/mod_page.cpp`) and the mods' tabs of the in-game menu's settings (`settings_tab`, `ui/menu/settings_tabs.cpp`) |
+ | `mod_settings.c`, `mod_settings.h` | A mod's settings per player: `<player folder>/mod-settings/<mod>.ini`, one `key=value` per line, written atomically. The store behind the API's `setting_get` / `setting_set` (version 2) and the options page's widgets (`ui/launcher/mod_page.cpp`); outside the mod's folder, so updating or importing the mod again keeps them. Test: `tests/runtime/test_mod_settings.py` |
+diff --git a/runtime/plugin/mkw_plugin.h b/runtime/plugin/mkw_plugin.h
+index 7b5d3b7..176b11f 100644
+--- a/runtime/plugin/mkw_plugin.h
++++ b/runtime/plugin/mkw_plugin.h
+@@ -1,4 +1,5 @@
+-// mkw-recomp native plugin API, version 2 (version 1 plus a mod's settings and its options page). The one header a plugin includes; it links against nothing of mkw-recomp.
++// mkw-recomp native plugin API, version 4 (version 1; a mod's settings and its options page in 2; images in 3; the pad
++// filter, the menu and the shown picture in 4). The one header a plugin includes; it links against nothing of mkw-recomp.
+ //
+ // A plugin is a shared library (.so on Linux, .dll on Windows) in mods/<mod>/plugin/ of the game folder. The runtime
+ // loads it at start when the player has the mod enabled (the Mods page, or `--mod <name>` / MKW_MODS), before the game
+@@ -23,7 +24,7 @@
+ extern "C" {
+ #endif
+ 
+-#define MKW_PLUGIN_API_VERSION 3
++#define MKW_PLUGIN_API_VERSION 4
+ 
+ // The start of the runtime's guest CPU state; ABI-stable for every API version (the runtime checks it at build time).
+ // Arguments in x[0..7], the result in x[0], the return address in x[30].
+@@ -55,6 +56,22 @@ typedef void (*MkwOverlayFn)(const MkwOverlay *o, void *user);
+ 
+ struct MkwPage;   // a mod's page (below): MkwPluginApi.settings_tab draws one
+ 
++// A player's pad as the game is about to read it (input_filter, version 4): the buttons after the layout, the
++// remapping and the keyboard's share, so what a remapper outside the game (Steam Input) made of the pad.
++enum {   // MkwPad.buttons bits
++    MKW_PAD_A, MKW_PAD_B, MKW_PAD_X, MKW_PAD_Y, MKW_PAD_STICK_L, MKW_PAD_STICK_R, MKW_PAD_L, MKW_PAD_R, MKW_PAD_ZL,
++    MKW_PAD_ZR, MKW_PAD_PLUS, MKW_PAD_MINUS, MKW_PAD_LEFT, MKW_PAD_UP, MKW_PAD_RIGHT, MKW_PAD_DOWN,
++};
++typedef struct MkwPad {
++    uint32_t size;           // sizeof(MkwPad) of the runtime
++    int player;              // 0: player 1 (with the keyboard), 1-7: the others
++    uint64_t buttons;        // 1 << MKW_PAD_*
++    int32_t lx, ly, rx, ry;  // the sticks, -32767..32767, up and right positive
++    int guide;               // the Guide (Xbox, PS, Home) button held; player 1 only
++} MkwPad;
++typedef void (*MkwPadFn)(MkwPad *pad, void *user);
++typedef void (*MkwFrameFn)(const uint8_t *rgba, int width, int height, int row_bytes, void *user);
++
+ typedef struct MkwPluginApi {
+     uint32_t size;      // sizeof(MkwPluginApi) of the runtime: a field is there when its offset is below size
+     uint32_t version;   // MKW_PLUGIN_API_VERSION of the runtime
+@@ -141,6 +158,21 @@ typedef struct MkwPluginApi {
+     // only an image the game is not showing (triple buffer as the game's own native images do, with their syncs).
+     // 1 done, 0 not one of native_image_create's handles.
+     int (*native_image_touch)(uint32_t handle);
++
++    // ---- version 4: the pad before the game reads it, the menu and the shown picture (an overlay of the plugin's own)
++    // filter(pad, user) runs at every read of a player's input, on the thread that reads it (the game's, several times
++    // a frame), before the runtime's own menu shortcut and before the game: what it clears or sets is what both get,
++    // so a button the plugin takes opens nothing else, and a pad it empties is an idle pad for the game. It does not
++    // wait and runs no guest code. One filter per plugin, in load order. Only from mkw_plugin_init; 1 done, 0 refused.
++    int (*input_filter)(MkwPadFn filter, void *user);
++    // Opens (1) or closes (0) the runtime's in-game menu, as F1 does. Any thread.
++    void (*menu_open)(int open);
++    // The next shown frame as the player sees it (the game's picture with the menu, notices and overlays; sRGB also on
++    // an HDR display), scaled down to fit max_w x max_h (not up), RGBA8 with opaque alpha: cb(rgba, width, height,
++    // row_bytes, user) on the present thread, once; the pixels are the runtime's and gone when cb returns. cb does not
++    // wait. No frame is shown while the window is minimised: then cb is not called. A newer request replaces one not
++    // answered yet. 1 asked, 0 refused (a size outside 16..4096).
++    int (*frame_capture)(int max_w, int max_h, MkwFrameFn cb, void *user);
+ } MkwPluginApi;
+ 
+ // Exported by the plugin. api_version is the runtime's (api->version); size tells which fields exist. Return 0 to stay
+diff --git a/runtime/plugin/plugin.c b/runtime/plugin/plugin.c
+index 7fd8e9d..58d03a9 100644
+--- a/runtime/plugin/plugin.c
++++ b/runtime/plugin/plugin.c
+@@ -4,6 +4,7 @@
+ #include <stdarg.h>
+ #include <stddef.h>
+ #include <stdio.h>
++#include <stdlib.h>
+ #include <string.h>
+ 
+ #include <SDL3/SDL.h>
+@@ -208,6 +209,83 @@ static int (*const setting_set_slot[MAX_PLUGINS])(const char *, const char *) =
+ _Static_assert(MAX_PLUGINS == 32, "one setting_get / setting_set pair per plugin slot");
+ 
+ 
++// ---- version 4: the pad before the game reads it, the menu, the shown picture
++static struct { MkwPadFn fn; void *user; } filters[MAX_PLUGINS];
++static int nfilters;
++
++static int api_input_filter(MkwPadFn fn, void *user) {
++    if (!in_init || !fn || nfilters == MAX_PLUGINS) {
++        rt_log("plugin: input_filter refused: only from mkw_plugin_init, with a function");
++        return 0;
++    }
++    filters[nfilters].fn = fn;
++    filters[nfilters++].user = user;
++    return 1;
++}
++
++// input.c, under its lock: the filters see the 16 buttons (the stick directions are made after them).
++void plugins_input_filter(int player, uint64_t *buttons, int32_t sticks[4], int *guide) {
++    if (!nfilters) return;
++    MkwPad p = {.size = sizeof p, .player = player, .buttons = *buttons & 0xffff, .lx = sticks[0], .ly = sticks[1],
++                .rx = sticks[2], .ry = sticks[3], .guide = guide ? *guide : 0};
++    for (int i = 0; i < nfilters; i++) filters[i].fn(&p, filters[i].user);
++    *buttons = (*buttons & ~0xffffull) | (p.buttons & 0xffff);
++    sticks[0] = p.lx, sticks[1] = p.ly, sticks[2] = p.rx, sticks[3] = p.ry;
++    if (guide) *guide = p.guide != 0;
++}
++
++static void api_menu_open(int open) {
++    if ((menu_is_open() != 0) != (open != 0)) menu_toggle();
++}
++
++static struct { MkwFrameFn cb; void *user; int max_w, max_h; } frame_req;
++static volatile int32_t frame_state;   // 0 none, 1 being asked, 2 asked, 3 being answered
++
++static int api_frame_capture(int max_w, int max_h, MkwFrameFn cb, void *user) {
++    if (!cb || max_w < 16 || max_h < 16 || max_w > 4096 || max_h > 4096 ||
++        (plat_cas32(&frame_state, 1, 0) != 0 && plat_cas32(&frame_state, 1, 2) != 2)) {
++        rt_log("plugin: frame_capture refused: a function, a size of 16..4096, not while one is being answered");
++        return 0;
++    }
++    frame_req.cb = cb, frame_req.user = user, frame_req.max_w = max_w, frame_req.max_h = max_h;
++    plat_xchg32(&frame_state, 2);
++    return 1;
++}
++
++int plugins_frame_wanted(void) { return frame_state == 2; }
++
++// gfx_present.c, after the present that copied its image: box-filtered down to fit the request, never up.
++void plugins_frame_captured(const uint8_t *rgba, int w, int h) {
++    if (w <= 0 || h <= 0 || plat_cas32(&frame_state, 3, 2) != 2) return;
++    int ow = w, oh = h;
++    if ((int64_t)ow * frame_req.max_h > (int64_t)oh * frame_req.max_w) {   // the width binds
++        if (ow > frame_req.max_w) oh = (int)((int64_t)h * frame_req.max_w / w), ow = frame_req.max_w;
++    } else if (oh > frame_req.max_h) {
++        ow = (int)((int64_t)w * frame_req.max_h / h), oh = frame_req.max_h;
++    }
++    if (ow < 1) ow = 1;
++    if (oh < 1) oh = 1;
++    uint8_t *out = ow == w && oh == h ? NULL : malloc(4ull * (size_t)ow * (size_t)oh);
++    if (out)
++        for (int y = 0; y < oh; y++)
++            for (int x = 0; x < ow; x++) {
++                int x0 = (int)((int64_t)x * w / ow), x1 = (int)((int64_t)(x + 1) * w / ow);
++                int y0 = (int)((int64_t)y * h / oh), y1 = (int)((int64_t)(y + 1) * h / oh);
++                if (x1 <= x0) x1 = x0 + 1;
++                if (y1 <= y0) y1 = y0 + 1;
++                uint32_t sum[3] = {0}, k = 0;
++                for (int sy = y0; sy < y1; sy++)
++                    for (int sx = x0; sx < x1; sx++, k++)
++                        for (int c = 0; c < 3; c++) sum[c] += rgba[4ull * ((size_t)sy * (size_t)w + (size_t)sx) + (size_t)c];
++                uint8_t *o = out + 4ull * ((size_t)y * (size_t)ow + (size_t)x);
++                o[0] = (uint8_t)(sum[0] / k), o[1] = (uint8_t)(sum[1] / k), o[2] = (uint8_t)(sum[2] / k), o[3] = 255;
++            }
++    if (out) frame_req.cb(out, ow, oh, ow * 4, frame_req.user);
++    else if (ow == w && oh == h) frame_req.cb(rgba, w, h, w * 4, frame_req.user);
++    free(out);
++    plat_xchg32(&frame_state, 0);
++}
++
+ // gfx/nvn/procs/nvn2.c: images a plugin fills (version 3)
+ uint32_t nvn2_native_image_create(int w, int h, void **pixels, int *row_bytes);
+ int nvn2_native_image_touch(uint32_t handle);
+@@ -236,6 +314,9 @@ static const MkwPluginApi api_template = {
+     .settings_tab = api_settings_tab,
+     .native_image_create = nvn2_native_image_create,
+     .native_image_touch = nvn2_native_image_touch,
++    .input_filter = api_input_filter,
++    .menu_open = api_menu_open,
++    .frame_capture = api_frame_capture,
+ };
+ 
+ // A plugin that declines or fails to load is told to the player too: the mod they enabled does nothing this run.
+diff --git a/runtime/plugin/plugin.h b/runtime/plugin/plugin.h
+index 1a1111e..b21f566 100644
+--- a/runtime/plugin/plugin.h
++++ b/runtime/plugin/plugin.h
+@@ -22,6 +22,12 @@ void plugin_overlay_show(MkwOverlayFn fn, int on);
+ int plugins_overlay_wanted(void);                       // one is on: the overlay lays out a frame
+ void plugins_overlay_draw(float width, float height, float scale);   // in the current ImGui frame
+ 
++// Version 4 (plugin.c): the plugins' pad filters, run by input/input.c at each read of a player's input (sticks: left
++// x, y, right x, y; guide NULL for players 2-8), and the shown picture a plugin asked for (gfx_present.c).
++void plugins_input_filter(int player, uint64_t *buttons, int32_t sticks[4], int *guide);
++int plugins_frame_wanted(void);                                    // this present copies its swapchain image
++void plugins_frame_captured(const uint8_t *rgba, int w, int h);    // RGBA8, tight rows; the present thread
++
+ #ifdef __cplusplus
+ }
+ #endif

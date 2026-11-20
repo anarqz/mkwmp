@@ -153,11 +153,18 @@ size_t plat_mem_readable(const void *p);
 int plat_mem_write_u64(uint64_t *at, uint64_t v);
 
 // ---- input, for the in-game voice UI's keyboard shortcuts
-enum { PLAT_KEY_PAGE_UP, PLAT_KEY_PAGE_DOWN, PLAT_KEY_M };
+enum { PLAT_KEY_PAGE_UP, PLAT_KEY_PAGE_DOWN, PLAT_KEY_M, PLAT_KEY_SHIFT, PLAT_KEY_TAB };
 int plat_game_focused(void);   // the foreground window belongs to this process (0 where that cannot be known)
 int plat_key_down(int key);    // a PLAT_KEY_* is held (0 where the keyboard cannot be read)
 
 // ---- process
 void plat_no_error_dialogs(void);   // no Windows error boxes from this process (SetErrorMode); nothing elsewhere
+unsigned long plat_process_id(void);
+// Windows: any process may take the foreground from this one once (AllowSetForegroundWindow), for the launcher this
+// process asks to come to the front (overlay.c). Nothing elsewhere.
+void plat_allow_foreground(void);
+// Starts exe (a UTF-8 path) with the argument line args, detached, in exe's folder; 1 when it started. Windows only
+// (0 elsewhere).
+int plat_spawn(const char *exe, const char *args);
 
 #endif

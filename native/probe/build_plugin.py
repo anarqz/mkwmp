@@ -41,7 +41,7 @@ OUT = HERE / "build" / "plugin"
 BACKEND = "backend_plugin.c"
 # the plugin's own parts: its seat client (no launcher), its options page in mkw-recomp's start screen
 PLUGIN_ONLY = ["seatapi.c", "seatd.c", "modpage.c", "voicetab.c", "camera.c", "camcodec.c", "camlib.c", "cameratab.c",
-               "chatroom.c", "roomnet.c"]
+               "chatroom.c", "roomnet.c", "overlay.c"]
 WIN_PLAT = ["plat_win.c", "plat_net_win.c", "plat_http_win.c"]
 POSIX_HTTP = ["plat_http_posix.c"]
 VERSION_SCRIPT = "{ global: mkw_plugin_init; mkw_mod_page; local: *; };\n"

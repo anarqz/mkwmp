@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 typedef struct { void (*fn)(void *); void *arg; } Start;
 
@@ -154,10 +155,32 @@ int plat_game_focused(void) {
 }
 
 int plat_key_down(int key) {
-    static const int vk[] = {[PLAT_KEY_PAGE_UP] = VK_PRIOR, [PLAT_KEY_PAGE_DOWN] = VK_NEXT, [PLAT_KEY_M] = 'M'};
+    static const int vk[] = {[PLAT_KEY_PAGE_UP] = VK_PRIOR, [PLAT_KEY_PAGE_DOWN] = VK_NEXT, [PLAT_KEY_M] = 'M',
+                             [PLAT_KEY_SHIFT] = VK_SHIFT, [PLAT_KEY_TAB] = VK_TAB};
     if (key < 0 || key >= (int)(sizeof vk / sizeof vk[0])) return 0;
     return (GetAsyncKeyState(vk[key]) & 0x8000) != 0;
 }
 
 // ---- process
 void plat_no_error_dialogs(void) { SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX); }
+unsigned long plat_process_id(void) { return GetCurrentProcessId(); }
+void plat_allow_foreground(void) { AllowSetForegroundWindow(ASFW_ANY); }
+
+int plat_spawn(const char *exe, const char *args) {
+    wchar_t wexe[520], wdir[520], wline[1400], wargs[800];
+    if (!MultiByteToWideChar(CP_UTF8, 0, exe, -1, wexe, 520) || !MultiByteToWideChar(CP_UTF8, 0, args ? args : "", -1, wargs, 800))
+        return 0;
+    if (_snwprintf(wline, 1400, L"\"%ls\" %ls", wexe, wargs) < 0) return 0;
+    wline[1399] = 0;
+    wcscpy(wdir, wexe);
+    wchar_t *slash = wcsrchr(wdir, L'\\'), *fwd = wcsrchr(wdir, L'/');
+    if (fwd > slash) slash = fwd;
+    if (slash) *slash = 0;
+    STARTUPINFOW si = {.cb = sizeof si};
+    PROCESS_INFORMATION pi;
+    if (!CreateProcessW(wexe, wline, NULL, NULL, FALSE, DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP, NULL, slash ? wdir : NULL, &si, &pi))
+        return 0;
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return 1;
+}

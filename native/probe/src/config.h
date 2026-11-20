@@ -21,6 +21,8 @@ typedef struct {
                              // default "mkwmp-lobby-ca.pem" (see lobby_ca.h)
     int voice_port;          // lobby voice relay UDP port (default 8907, 0 = voice off; VOICE_API.md)
     int direct;              // no launcher: the plugin signs in itself (seatd.c, mkwmp_config_use_direct)
+    char launcher_exe[300];  // the launcher's executable (`launcher_exe = "C:/.../mkwmp-launcher.exe"`, forward
+                             // slashes), for the mod to start it as its overlay host (overlay.c); may be empty
 } MkwmpConfig;
 
 // Parse the minimal `key = "value"` / `key = N` format. Pure; unit-tested.

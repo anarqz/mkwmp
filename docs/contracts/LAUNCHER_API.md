@@ -14,6 +14,8 @@ The game patch (probe, `winmm.dll`) asks the launcher for a seat. Owners:
     ticket = "mkw1..."                  # seat = "start" only, once seated
     voice_port = 8907                   # seat status voicePort: the voice relay on the lobby host (0 = off)
     slot = 2                            # loopback testing only
+    launcher_exe = "C:/.../mkwmp-launcher.exe"   # the launcher's executable, forward slashes: the mod starts it as its
+                                        # overlay host when no launcher runs ("The overlay host" below)
 
 The file is replaced atomically, and rewritten when the ticket or token changes. The probe is dormant until the game's first network request (Online Play).
 
@@ -63,6 +65,91 @@ Same bearer. Specified in docs/contracts/VOICE_API.md §4; work without PLAY. `G
 account a u64 in decimal); the two POSTs answer `204`, `400` for a malformed body. Limits: GET burst
 10 then 2/s; the POSTs share a bucket, burst 20 then 2/s. Saved in client.toml `[voice]`; the
 launcher keeps at most 64 devices per list and 500 mutes.
+
+## The overlay: POST /local/v1/overlay/open, GET /local/v1/overlay/state
+
+Same bearer. The MKWMP mod inside the game asks the launcher to come over the game (the Guide
+button, Select+Start, Select held for a second, Shift+Tab) and waits to be told "back to the
+game". Design and what each side does: launcher/docs/OVERLAY.md. Both work without PLAY.
+
+`GET /local/v1/overlay/state[?wait=S&seq=N]`
+
+| Status | Body | Meaning |
+|---|---|---|
+| 200 | `{"open":false,"seq":0,"enabled":true}` | Closed. `enabled`: the launcher can show itself over a game now; while `false` the mod leaves every button to the game and mkw-recomp. `seq` goes up at every change of `open`. |
+| 200 | `{"open":true,"seq":5,"enabled":true}` | The overlay is up: the mod keeps the game's pad idle. |
+| 200 | `{"open":false,"seq":6,"enabled":true,"action":"resume"}` | The player went back to the game (`action`, after a close): `"resume"`, or `"menu"` = also open mkw-recomp's own menu (plugin API 4 `menu_open`; otherwise as `"resume"`). |
+| 400 | `{"state":"invalid","message"}` | `wait` or `seq` is not a number. |
+| 401 | `{"state":"unauthorized"}` | Wrong or missing token. |
+
+Without `wait` it answers at once: the mod asks every 10 s (every 3 s while there is no answer)
+to know whether there is an overlay at all; a launcher older than this answers 404, and the mod
+then takes no button. With `wait=S&seq=N` (S at most 25) the answer is held until the state is
+no longer N, or S seconds passed (then the same state again): the mod's wait while the overlay
+is up (`wait=2`), repeated. Three failed polls in a row and the mod gives the game back by
+itself.
+
+`POST /local/v1/overlay/open?by=<guide|chord|hold|keys>&pid=<game pid>[&w=<W>&h=<H>&format=rgba]`
+
+The body is the game's picture when the request has one: `W*H*4` bytes, RGBA8, rows top to
+bottom, no padding, at most 1920 x 1080 and at least 16 x 16 (the mod sends at most 1280 x 720,
+3.7 MB); `Content-Type: application/octet-stream`. No picture: no body and no `w`/`h`/`format`
+(plugin API 3, a minimised window). A body over 256 KiB is read only when the token is right
+(else `413` and the connection is closed). An all-black picture counts as none.
+
+Before it sends, the game process calls `AllowSetForegroundWindow(ASFW_ANY)` so the launcher may
+take the foreground on Windows.
+
+| Status | Body | Meaning |
+|---|---|---|
+| 200 | `{"open":true,"seq":5,"enabled":true}` | Opening. Sent again while it is open (the game took the focus back and the player pressed again) the launcher comes to the front again; `seq` is unchanged and a picture, if any, replaces the thumbnail. |
+| 400 | `{"state":"invalid","message"}` | `by` missing or unknown; `pid` not a number; a body that is not `format=rgba` with a matching `w` and `h`. |
+| 401 | `{"state":"unauthorized"}` | Wrong or missing token. |
+| 409 | `{"open":false,"seq":N,"enabled":false}` | Not now (setup, an update being applied, no window to show). The mod gives the button back: mkw-recomp's own menu opens where the mod can ask for it. |
+| 413 | | A body over the limit. |
+
+Closing is the launcher's: its shell calls `OverlayBridge.ReturnToGame()`, the waiting
+`GET .../state` answers `open:false`, and the game reads the pad again once every button is up.
+There is no `POST /local/v1/overlay/close`: the game is an HTTP client only, and a second
+trigger while the overlay is up means "come to the front again", never "close".
+
+Limits: `open` burst 10 then 2/s; `state` burst 20 then 2/s.
+
+## The overlay host: mkwmp-overlay.toml, launcher.json, POST /local/v1/instance/show, POST /local/v1/instance/host
+
+For a game no launcher started (the mod alone, with its own account). The mod starts the
+launcher at game start as `mkwmp-launcher.exe --overlay-host --parent-pid <game pid> --session
+"<mod folder>/mkwmp-overlay.toml"`. In that mode the launcher shows no window and takes no seat,
+answers `/local/v1/overlay/...` only, and exits when the game does. Ready is the session file,
+which it writes once its local API is up and deletes when it leaves:
+
+```toml
+launcher = "127.0.0.1:47820"
+launcher_token = "3f1c9a..."
+```
+
+The mod reads it as it reads mkwmp.toml's two keys, and is armed by the first
+`GET /local/v1/overlay/state` that answers 200 with `enabled:true`. Not started when mkwmp.toml
+names a launcher that answers (that launcher started the game and is the overlay).
+
+Where the mod finds the executable, first hit wins: the mod's setting `launcher_path`;
+`launcher_exe = "C:/.../mkwmp-launcher.exe"` in mkwmp.toml (forward slashes; written by the
+launcher beside `launcher`); `"exe"` of `%LOCALAPPDATA%\mkwmp\launcher.json`;
+`mkwmp-launcher.exe` in the mod's folder. The mod's setting `overlay = 0` turns the overlay off.
+
+`%LOCALAPPDATA%\mkwmp\launcher.json`, written by the launcher at every start:
+`{"exe":"C:/.../mkwmp-launcher.exe","pid":1234,"port":47820,"token":"3f1c9a..."}`. One launcher
+per user (named mutex `Local\mkwmp-launcher`): a second one reads the record and hands its
+request to the first, same bearer, then exits.
+
+| Request | Answer | Meaning |
+|---|---|---|
+| `POST /local/v1/instance/show` | 204 | The player started the launcher while one runs (perhaps as a host without a window): show the window. A host becomes the ordinary launcher and stays when the game ends. |
+| `POST /local/v1/instance/host?pid=<game pid>&session=<file>` | 204 | A mod asked for a host while a launcher already runs: that one writes the session file and stands by for the game. |
+| | 400 `{"state":"invalid","message"}` | No `pid`, or `session` is not a file named `mkwmp-overlay.toml` in an existing folder. |
+| | 409 `{"state":"refused","message"}` | The game is not running, or the file cannot be written. |
+
+Limit: burst 5 then 1/s for the two together.
 
 ## Room ID (removed in 1.0.0)
 
