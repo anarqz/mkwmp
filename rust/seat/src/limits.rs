@@ -16,6 +16,8 @@
 //! | report withdrawals | profile    | 5 per day      |
 //! | report reads       | presence   | 60 per minute  |
 //! | status, profile    | ip         | 120 per minute |
+//! | privacy answers    | presence   | 10 per minute  |
+//! | privacy text       | ip         | (status bucket)|
 //!
 //! Every refusal is a 429 with Retry-After.
 //!
@@ -45,6 +47,7 @@ const DAY_MS: u64 = 86_400_000;
 pub const REPORT_PER_NAME: Limit = Limit { max: 5, window_ms: DAY_MS };
 pub const REPORT_PER_IP: Limit = Limit { max: 10, window_ms: DAY_MS };
 pub const REPORT_WITHDRAW_PER_NAME: Limit = Limit { max: 5, window_ms: DAY_MS };
+pub const PRIVACY_PER_TOKEN: Limit = Limit { max: 10, window_ms: 60_000 };
 pub const REPORT_GET_PER_TOKEN: Limit = Limit { max: 60, window_ms: 60_000 };
 
 #[derive(Default)]

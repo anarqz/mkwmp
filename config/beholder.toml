@@ -1,0 +1,6 @@
+## `mkwmp beholder`: the public directory of mkwmp servers (docs/contracts/BEHOLDER_API.md).
+## Seat servers announce themselves here every 30 s; launchers list them. In memory only:
+## a restart empties the list until the next announces (30 s).
+
+bind = "127.0.0.1:7100"          # point the Cloudflare tunnel (or a reverse proxy) here
+trust_cf_connecting_ip = false   # true ONLY behind a Cloudflare tunnel: per-address limits then use CF-Connecting-IP

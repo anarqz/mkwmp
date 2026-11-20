@@ -2,10 +2,12 @@
 //! friend graph, served over HTTP (docs/contracts/SEAT_API.md). The binary
 //! (`main.rs`) loads config and serves [`http::router`].
 
+pub mod announce;
 pub mod http;
 pub mod limits;
 pub mod names;
 pub mod presence;
+pub mod privacy;
 pub mod registry;
 pub mod roster;
 pub mod serve;

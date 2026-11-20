@@ -9,13 +9,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::extract::{ConnectInfo, DefaultBodyLimit, Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::limits::{self, Limiter};
 use crate::presence::{Presence, Who};
+use crate::privacy::Policy;
 use crate::registry::{Registry, RegistryError};
 use crate::roster::{Roster, RosterError};
 
@@ -43,6 +44,7 @@ pub struct AppState {
     limiter: Arc<Mutex<Limiter>>,
     lobby_tokens: Arc<Vec<String>>,
     admin_token: Arc<Option<String>>,
+    privacy: Arc<Policy>,
     clock: Clock,
 }
 
@@ -63,8 +65,19 @@ impl AppState {
             limiter: Arc::new(Mutex::new(Limiter::default())),
             lobby_tokens: Arc::new(lobby_tokens),
             admin_token: Arc::new(admin_token),
+            privacy: Arc::new(Policy::default()),
             clock,
         }
+    }
+
+    /// Serve this privacy policy (default: the built-in one, not enforced).
+    pub fn with_privacy(mut self, policy: Policy) -> Self {
+        self.privacy = Arc::new(policy);
+        self
+    }
+
+    pub fn privacy(&self) -> &Policy {
+        &self.privacy
     }
 
     pub fn registry(&self) -> &Arc<Registry> {
@@ -109,6 +122,9 @@ impl AppState {
 
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .route("/ping", get(|| async { StatusCode::NO_CONTENT }))
+        .route("/privacy", get(privacy_text))
+        .route("/seat/v1/privacy", put(privacy_answer))
         .route("/seat/v1/status", get(status))
         .route("/seat/v1/keys", get(keys))
         .route("/seat/v1/profiles", post(register))
@@ -161,9 +177,94 @@ async fn status(State(s): State<AppState>, ConnectInfo(peer): ConnectInfo<Socket
     if let Err(w) = s.limiter.lock().unwrap().take(&format!("read:{}", client_ip(peer, &h)), limits::READS_PER_IP, now) {
         return too_many(w);
     }
-    let mut r = no_store(s.roster.lock().unwrap().status(now));
+    let mut v = serde_json::to_value(s.roster.lock().unwrap().status(now)).unwrap();
+    v["privacy"] = json!({"version": s.privacy.version, "enforced": s.privacy.enforce});
+    let mut r = no_store(v);
     r.headers_mut().insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
     r
+}
+
+// ---- privacy policy and consent ------------------------------------------------
+
+/// The policy as Markdown. `ETag` is the quoted version (the SHA-256 of the text);
+/// `If-None-Match` with it answers 304.
+async fn privacy_text(State(s): State<AppState>, ConnectInfo(peer): ConnectInfo<SocketAddr>, h: HeaderMap) -> Response {
+    if let Err(w) = s.limiter.lock().unwrap().take(&format!("read:{}", client_ip(peer, &h)), limits::READS_PER_IP, s.now()) {
+        return too_many(w);
+    }
+    let etag = format!("\"{}\"", s.privacy.version);
+    let hit = h
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.split(',').any(|t| t.trim().trim_start_matches("W/") == etag || t.trim() == "*"));
+    let headers = [
+        (header::ETAG, etag.clone()),
+        (header::CACHE_CONTROL, "no-cache".to_string()),
+        (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".to_string()),
+        (header::ACCESS_CONTROL_EXPOSE_HEADERS, "ETag".to_string()),
+    ];
+    if hit {
+        return (StatusCode::NOT_MODIFIED, headers).into_response();
+    }
+    let mut r = (headers, s.privacy.text.clone()).into_response();
+    r.headers_mut().insert(header::CONTENT_TYPE, "text/markdown; charset=utf-8".parse().unwrap());
+    r
+}
+
+/// Whether `name` accepted the current policy.
+fn privacy_accepted(s: &AppState, name: &str) -> bool {
+    s.registry.privacy(name).is_some_and(|(v, _)| v == s.privacy.version)
+}
+
+/// 403 PRIVACY_REQUIRED while consent is enforced and `name` hasn't accepted the current policy.
+fn privacy_gate(s: &AppState, name: &str) -> Result<(), Response> {
+    if !s.privacy.enforce || privacy_accepted(s, name) {
+        return Ok(());
+    }
+    let body = json!({"error": {
+        "code": "PRIVACY_REQUIRED",
+        "message": "accept this server's privacy policy first",
+        "privacyVersion": s.privacy.version,
+    }});
+    Err((StatusCode::FORBIDDEN, [(header::CACHE_CONTROL, "no-store")], Json(body)).into_response())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PrivacyBody {
+    accepted: bool,
+    #[serde(default)]
+    version: Option<String>,
+}
+
+/// Accept the policy version the launcher showed, or withdraw consent.
+async fn privacy_answer(State(s): State<AppState>, h: HeaderMap, Json(b): Json<PrivacyBody>) -> Response {
+    let (token, who) = match me(&s, &h) {
+        Ok(x) => x,
+        Err(r) => return r,
+    };
+    let now = s.now();
+    if let Err(w) = s.limiter.lock().unwrap().take(&format!("privacy:{token}"), limits::PRIVACY_PER_TOKEN, now) {
+        return too_many(w);
+    }
+    let version = match (b.accepted, b.version.as_deref()) {
+        (false, _) => None,
+        (true, None) => return error(StatusCode::BAD_REQUEST, "REQUEST_INVALID", "version is required to accept"),
+        (true, Some(v)) if v != s.privacy.version => {
+            let body = json!({"error": {
+                "code": "PRIVACY_VERSION",
+                "message": "the policy changed; show the current one",
+                "privacyVersion": s.privacy.version,
+            }});
+            return (StatusCode::CONFLICT, [(header::CACHE_CONTROL, "no-store")], Json(body)).into_response();
+        }
+        (true, Some(v)) => Some(v.to_string()),
+    };
+    match s.registry.set_privacy(&who.name, version.as_deref(), now / 1000) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(RegistryError::NotFound) => error(StatusCode::UNAUTHORIZED, "PRESENCE_NOT_FOUND", "sign in again"),
+        Err(e) => registry_error(e),
+    }
 }
 
 async fn keys(State(s): State<AppState>) -> Response {
@@ -264,6 +365,9 @@ async fn create(
         }
         Err(e) => return registry_error(e),
     };
+    if let Err(r) = privacy_gate(&s, &name) {
+        return r;
+    }
     match s.roster.lock().unwrap().join(&name, now) {
         Ok(c) => {
             let mut v = serde_json::to_value(&c.view).unwrap();
@@ -542,7 +646,14 @@ async fn presence_sign_in(
     match login {
         Ok((Some(hash), display)) => {
             let token = s.presence.lock().unwrap().sign_in(&display, &hash, now);
-            no_store(json!({"token": token, "name": display, "ttlMs": crate::presence::TTL_MS}))
+            no_store(json!({
+                "token": token,
+                "name": display,
+                "ttlMs": crate::presence::TTL_MS,
+                "privacyAccepted": privacy_accepted(&s, &display),
+                "privacyVersion": s.privacy.version,
+                "privacyEnforced": s.privacy.enforce,
+            }))
         }
         Ok((None, _)) => registry_error(RegistryError::NotFound),
         Err(RegistryError::WrongPin) => {
@@ -576,6 +687,13 @@ fn me(s: &AppState, h: &HeaderMap) -> Result<(String, Who), Response> {
     Ok((token, who))
 }
 
+/// [`me`], and consent to the current privacy policy when it is enforced (friends, reports).
+fn member(s: &AppState, h: &HeaderMap) -> Result<(String, Who), Response> {
+    let (token, who) = me(s, h)?;
+    privacy_gate(s, &who.name)?;
+    Ok((token, who))
+}
+
 #[derive(Deserialize)]
 struct Since {
     since: Option<u64>,
@@ -587,7 +705,7 @@ const LONG_POLL_MS: u64 = 25_000;
 /// Friends with their state, and requests both ways. With `?since=<cursor>`
 /// from the last answer, waits (up to 25 s) until something changes.
 async fn friends_list(State(s): State<AppState>, Query(q): Query<Since>, h: HeaderMap) -> Response {
-    let (token, who) = match me(&s, &h) {
+    let (token, who) = match member(&s, &h) {
         Ok(x) => x,
         Err(r) => return r,
     };
@@ -640,7 +758,7 @@ struct FriendBody {
 
 /// Ask someone to be friends (or accept, if they asked first).
 async fn friend_request(State(s): State<AppState>, h: HeaderMap, Json(b): Json<FriendBody>) -> Response {
-    let (_, who) = match me(&s, &h) {
+    let (_, who) = match member(&s, &h) {
         Ok(x) => x,
         Err(r) => return r,
     };
@@ -667,7 +785,7 @@ fn friend_act(s: &AppState, who: &Who) -> Result<(), Response> {
 }
 
 async fn friend_accept(State(s): State<AppState>, Path(name): Path<String>, h: HeaderMap) -> Response {
-    let (_, who) = match me(&s, &h) {
+    let (_, who) = match member(&s, &h) {
         Ok(x) => x,
         Err(r) => return r,
     };
@@ -687,7 +805,7 @@ async fn friend_accept(State(s): State<AppState>, Path(name): Path<String>, h: H
 
 /// The caller's open report (`{"report": null}` when none).
 async fn report_get(State(s): State<AppState>, h: HeaderMap) -> Response {
-    let (token, who) = match me(&s, &h) {
+    let (token, who) = match member(&s, &h) {
         Ok(x) => x,
         Err(r) => return r,
     };
@@ -718,7 +836,7 @@ async fn report_file(
     h: HeaderMap,
     Json(b): Json<ReportBody>,
 ) -> Response {
-    let (_, who) = match me(&s, &h) {
+    let (_, who) = match member(&s, &h) {
         Ok(x) => x,
         Err(r) => return r,
     };
@@ -743,7 +861,7 @@ async fn report_file(
     }
 }
 
-/// Take back the caller's open report.
+/// Take back the caller's open report (allowed without privacy consent: it only removes data).
 async fn report_withdraw(State(s): State<AppState>, h: HeaderMap) -> Response {
     let (_, who) = match me(&s, &h) {
         Ok(x) => x,
@@ -806,7 +924,8 @@ async fn admin_report_action(
     }
 }
 
-/// Reject a request, cancel yours, or remove a friend.
+/// Reject a request, cancel yours, or remove a friend (allowed without privacy consent: it only
+/// removes data).
 async fn friend_remove(State(s): State<AppState>, Path(name): Path<String>, h: HeaderMap) -> Response {
     let (_, who) = match me(&s, &h) {
         Ok(x) => x,

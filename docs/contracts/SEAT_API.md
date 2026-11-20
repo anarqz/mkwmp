@@ -81,7 +81,7 @@ A launcher signs in with its PIN to a **presence**. A presence never takes a sea
 
 | Route | Body → answer | Notes |
 |---|---|---|
-| `POST /seat/v1/presence` | `{name, pin}` → `{token, name, ttlMs}` | Same PIN limits as joins (`401 PIN_WRONG`, `404 PROFILE_NOT_FOUND`, `429`), plus 30 sign-ins per IP per minute. |
+| `POST /seat/v1/presence` | `{name, pin}` → `{token, name, ttlMs, privacyAccepted, privacyVersion, privacyEnforced}` | Same PIN limits as joins (`401 PIN_WRONG`, `404 PROFILE_NOT_FOUND`, `429`), plus 30 sign-ins per IP per minute. The privacy fields are §2c (servers before 1.4.0 leave them out). |
 | `DELETE /seat/v1/presence` | bearer → `204` | The launcher quits: offline at once. |
 | `GET /seat/v1/friends[?since=<cursor>]` | bearer → `{cursor, friends: [{name, state}], incoming: [{name, since}], outgoing: [{name, since}]}` | `state`: `playing` (seated), `online` (launcher running, or queued), `offline`. Friends are ordered playing, online, offline, then by name. With `since` (the last `cursor`), the server waits up to 25 s for any change. 120 per minute per token. |
 | `POST /seat/v1/friends` | bearer, `{name}` → `{name, state: "pending" \| "accepted"}` | A request; if they had asked you, it accepts instead. Errors: `404 FRIEND_UNKNOWN`, `400 FRIEND_SELF`, `409 FRIEND_EXISTS`, `409 FRIEND_PENDING`, `409 FRIEND_LIMIT` (100 friends, 50 requests waiting). 20 per hour per profile. |
@@ -103,6 +103,21 @@ A player reports another player's voice chat from the launcher (SETTINGS → REP
 `Report` = `{id, reporter, reported, reportedCreated, reason, details, created, status: "open"|"closed", closed, outcome}`. Draft on branch `chat-rooms`: `POST` takes an optional `kind: "voice"|"camera"` (default `"voice"`) and `Report` gains `kind` (VIDEO_API.md 4); times in seconds since 1970. Ids are never reused.
 
 A missing, expired or outdated token answers `401 PRESENCE_NOT_FOUND`: sign in again. Every `429` carries `Retry-After`.
+
+## 2c. Privacy policy and consent (1.4.0)
+
+Each server serves its own privacy policy and records, per profile, which version the player accepted. The launcher signs in (§2a), then shows the policy when `privacyAccepted` is `false` and sends the answer.
+
+| Route | Body → answer | Notes |
+|---|---|---|
+| `GET /privacy` | → `200` Markdown | `Content-Type: text/markdown; charset=utf-8`, no auth, `ETag: "<version>"` (quoted, as HTTP wants), `Cache-Control: no-cache`, CORS `*`. `If-None-Match: "<version>"` → `304`. The text is `[privacy] file`, or the built-in policy for self-hosted servers. Shares the 120-per-minute read budget with `status`. |
+| `PUT /seat/v1/privacy` | bearer (presence), `{accepted: true, version}` or `{accepted: false}` → `204` | Accept stores the version and the time on the profile; withdraw clears them. `version` is the one the launcher showed: another one → `409 PRIVACY_VERSION` (the error carries `privacyVersion`, the current one: fetch `/privacy` again). `accepted: true` without `version` → `400 REQUEST_INVALID`. Unknown fields → `422`. 10 per minute per token. |
+| `GET /ping` | → `204` | Empty, no limit: for the launcher's latency measurement. |
+
+- **Version** = lower-case hex SHA-256 of the policy's bytes. Editing the file (and restarting the server) makes a new version, so every profile is `privacyAccepted: false` again.
+- `privacyAccepted` is `true` only when the profile accepted the current version. A deleted, expired or re-registered gamertag starts without consent. A new PIN (admin reset) keeps it.
+- `GET /seat/v1/status` gains `privacy: {version, enforced}`, so a launcher can tell before signing in whether a server enforces consent.
+- **Enforcement** (`[privacy] enforce = true`, default `false`): until the profile accepted the current version, `POST /seat/v1/sessions` (after the PIN check), `GET`/`POST /seat/v1/friends`, `POST /seat/v1/friends/{name}/accept` and `GET`/`POST /seat/v1/reports` answer `403 PRIVACY_REQUIRED` (with `privacyVersion`). Removing data stays open: `DELETE /seat/v1/friends/{name}`, `DELETE /seat/v1/reports` and `DELETE /seat/v1/profiles/{name}`. Presence sign-in, `PUT /seat/v1/privacy` and registration are never gated. Launchers up to 1.3.0 only ask for consent locally, so a server enforcing it refuses them seats.
 
 ## 3. The seat ticket (v1)
 

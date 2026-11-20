@@ -112,6 +112,11 @@ To lock an abusive player out, `reset-pin` their gamertag (their launcher's PIN 
    - **Cloudflare tunnel:** route `https://<your host>` to `http://127.0.0.1:7000`, put `TUNNEL_TOKEN=...` in `/etc/mkwmp/tunnel.env` (mode 600), install `cloudflared`, then `systemctl enable --now mkwmp-cloudflared`.
    - **Reverse proxy:** use, for example, Caddy with the block in `deploy/docker/Caddyfile`. It passes the player's address to the seat server's rate limits.
 
+8. **Optional: your privacy policy and the server list.**
+   - `[privacy] file = "/opt/mkwmp/config/privacy.md"`: the policy your players accept in the launcher (`GET /privacy`). Without it they see a generic default. `enforce = true` refuses seats, friends and reports to players who haven't accepted the current text; launchers up to 1.3.0 can't accept it, so leave it off until your players have 1.4.0. See SEAT_API.md §2c.
+   - `[announce] beholder_url` + `endpoint` (your public `https://` seat API URL) lists your server in a beholder's server browser. Set `key_file = "/var/lib/mkwmp/beholder-ed25519.key"`: the unit's `/opt/mkwmp/keys` is read-only and the key is made on first start. See BEHOLDER_API.md.
+   - To run a beholder yourself: `config/beholder.toml` + `deploy/systemd/mkwmp-beholder.service`.
+
 ## 4. For development
 
     tools/host/run_seat_local.sh          # seat server on 127.0.0.1:7000, config/server.toml
@@ -125,6 +130,7 @@ The local config uses the development certificate pair in `scratch/certs/` (not 
 - the lobby tokens and token secret;
 - the admin token;
 - the lobby's private key (`lobby-key.pem`);
-- the tunnel token.
+- the tunnel token;
+- the beholder announce key (`beholder-ed25519.key`): whoever holds it can replace your server list entry.
 
 The lobby **certificate** is public: the seat server publishes it (`lobbyCa` in `/seat/v1/status`) so that players' game patches trust it.

@@ -1,0 +1,25 @@
+# mkwmp beholder (`mkwmp beholder`): the public server directory (docs/contracts/BEHOLDER_API.md).
+# Layout: /opt/mkwmp/{bin/mkwmp, config/beholder.toml}, user `mkwmp`. In memory only.
+# Listens on `bind` (127.0.0.1:7100); put HTTPS in front of it (Cloudflare tunnel:
+# then set trust_cf_connecting_ip = true).
+[Unit]
+Description=mkwmp beholder (server directory)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/opt/mkwmp/bin/mkwmp
+ConditionPathExists=/opt/mkwmp/config/beholder.toml
+
+[Service]
+User=mkwmp
+WorkingDirectory=/opt/mkwmp
+ExecStart=/opt/mkwmp/bin/mkwmp beholder /opt/mkwmp/config/beholder.toml
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+MemoryMax=64M
+
+[Install]
+WantedBy=multi-user.target
