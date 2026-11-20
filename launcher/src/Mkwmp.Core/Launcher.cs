@@ -103,6 +103,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         _targetInfos = _targets.Infos;
         _updater = new Updater(_http, _userAgent, _options.UpdateApi, _options.ReleaseKeys);
         _local = new LocalApi(this, _clock);
+        WatchOverlayHost();
         _devices = new DeviceLab(CameraFolders, Log.Note);
         Token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
         // A launcher dropped into the game folder (or beside it) finds the game next to it.
@@ -121,6 +122,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         _voiceView = null!;
         _reportView = null!;
         InspectGame(out _install, out _check, out _integration);
+        _setupStatus = InspectSetup(_install);
         lock (_gate)
         {
             Rebuild();
@@ -407,14 +409,29 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         // What blocks PLAY, in the Rust window's order: the settings, the game's gates, the local API, the integration.
         var check = _check;
         var integrationProblem = _integration is { Ok: false } bad ? bad.Summary : null;
-        var problem = configProblem ?? check?.Problem ?? LocalApiProblem(s) ?? integrationProblem;
-        if (check is { Status: TargetStatus.Ready } && integrationProblem is not null)
+        // A setup the launcher must run first (Launcher.GameSetup.cs) comes after the game folder and its gates, and
+        // before everything about the integration: its switch in the settings, the local API, its files.
+        var setupProblem = SetupProblem(check);
+        var beforePatchSwitch = setupProblem is not null && configProblem == Strings.InstallPatchFirst;
+        var problem = (beforePatchSwitch ? setupProblem : configProblem) ?? HostedGameProblem ?? check?.Problem ?? setupProblem ?? LocalApiProblem(s) ?? integrationProblem;
+        var setup = _gameSetupView;
+        Put(ref setup, GameSetupNow(check));
+        _gameSetupView = setup;
+        if (check is { Status: TargetStatus.Ready } && setupProblem is not null)
+        {
+            check = check with { Status = TargetStatus.NeedsRebuild, Problem = setupProblem };
+        }
+        else if (check is { Status: TargetStatus.Ready } && integrationProblem is not null)
         {
             check = check with { Status = TargetStatus.NoIntegration, Problem = integrationProblem };
         }
         var game = _gameView;
         Put(ref game, new GameView(_targetInfos, _install, check, _integration, _searching, _gameWorking, _gameNote?.Text, _gameNote?.IsError ?? false));
         _gameView = game;
+
+        var runtime = _runtimeView;
+        Put(ref runtime, RuntimeNow());
+        _runtimeView = runtime;
 
         if (_playProblem != problem)
         {

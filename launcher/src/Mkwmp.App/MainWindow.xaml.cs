@@ -40,6 +40,7 @@ public partial class MainWindow : Window
         DataContext = shell;
 
         Root.SizeChanged += (_, _) => FitStage();
+        Stage.SizeChanged += (_, _) => ApplyFx(); // the overlay's picture follows the stage (its first frame is drawn at the first layout)
         AddHandler(GotFocusEvent, new RoutedEventHandler(OnAnyGotFocus), true);
         PreviewKeyDown += OnPreviewKeyDown;
         PreviewMouseDown += (_, _) => _vm.InputKind = InputKind.Mouse;
@@ -213,6 +214,10 @@ public partial class MainWindow : Window
     /// <summary>A button, from the controller, the keyboard or a tap on a hint.</summary>
     private void OnButton(PadButton button)
     {
+        if (IsOverlayAnimating)
+        {
+            return; // the game's picture is on its way in or out
+        }
         switch (button)
         {
             case PadButton.Up:
@@ -294,6 +299,12 @@ public partial class MainWindow : Window
             Key.F2 => PadButton.Back,
             _ => null,
         };
+        if (e.Key == Key.F9 && _vm.Launcher is Design.DesignLauncher && OverlayControl is { } overlay)
+        {
+            overlay.Simulate(); // the demo's game asks for the overlay (and, the second time, gets the screen back)
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.F11)
         {
             _ = _vm.SetFullscreenAsync(!_vm.IsFullscreen);

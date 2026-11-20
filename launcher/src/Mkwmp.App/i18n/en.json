@@ -150,6 +150,11 @@
   "home.fix.game": "Open Game Settings",
   "home.fix.browser": "Open the Page",
   "home.fix.browser_failed": "Could not open the browser",
+  "home.overlay.back": "Back to the Game",
+  "home.overlay.badge": "In game",
+  "home.overlay.status": "THE GAME IS RUNNING",
+  "home.overlay.menu": "{game} menu",
+  "home.overlay.placeholder": "The game is running",
 
   "power.title": "Power",
   "power.hide": "Hide to Tray",

@@ -120,17 +120,99 @@ public static partial class RecompSettings
         var console = !deck && (env("SteamGamepadUI") == "1" || env("SteamTenfoot") == "1" || env("GAMESCOPE_WAYLAND_DISPLAY") is { Length: > 0 });
         var size = file.GetValueOrDefault("WINDOW_SIZE") is { } s && WindowSize().IsMatch(s) ? s : "";
         var locked = Sections.Keys.Where(key => env("MKW_" + key) is not null).Select(key => key.ToLowerInvariant()).Order(StringComparer.Ordinal).ToArray();
-        return Schemas.GetOrAdd($"{deck}|{console}|{size}|{string.Join(',', locked)}", _ =>
+        var owned = RecompSetup.Drives(install);
+        return Schemas.GetOrAdd($"{deck}|{console}|{size}|{string.Join(',', locked)}|{owned}", _ =>
         {
             var all = Build(deck, console, size);
-            return locked.Length == 0 ? all : all with
+            return locked.Length == 0 && !owned ? all : all with
             {
                 Categories = [.. all.Categories.Select(c => c with
                 {
-                    Settings = [.. c.Settings.Select(x => locked.Contains(x.Id) ? x with { Locked = $"Set by the environment variable MKW_{x.Id.ToUpperInvariant()}" } : x)],
+                    Settings = [.. c.Settings.Select(x =>
+                        locked.Contains(x.Id) ? x with { Locked = $"Set by the environment variable MKW_{x.Id.ToUpperInvariant()}" }
+                        : owned && Owned.FirstOrDefault(o => o.Id == x.Id).Why is { } why ? x with { Locked = why }
+                        : x)],
                 })],
             };
         });
+    }
+
+    /// <summary>
+    /// The settings MKWMP keeps for an mkw-recomp it installs and sets up itself
+    /// (<see cref="RecompSetup.Drives"/>), with the reason the window shows on the locked row.
+    /// <c>update_check = 0</c>: mkw-recomp's own updater follows its repository's newest release and
+    /// would replace the one build this MKWMP is made for. <c>start_screen = skip</c>: a game
+    /// started by hand or from Steam goes straight in, as it does from the launcher
+    /// (<c>mkw.exe --play</c> never shows that screen, whatever this says).
+    /// </summary>
+    internal static readonly (string Id, string Value, string Why)[] Owned =
+    [
+        ("update_check", "0", "Kept off by MKWMP: it installs and updates mkw-recomp itself, one tested version at a time"),
+        ("start_screen", "skip", "Kept on Skip by MKWMP: the launcher sets the game up and starts it"),
+    ];
+
+    /// <summary>
+    /// Writes <see cref="Owned"/> into mkw.ini when they are not there yet. Nothing happens for an
+    /// install the launcher does not set up, while the game runs (it holds its settings and may
+    /// write them back), or when the file cannot be written: the next install, setup or call tries
+    /// again. Returns what it wrote, for the log.
+    /// </summary>
+    public static IReadOnlyList<string> EnforceOwned(IGameTarget target, GameInstall install) => EnforceOwned(target, install, RealEnv);
+
+    internal static IReadOnlyList<string> EnforceOwned(IGameTarget target, GameInstall install, Func<string, string?> env)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        if (!RecompSetup.Drives(install) || PathFor(install, env) is not { } path)
+        {
+            return [];
+        }
+        var file = FileValues(path);
+        var edits = Owned.Where(o => file.GetValueOrDefault(o.Id.ToUpperInvariant()) != o.Value)
+            .Select(o => new KeyValuePair<string, string?>(o.Id, o.Value)).ToList();
+        if (edits.Count == 0 || target.IsRunning(install))
+        {
+            return [];
+        }
+        try
+        {
+            return Save(path, edits) ? [.. edits.Select(e => $"{e.Key} = {e.Value}")] : [];
+        }
+        catch (LauncherException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>The edits applied to the file through a temporary one; false when nothing changed. Throws <see cref="LauncherException"/> with why it could not be written.</summary>
+    private static bool Save(string path, IReadOnlyList<KeyValuePair<string, string?>> edits)
+    {
+        try
+        {
+            var folder = Path.GetDirectoryName(path)!;
+            if (!Directory.Exists(folder))
+            {
+                throw new LauncherException($"The game's folder is gone: {folder}");
+            }
+            var exists = File.Exists(path);
+            if (exists && File.GetAttributes(path).HasFlag(FileAttributes.ReadOnly))
+            {
+                throw new LauncherException($"{IniName} is read-only: the game's settings are locked");
+            }
+            var before = exists ? RecompIni.Decode(File.ReadAllBytes(path)) : "";
+            var after = RecompIni.Apply(before, edits, key => Sections.GetValueOrDefault(key));
+            if (after == before)
+            {
+                return false;
+            }
+            var temporary = path + ".mkwmp-tmp";
+            File.WriteAllBytes(temporary, RecompIni.Encode(after));
+            File.Move(temporary, path, overwrite: true);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            throw new LauncherException($"saving the game's settings: {e.Message}", e);
+        }
     }
 
     /// <summary>
@@ -198,32 +280,7 @@ public static partial class RecompSettings
         {
             throw new LauncherException(GameIsRunning);
         }
-        try
-        {
-            var folder = Path.GetDirectoryName(path)!;
-            if (!Directory.Exists(folder))
-            {
-                throw new LauncherException($"The game's folder is gone: {folder}");
-            }
-            var exists = File.Exists(path);
-            if (exists && File.GetAttributes(path).HasFlag(FileAttributes.ReadOnly))
-            {
-                throw new LauncherException($"{IniName} is read-only: the game's settings are locked");
-            }
-            var before = exists ? RecompIni.Decode(File.ReadAllBytes(path)) : "";
-            var after = RecompIni.Apply(before, edits, key => Sections.GetValueOrDefault(key));
-            if (after == before)
-            {
-                return;
-            }
-            var temporary = path + ".mkwmp-tmp";
-            File.WriteAllBytes(temporary, RecompIni.Encode(after));
-            File.Move(temporary, path, overwrite: true);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            throw new LauncherException($"saving the game's settings: {e.Message}", e);
-        }
+        Save(path, edits);
     }
 
     // ---- the table ------------------------------------------------------------------------

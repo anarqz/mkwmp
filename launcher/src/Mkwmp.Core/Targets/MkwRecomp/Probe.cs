@@ -472,6 +472,11 @@ internal static class Probe
         b.Append(System.Globalization.CultureInfo.InvariantCulture, $"name = \"{s.Name}\"\n");
         b.Append(System.Globalization.CultureInfo.InvariantCulture, $"launcher = \"{s.Launcher}\"\n");
         b.Append(System.Globalization.CultureInfo.InvariantCulture, $"launcher_token = \"{s.LauncherToken}\"\n");
+        // for the mod to start the launcher as its overlay host when the game runs without it; a path the format cannot hold is left out
+        if (s.LauncherExe is { Length: > 0 and < 300 } exe && !exe.Contains('"', StringComparison.Ordinal) && !exe.Contains('\n', StringComparison.Ordinal))
+        {
+            b.Append(System.Globalization.CultureInfo.InvariantCulture, $"launcher_exe = \"{exe.Replace('\\', '/')}\"\n");
+        }
         b.Append(System.Globalization.CultureInfo.InvariantCulture, $"voice_port = {s.VoicePort}\n");
         if (s.Ticket is not null)
         {

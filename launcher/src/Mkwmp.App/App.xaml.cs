@@ -12,6 +12,7 @@ namespace Mkwmp.App;
 public partial class App : Application
 {
     private ILauncher? _launcher;
+    private Overlay.OverlayStartup? _startup;
 
     public App()
     {
@@ -33,7 +34,18 @@ public partial class App : Application
     /// options (some take a value, like <c>--shot out.png</c>) must not be read as a config path.
     /// </summary>
     internal static string[] CoreArguments(string[] args) =>
-        [.. args.Where(a => CoreFlags.Contains(a, StringComparer.Ordinal) || a.EndsWith(".toml", StringComparison.OrdinalIgnoreCase))];
+        [.. args.Where((a, i) => CoreFlags.Contains(a, StringComparer.Ordinal)
+            || (a.EndsWith(".toml", StringComparison.OrdinalIgnoreCase) && !(i > 0 && ValueOptions.Contains(args[i - 1], StringComparer.OrdinalIgnoreCase))))];
+
+    /// <summary>
+    /// The window's options that take a value: what follows one is never client.toml (the overlay
+    /// host's <c>--session .../mkwmp-overlay.toml</c> ends in .toml too).
+    /// </summary>
+    private static readonly string[] ValueOptions =
+    [
+        "--session", "--parent-pid", "--shot", "--icon", "--size", "--page", "--category", "--press", "--then", "--theme", "--battery",
+        "--network", "--input", "--locale", "--modal", "--state", "--overlay-frame", "--overlay-progress", "--overlay-return",
+    ];
 
     /// <summary>The launcher behind the window. <c>--demo</c>: the design-time fake.</summary>
     private static ILauncher CreateLauncher(bool demo, LauncherOptions options)
@@ -64,14 +76,37 @@ public partial class App : Application
             });
             return;
         }
+        var harness = Option(args, "--shot") is not null || Option(args, "--icon") is not null;
+        // One launcher per user, and the overlay host (launcher/docs/OVERLAY.md §7). On this thread: the
+        // instance's mutex belongs to it. The demo and the harness are no launcher: they run beside one.
+        if (!demo && !harness)
+        {
+            _startup = Overlay.OverlayStartup.Begin(args);
+            if (_startup is null)
+            {
+                Shutdown(0); // the running launcher took the request over (its window shows; or it stands by for the game)
+                return;
+            }
+        }
+        // Started by a game's mod to stand by as its overlay: no window until the player asks, no tray,
+        // nothing started (the game runs and holds the seat), gone with the game.
+        var hosted = _startup is { Hosted: true };
+        if (hosted)
+        {
+            options = options with { OverlayHost = true, Tray = false };
+            ShutdownMode = ShutdownMode.OnExplicitShutdown; // a window that was never shown ends nothing
+        }
         try
         {
             _launcher = CreateLauncher(demo, options);
         }
         catch (LauncherException error)
         {
-            // a client.toml that cannot be read: say so instead of starting over with defaults
-            MessageBox.Show(error.Message, "MKWMP", MessageBoxButton.OK, MessageBoxImage.Error);
+            // a client.toml that cannot be read: say so instead of starting over with defaults (a host has nobody to tell)
+            if (!hosted)
+            {
+                MessageBox.Show(error.Message, "MKWMP", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
             Shutdown(1);
             return;
         }
@@ -81,17 +116,28 @@ public partial class App : Application
         var shell = new ShellViewModel(_launcher, strings);
         var window = new MainWindow(shell, args);
         MainWindow = window;
-        // tray, close-to-tray, system notifications (nothing of it in the screenshot harness)
-        var harness = Option(args, "--shot") is not null || Option(args, "--icon") is not null;
-        var desktop = Desktop.DesktopIntegration.Attach(window, shell, options.Tray, harness);
-        if (desktop is not { StartHidden: true })
+        // tray, close-to-tray, system notifications (nothing of it in the screenshot harness, nor for a host)
+        Desktop.DesktopIntegration? desktop = null;
+        if (hosted)
+        {
+            shell.QuitRequested += (_, _) => Dispatcher.BeginInvoke(() => Shutdown());
+            window.Closed += (_, _) => Shutdown();
+        }
+        else
+        {
+            desktop = Desktop.DesktopIntegration.Attach(window, shell, options.Tray, harness);
+        }
+        // the overlay: the game asks, the window shows over it (the harness draws its moments itself)
+        var overlay = harness ? null : new Overlay.OverlayController(window, shell, _launcher as Launcher, _startup);
+        window.OverlayControl = overlay;
+        if (!hosted && desktop is not { StartHidden: true })
         {
             window.Show(); // --tray: the window stays hidden until the tray icon opens it
         }
-        _ = StartAsync(_launcher);
+        _ = StartAsync(_launcher, window, shell, overlay, options.Tray);
     }
 
-    private static async Task StartAsync(ILauncher launcher)
+    private async Task StartAsync(ILauncher launcher, MainWindow window, ShellViewModel shell, Overlay.OverlayController? overlay, bool tray)
     {
         try
         {
@@ -103,10 +149,42 @@ public partial class App : Application
         {
             Report(e);
         }
+        if (_startup is not { } startup || launcher is not Launcher real)
+        {
+            return;
+        }
+        var wasHost = startup.Hosted;
+        // the local API is up: where this launcher is goes on record (for the mod and for a second launcher),
+        // and a host writes the session file its game waits for
+        startup.Attach(
+            real,
+            show: () =>
+            {
+                // the player started the launcher (again): a host is the ordinary launcher from now on
+                if (wasHost && ShutdownMode == ShutdownMode.OnExplicitShutdown)
+                {
+                    ShutdownMode = ShutdownMode.OnMainWindowClose;
+                    real.LeaveOverlayHostMode();
+                    _ = Desktop.DesktopIntegration.Attach(window, shell, tray, harness: false);
+                }
+                overlay?.ShownByPlayer();
+                if (!shell.IsOverlay)
+                {
+                    window.RestoreAfterOverlay();
+                }
+                if (window.WindowState == WindowState.Minimized)
+                {
+                    window.WindowState = shell.IsFullscreen ? WindowState.Maximized : WindowState.Normal;
+                }
+                window.Show();
+                _ = window.Activate();
+            },
+            exit: () => Shutdown());
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _startup?.Dispose();
         if (_launcher is { } launcher)
         {
             try

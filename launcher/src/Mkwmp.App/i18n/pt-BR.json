@@ -150,6 +150,11 @@
   "home.fix.game": "Abrir as configurações do jogo",
   "home.fix.browser": "Abrir a página",
   "home.fix.browser_failed": "Não foi possível abrir o navegador",
+  "home.overlay.back": "Voltar ao jogo",
+  "home.overlay.badge": "Em jogo",
+  "home.overlay.status": "O JOGO ESTÁ RODANDO",
+  "home.overlay.menu": "Menu do {game}",
+  "home.overlay.placeholder": "O jogo está rodando",
 
   "power.title": "Energia",
   "power.hide": "Ocultar na bandeja",

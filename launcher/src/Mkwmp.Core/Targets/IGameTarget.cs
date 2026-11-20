@@ -51,6 +51,12 @@ public interface IGameTarget
     /// <summary>Whether this target's game is running (also when not started by us).</summary>
     bool IsRunning(GameInstall install);
 
+    /// <summary>
+    /// The process ids of this target's running game, as this process sees them (under Wine: this
+    /// prefix's): the window looks for the game's window with them. Empty when not running or not known.
+    /// </summary>
+    IReadOnlyList<int> ProcessIds(GameInstall install) => [];
+
     /// <summary>Extra files for a bug report (game logs, redacted session file, a system line per file).</summary>
     IEnumerable<SupportItem> SupportItems(GameInstall install);
 
@@ -115,6 +121,41 @@ public interface IGameTarget
     /// the change or would write over it, a file that cannot be written.
     /// </summary>
     void WriteGameSettings(GameInstall install, IReadOnlyDictionary<string, string?> changes) => MkwRecomp.RecompSettings.Write(this, install, changes);
+
+    /// <summary>
+    /// The one build of this target's runtime that the launcher installs and updates itself
+    /// (<see cref="RuntimeInstaller"/>), pinned in the launcher's source; null when the player
+    /// installs the runtime themselves. Never "the newest release": see <see cref="RuntimeManifest"/>.
+    /// </summary>
+    RuntimeManifest? Runtime => null;
+
+    /// <summary>
+    /// The setup that makes the game playable in this install, when the launcher runs it (for
+    /// mkw-recomp: building the game from the player's own copy): whether one is needed now and
+    /// the copy the last one used. Null (the default): this target has none, or the player does it
+    /// elsewhere (an emulator needs none). Called every 2 s: read at most a small file.
+    /// </summary>
+    GameSetupStatus? SetupStatus(GameInstall install) => null;
+
+    /// <summary>Why the game must be set up before PLAY, or null: it blocks PLAY, after the game folder and before the integration.</summary>
+    GameSetupPlan? SetupNeeded(GameInstall install) => SetupStatus(install)?.Needed;
+
+    /// <summary>
+    /// Runs the setup to its end, reporting where it is. Never throws for a failure: the result
+    /// carries a stable code and a message for the player. Refused while the game runs and while
+    /// another setup of the install runs. Cancelling ends everything it started and throws
+    /// <see cref="OperationCanceledException"/>; a setup that was stopped must continue, not start
+    /// over, when it is run again. The player's copy of the game is only read.
+    /// </summary>
+    Task<GameSetupResult> RunSetupAsync(GameInstall install, GameSetupRequest request, IProgress<GameSetupProgress>? progress, CancellationToken cancel) =>
+        Task.FromResult(GameSetupResult.Refused("none", Strings.SetupNone));
+
+    /// <summary>
+    /// Writes the game settings the launcher keeps for an install it manages (shown locked in
+    /// <see cref="GameSettings"/>). Called after the launcher installed or updated the runtime and
+    /// before a setup; does nothing while the game runs. Returns what it changed, for the log.
+    /// </summary>
+    IReadOnlyList<string> ApplyOwnedSettings(GameInstall install) => [];
 }
 
 /// <param name="Name">The file's name in the release and in SHA256SUMS.</param>
@@ -161,7 +202,8 @@ public sealed record IntegrationPackage(string Version, IReadOnlyDictionary<stri
 }
 
 /// <summary>What the hook reads (mkwmp.toml): see docs/contracts/LAUNCHER_API.md.</summary>
-public sealed record SessionFile(string Server, string Name, string Launcher, string LauncherToken, int VoicePort, string? Ticket, int Slot, string? LobbyCaPem);
+/// <param name="LauncherExe">The launcher's executable with forward slashes, for the mod to start it as its overlay host later; null when unknown (run from the dotnet host).</param>
+public sealed record SessionFile(string Server, string Name, string Launcher, string LauncherToken, int VoicePort, string? Ticket, int Slot, string? LobbyCaPem, string? LauncherExe = null);
 
 public sealed record LaunchOptions(string? CustomCommand);
 

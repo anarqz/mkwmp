@@ -15,7 +15,8 @@ is behind `IGameTarget` (`src/Mkwmp.Core/Targets/IGameTarget.cs`), and the targe
   `docs/contracts/VOICE_API.md` §4).
 - Finding the files of an integration: the signed `game/` folder next to the launcher, else this
   launcher's GitHub release, verified against the signed `SHA256SUMS` (`Launcher.Game.cs`).
-- The order of what blocks PLAY: settings, the target's gates, the local API port, the integration.
+- The order of what blocks PLAY: settings, the target's gates, the game's setup, the local API port,
+  the integration.
 
 ## What the hook inside the game must speak
 
@@ -97,6 +98,58 @@ writes them. The game reads the file at start and holds the values while it runs
 refused then. An `MKW_<KEY>` environment variable wins over the file: that setting is locked.
 Defaults follow the game's device profile (the Steam Deck: fullscreen, 1280x800, VSync, 720p; Big
 Picture / Gaming Mode: fullscreen), read from the launcher's environment.
+
+### A runtime the launcher installs
+
+A target may name one build of its runtime for the launcher to install: `Runtime`, a
+`RuntimeManifest` (`src/Mkwmp.Core/Targets/RuntimeManifest.cs`) pinned in the source: repository,
+tag, asset name, size, SHA-256, the executable's SHA-256, the unpacked size, the names an update
+never replaces (`Preserved`), and the credit and license notice. Null (the default): the player
+installs the runtime. There is no "latest": the download address is built from the tag and the
+asset name, and the pin changes only in a launcher release.
+
+`RuntimeInstaller` does the work for any target: a resumable download (HTTP Range into
+`<asset>.part`), size and SHA-256 checked before anything is unpacked, every entry name checked
+(zip-slip), free space checked, files put in place with a backup of what they replace
+(`.mkwmp-backup\`) and a rollback on any failure, refused while the game runs. A folder that holds
+an install which is not the same fork (`LineageSuffix`) and was not installed by the launcher
+(`mkwmp-runtime.json`) is never touched. The core shows it as `ILauncher.Runtime` (`RuntimeView`)
+with `InstallRuntimeAsync(folder, cancel)` and `CancelRuntimeInstall()`; after an install the
+target's own `Detect` must name the pinned version, and the folder becomes client.toml's `game`.
+
+**mkw-recomp**: `Targets/MkwRecomp/RecompRuntime.cs` (0.1.15-mkwmp, the Windows zip of
+github.com/anarqz/mkw-recomp). What its setup then does with the player's game, and how the
+launcher can drive it: `RECOMP_INTEGRATION.md`.
+
+### A setup the launcher runs
+
+Some runtimes must make the game playable first (mkw-recomp builds it from the player's own copy).
+A target whose setup the launcher can run says so with four optional members
+(`src/Mkwmp.Core/Targets/GameSetup.cs`); a target that needs none (an emulator) implements nothing.
+
+| Member | What it must do |
+| --- | --- |
+| `SetupStatus(install)` | Null: no setup here. Else a `GameSetupStatus`: `Needed` (a `GameSetupPlan` with the reason, one line for the player, and whether they must pick their game) or null when the game is ready, and the copy the last setup used. Called every 2 s: read at most a small file. |
+| `SetupNeeded(install)` | `SetupStatus(install)?.Needed` by default. It blocks PLAY after the game folder and before the integration, and `Launcher` shows it as `GameView.Check` with `NeedsRebuild`. |
+| `RunSetupAsync(install, request, progress, cancel)` | Run it to the end. `request.DumpPath` is the player's own copy (null: repeat the last setup), `request.Mode` link or copy, `request.LogFolder` where the whole log goes. Report `GameSetupProgress` (step, label, both fractions, time left). Never throw for a failure: return a `GameSetupResult` with a stable `ErrorCode` and a `Message` for the player. Refuse while the game runs and while another setup of the install runs. On cancel end every process it started and throw `OperationCanceledException`; a later run must continue, not start over. Only read the player's copy. |
+| `ApplyOwnedSettings(install)` | Write the game settings the launcher keeps for an install it manages, and show them `Locked` in the schema. Called after a runtime install and around a setup; nothing while the game runs. |
+
+The core turns this into `ILauncher.GameSetup` (`GameSetupView`: `Idle`, `NeedsSetup` with the
+reason, `Running` with the step, `Failed` with a code and a message, `Done`; `DumpPath`,
+`LastLog`), `RunGameSetupAsync(dumpPath, cancel)` and `CancelGameSetup()`, which never throw. One
+setup at a time; none while a session holds a seat or the runtime is being installed, and no
+runtime install or PLAY while one runs.
+
+**mkw-recomp** (`Targets/MkwRecomp/RecompSetup.cs`, the events in `RecompSetupProgress.cs`): for
+the pinned runtime only (`RecompSetup.Runtimes`; any other install keeps the old "open mkw-recomp
+once" gate). The setup is the runtime's own `setup\python\python.exe -I
+setup\src\tools\prepare\prepare.py --game <data> --runtime <folder of mkw.exe> --port <version>
+[--source <copy> --romfs link|copy]`, read line by line (`step`, `skip`, `progress d t`,
+`version`, `done`, `error <code> <detail>`). A setup is needed when `setup-state.json` has no
+`port` or another one than the installed runtime's (`mkw.exe --play` skips mkw-recomp's own check
+of it), when `mkwgame.dll` is missing or `mkwgame.id` is another runtime's, or when a linked copy
+is gone. The launcher keeps `update_check = 0` and `start_screen = skip` in `mkw.ini`
+(`RecompSettings.Owned`). Details, timings and the Proton notes: `RECOMP_INTEGRATION.md` 3.1.
 
 ### An emulator, concretely
 

@@ -575,6 +575,17 @@
                     <ImageBrush ImageSource="{Binding Image, RelativeSource={RelativeSource TemplatedParent}}" Stretch="UniformToFill" />
                   </Border.Background>
                 </Border>
+                <!-- a picture can be any colour: the white title needs something dark under it -->
+                <Border x:Name="PhotoScrim" Visibility="Collapsed">
+                  <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                      <GradientStop Offset="0" Color="#40000000" />
+                      <GradientStop Offset="0.28" Color="#00000000" />
+                      <GradientStop Offset="0.5" Color="#00000000" />
+                      <GradientStop Offset="1" Color="#C8000000" />
+                    </LinearGradientBrush>
+                  </Border.Background>
+                </Border>
                 <StackPanel x:Name="Texts" VerticalAlignment="Bottom" Margin="32,0,28,34">
                   <TextBlock Text="{TemplateBinding Title}" Foreground="White" FontSize="38" FontWeight="ExtraBold"
                              TextWrapping="Wrap" LineHeight="42" LineStackingStrategy="BlockLineHeight" MaxHeight="88" TextTrimming="CharacterEllipsis" />
@@ -606,6 +617,7 @@
           <ControlTemplate.Triggers>
             <DataTrigger Binding="{Binding Image, RelativeSource={RelativeSource Self}, Converter={StaticResource Conv.Visible}}" Value="Visible">
               <Setter TargetName="Photo" Property="Visibility" Value="Visible" />
+              <Setter TargetName="PhotoScrim" Property="Visibility" Value="Visible" />
               <Setter TargetName="Glyph" Property="Visibility" Value="Collapsed" />
               <Setter TargetName="Shapes" Property="Visibility" Value="Collapsed" />
             </DataTrigger>

@@ -26,7 +26,7 @@
           <RowDefinition Height="*" />
           <RowDefinition Height="112" />
         </Grid.RowDefinitions>
-        <c:TopBar Visibility="{Binding ShowTopBar, Converter={StaticResource Conv.Visible}}" />
+        <c:TopBar x:Name="TopChrome" Visibility="{Binding ShowTopBar, Converter={StaticResource Conv.Visible}}" />
         <c:PageHost x:Name="Pages" Grid.Row="1" Navigator="{Binding Nav}" />
       </Grid>
 
@@ -51,6 +51,25 @@
       <!-- 4: the on-screen keyboard (Input/TextEntry opens it for any text box) -->
       <c:OnScreenKeyboard x:Name="KeyboardLayer" />
       <c:ToastHost />
+
+      <!-- 5: the overlay animation (MainWindow.Overlay.cs): the game's picture, from the whole stage into home's
+           Play tile and back. Only the clip and the two transforms change per frame: no layout. While it is
+           visible it also takes the pointer, so nothing under it is clicked mid-flight. -->
+      <Canvas x:Name="OverlayFx" Visibility="Collapsed" Background="Transparent" UseLayoutRounding="False" SnapsToDevicePixels="False">
+        <Canvas x:Name="FxCard">
+          <Canvas.Clip>
+            <RectangleGeometry x:Name="FxClip" />
+          </Canvas.Clip>
+          <Image x:Name="FxImage" Stretch="Fill" Width="1000" Height="562.5">
+            <Image.RenderTransform>
+              <TransformGroup>
+                <ScaleTransform x:Name="FxScale" />
+                <TranslateTransform x:Name="FxShift" />
+              </TransformGroup>
+            </Image.RenderTransform>
+          </Image>
+        </Canvas>
+      </Canvas>
     </Grid>
   </Grid>
 </Window>

@@ -17,6 +17,12 @@ public sealed class HomeTile : ObservableObject
     private string _badge = "";
     private string _iconKey;
     private double _progress = double.NaN;
+    private System.Windows.Media.ImageSource? _image;
+    private double _width = SquareWidth;
+
+    /// <summary>A tile is a square; one with a game's picture is as wide as the picture (16:9).</summary>
+    public const double SquareWidth = 372;
+    public const double WideWidth = 661;
 
     public HomeTile(string key, string iconKey, string seed, Action invoke)
     {
@@ -61,6 +67,19 @@ public sealed class HomeTile : ObservableObject
         get => _progress;
         set => Set(ref _progress, value);
     }
+
+    /// <summary>A picture instead of the generated art (the running game's, in overlay mode).</summary>
+    public System.Windows.Media.ImageSource? Image
+    {
+        get => _image;
+        set => Set(ref _image, value);
+    }
+
+    public double Width
+    {
+        get => _width;
+        set => Set(ref _width, value);
+    }
 }
 
 /// <summary>
@@ -88,6 +107,7 @@ public sealed class HomeViewModel : PageViewModel
         SettingsCommand = new RelayCommand(() => Shell.OpenSettings());
         FullscreenCommand = RelayCommand.Async(() => Shell.SetFullscreenAsync(!Shell.IsFullscreen));
         PowerCommand = new RelayCommand(ShowPowerMenu);
+        GameMenuCommand = new RelayCommand(() => Shell.LeaveOverlay(toMenu: true));
         StatusCommand = new RelayCommand(() =>
         {
             if (Problem is { } problem)
@@ -120,16 +140,20 @@ public sealed class HomeViewModel : PageViewModel
 
     private bool Busy => Launcher.Session.Busy;
 
-    /// <summary>What blocks PLAY now (nothing while a session runs: STOP always works).</summary>
-    private string? Problem => Busy ? null : Launcher.PlayProblem;
+    /// <summary>Over a running game (launcher/docs/OVERLAY.md): the Play tile is the way back, PLAY starts nothing.</summary>
+    private bool Overlay => Shell.IsOverlay;
 
-    /// <summary>The session's status, verbatim; what blocks PLAY instead while idle.</summary>
-    public string StatusText => Launcher.Session.State == SessionState.Failed && Launcher.Session.Status.Length > 0
-        ? Launcher.Session.Status
+    /// <summary>What blocks PLAY now (nothing while a session runs: STOP always works; nothing over a game: it runs).</summary>
+    private string? Problem => Busy || Overlay ? null : Launcher.PlayProblem;
+
+    /// <summary>The session's status, verbatim; what blocks PLAY instead while idle; "in game" over a game the launcher holds no seat for.</summary>
+    public string StatusText => Overlay && !Busy ? S["home.overlay.status"]
+        : Launcher.Session.State == SessionState.Failed && Launcher.Session.Status.Length > 0 ? Launcher.Session.Status
         : Problem ?? Launcher.Session.Status;
 
     /// <summary>good / warn / bad / info / plain.</summary>
-    public string StatusTone => Launcher.Session.State == SessionState.Failed ? "bad" : Problem is null ? Launcher.Session.Tone : "warn";
+    public string StatusTone => Overlay && !Busy ? "good"
+        : Launcher.Session.State == SessionState.Failed ? "bad" : Problem is null ? Launcher.Session.Tone : "warn";
 
     public bool HasProblem => Problem is not null;
 
@@ -145,16 +169,32 @@ public sealed class HomeViewModel : PageViewModel
 
     // ── the dock ──
 
-    public string PlayLabel => Busy ? S["home.stop"] : S["home.play"];
+    public string PlayLabel => Overlay ? S["home.overlay.back"] : Busy ? S["home.stop"] : S["home.play"];
 
-    public string PlayIcon => Busy ? "Icon.Stop" : "Icon.Kart";
+    public string PlayIcon => Overlay ? "Icon.Play" : Busy ? "Icon.Stop" : "Icon.Kart";
+
+    /// <summary>"mkw-recomp menu": the game's own menu, offered only over a game that can be told to open it.</summary>
+    public bool ShowGameMenu => Overlay && Shell.OverlayHasMenu;
+
+    public string GameMenuLabel => S.Format("home.overlay.menu", ("game", TargetName));
+
+    public ICommand GameMenuCommand { get; }
+
+    private string TargetName
+    {
+        get
+        {
+            var id = Launcher.Game.Install?.TargetId ?? Launcher.Settings.Target;
+            return Launcher.Game.Targets.FirstOrDefault(t => string.Equals(t.Id, id, StringComparison.OrdinalIgnoreCase))?.DisplayName ?? id;
+        }
+    }
 
     public string FullscreenLabel => Shell.IsFullscreen ? S["home.windowed"] : S["home.fullscreen"];
 
     public string FullscreenIcon => Shell.IsFullscreen ? "Icon.Window" : "Icon.Fullscreen";
 
     /// <summary>The Steam Deck's Game Mode has one full-screen window: nothing to switch.</summary>
-    public bool CanSwitchFullscreen { get; } = !Desktop.DesktopEnvironment.IsGameMode;
+    public bool CanSwitchFullscreen => !Desktop.DesktopEnvironment.IsGameMode && !Overlay; // over a game the window covers the game
 
     public bool HasUpdate => Launcher.Update.State is UpdateState.Available or UpdateState.Downloading or UpdateState.Failed;
 
@@ -179,12 +219,31 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>A click on the status line: explains what blocks PLAY.</summary>
     public ICommand StatusCommand { get; }
 
-    public override IReadOnlyList<Hint> Hints =>
-    [
-        new Hint(PadButton.Start, S["hint.options"]),
-        new Hint(PadButton.Y, S["hint.friends"]),
-        new Hint(PadButton.A, S["hint.start"]),
-    ];
+    public override IReadOnlyList<Hint> Hints => Overlay
+        ?
+        [
+            new Hint(PadButton.Start, S["hint.options"]),
+            new Hint(PadButton.Y, S["hint.friends"]),
+            new Hint(PadButton.B, S["home.overlay.back"]),
+            new Hint(PadButton.A, S["hint.ok"]),
+        ]
+        :
+        [
+            new Hint(PadButton.Start, S["hint.options"]),
+            new Hint(PadButton.Y, S["hint.friends"]),
+            new Hint(PadButton.A, S["hint.start"]),
+        ];
+
+    /// <summary>B on home, over a game: back to it.</summary>
+    public override bool OnBack()
+    {
+        if (!Overlay)
+        {
+            return false;
+        }
+        Shell.LeaveOverlay();
+        return true;
+    }
 
     public override void OnEnter()
     {
@@ -202,6 +261,12 @@ public sealed class HomeViewModel : PageViewModel
         {
             Raise(nameof(FullscreenLabel));
             Raise(nameof(FullscreenIcon));
+        }
+        else if (e.PropertyName is nameof(ShellViewModel.IsOverlay) or nameof(ShellViewModel.OverlayThumb) or nameof(ShellViewModel.OverlayHasMenu))
+        {
+            Refresh();
+            RaiseAll();
+            RefreshHints();
         }
     }
 
@@ -222,11 +287,14 @@ public sealed class HomeViewModel : PageViewModel
 
         // Play Online: the game and its version; the seats of the server (or where the player is in it)
         _play.Title = PlayLabel;
-        _play.IconKey = PlayIcon;
+        _play.IconKey = Overlay ? "Icon.Kart" : PlayIcon;
+        _play.Image = Overlay ? Shell.OverlayThumb : null;
+        _play.Width = Overlay ? HomeTile.WideWidth : HomeTile.SquareWidth;
         _play.Subtitle = Problem is not null ? S["home.play_blocked"]
             : game.Install is { } install ? string.IsNullOrEmpty(install.GameVersion) ? "Mario Kart World" : $"Mario Kart World {install.GameVersion}"
+            : Overlay ? "Mario Kart World"
             : S["home.no_game"];
-        _play.Badge = session.Phase switch
+        _play.Badge = Overlay ? S["home.overlay.badge"] : session.Phase switch
         {
             SeatPhase.Queued when session.QueuePosition > 0 => S.Format("home.queued", ("n", Number(session.QueuePosition))),
             SeatPhase.Seated => S["home.seated"],
@@ -277,6 +345,12 @@ public sealed class HomeViewModel : PageViewModel
 
     private Task TogglePlayAsync()
     {
+        if (Overlay)
+        {
+            // the game runs: this is the way back to it, never a second game (and never STOP under the player's hands)
+            Shell.LeaveOverlay();
+            return Task.CompletedTask;
+        }
         if (Busy)
         {
             return Launcher.StopAsync();

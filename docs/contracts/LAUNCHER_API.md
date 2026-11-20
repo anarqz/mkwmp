@@ -89,7 +89,11 @@ no longer N, or S seconds passed (then the same state again): the mod's wait whi
 is up (`wait=2`), repeated. Three failed polls in a row and the mod gives the game back by
 itself.
 
-`POST /local/v1/overlay/open?by=<guide|chord|hold|keys>&pid=<game pid>[&w=<W>&h=<H>&format=rgba]`
+`POST /local/v1/overlay/open?by=<guide|chord|hold|keys>&pid=<game pid>[&menu=1][&w=<W>&h=<H>&format=rgba]`
+
+`menu=1`: this game opens mkw-recomp's own menu when the close says `"action":"menu"` (plugin
+API 4). Only then does the launcher offer "mkw-recomp menu" in the overlay; without it (plugin
+API 3, an older mod) it never answers `"menu"`.
 
 The body is the game's picture when the request has one: `W*H*4` bytes, RGBA8, rows top to
 bottom, no padding, at most 1920 x 1080 and at least 16 x 16 (the mod sends at most 1280 x 720,

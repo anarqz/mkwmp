@@ -14,7 +14,8 @@ namespace Mkwmp.App;
 /// The screenshot harness (see docs/DESIGN.md, "Checking your page"):
 /// <c>mkwmp-launcher --demo --shot out.png [--page home|settings|chat|setup|gallery] [--category key]
 /// [--modal update|available|confirm|message|progress] [--friends] [--sheet] [--toast]
-/// [--press right,down,a,…] [--size 1920x1080] [--theme dark] [--battery 93] [--input keyboard] [--locale pt-BR]</c>
+/// [--press right,down,a,…] [--size 1920x1080] [--theme dark] [--battery 93] [--input keyboard] [--locale pt-BR]
+/// [--overlay [--overlay-frame png|none] [--overlay-no-menu] [--overlay-progress 0..1 | --overlay-return 0..1]]</c>
 /// renders the stage at that size once everything has settled, saves the PNG and exits. The window
 /// stays off-screen and never takes the focus. <c>--icon dir</c> writes the app icon instead.
 /// </summary>
@@ -120,6 +121,23 @@ public partial class MainWindow
         // --state blocked|offline|signedout|nofriends|uptodate|queued|seated: another demo situation; --with-tray: as on Windows
         (_vm.Launcher as DesignLauncher)?.Pretend(App.Option(args, "--state"));
         _vm.TrayAvailable = args.Contains("--with-tray");
+        // --overlay [--overlay-frame <png>|none] [--overlay-no-menu]: overlay mode, as after a request of the game
+        ImageSource? overlayPicture = null;
+        if (args.Contains("--overlay"))
+        {
+            var picture = App.Option(args, "--overlay-frame") switch
+            {
+                "none" => Overlay.OverlayArt.Placeholder("Mario Kart World 1.8.0", _vm.S["home.overlay.placeholder"]),
+                { } png => Overlay.OverlayArt.Load(png) ?? Overlay.OverlayArt.SyntheticGame(),
+                null => Overlay.OverlayArt.SyntheticGame(),
+            };
+            var bridge = _vm.Launcher.OverlayBridge;
+            bridge.Requested += (_, _) => { };
+            bridge.Enabled = true;
+            _ = bridge.RequestFromLauncher(0, Overlay.OverlayArt.ToFrame(picture), gameHasMenu: !args.Contains("--overlay-no-menu"));
+            _vm.EnterOverlay(picture, again: false);
+            overlayPicture = picture;
+        }
         await Task.Delay(350).ConfigureAwait(true);
         SyncFocus();
         foreach (var name in (App.Option(args, "--press") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -182,6 +200,13 @@ public partial class MainWindow
             }
         }
         await Task.Delay(1300).ConfigureAwait(true);
+
+        // --overlay-progress 0..1: that moment of the open animation; --overlay-return 0..1: of the way back
+        if (overlayPicture is not null && (App.Option(args, "--overlay-return") ?? App.Option(args, "--overlay-progress")) is { } moment
+            && double.TryParse(moment, NumberStyles.Float, CultureInfo.InvariantCulture, out var at))
+        {
+            FreezeOverlay(overlayPicture, at, returning: App.Option(args, "--overlay-return") is not null);
+        }
 
         Root.UpdateLayout();
         var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);

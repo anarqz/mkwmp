@@ -5,8 +5,9 @@ the way the Switch 2's HOME button does: the picture the game was showing shrink
 player looks at friends, settings or Party Chat, and "back to the game" grows the thumbnail back to the full screen.
 mkw-recomp's own menu does not open on that button.
 
-Status: the plumbing is built (the mod's part, the launcher's Core and window helpers, the contract, tests). The shell
-animation is the coordinator's. Nothing here has run against a live game yet: section 9 lists what must be tested.
+Status: built and wired end to end (the mod's part, the launcher's Core, the window helpers, the shell's overlay mode
+and its animation, the contract, tests): section 8. Nothing here has run against a live game yet: section 9 lists what
+must be tested.
 Sources quoted as `fork:` are anarqz/mkw-recomp at tag `v0.1.15-mkwmp`; `SDL:` is libsdl-org/SDL `main`;
 `gamescope:` is ValveSoftware/gamescope `master` (both read on 2026-11-20).
 
@@ -201,7 +202,9 @@ runtime's to know.
 - `GET /local/v1/overlay/state` answers `{"open","seq","enabled"[,"action"]}`; with `?wait=S&seq=N` it is held until
   the state changes. The mod asks it every 10 s to know whether to take any button at all (`enabled`), and in a loop
   of `wait=2` while the overlay is up.
-- `POST /local/v1/overlay/open?by=..&pid=..[&w=..&h=..&format=rgba]`, body the picture. `200` open, `409` not now.
+- `POST /local/v1/overlay/open?by=..&pid=..[&menu=1][&w=..&h=..&format=rgba]`, body the picture. `200` open, `409`
+  not now. `menu=1` (the mod sends it when the runtime has `menu_open`) is `OverlayBridge.GameHasMenu`: the shell
+  shows its "mkw-recomp menu" button only then.
 - Closing: `OverlayBridge.ReturnToGame()` ends the mod's wait. `action` `menu` asks for mkw-recomp's menu.
 - Same bearer as every route; a picture is read only from a caller with the token; buckets of 10 and 20.
 - If the launcher stops answering (three polls), the mod gives the game back by itself.
@@ -285,56 +288,76 @@ In the launcher:
 | `src/Mkwmp.App/Overlay/OverlayStartup.cs` | single instance and host mode for `App.xaml.cs` |
 | `tests/Mkwmp.Core.Tests/OverlayTests.cs` | the routes over `HandleAsync` and a socket, the host, the record, the instance |
 
-The shell (`launcher` is the `Mkwmp.Core.Launcher`, not `ILauncher`: the design-time fake has no overlay):
+The shell (what is wired; the screenshots of every moment come from the harness, DESIGN.md §11):
 
-```csharp
-// App.xaml.cs, first thing in OnStartup (UI thread)
-var startup = OverlayStartup.Begin(e.Args);
-if (startup is null) { Shutdown(0); return; }
-// "--overlay-host", "--parent-pid", "--session" are not Core flags: keep them out of LauncherOptions.Parse.
-// Hosted: do not take a seat, start a game, show the tray or prompt for updates.
+| File | What |
+|---|---|
+| `src/Mkwmp.App/App.xaml.cs` | `OverlayStartup.Begin` first (single instance, hand-off); host mode: no window, no tray, `LauncherOptions.OverlayHost`; `startup.Attach` once the local API is up; a host the player opens becomes the ordinary launcher (`Launcher.LeaveOverlayHostMode`, the tray) |
+| `src/Mkwmp.App/Overlay/OverlayController.cs` | the bridge's events on the UI thread: request → picture → `EnterOverlay` → the window over the game → the shrink; the way back; `bridge.Enabled`; the launcher's window hidden while its game is in front and shown again when the game ends; the Guide watch |
+| `src/Mkwmp.App/MainWindow.Overlay.cs`, `MainWindow.xaml` (`OverlayFx`) | the animation, and the window borderless over the game's picture (`GameWindow.ClientPixels` / `Place`) |
+| `src/Mkwmp.App/Overlay/OverlayArt.cs` | the card drawn when the game sent no picture; the demo's frame |
+| `src/Mkwmp.App/ViewModels/ShellViewModel.Overlay.cs` | `IsOverlay`, `OverlayThumb`, `OverlayHasMenu`, `EnterOverlay(frame, again)`, `LeaveOverlay(toMenu)`, `EndOverlay()` |
+| `src/Mkwmp.App/ViewModels/HomeViewModel.cs`, `Views/HomePage.xaml(.cs)` | the Play tile as "Back to the Game" (wide, the picture, "In game"), B on home, the "mkw-recomp menu" dock button, the parts the animation moves |
+| `src/Mkwmp.Core/Launcher.Overlay.cs`, `Launcher.Background.cs`, `LauncherOptions.cs` | host mode in Core (below); `FindGamePid`, `IsGameProcess`; `launcher_exe` in mkwmp.toml |
 
-// after the launcher started and the window exists
-startup.Attach(launcher, show: () => { window.Show(); window.Activate(); }, exit: Shutdown);
-if (!startup.Hosted) window.Show();
+How it behaves:
 
-// the overlay
-var bridge = launcher.OverlayBridge;
-bridge.Requested += (_, request) => Dispatcher.BeginInvoke(() =>
-{
-    var game = GameWindow.Find(request.GamePid);            // 0 pid: the pid of the game the launcher started
-    var frame = request.Frame ?? GameWindow.Capture(game);  // Capture before ShowOver; null under Wine
-    shell.EnterOverlay(frame is null ? null : GameWindow.ToBitmap(frame), request.Again);
-    GameWindow.ShowOver(window);                            // the first frame drawn is the picture, full screen
-    // then animate the picture from the full screen into the Play tile
-});
-bridge.Closed += (_, how) => { /* any thread: the overlay is over (also when the game ended) */ };
-bridge.Enabled = true;   // false during setup or an update: the mod then takes no button
+- **A request** (`bridge.Requested`, any trigger): the picture is the mod's, else `GameWindow.Capture` (Windows
+  desktop only, taken before the window shows), else a drawn card with the game's name. The shell goes home in overlay
+  mode, the window becomes borderless exactly over the game's client area (the whole screen when that is unknown), the
+  picture is the first thing drawn, `GameWindow.ShowOver`, then the shrink. Under Wine a window that is still visible
+  is hidden first, so that the show is a map (gamescope's rule, section 4).
+- **Overlay mode**: home's Play tile is "Back to the Game" with the picture; A on it, B on home, the dock's first
+  button or Guide (`GuideWatcher`) go back. PLAY / STOP start and stop nothing. "mkw-recomp menu" (dock) is there when
+  the game said `menu=1` and returns with `OverlayReturn.Menu`. Friends, Settings and Party Chat work as always; the
+  game's settings say "close the game" because the target sees it running.
+- **Back**: the picture grows from the tile over the stage, `GameWindow.GiveBack` hides the launcher and focuses the
+  game, `bridge.ReturnToGame`. The launcher's window is then hidden, on Windows too.
+- **Without the animation** the game still gets its pad back: the window was hidden by something else (the tray),
+  minimised, closed (quit from the overlay), or the game took the front by itself (Alt+Tab).
+- **A game the launcher started with PLAY**: once its window is up the launcher's window hides (one visible window at a
+  time); when the game ends it shows again, and `bridge.GameExited()` is called. The tray icon and a second start of
+  the launcher bring the window back meanwhile, and it then stays.
+- **`bridge.Enabled`** is true once the first-run setup is done and the 18+ answer given, and false on the setup page
+  and while an update downloads or restarts. A host for a player who never set the launcher up is therefore disabled:
+  the mod leaves every button to mkw-recomp (open question of section 7).
+- **A game of another Proton prefix** (its own Steam shortcut, the launcher only holding the seat) can reach the local
+  API but no window of ours can be shown over it. Under Wine a request whose pid is no process of this prefix is
+  answered by an immediate `ReturnToGame` and the overlay is disabled until that game ends.
+- **Host mode** (`--overlay-host`, section 7): no window (`ShutdownMode.OnExplicitShutdown`), no tray, no
+  notifications. Core with `LauncherOptions.OverlayHost`: no update check, no sync of the game's integration (the
+  game runs), no start-up entry; the local API, the server's status and the friends list run as always, since that is
+  what the overlay shows. PLAY is refused while the launcher stands by for a game (`Strings.GameRunsAlready`: that
+  game holds its own seat). `--session <...>.toml` and `--parent-pid` are kept out of Core's arguments
+  (`App.CoreArguments`: the session file ends in .toml too). The player starting the launcher meanwhile:
+  `instance/show`, the window appears, the tray is made, and what was held back runs once
+  (`Launcher.LeaveOverlayHostMode`); it then stays when the game ends.
+- **mkwmp.toml** has `launcher_exe = "C:/.../mkwmp-launcher.exe"` after `launcher_token` (`Probe.SessionText`), left
+  out when the launcher runs from the dotnet host.
 
-// "back to the game" (B on Home, the Play tile, Guide through GuideWatcher.Pressed):
-// animate the thumbnail back to the full screen, then
-GameWindow.GiveBack(window, GameWindow.Find(bridge.GamePid));   // hides the launcher, focuses the game
-bridge.ReturnToGame();                                          // or ReturnToGame(OverlayReturn.Menu)
-
-// when the launcher's own game process ends
-bridge.GameExited();
-```
-
-- `bridge.LastFrame` is the Play tile's thumbnail while the game runs; `bridge.GameListening` says a mod with the
-  overlay is asking (the hint bar can name the button); `bridge.IsOpen`.
-- While the game is in front the launcher's window must be hidden (`window.Hide()` after it started the game), on
-  Windows too: section 4.
-- `GuideWatcher`: `Start()` while the overlay is up (Guide = back to the game) and while a game without the mod's
-  overlay runs (`Pressed` with `GameWindow.IsForeground(pid)` true: `bridge.RequestFromLauncher(pid,
-  GameWindow.Capture(hwnd))`).
-- Where mkwmp.toml is written (`Launcher.Game.cs`), add `launcher_exe = "<Environment.ProcessPath with forward
-  slashes>"`.
+The animation (`MainWindow.Overlay.cs`): one number, 0 to 1, drawn by `ApplyFx` from a `CompositionTarget.Rendering`
+handler whose clock starts at the first frame drawn. Per frame it sets the rectangle and corner radius of one clip
+(`RectangleGeometry`), a scale and a translation on the picture, and the opacity and translation of the top bar, the
+other tiles (60 ms apart), the status line, the dock and the hint bar: no layout pass. The target rectangle is the
+Play tile's card as it is drawn at that moment (`TransformToAncestor` to the stage, so the stage's scale, the
+carousel's glide and the tile's focus pop are in it). Open: 480 ms, of which 380 ms of travel with a cubic ease-out
+to 98 % of the tile and 100 ms settling to its size; the tile and its focus ring come up under the picture at two
+thirds, then the picture fades off it, so title and badge appear without a pop. Back: 350 ms, cubic ease-in-out,
+home fades in the first 60 %. With something over home (a page, the friends panel) the picture grows from a card in
+the middle. A watchdog ends either animation if nothing is rendered: the game is always given back.
 
 ## 9. To test live, and the open risks
 
 Nothing below has been run. The mod builds (`build_plugin.py --target all`, both libraries, `-Werror`),
 `tests/test_overlay.c` passes on Windows, and the launcher's tests pass; `test_plugin.c` and the other Linux tests
 were not run here (they need a Linux host).
+
+What was run for the shell, without a game: the animation's moments rendered by the harness (DESIGN.md §11), and
+once a host beside a stand-in window (`--overlay-host --parent-pid` of a small WinForms process, a request over the
+local API): no window while standing by, the session file written, `enabled:true`, the window borderless exactly
+on the stand-in's client area after the request, and the launcher gone (session file deleted) when the stand-in was
+killed. Not seen there: the foreground switch (the stand-in was not the foreground window), the way back by a
+button, the motion on a real screen.
 
 1. **The fork patch.** It was written against the source and never compiled. Build the fork with it, then check: the
    filter sees every read; the menu does not open on Guide or Select+Start; a short Select still does what it did in

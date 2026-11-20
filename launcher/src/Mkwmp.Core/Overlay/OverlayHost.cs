@@ -198,6 +198,9 @@ public sealed class OverlayHost : IDisposable
     /// <summary>The game this launcher stands by for ended.</summary>
     public event EventHandler? ParentExited;
 
+    /// <summary>The launcher now stands by for a game (<see cref="ParentPid"/>).</summary>
+    public event EventHandler? ParentAttached;
+
     /// <summary>The game stood by for (0: none).</summary>
     public int ParentPid
     {
@@ -246,6 +249,7 @@ public sealed class OverlayHost : IDisposable
             _session = args.SessionPath;
             _parent = args.ParentPid;
         }
+        ParentAttached?.Invoke(this, EventArgs.Empty);
         _ = WatchAsync(game, args);
         return true;
     }

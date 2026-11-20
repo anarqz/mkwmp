@@ -160,7 +160,8 @@ internal sealed class Rig : IAsyncDisposable
         Recomp.TestExes[Updater.Sha256Hex(TestModExe)] = Recomp.ModRuntimes[0];
     }
 
-    public Rig(FakeSeatServer server, Func<LauncherSettings, LauncherSettings>? edit = null, bool installPatch = true)
+    /// <param name="executable">What the launcher takes for its own executable (null: none, as under a test host).</param>
+    public Rig(FakeSeatServer server, Func<LauncherSettings, LauncherSettings>? edit = null, bool installPatch = true, string? executable = null)
     {
         Server = server;
         Root = NewFolder("core");
@@ -193,6 +194,7 @@ internal sealed class Rig : IAsyncDisposable
         Launcher = new Launcher(ConfigPath, home, new LauncherOptions
         {
             Version = "1.4.0",
+            Executable = executable,
             Targets = [Target],
             BindLocalApi = false, // as if the port were bound
             BackgroundLoops = false,

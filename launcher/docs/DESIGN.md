@@ -268,6 +268,7 @@ public sealed class RoomsViewModel : PageViewModel
 | `OpenSettings(category?)` | settings on a category (`profile`, `game`, `chat`, `notifications`, `appearance`, `updates`, `about`) |
 | `OpenKeyboard(KeyboardViewModel)`, `CloseKeyboard()`, `IsKeyboardOpen` | the on-screen keyboard (text boxes open it by themselves, section 5) |
 | `TrayAvailable`, `HideToTray()`, `IsQuitting`, `ToastSink` | the desktop integration's (section 10) |
+| `IsOverlay`, `OverlayThumb`, `OverlayHasMenu`, `EnterOverlay(frame, again)`, `LeaveOverlay(toMenu?)`, `EndOverlay()` | overlay mode: the launcher over a running game (section 11) |
 | `ShowToast(title, body, kind)` | toast (the launcher's own `Toasted` events arrive by themselves) |
 | `SetThemeAsync("light" / "dark")`, `IsDark` | theme, saved to `UiSettings.Theme` |
 | `SetFullscreenAsync(bool)`, `IsFullscreen` | saved to `UiSettings.Fullscreen` |
@@ -314,6 +315,7 @@ Add your keys to **both** files; prefix them with your area (`home.`, `settings.
 | On-screen keyboard | `Controls/OnScreenKeyboard.xaml(.cs)`, `ViewModels/KeyboardViewModel.cs`, `Input/TextEntry.cs` |
 | Desktop (tray, close-to-tray, notifications) | `Desktop/*`, `ViewModels/ShellViewModel.Desktop.cs` |
 | Design system and shell | `Themes/*`, `Controls/*`, `Input/*`, `MainWindow.*`, `App.xaml*`, `ViewModels/ShellViewModel*.cs`, `ViewModels/Modals.cs`, `Design/*`, `Views/Dev/*` |
+| The overlay (section 11) | `Overlay/*`, `MainWindow.Overlay.cs`, `ViewModels/ShellViewModel.Overlay.cs` |
 
 The stub pages already use the design system and work in the demo; replace their content freely.
 If a control lacks something, add a property to it rather than restyling it in a page.
@@ -335,8 +337,8 @@ settle and writes the PNG. Options: `--page home|settings|chat|setup|gallery`, `
 put the focus somewhere or to walk into a sub-step), `--size WxH`, `--theme dark`, `--battery 93`,
 `--input keyboard`, `--locale pt-BR`, `-NoBuild`; `--then a,down,…` presses after the panel / sheet / modal is open
 (`--friends --then a`: the on-screen keyboard on the friend field); `--state blocked|offline|signedout|nofriends|uptodate|queued|seated`
-puts the demo in another situation; `--with-tray` shows what Windows with a tray shows ("Hide to Tray"). Look at every state at 1920x1080 and 1280x800, light
-and dark.
+puts the demo in another situation; `--with-tray` shows what Windows with a tray shows ("Hide to Tray"); `--overlay` is overlay mode
+(section 11). Look at every state at 1920x1080 and 1280x800, light and dark.
 
 `--demo` uses `Design/DesignLauncher.cs`: server online 12/32, a signed-in player, 8 friends, 2 incoming
 and 1 outgoing request, a found mkw-recomp 0.1.15-mkwmp with game 1.8.0, update 1.4.1 available;
@@ -360,3 +362,48 @@ notify.rs; the shell only exposes `TrayAvailable`, `HideToTray()`, `Quit()` and 
 Power (home's dock) offers Hide to Tray (Windows) or Minimize (Wine desktop), Exit Full Screen (not in Game
 Mode) and Quit; quitting asks first only while a session holds a seat. Every quit path ends in
 `App.OnExit`, which disposes the launcher (the seat is given back). Wine is `Mkwmp.Core.Platform.WineHost.Detected`.
+
+## 11. Overlay mode: the launcher over a running game
+
+The design and the wiring are in `docs/OVERLAY.md` (section 8); this is what a page needs to know.
+
+While a game runs, the launcher's window is hidden. The game's Guide button (or Select+Start, or Select held) asks
+for the launcher: the window comes up over the game showing the picture the game had, the picture shrinks into home's
+Play tile, and the shell is in **overlay mode** (`Shell.IsOverlay`) until the player goes back.
+
+| In overlay mode | |
+| --- | --- |
+| Home's Play tile | "Back to the Game": 661 wide (16:9) instead of 372, the game's picture on it (`Shell.OverlayThumb`; a drawn card when the game sent none), the badge "In game". A on it goes back |
+| B on home, the dock's first button, the Guide button | back to the game (`Shell.LeaveOverlay()`) |
+| Dock: "mkw-recomp menu" | only when `Shell.OverlayHasMenu` (the game can open its own menu when told to): `Shell.LeaveOverlay(toMenu: true)` |
+| PLAY / STOP | not offered: nothing starts or stops a session from the overlay |
+| Status line | "THE GAME IS RUNNING", unless the launcher's own session has something to say |
+| Full screen switch | hidden: the window covers the game |
+| Everything else | as always: friends panel, Settings, Party Chat, toasts. The game's settings show "close the game" (the target sees it running) |
+
+A page needs nothing for it. A page that offers something which makes no sense beside a running game checks
+`Shell.IsOverlay`; one that wants to send the player back calls `Shell.LeaveOverlay()`. Never call `Launcher.PlayAsync`
+on the player's behalf while `Shell.IsOverlay`.
+
+`c:Tile` got two things for it: `Width` can be bound (the card's clip follows), and a tile with an `Image` draws a
+dark gradient under its title, so the text reads on any picture.
+
+**The animation** (`MainWindow.Overlay.cs`, the `OverlayFx` canvas of `MainWindow.xaml`) is driven by one number and
+changes only a clip rectangle, transforms and opacities, so it costs no layout. It moves home's parts through
+`HomePage.SetOverlayMotion`; if you add a part to home, give it a slot there or it will sit still while the rest
+comes in. Buttons are ignored while it runs.
+
+**Checking it** (the harness; each moment is a still):
+
+```powershell
+.\shot.ps1 out.png --overlay                                   # home in overlay mode
+.\shot.ps1 out.png --overlay --overlay-progress 0.3            # that moment of the open (0: the game's picture, 1: home)
+.\shot.ps1 out.png --overlay --overlay-return 0.5              # that moment of the way back
+.\shot.ps1 out.png --overlay --overlay-frame shot.png          # a PNG as the game's picture (default: a drawn race)
+.\shot.ps1 out.png --overlay --overlay-frame none              # the game sent no picture: the drawn card
+.\shot.ps1 out.png --overlay --overlay-no-menu                 # a game that cannot be told to open its menu
+.\shot.ps1 out.png --overlay --friends                         # any other option works in overlay mode
+```
+
+Live, in the demo: `.\run.ps1 --demo --windowed`, then **F9** opens the overlay with the drawn race (the picture
+fills the window and shrinks) and F9 again goes back.

@@ -240,12 +240,170 @@ public class OverlayTests
     }
 
     [Fact]
+    public async Task The_game_says_whether_it_can_open_its_own_menu()
+    {
+        using var api = new LocalApi(new Host(), TimeProvider.System);
+        api.Overlay.Requested += (_, _) => { };
+        api.Overlay.Enabled = true;
+        // plugin API 3: no menu to ask for
+        await api.HandleAsync("POST", "/local/v1/overlay/open", "by=guide&pid=7", Auth, default, default);
+        Assert.False(api.Overlay.GameHasMenu);
+        Assert.True(api.Overlay.ReturnToGame());
+        // plugin API 4 says so in its request; the launcher's own trigger never does
+        await api.HandleAsync("POST", "/local/v1/overlay/open", "by=guide&pid=7&menu=1", Auth, default, default);
+        Assert.True(api.Overlay.GameHasMenu);
+        Assert.True(api.Overlay.ReturnToGame(OverlayReturn.Menu));
+        Assert.True(api.Overlay.RequestFromLauncher(7, null));
+        Assert.False(api.Overlay.GameHasMenu);
+        api.Overlay.GameExited();
+        Assert.False(api.Overlay.GameHasMenu);
+    }
+
+    [Fact]
+    public async Task The_session_file_names_the_launcher_for_a_later_overlay_host()
+    {
+        var session = new Targets.SessionFile("lobby.test:8905", "Ana", "127.0.0.1:47820", "abc", 8907, null, 1, null);
+        Assert.DoesNotContain("launcher_exe", Targets.MkwRecomp.Probe.SessionText(session), StringComparison.Ordinal);
+        // forward slashes, as native/probe/src/config.c reads it; a path the format cannot hold is left out
+        Assert.Contains("launcher_token = \"abc\"\nlauncher_exe = \"C:/Games/MKWMP/mkwmp-launcher.exe\"\n",
+            Targets.MkwRecomp.Probe.SessionText(session with { LauncherExe = @"C:\Games\MKWMP\mkwmp-launcher.exe" }), StringComparison.Ordinal);
+        Assert.DoesNotContain("launcher_exe", Targets.MkwRecomp.Probe.SessionText(session with { LauncherExe = "C:/a\"b/mkwmp-launcher.exe" }), StringComparison.Ordinal);
+        Assert.DoesNotContain("launcher_exe", Targets.MkwRecomp.Probe.SessionText(session with { LauncherExe = "C:/" + new string('x', 300) }), StringComparison.Ordinal);
+
+        // PLAY writes it: the launcher's own executable
+        var exe = Path.Combine(Rig.NewFolder("exe"), "mkwmp-launcher.exe");
+        await using var rig = new Rig(new FakeSeatServer(), executable: exe);
+        await rig.Launcher.PlayAsync();
+        await Rig.Until("the game", () => rig.Started);
+        Assert.Contains($"launcher_exe = \"{exe.Replace('\\', '/')}\"\n", File.ReadAllText(Path.Combine(rig.Game, "mkwmp.toml")), StringComparison.Ordinal);
+        await rig.SettleSession();
+        // run from the dotnet host or a test runner there is no launcher to name
+        await using var hostless = new Rig(new FakeSeatServer());
+        await hostless.Launcher.PlayAsync();
+        await Rig.Until("the game", () => hostless.Started);
+        Assert.DoesNotContain("launcher_exe", File.ReadAllText(Path.Combine(hostless.Game, "mkwmp.toml")), StringComparison.Ordinal);
+        await hostless.SettleSession();
+    }
+
+    [Fact]
+    public async Task A_host_does_not_PLAY_beside_the_game_it_stands_by_for()
+    {
+        var folder = Directory.CreateTempSubdirectory("mkwmp-overlay-").FullName;
+        using var game = Process.Start(new ProcessStartInfo("cmd.exe", "/c pause") { RedirectStandardInput = true, RedirectStandardOutput = true, CreateNoWindow = true })!;
+        try
+        {
+            await using var rig = new Rig(new FakeSeatServer());
+            var changes = 0;
+            rig.Launcher.Changed += (_, _) => Interlocked.Increment(ref changes);
+            Assert.Null(rig.Launcher.PlayProblem);
+            // the mod's game asked this launcher to stand by: that game holds the seat itself
+            Assert.True(rig.Launcher.OverlayHost.Attach(new OverlayHostArgs(game.Id, Path.Combine(folder, OverlayHostArgs.SessionFile)), 47820, "t0ken"));
+            Assert.Equal(Strings.GameRunsAlready, rig.Launcher.PlayProblem);
+            Assert.True(changes > 0);
+            await rig.Launcher.PlayAsync();
+            var session = await rig.SettleSession();
+            Assert.Equal((SessionState.Failed, Strings.GameRunsAlready), (session.State, session.Status));
+            Assert.False(rig.Started);
+            Assert.Equal(0, rig.Server.Joins);
+
+            game.Kill();
+            await Rig.Until("the game to be gone", () => rig.Launcher.PlayProblem is null);
+            await rig.Launcher.PlayAsync();
+            await Rig.Until("the game", () => rig.Started);
+            await rig.SettleSession();
+        }
+        finally
+        {
+            if (!game.HasExited)
+            {
+                game.Kill();
+            }
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task A_host_holds_its_startup_work_back_until_the_player_opens_it()
+    {
+        _ = Rig.TestExe;
+        var root = Rig.NewFolder("host");
+        var game = Path.Combine(root, "mkw");
+        var home = Path.Combine(root, "launcher");
+        Directory.CreateDirectory(game);
+        Directory.CreateDirectory(home);
+        File.WriteAllBytes(Path.Combine(game, "mkw.exe"), Rig.TestExe);
+        var exe = Path.Combine(home, "mkwmp-launcher.exe");
+        File.WriteAllText(exe, "this launcher");
+        var config = Path.Combine(root, "client.toml");
+        new ClientConfig { Settings = new LauncherSettings { Server = FakeSeatServer.Url, Game = game, Background = new BackgroundSettings { StartWithSystem = true } } }.Save(config);
+        var github = new FakeGitHub()
+            .Release("1.4.0", new() { ["winmm.dll"] = "MZ mkwmp probe 1.4.0"u8.ToArray(), ["mkwmp-voice.dll"] = "voice"u8.ToArray() })
+            .Release("1.4.1", new() { ["mkwmp-launcher.exe"] = "newer"u8.ToArray() });
+        var autostart = new RecordingAutostart();
+        await using var launcher = new Launcher(config, home, new LauncherOptions
+        {
+            Version = "1.4.0",
+            Executable = exe,
+            UpdateApi = FakeGitHub.Api,
+            ReleaseKeys = [FakeGitHub.TestKey],
+            Targets = [new Targets.MkwRecomp.MkwRecompTarget("1.4.0") { RunningOverride = () => true }],
+            Autostart = autostart,
+            BindLocalApi = false,
+            OverlayHost = true,
+            Exit = _ => { },
+        }, github);
+
+        // The game runs: no update is looked for, nothing is put into its folder, the start-up entry is left alone.
+        await launcher.StartAsync(default);
+        await launcher.StartupUpdates;
+        await Task.Delay(300);
+        Assert.Equal(UpdateState.UpToDate, launcher.Update.State);
+        Assert.Equal(0, github.Downloads);
+        Assert.Equal(Targets.IntegrationState.Missing, launcher.Game.Integration!.State);
+        Assert.Empty(autostart.Applied);
+
+        // The player opened the launcher: it is the ordinary one now, once.
+        launcher.LeaveOverlayHostMode();
+        await launcher.StartupUpdates;
+        Assert.Equal((UpdateState.Available, "1.4.1"), (launcher.Update.State, launcher.Update.AvailableVersion));
+        Assert.Equal([(true, exe)], autostart.Applied);
+        var after = launcher.StartupUpdates;
+        launcher.LeaveOverlayHostMode();
+        Assert.Same(after, launcher.StartupUpdates);
+    }
+
+    private sealed class RecordingAutostart : IAutostart
+    {
+        public List<(bool On, string Exe)> Applied { get; } = [];
+
+        public void Apply(bool on, string exe) => Applied.Add((on, exe));
+    }
+
+    [Fact]
     public async Task One_launcher_per_user()
     {
         var name = $"mkwmp-test-{Guid.NewGuid():N}";
-        using var first = SingleInstance.TryAcquire(name);
-        Assert.NotNull(first);
-        // A mutex is re-entrant on its own thread: the second launcher is another one.
-        Assert.Null(await Task.Factory.StartNew(() => SingleInstance.TryAcquire(name), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default));
+        // A mutex belongs to the thread that took it (the launcher's UI thread): one that lives as long as the
+        // instance does. A pool thread the test happens to run on may end meanwhile and abandon it.
+        using var done = new ManualResetEventSlim();
+        var held = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var owner = new Thread(() =>
+        {
+            using var first = SingleInstance.TryAcquire(name);
+            held.SetResult(first is not null);
+            done.Wait();
+        });
+        owner.Start();
+        try
+        {
+            Assert.True(await held.Task);
+            // A mutex is re-entrant on its own thread: the second launcher is another one.
+            Assert.Null(await Task.Factory.StartNew(() => SingleInstance.TryAcquire(name), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default));
+        }
+        finally
+        {
+            done.Set();
+            owner.Join();
+        }
     }
 }

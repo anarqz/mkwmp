@@ -1,5 +1,6 @@
 // Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
 using Mkwmp.Core.Overlay;
+using Mkwmp.Core.Targets;
 
 namespace Mkwmp.Core;
 
@@ -23,4 +24,43 @@ public sealed partial class Launcher
 
     /// <summary>Stands by for the game of <paramref name="args"/> (the overlay host's start); false when the local API is not up or the game is gone.</summary>
     public bool AttachOverlayHost(OverlayHostArgs args) => LocalApiPort > 0 && _local.Instance.Attach(args, LocalApiPort, Token);
+
+    /// <summary>
+    /// The process id of the running game of the selected target (the first, when several run), for
+    /// the window to find the game's window; 0 when none is seen. Reads the process list: not for a tight loop.
+    /// </summary>
+    public int FindGamePid() => GamePids() is [var first, ..] ? first : 0;
+
+    /// <summary>
+    /// That process id is the selected target's game as this process sees it (under Wine: in this
+    /// prefix; a game of another prefix can reach the local API but no window of ours can be put over it).
+    /// </summary>
+    public bool IsGameProcess(int pid) => pid > 0 && GamePids().Contains(pid);
+
+    private IReadOnlyList<int> GamePids()
+    {
+        var s = Settings;
+        var target = _targets.Get(s.Target);
+        return GameFinder.Detect(target, s.Game) is { } install ? target.ProcessIds(install) : [];
+    }
+
+    /// <summary>
+    /// What the mod reads as <c>launcher_exe</c> in mkwmp.toml: this launcher's executable (never
+    /// the dotnet host or a test runner), so that a later start of the game without the launcher
+    /// can bring it up as the overlay host.
+    /// </summary>
+    private string? LauncherExe => (_options.Executable ?? LauncherOptions.SelfExecutable())?.Replace('\\', '/');
+
+    /// <summary>
+    /// PLAY is refused while the launcher stands by for a game that runs by itself (the mod signed
+    /// in and holds the seat): a second session would start a second game and fight for the name.
+    /// </summary>
+    private string? HostedGameProblem => _local.Instance.ParentPid != 0 ? Strings.GameRunsAlready : null;
+
+    /// <summary>The views follow the game the launcher stands by for (<see cref="PlayProblem"/>).</summary>
+    private void WatchOverlayHost()
+    {
+        _local.Instance.ParentAttached += (_, _) => Mutate(() => { });
+        _local.Instance.ParentExited += (_, _) => Mutate(() => { });
+    }
 }

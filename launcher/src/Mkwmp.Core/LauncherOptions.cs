@@ -34,6 +34,14 @@ public sealed record LauncherOptions
     /// <summary>No update check and no downloads for this run (not saved).</summary>
     public bool NoUpdate { get; init; }
 
+    /// <summary>
+    /// Started by the mod of a running game as its overlay host (<c>--overlay-host</c>, see
+    /// <see cref="Overlay.OverlayHostArgs"/>; not a flag <see cref="Parse"/> reads: the window sets
+    /// it). Nothing is done for a game that already runs: no update check, no sync of the game's
+    /// integration, no start-up entry, until <see cref="Launcher.LeaveOverlayHostMode"/>.
+    /// </summary>
+    public bool OverlayHost { get; init; }
+
     /// <summary>Write the bug-report zip and exit.</summary>
     public bool SaveLogs { get; init; }
 
@@ -88,6 +96,18 @@ public sealed record LauncherOptions
 
     /// <summary>What ends the process after a self-update (tests: nothing).</summary>
     internal Action<int>? Exit { get; init; }
+
+    /// <summary>The runtime to install instead of the target's pinned one (a small zip served by the test).</summary>
+    internal RuntimeManifest? Runtime { get; init; }
+
+    /// <summary>Where the runtime is installed by default (null: <c>%LOCALAPPDATA%\MKWMP\&lt;name&gt;</c>).</summary>
+    internal string? RuntimeFolder { get; init; }
+
+    /// <summary>Where the runtime's download is kept (null: <c>%LOCALAPPDATA%\MKWMP\downloads</c>).</summary>
+    internal string? RuntimeCache { get; init; }
+
+    /// <summary>Free bytes on a path's drive (null: the drive's own answer).</summary>
+    internal Func<string, long?>? RuntimeFreeSpace { get; init; }
 
     public static LauncherOptions Parse(IEnumerable<string> args)
     {

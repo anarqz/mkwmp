@@ -50,6 +50,9 @@ public static class Strings
     public const string StopBeforeDelete = "Stop playing before deleting the profile";
     public const string PressStopFirst = "Press STOP first";
 
+    /// <summary>PLAY while the launcher stands by for a game that signed in by itself (the overlay host).</summary>
+    public const string GameRunsAlready = "The game is already running and holds its own seat: close it to PLAY from here";
+
     /// <summary>"Set the game folder (the one with mkw.exe)": the hint is the target's.</summary>
     public static string SetGameFolder(string folderHint) => $"Set the game folder ({folderHint})";
 
@@ -176,4 +179,119 @@ public static class Strings
     public const string GameSettingsCloseGame = "Close the game to change its settings";
 
     public static string GameSettingsNone(string game) => $"{game} has no settings the launcher can change";
+
+    // ---- installing the game's runtime (the pinned build) ---------------------------------
+    public const string RuntimeFolderOccupied = "That folder has other files in it: pick an empty folder, or a new one";
+    public const string RuntimePaused = "Download paused: it continues from where it stopped";
+    public const string RuntimeNone = "This game has no runtime the launcher can install";
+
+    public static string RuntimeFolderForeign(string name, string? found) =>
+        $"That folder holds {(found is null ? $"a {name} MKWMP does not know" : $"{name} {found}")}, which MKWMP did not install. "
+        + "MKWMP leaves it alone: pick another folder and MKWMP's build goes beside it";
+
+    public static string RuntimeCloseGame(string name) => $"Close the game to update {name}";
+
+    public static string RuntimeNoSpace(string drive, long need, long free) =>
+        $"Not enough free space on {drive}: {Gigabytes(need)} needed, {Gigabytes(free)} free";
+
+    public static string RuntimeDownloadFailed(string asset, string why) => $"download {asset}: {why}";
+
+    public static string RuntimeBadDownload(string asset) =>
+        $"{asset} is not the file this MKWMP expects (size or checksum mismatch): it was thrown away, try again";
+
+    public static string RuntimeUnsafeArchive(string entry) => $"the download holds a file with an unsafe name ({entry}): nothing was installed";
+
+    public static string RuntimeArchiveLacks(string file) => $"the download holds no {file}: nothing was installed";
+
+    public static string RuntimeNotRecognised(string name, string version) =>
+        $"what was installed is not {name} {version}: everything was put back as it was";
+
+    public static string RuntimeInstallFailed(string name, string why) => $"installing {name} failed, everything was put back as it was: {why}";
+
+    public static string RuntimeInstalled(string name, string version) => $"{name} {version} installed";
+
+    public static string RuntimeUpdated(string name, string version) => $"{name} updated to {version}";
+
+    // ---- setting the game up (the runtime's setup, run by the launcher) --------------------
+    public const string SetupNotSetUp = "Set the game up: MKWMP builds it on this device from your own copy of the game";
+    public const string SetupUnfinished = "The game's setup did not finish: continue it";
+    public const string SetupGameMismatch = "The game was built for another version of its runtime: it must be built again";
+    public const string SetupRunning = "The game is being set up";
+    public const string SetupDone = "The game is set up";
+    public const string SetupCancelled = "Setup stopped: it continues from where it stopped";
+    public const string SetupNone = "This game needs no setup from the launcher";
+    public const string SetupCloseGame = "Close the game to set it up";
+    public const string SetupAlreadyRunning = "A setup of this game is already running";
+    public const string SetupWaitForInstall = "Wait for the install to finish, then set the game up";
+    public const string SetupStarting = "Starting the setup";
+    public const string SetupWaitingForLock = "Waiting for another setup of this game to finish";
+    public const string SetupPickDump = "Pick your copy of the game: a .nup or .nx file, or the folder that holds exefs and romfs";
+    public const string SetupToolsMissing = "The setup tools are missing from the game folder: install the game's runtime again";
+    public const string SetupCpu = "This processor cannot run the game: it needs AVX2, FMA and BMI2 (Intel from 2013, AMD from 2015)";
+    public const string SetupShadersOnline = "This step downloads a tool from NVIDIA the first time: check the internet connection and try again";
+    public const string SetupShadersProton = "This step is not confirmed to work under Proton yet: send the log with a bug report";
+
+    public static string SetupRuntimeChanged(string name, string version) =>
+        $"{name} {version} is new here: the game is set up again for it (only what changed)";
+
+    public static string SetupDumpGone(string path) => $"Your copy of the game is no longer at {path}: pick it again";
+
+    public static string SetupDumpNotFound(string path) => $"Nothing at {path}: pick your copy of the game again";
+
+    public static string SetupDumpNotAGame(string path) =>
+        $"{path} is not a copy of the game: pick a .nup or .nx file, or the folder that holds exefs and romfs";
+
+    public static string SetupPathTooLong(string folder, int limit) =>
+        $"The game folder's path is too long ({folder.Length.ToString(CultureInfo.InvariantCulture)} characters, at most {limit.ToString(CultureInfo.InvariantCulture)}): install the game in a folder with a shorter path";
+
+    public static string SetupNoSpace(string drive, long need, long free) =>
+        $"Not enough free space on {drive} to set the game up: {Gigabytes(need)} needed, {Gigabytes(free)} free";
+
+    public static string SetupWorking(string step) => $"Working ({step})";
+
+    /// <summary>A step of the setup, for the player (mkw-recomp's prepare.py: check, exefs, romfs, generate, compile, shaders, warm, cleanup).</summary>
+    public static string SetupStep(string step, bool copy) => step switch
+    {
+        "check" => "Reading your game",
+        "exefs" => "Copying the game's program",
+        "romfs" => copy ? "Copying the game's data" : "Finding the game's data",
+        "generate" => "Translating the game",
+        "compile" => "Building the game",
+        "shaders" => "Preparing shaders",
+        "warm" => "Warming up the graphics",
+        "cleanup" => "Finishing up",
+        "" => SetupStarting,
+        _ => SetupWorking(step),
+    };
+
+    /// <summary>
+    /// A failed setup, for the player: the setup's code (mkw-recomp's prepare.py and the three its own
+    /// start screen adds) with its detail inside. An unknown code shows the detail as it came.
+    /// </summary>
+    /// <param name="step">The label of the step that was under way, or null.</param>
+    public static string SetupError(string code, string? detail, string? step, int? exitCode)
+    {
+        var d = string.IsNullOrWhiteSpace(detail) ? null : detail.Trim();
+        return code switch
+        {
+            "source" when d is null || d.StartsWith("no earlier setup", StringComparison.Ordinal) => SetupPickDump,
+            "source" => $"{d} could not be unpacked: the file may be damaged or incomplete",
+            "moved" => SetupDumpGone(d ?? "the folder the last setup used"),
+            "nogame" => d is null ? SetupPickDump : SetupDumpNotAGame(d),
+            "encrypted" => "This copy of the game is still encrypted: the setup needs a decrypted one" + (d is null ? "" : $" ({d})"),
+            "version" => $"This version of the game is not supported{(d is null ? "" : $" (build {d})")}: the setup knows 1.0.0 and 1.8.0",
+            "romfs" => $"This copy of the game is incomplete: its data has only {d ?? "some"} of the game's files",
+            "mismatch" => $"This copy mixes two versions of the game{(d is null ? "" : $" ({d})")}: the program and the data must be from the same one",
+            "space" => $"Not enough free disk space: the setup needs {d ?? "more room"}",
+            "failed" => $"{(step is null ? "The setup" : $"\"{step}\"")} failed: {d ?? "no reason given"}. Try again: it continues from where it stopped",
+            "io" => $"A file could not be read or written: {d ?? "no reason given"}. Try again: it continues from where it stopped",
+            "no_setup" => SetupToolsMissing,
+            "cancelled" => SetupCancelled,
+            "stopped" => $"The setup ended unexpectedly{(step is null ? "" : $" during \"{step}\"")}"
+                + $"{(exitCode is { } exit ? $" (exit code {exit.ToString(CultureInfo.InvariantCulture)})" : "")}. Try again: it continues from where it stopped",
+            _ => d ?? $"The setup failed ({code})",
+        };
+    }
+
+    private static string Gigabytes(long bytes) => (bytes / 1e9).ToString("0.0", CultureInfo.InvariantCulture) + " GB";
 }

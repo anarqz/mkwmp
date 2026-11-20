@@ -106,6 +106,7 @@ public sealed class OverlayBridge(TimeProvider clock)
     private OverlayReturn _last = OverlayReturn.Resume;
     private OverlayFrame? _frame;
     private int _gamePid;
+    private bool _gameHasMenu;
     private long? _seenAt;
 
     /// <summary>The game asked for the overlay (or asked again while it is open).</summary>
@@ -155,6 +156,21 @@ public sealed class OverlayBridge(TimeProvider clock)
         }
     }
 
+    /// <summary>
+    /// The game that asked last can open mkw-recomp's own menu when told to (<c>menu=1</c> in its
+    /// request: plugin API 4): only then is <see cref="OverlayReturn.Menu"/> worth offering.
+    /// </summary>
+    public bool GameHasMenu
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _gameHasMenu;
+            }
+        }
+    }
+
     /// <summary>A mod with the overlay asked for its state in the last 30 s: the hint bar can name the button.</summary>
     public bool GameListening
     {
@@ -182,6 +198,7 @@ public sealed class OverlayBridge(TimeProvider clock)
         {
             _frame = null;
             _gamePid = 0;
+            _gameHasMenu = false;
             _seenAt = null;
         }
     }
@@ -189,9 +206,10 @@ public sealed class OverlayBridge(TimeProvider clock)
     /// <summary>
     /// The launcher opens the overlay itself (its own Guide watch, for a game without the mod):
     /// the same <see cref="Requested"/>, with <see cref="OverlayTrigger.Launcher"/>. False when it is not enabled.
+    /// <paramref name="gameHasMenu"/> is for the demo: a game without the mod cannot be told to open its menu.
     /// </summary>
-    public bool RequestFromLauncher(int gamePid, OverlayFrame? frame) =>
-        Request(new OverlayRequest(OverlayTrigger.Launcher, gamePid, frame, Again: false)) is not null;
+    public bool RequestFromLauncher(int gamePid, OverlayFrame? frame, bool gameHasMenu = false) =>
+        Request(new OverlayRequest(OverlayTrigger.Launcher, gamePid, frame, Again: false), gameHasMenu) is not null;
 
     private bool Close(OverlayReturn how)
     {
@@ -219,7 +237,7 @@ public sealed class OverlayBridge(TimeProvider clock)
     }
 
     /// <summary>The state after the request, or null when the overlay cannot open now.</summary>
-    private string? Request(OverlayRequest request)
+    private string? Request(OverlayRequest request, bool hasMenu)
     {
         var handlers = Requested;
         if (!Enabled || handlers is null)
@@ -230,6 +248,7 @@ public sealed class OverlayBridge(TimeProvider clock)
         lock (_gate)
         {
             request = request with { Again = _open };
+            _gameHasMenu = hasMenu;
             if (request.Frame is { } frame)
             {
                 _frame = frame;
@@ -260,7 +279,7 @@ public sealed class OverlayBridge(TimeProvider clock)
 
     // ---- the routes (LocalApi) ---------------------------------------------------------------
 
-    /// <summary>POST /local/v1/overlay/open?by=..&amp;pid=..[&amp;w=..&amp;h=..&amp;format=rgba] with the picture as the body.</summary>
+    /// <summary>POST /local/v1/overlay/open?by=..&amp;pid=..[&amp;menu=1][&amp;w=..&amp;h=..&amp;format=rgba] with the picture as the body.</summary>
     internal LocalResponse Open(IReadOnlyDictionary<string, string> query, ReadOnlyMemory<byte> body)
     {
         OverlayTrigger? by = query.GetValueOrDefault("by") switch
@@ -296,7 +315,7 @@ public sealed class OverlayBridge(TimeProvider clock)
             }
         }
         Seen();
-        return Request(new OverlayRequest(by.Value, pid, frame, Again: false)) is { } state
+        return Request(new OverlayRequest(by.Value, pid, frame, Again: false), hasMenu: query.GetValueOrDefault("menu") == "1") is { } state
             ? new LocalResponse(200, state)
             : new LocalResponse(409, JsonSerializer.Serialize(new { open = false, seq = Seq(), enabled = false }));
     }

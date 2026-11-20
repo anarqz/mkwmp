@@ -16,17 +16,20 @@
     </Grid.RowDefinitions>
 
     <!-- the title of the tile under the focus: follows the tile, hidden while the focus is elsewhere -->
-    <StackPanel x:Name="TitleHost" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Bottom" Opacity="0"
-                IsHitTestVisible="False" DataContext="{Binding SelectedTile}">
-      <StackPanel.RenderTransform>
-        <TranslateTransform x:Name="TitleShift" />
-      </StackPanel.RenderTransform>
-      <c:Icon Data="{Binding IconKey, Converter={StaticResource Conv.Icon}}" Width="36" Height="36" Foreground="{DynamicResource Brush.Accent}" StrokeThickness="2.2" />
-      <TextBlock Text="{Binding Title}" Style="{StaticResource Text.Accent}" FontSize="36" FontWeight="Regular" Margin="12,0,0,0" />
-    </StackPanel>
+    <!-- TitleFade: the overlay animation fades the title in with the tile's focus ring (HomePage.SetOverlayMotion) -->
+    <Grid x:Name="TitleFade" IsHitTestVisible="False">
+      <StackPanel x:Name="TitleHost" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Bottom" Opacity="0"
+                  IsHitTestVisible="False" DataContext="{Binding SelectedTile}">
+        <StackPanel.RenderTransform>
+          <TranslateTransform x:Name="TitleShift" />
+        </StackPanel.RenderTransform>
+        <c:Icon Data="{Binding IconKey, Converter={StaticResource Conv.Icon}}" Width="36" Height="36" Foreground="{DynamicResource Brush.Accent}" StrokeThickness="2.2" />
+        <TextBlock Text="{Binding Title}" Style="{StaticResource Text.Accent}" FontSize="36" FontWeight="Regular" Margin="12,0,0,0" />
+      </StackPanel>
+    </Grid>
 
     <c:SmoothScrollViewer x:Name="Carousel" Grid.Row="1" Style="{StaticResource Carousel}" ScrollChanged="OnCarouselScrolled">
-      <ItemsControl ItemsSource="{Binding Tiles}" Focusable="False" Margin="134,26,134,26">
+      <ItemsControl x:Name="TilesHost" ItemsSource="{Binding Tiles}" Focusable="False" Margin="134,26,134,26">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
             <StackPanel Orientation="Horizontal" />
@@ -36,6 +39,7 @@
           <DataTemplate>
             <c:Tile Title="{Binding Title}" Subtitle="{Binding Subtitle}" Badge="{Binding Badge}" Progress="{Binding Progress}"
                     Seed="{Binding Seed}" Icon="{Binding IconKey, Converter={StaticResource Conv.Icon}}"
+                    Image="{Binding Image}" Width="{Binding Width}"
                     Command="{Binding Command}" GotFocus="OnTileFocus" LostFocus="OnTileBlur" />
           </DataTemplate>
         </ItemsControl.ItemTemplate>
@@ -43,7 +47,7 @@
     </c:SmoothScrollViewer>
 
     <!-- the session's status (a click explains what blocks PLAY), then the server's -->
-    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+    <StackPanel x:Name="StatusLine" Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
       <Button Style="{StaticResource ChromeButton}" Padding="18,10" Command="{Binding StatusCommand}">
         <StackPanel Orientation="Horizontal">
           <c:Spinner Width="30" Height="30" Margin="0,0,14,0" Visibility="{Binding IsWorking, Converter={StaticResource Conv.Visible}}" />
@@ -115,10 +119,13 @@
       </StackPanel>
     </StackPanel>
 
-    <Border Grid.Row="3" Style="{StaticResource Dock}">
+    <Border x:Name="DockHost" Grid.Row="3" Style="{StaticResource Dock}">
       <StackPanel Orientation="Horizontal">
         <c:DockButton Icon="{Binding PlayIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding PlayLabel}"
                       Fill="{DynamicResource Brush.Accent}" Tint="{DynamicResource Brush.OnAccent}" Command="{Binding PlayCommand}" />
+        <!-- over a game that can open its own menu when told to (plugin API 4) -->
+        <c:DockButton Icon="{StaticResource Icon.Menu}" Label="{Binding GameMenuLabel}" Tint="#FF5B5BD6" Command="{Binding GameMenuCommand}"
+                      Visibility="{Binding ShowGameMenu, Converter={StaticResource Conv.Visible}}" />
         <c:DockButton Icon="{StaticResource Icon.Friends}" Label="{Binding S[home.friends]}" Tint="#FFF08A1A"
                       HasDot="{Binding HasRequests}" Command="{Binding FriendsCommand}" />
         <c:DockButton Icon="{StaticResource Icon.Headset}" Label="{Binding S[home.chat]}" Tint="#FF12A86B" Command="{Binding ChatCommand}" />

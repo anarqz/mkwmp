@@ -5,6 +5,7 @@
 #   .\shot.ps1 out.png --modal update        (also: available, confirm, message, progress)
 #   .\shot.ps1 out.png --friends             .\shot.ps1 out.png --page chat --sheet     .\shot.ps1 out.png --toast
 # More: --battery 93  --input keyboard  --locale pt-BR  --press a,b,x,y,up,down,left,right,start
+#   .\shot.ps1 out.png --overlay [--overlay-progress 0.3 | --overlay-return 0.5] [--overlay-frame <png>|none]   (docs/DESIGN.md, section 11)
 # -NoBuild skips the build.
 param([Parameter(Mandatory)][string]$Out, [switch]$NoBuild, [Parameter(ValueFromRemainingArguments)][object[]]$Rest)
 $ErrorActionPreference = 'Stop'

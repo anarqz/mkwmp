@@ -51,10 +51,12 @@ public sealed partial class Launcher
     private void RefreshGame()
     {
         InspectGame(out var install, out var check, out var integration);
+        var setup = InspectSetup(install);
         Mutate(() =>
         {
             _install = install;
             _check = check;
+            _setupStatus = setup;
             // The same verdict keeps the same object, so the window is not told every two seconds.
             if (integration is null || _integration is null || integration.State != _integration.State || integration.Summary != _integration.Summary
                 || !integration.Lines.SequenceEqual(_integration.Lines))

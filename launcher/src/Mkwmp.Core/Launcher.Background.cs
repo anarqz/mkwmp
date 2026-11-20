@@ -16,6 +16,7 @@ public sealed partial class Launcher
     private Release? _availableRelease;
     private Task _startupUpdates = Task.CompletedTask;
     private int _started;
+    private int _startupDeferred;
 
     /// <summary>The start-up update check and integration sync: <c>--headless</c> waits for it before PLAY.</summary>
     internal Task StartupUpdates => _startupUpdates;
@@ -53,13 +54,37 @@ public sealed partial class Launcher
         if (!_options.Headless)
         {
             _ = Task.Run(() => StarsLoopAsync(life), CancellationToken.None);
-            // Keep the start-up entry pointing at this launcher (it may have moved).
-            if (s.Background.StartWithSystem)
-            {
-                ApplyAutostart(true);
-            }
+        }
+        if (_options.OverlayHost)
+        {
+            // Standing by for a game that already runs: nothing of the launcher's own start-up until the player opens it.
+            SetUpdate(new UpdateView(UpdateState.UpToDate, null, null, 0, null, Strings.UpToDate));
+            Volatile.Write(ref _startupDeferred, 1);
+            return;
+        }
+        BeginStartupWork(s);
+    }
+
+    private void BeginStartupWork(LauncherSettings s)
+    {
+        // Keep the start-up entry pointing at this launcher (it may have moved).
+        if (!_options.Headless && s.Background.StartWithSystem)
+        {
+            ApplyAutostart(true);
         }
         _startupUpdates = Task.Run(StartupUpdatesAsync, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// The overlay host became the ordinary launcher (the player opened it): what
+    /// <see cref="LauncherOptions.OverlayHost"/> held back at the start runs now, once.
+    /// </summary>
+    public void LeaveOverlayHostMode()
+    {
+        if (Interlocked.Exchange(ref _startupDeferred, 0) == 1)
+        {
+            BeginStartupWork(Settings);
+        }
     }
 
     /// <summary>

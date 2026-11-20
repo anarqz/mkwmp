@@ -379,11 +379,13 @@ static int ask_open(OverlayTrigger by, int with_frame, OverlayState *st) {
         g_frame = NULL;
         plat_unlock(&g_frame_lock);
     }
+    // menu=1: this runtime opens its own menu when asked (plugin API 4), so the launcher may offer it
+    const char *menu = g_menu_open ? "&menu=1" : "";
     if (frame)
-        snprintf(path, sizeof path, "/local/v1/overlay/open?by=%s&pid=%lu&w=%d&h=%d&format=rgba", trigger_name(by),
-                 plat_process_id(), w, h);
+        snprintf(path, sizeof path, "/local/v1/overlay/open?by=%s&pid=%lu%s&w=%d&h=%d&format=rgba", trigger_name(by),
+                 plat_process_id(), menu, w, h);
     else
-        snprintf(path, sizeof path, "/local/v1/overlay/open?by=%s&pid=%lu", trigger_name(by), plat_process_id());
+        snprintf(path, sizeof path, "/local/v1/overlay/open?by=%s&pid=%lu%s", trigger_name(by), plat_process_id(), menu);
     plat_allow_foreground();   // Windows: the launcher may take the foreground from the game
     int status = request("POST", path, frame, frame ? (size_t)w * (size_t)h * 4 : 0, 5000, buf, sizeof buf, &answer);
     free(frame);

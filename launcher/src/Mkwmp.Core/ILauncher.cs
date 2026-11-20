@@ -96,6 +96,44 @@ public interface ILauncher : IAsyncDisposable
 
     /// <summary>Puts every game setting of the schema back to its default (locked ones stay).</summary>
     Task ResetGameSettingsAsync();
+
+    // The game's runtime (mkw-recomp), installed by the launcher from one pinned release
+    /// <summary>The pinned runtime and its install: not installed, installed, an update of ours to apply, or the install in progress.</summary>
+    RuntimeView Runtime { get; }
+
+    /// <summary>
+    /// Downloads (continuing a partial download), verifies and installs the pinned runtime, or
+    /// updates the install; then makes it the game folder. <paramref name="folder"/> null: the
+    /// install in use when it is MKWMP's build, else <see cref="RuntimeView.Folder"/>. Never
+    /// throws: progress and the outcome are in <see cref="Runtime"/>. Cancelling keeps the download.
+    /// </summary>
+    Task InstallRuntimeAsync(string? folder, CancellationToken cancel);
+
+    /// <summary>Stops an install in progress (what was downloaded stays), or clears a failure's note.</summary>
+    Task CancelRuntimeInstall();
+
+    // The game's setup (mkw-recomp: building the game from the player's own copy), run by the launcher
+    /// <summary>
+    /// Whether the game must be set up before PLAY and why, the setup in progress (step, fractions, time left), how the
+    /// last one ended, the player's copy the last one used and the log of the last run. A setup that is needed is also
+    /// <see cref="PlayProblem"/>.
+    /// </summary>
+    GameSetupView GameSetup { get; }
+
+    /// <summary>
+    /// Runs the setup. <paramref name="dumpPath"/>: the player's own copy of the game (a .nup or .nx file, or a folder
+    /// with exefs and romfs), read where it is and never copied; null repeats the last setup (after a runtime update, or
+    /// to continue one that stopped). Never throws: progress and the outcome are in <see cref="GameSetup"/>. Cancelling
+    /// ends it; the next run continues from the last finished step.
+    /// </summary>
+    Task RunGameSetupAsync(string? dumpPath, CancellationToken cancel);
+
+    /// <summary>Stops a setup in progress, or clears the note of the last one.</summary>
+    Task CancelGameSetup();
+
+    // The console-style overlay (launcher/docs/OVERLAY.md)
+    /// <summary>The game asks for the launcher over it (<c>Requested</c>); the window answers with <c>ReturnToGame</c>.</summary>
+    Overlay.OverlayBridge OverlayBridge { get; }
 }
 
 /// <summary>The game's own settings, for the window (see <see cref="IGameTarget.GameSettings"/>).</summary>

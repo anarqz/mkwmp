@@ -115,6 +115,28 @@ public static class GameWindow
         _ = SetForegroundWindow(game); // this process has the foreground: allowed
     }
 
+    /// <summary>
+    /// Where the game draws, in screen pixels: the launcher covers exactly that for the overlay, so
+    /// the picture shrinks from where the game was (a window as much as a full screen). Null for
+    /// no window, a minimised one, or one too small to be a game's.
+    /// </summary>
+    public static Int32Rect? ClientPixels(IntPtr game)
+    {
+        if (game == IntPtr.Zero || IsIconic(game) || !GetClientRect(game, out var client) || client.Right < 320 || client.Bottom < 200)
+        {
+            return null;
+        }
+        var origin = default(Point32);
+        return ClientToScreen(game, ref origin) ? new Int32Rect(origin.X, origin.Y, client.Right, client.Bottom) : null;
+    }
+
+    /// <summary>Moves a (borderless, not maximised) window onto that rectangle of the screen, without activating it.</summary>
+    public static void Place(Window launcher, Int32Rect pixels)
+    {
+        var hwnd = new WindowInteropHelper(launcher).EnsureHandle();
+        _ = SetWindowPos(hwnd, IntPtr.Zero, pixels.X, pixels.Y, pixels.Width, pixels.Height, 0x0014 /* SWP_NOZORDER | SWP_NOACTIVATE */);
+    }
+
     /// <summary>The frame as an image for the Play tile and the shrink animation (frozen: any thread may make it).</summary>
     public static BitmapSource ToBitmap(OverlayFrame frame)
     {
@@ -270,6 +292,10 @@ public static class GameWindow
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ShowWindow(IntPtr hwnd, int command);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int width, int height, uint flags);
 
 
     [DllImport("kernel32.dll")]

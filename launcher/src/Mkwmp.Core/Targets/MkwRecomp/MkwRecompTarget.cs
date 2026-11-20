@@ -49,10 +49,57 @@ public sealed class MkwRecompTarget : IGameTarget
 
     public bool KeepsOwnIntegration => Probe.DevProbe;
 
+    /// <summary>The mkw-recomp build the launcher installs: one pinned release of MKWMP's fork.</summary>
+    public RuntimeManifest? Runtime => RecompRuntime.Pinned;
+
     public bool NeedsPackage(GameInstall install)
     {
         ArgumentNullException.ThrowIfNull(install);
         return Probe.DevProbe || Recomp.ActiveMod(install.Root) is null;
+    }
+
+    // ---- the game's setup, run by the launcher (RecompSetup) ---------------------------------
+
+    /// <summary>Tests: the process started instead of the install's Python, for the given prepare.py arguments.</summary>
+    internal Func<IReadOnlyList<string>, ProcessStartInfo>? SetupCommandOverride { get; set; }
+
+    /// <summary>Tests: free bytes on a path's drive.</summary>
+    internal Func<string, long?>? SetupFreeSpace { get; set; }
+
+    public GameSetupStatus? SetupStatus(GameInstall install) => RecompSetup.Status(install);
+
+    public IReadOnlyList<string> ApplyOwnedSettings(GameInstall install)
+    {
+        var written = RecompSettings.EnforceOwned(this, install);
+        foreach (var line in written)
+        {
+            _note($"mkw.ini: {line} (kept by MKWMP)");
+        }
+        return written;
+    }
+
+    public async Task<GameSetupResult> RunSetupAsync(GameInstall install, GameSetupRequest request, IProgress<GameSetupProgress>? progress, CancellationToken cancel)
+    {
+        ArgumentNullException.ThrowIfNull(install);
+        ArgumentNullException.ThrowIfNull(request);
+        // Before the setup: its own start screen is never the one to offer an update or to open in the launcher's place.
+        ApplyOwnedSettings(install);
+        var result = await RecompSetup.RunAsync(
+            install,
+            request,
+            new RecompSetupHost
+            {
+                IsRunning = () => IsRunning(install),
+                FreeSpace = SetupFreeSpace ?? RuntimeInstaller.DriveFreeSpace,
+                Command = SetupCommandOverride,
+            },
+            progress,
+            cancel).ConfigureAwait(false);
+        if (result.Ok)
+        {
+            ApplyOwnedSettings(install); // prepare.py rewrites mkw.ini for the game's data: checked once more
+        }
+        return result;
     }
 
     public GameInstall? Detect(string folder)
@@ -85,6 +132,10 @@ public sealed class MkwRecompTarget : IGameTarget
         yield return Path.Combine(profile, "Downloads");
         yield return Path.Combine(profile, "Downloads", "GAMES");
         yield return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        if (RuntimeInstaller.DataFolder is { } installs)
+        {
+            yield return installs; // where the launcher installs mkw-recomp itself
+        }
         DriveInfo[] drives;
         try
         {
@@ -169,7 +220,8 @@ public sealed class MkwRecompTarget : IGameTarget
         {
             return new TargetCheck(TargetStatus.Unsupported, version, null, null, null);
         }
-        if (Recomp.RebuildProblemFor(id, Recomp.GameId(game)) is { } rebuild)
+        // An install the launcher sets up itself has no "open mkw-recomp once": SetupStatus says what to run instead.
+        if (!RecompSetup.Drives(install) && Recomp.RebuildProblemFor(id, Recomp.GameId(game)) is { } rebuild)
         {
             return new TargetCheck(TargetStatus.NeedsRebuild, rebuild, null, null, null);
         }
@@ -389,6 +441,29 @@ public sealed class MkwRecompTarget : IGameTarget
         }
         var want = File.Exists(Path.Combine(game, Probe.ProbeDll)) && (Probe.DevProbe || Recomp.ActiveMod(game) is null);
         _note($"wine: winmm override for mkw.exe: {Platform.WineHost.EnsureDllOverride("mkw.exe", "winmm", want)}");
+    }
+
+    /// <summary>The running mkw.exe processes of this Windows session (or Wine prefix).</summary>
+    public IReadOnlyList<int> ProcessIds(GameInstall install)
+    {
+        if (RunningOverride is not null)
+        {
+            return [];
+        }
+        try
+        {
+            var found = System.Diagnostics.Process.GetProcessesByName("mkw");
+            var ids = found.Select(p => p.Id).ToList();
+            foreach (var p in found)
+            {
+                p.Dispose();
+            }
+            return ids;
+        }
+        catch (Exception e) when (e is InvalidOperationException or Win32Exception or NotSupportedException)
+        {
+            return [];
+        }
     }
 
     /// <summary>Is mkw.exe running (also when Steam or the player started it)?</summary>

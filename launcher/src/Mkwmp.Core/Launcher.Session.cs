@@ -101,6 +101,10 @@ public sealed partial class Launcher
         {
             throw new LauncherException(missing);
         }
+        if (HostedGameProblem is { } hosted)
+        {
+            throw new LauncherException(hosted); // that game has its own seat: a second one would only fight it
+        }
         if (!LocalApiUp)
         {
             throw new LauncherException(Strings.AnotherLauncher(s.LocalPort));
@@ -111,6 +115,15 @@ public sealed partial class Launcher
         if (check.Problem is { } gate)
         {
             throw new LauncherException(check.Explain is null ? gate : $"{gate} ({check.Explain})");
+        }
+        // The game must be set up for this runtime (Launcher.GameSetup.cs): the game itself would stop at once, or run old code.
+        if (SetupRunning)
+        {
+            throw new LauncherException(Strings.SetupRunning);
+        }
+        if (target.SetupNeeded(install) is { } setup)
+        {
+            throw new LauncherException(setup.Message);
         }
         var api = Api(s.Server);
         var seat = new SeatSession(api, s.Seat, s.Name, s.Pin, Note, _clock, _options.BusyRetry);
@@ -131,7 +144,7 @@ public sealed partial class Launcher
         var address = string.Create(CultureInfo.InvariantCulture, $"127.0.0.1:{(_local.Port != 0 ? _local.Port : s.LocalPort)}");
         // Always the current server's lobby and certificate: a stale file from another server would make the game reject this one.
         void Write(string? ticket, string toLobby) =>
-            target.WriteSession(install, new SessionFile(toLobby, s.Name, address, Token, voicePort, ticket, s.Slot, lobbyCa));
+            target.WriteSession(install, new SessionFile(toLobby, s.Name, address, Token, voicePort, ticket, s.Slot, lobbyCa, LauncherExe));
 
         Write(null, lobby); // never a stale ticket
         // Consent, and a profile the server deleted (a month unused) comes back here, before the

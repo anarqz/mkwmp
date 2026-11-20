@@ -83,6 +83,9 @@ public sealed class DesignLauncher : ILauncher
 
     public IDeviceLab Devices => _devices;
 
+    /// <summary>A real bridge nobody calls from a game: the harness asks through <c>RequestFromLauncher</c>.</summary>
+    public Mkwmp.Core.Overlay.OverlayBridge OverlayBridge { get; } = new(TimeProvider.System);
+
     public string? PlayProblem { get; private set; }
 
     /// <summary>For screenshots and trying things (<c>--state</c>): another situation than the happy one.</summary>
@@ -510,6 +513,239 @@ public sealed class DesignLauncher : ILauncher
     public Task ResetGameSettingAsync(string id) => ChangeGameSettings(() => DemoGameSettings.Changes(id, null));
 
     public Task ResetGameSettingsAsync() => ChangeGameSettings(() => _gameValues.Keys.ToDictionary(id => id, _ => (string?)null));
+
+    // ---- the game's runtime (a pretend install of the pinned mkw-recomp) -------------------
+    private static readonly RuntimeManifest DemoRuntime = Mkwmp.Core.Targets.MkwRecomp.RecompRuntime.Pinned;
+    private CancellationTokenSource? _runtimeInstall;
+
+    public RuntimeView Runtime { get; private set; } = new(
+        RuntimeState.Installed, DemoRuntime.Version, DemoRuntime.Version, @"C:\Games\Mario Kart World\mkw-recomp", false,
+        0, 0, 0, 0, null, DemoRuntime.Size, DemoRuntime.Size + DemoRuntime.InstalledSize + DemoRuntime.SetupSpace, null, DemoRuntime.Credit);
+
+    /// <summary>For screenshots and trying things: the runtime as not installed, to update, or frozen mid-download.</summary>
+    public void PretendRuntime(RuntimeState state, double fraction = 0.42)
+    {
+        var done = (long)(DemoRuntime.Size * fraction);
+        Change(() => Runtime = state switch
+        {
+            RuntimeState.NotInstalled => Runtime with { State = state, InstalledVersion = null, Folder = @"C:\Users\Alex\AppData\Local\MKWMP\mkw-recomp", Note = null },
+            RuntimeState.UpdateAvailable => Runtime with { State = state, InstalledVersion = "0.1.14-mkwmp", Note = null },
+            RuntimeState.Downloading => Runtime with
+            {
+                State = state, Progress = fraction, BytesDone = done, BytesTotal = DemoRuntime.Size, BytesPerSecond = 6_300_000,
+                Remaining = TimeSpan.FromSeconds((DemoRuntime.Size - done) / 6_300_000.0), Note = null,
+            },
+            RuntimeState.Failed => Runtime with { State = state, Note = CoreStrings.RuntimeBadDownload(DemoRuntime.Asset) },
+            _ => Runtime with { State = state, Progress = fraction, Note = null },
+        });
+    }
+
+    public async Task InstallRuntimeAsync(string? folder, CancellationToken cancel)
+    {
+        if (Runtime.Busy)
+        {
+            return;
+        }
+        var before = Runtime;
+        using var both = CancellationTokenSource.CreateLinkedTokenSource(cancel, _lifetime.Token);
+        _runtimeInstall = both;
+        try
+        {
+            const int Steps = 120;
+            const double Speed = 6_300_000;
+            foreach (var (state, total) in new[] { (RuntimeState.Downloading, DemoRuntime.Size), (RuntimeState.Verifying, DemoRuntime.Size), (RuntimeState.Extracting, DemoRuntime.InstalledSize) })
+            {
+                var steps = state == RuntimeState.Downloading ? Steps : Steps / 4;
+                for (var i = 0; i <= steps; i++)
+                {
+                    var done = total * i / steps;
+                    Change(() => Runtime = Runtime with
+                    {
+                        State = state, Folder = folder ?? before.Folder, Progress = (double)done / total, BytesDone = done, BytesTotal = total,
+                        BytesPerSecond = Speed, Remaining = TimeSpan.FromSeconds((total - done) / Speed), Note = null,
+                    });
+                    await Task.Delay(50, both.Token).ConfigureAwait(false);
+                }
+            }
+            Change(() => Runtime = Runtime with
+            {
+                State = RuntimeState.Installed, InstalledVersion = DemoRuntime.Version, Foreign = false, Progress = 0, BytesDone = 0, BytesTotal = 0,
+                BytesPerSecond = 0, Remaining = null, Note = CoreStrings.RuntimeInstalled(DemoRuntime.Name, DemoRuntime.Version),
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            Change(() => Runtime = before with { Note = CoreStrings.RuntimePaused });
+        }
+        finally
+        {
+            _runtimeInstall = null;
+        }
+    }
+
+    public Task CancelRuntimeInstall()
+    {
+        if (_runtimeInstall is { } running)
+        {
+            try
+            {
+                running.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // it ended by itself
+            }
+        }
+        else if (Runtime.State == RuntimeState.Failed || Runtime.Note is not null)
+        {
+            Change(() => Runtime = Runtime with { State = Runtime.InstalledVersion is null ? RuntimeState.NotInstalled : RuntimeState.Installed, Note = null });
+        }
+        return Task.CompletedTask;
+    }
+
+    // ---- the game's setup (a pretend run of mkw-recomp's, with its real steps and their measured share of the time) ----
+    private const string DemoDump = @"D:\Games\Mario Kart World.nup";
+    private static readonly (string Step, double Seconds)[] DemoSetupSteps =
+        [("check", 4), ("exefs", 6), ("romfs", 1), ("generate", 160), ("compile", 186), ("shaders", 80), ("warm", 76), ("cleanup", 24)];
+
+    private static readonly GameSetupView DemoSetupIdle = GameSetupView.None with { Available = true, DumpPath = DemoDump, GameVersion = "1.8.0" };
+    private CancellationTokenSource? _gameSetup;
+
+    public GameSetupView GameSetup { get; private set; } = DemoSetupIdle;
+
+    /// <summary>The setup's view <paramref name="seconds"/> into a run on the reference machine.</summary>
+    private static GameSetupView DemoSetupAt(double seconds)
+    {
+        var total = DemoSetupSteps.Sum(s => s.Seconds);
+        var (index, before) = (0, 0.0);
+        while (index < DemoSetupSteps.Length - 1 && before + DemoSetupSteps[index].Seconds <= seconds)
+        {
+            before += DemoSetupSteps[index++].Seconds;
+        }
+        var (step, length) = DemoSetupSteps[index];
+        return DemoSetupIdle with
+        {
+            State = GameSetupState.Running,
+            Step = step,
+            StepLabel = CoreStrings.SetupStep(step, copy: false),
+            StepIndex = index,
+            StepCount = DemoSetupSteps.Length,
+            StepProgress = Math.Clamp((seconds - before) / length, 0, 1),
+            StepIndeterminate = step is "check" or "romfs" or "generate" or "cleanup",
+            Progress = Math.Clamp(seconds / total, 0, 1),
+            Remaining = TimeSpan.FromSeconds(Math.Max(0, total - seconds)),
+        };
+    }
+
+    /// <summary>For screenshots and trying things: the setup as needed, frozen mid-run, failed or done.</summary>
+    public void PretendGameSetup(GameSetupState state, GameSetupReason reason = GameSetupReason.NotSetUp, double fraction = 0.42)
+    {
+        var message = reason switch
+        {
+            GameSetupReason.Unfinished => CoreStrings.SetupUnfinished,
+            GameSetupReason.RuntimeChanged => CoreStrings.SetupRuntimeChanged(DemoRuntime.Name, DemoRuntime.Version),
+            GameSetupReason.GameMismatch => CoreStrings.SetupGameMismatch,
+            GameSetupReason.DumpMissing => CoreStrings.SetupDumpGone(DemoDump),
+            _ => CoreStrings.SetupNotSetUp,
+        };
+        var needsDump = reason is GameSetupReason.NotSetUp or GameSetupReason.DumpMissing;
+        var needed = DemoSetupIdle with
+        {
+            State = GameSetupState.NeedsSetup, Reason = reason, Message = message, NeedsDump = needsDump,
+            DumpPath = reason == GameSetupReason.NotSetUp ? null : DemoDump, GameVersion = reason == GameSetupReason.NotSetUp ? null : "1.8.0",
+        };
+        Change(() =>
+        {
+            GameSetup = state switch
+            {
+                GameSetupState.NeedsSetup => needed,
+                GameSetupState.Running => DemoSetupAt(DemoSetupSteps.Sum(s => s.Seconds) * fraction),
+                GameSetupState.Failed => needed with
+                {
+                    State = state, ErrorCode = "failed", LastLog = @"C:\Games\MKWMP\logs\setup-20261120-203015.log",
+                    Message = CoreStrings.SetupError("failed", "compiling the game code failed: out of memory", CoreStrings.SetupStep("compile", false), 1),
+                },
+                GameSetupState.Done => DemoSetupIdle with { State = state, Message = CoreStrings.SetupDone },
+                _ => DemoSetupIdle,
+            };
+            PlayProblem = GameSetup.State switch
+            {
+                GameSetupState.Running => CoreStrings.SetupRunning,
+                GameSetupState.NeedsSetup or GameSetupState.Failed => message,
+                _ => null,
+            };
+        });
+    }
+
+    public async Task RunGameSetupAsync(string? dumpPath, CancellationToken cancel)
+    {
+        if (GameSetup.Busy)
+        {
+            return;
+        }
+        var before = GameSetup;
+        using var both = CancellationTokenSource.CreateLinkedTokenSource(cancel, _lifetime.Token);
+        _gameSetup = both;
+        try
+        {
+            if (before.NeedsDump && string.IsNullOrWhiteSpace(dumpPath))
+            {
+                Change(() => GameSetup = before with { State = GameSetupState.Failed, ErrorCode = "source", Message = CoreStrings.SetupPickDump });
+                return;
+            }
+            // Ten minutes of setup in forty seconds.
+            var total = DemoSetupSteps.Sum(s => s.Seconds);
+            for (var seconds = 0.0; seconds < total; seconds += total / 400)
+            {
+                var at = seconds;
+                Change(() =>
+                {
+                    GameSetup = DemoSetupAt(at) with { DumpPath = dumpPath ?? before.DumpPath ?? DemoDump };
+                    PlayProblem = CoreStrings.SetupRunning;
+                });
+                await Task.Delay(100, both.Token).ConfigureAwait(false);
+            }
+            Change(() =>
+            {
+                GameSetup = DemoSetupIdle with { State = GameSetupState.Done, Message = CoreStrings.SetupDone, DumpPath = dumpPath ?? before.DumpPath ?? DemoDump };
+                PlayProblem = null;
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            Change(() =>
+            {
+                GameSetup = before with { State = before.Reason is null ? GameSetupState.Idle : GameSetupState.NeedsSetup, Message = CoreStrings.SetupCancelled, ErrorCode = null };
+                PlayProblem = before.Reason is null ? null : before.Message;
+            });
+        }
+        finally
+        {
+            _gameSetup = null;
+        }
+    }
+
+    public Task CancelGameSetup()
+    {
+        if (_gameSetup is { } running)
+        {
+            try
+            {
+                running.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // it ended by itself
+            }
+        }
+        else if (GameSetup.State is GameSetupState.Failed or GameSetupState.Done || GameSetup.Message is not null)
+        {
+            Change(() => GameSetup = GameSetup.Reason is null
+                ? DemoSetupIdle
+                : GameSetup with { State = GameSetupState.NeedsSetup, ErrorCode = null });
+        }
+        return Task.CompletedTask;
+    }
 
     public ValueTask DisposeAsync()
     {
