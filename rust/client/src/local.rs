@@ -3,7 +3,8 @@
 //!   POST http://127.0.0.1:<local_port>/local/v1/seat
 //!   Authorization: Bearer <launcher_token from mkwmp.toml>
 //!
-//! 200 {"state":"seated","ticket","lobby","name"}
+//! 200 {"state":"seated","ticket","lobby","name","room"}   (room: {lobby, ussid, ussids, at} | null,
+//!     from the seat server; SEAT_API.md §2)
 //! 200 {"state":"queued","position","seatsTotal"}
 //! 409 {"state":"refused","message"}   (fix client.toml; retrying won't help)
 //! 503 {"state":"unavailable","message"} (server unreachable; transient)
@@ -154,8 +155,8 @@ async fn want(State(core): State<Arc<Core>>, h: HeaderMap) -> Response {
         return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"state": "unavailable", "message": m}))).into_response();
     };
     match seat.want().await {
-        Answer::Seated { ticket, lobby, name } => {
-            Json(json!({"state": "seated", "ticket": ticket, "lobby": lobby, "name": name})).into_response()
+        Answer::Seated { ticket, lobby, name, room } => {
+            Json(json!({"state": "seated", "ticket": ticket, "lobby": lobby, "name": name, "room": room})).into_response()
         }
         Answer::Queued { position, seats_total } => {
             Json(json!({"state": "queued", "position": position, "seatsTotal": seats_total})).into_response()
