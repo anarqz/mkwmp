@@ -171,4 +171,9 @@ public static class Strings
         $"mkwmp-camera.dll speaks another version ({abi.ToString(CultureInfo.InvariantCulture)}): update MKWMP";
 
     public static string CameraDllBroken(string why) => $"mkwmp-camera.dll could not be loaded: {why}";
+
+    // ---- the game's own settings ----------------------------------------------------------
+    public const string GameSettingsCloseGame = "Close the game to change its settings";
+
+    public static string GameSettingsNone(string game) => $"{game} has no settings the launcher can change";
 }

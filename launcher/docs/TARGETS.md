@@ -54,6 +54,50 @@ as `LauncherOptions.Targets` (the default list is in `Launcher`'s constructor). 
 | `SupportItems(install)` | Files for the bug-report zip (game logs; the session file with secrets masked via `SupportBundle.RedactToml`), and a `system.txt` item whose text is appended to the report's system.txt. |
 | `NativeLibraryFolders(install)` | Optional: where mkwmp-camera.dll may be, for the launcher's own camera test. |
 
+### Game settings
+
+A target may let the launcher edit the game's **own** settings (video, sound, controls...). The
+window draws them from data and knows no game: SETTINGS > Game settings shows whatever the target
+in use declares (`src/Mkwmp.Core/Targets/GameSettings.cs`). Three optional members:
+
+| Member | What it must do |
+| --- | --- |
+| `GameSettings(install)` | The `GameSettingsSchema`, or null when this install has none. Per install: defaults and locks may depend on the machine. Called every 2 s: read at most a small file, and return the same object while nothing changed. |
+| `ReadGameSettings(install)` | Setting id to the value the game has set. A setting at its default is absent. Never throws. |
+| `WriteGameSettings(install, changes)` | Apply id to value (null: back to the default) in one atomic write that keeps everything else in the game's file (comments, unknown keys, order). Check every value with `GameSetting.Normalize` and throw `LauncherException` (a message for the player) for an unknown id, a bad value, a locked setting, or while the game runs if it would not see the change or would write over it. |
+
+The schema is categories (`Id`, `Title`, an `Icon` hint by name, an optional `Note`, `Advanced` for
+a page of testing options) holding settings. A setting has an `Id` (unique), `Label`,
+`Description`, `Default`, `RequiresRestart`, an optional `Group` heading, and a kind:
+
+| Kind | Made with | Values |
+| --- | --- | --- |
+| Toggle | `GameSetting.Toggle(id, label, description, default, requiresRestart)` | `"0"` / `"1"` (reading: anything but `"0"` is on) |
+| Choice | `GameSetting.Choice(..., options)` | one of `Options` (`Value`, `Label`); `""` is the "automatic / unset" option. An option with `Sets` is a preset: choosing it also writes those settings (`GameSettingsSchema.Changes`). |
+| Range | `GameSetting.Range(..., min, max, step, unit)` | a number with `.`, rounded to the step's decimals |
+| Text | `GameSetting.Text(..., maxLength, pattern)` | one line matching the regular expression |
+
+`VisibleWhen = new("other_id", ["value", ...])` shows (or enables) a setting only while another
+has one of those values in effect; `Locked = "why"` shows it but refuses changes. All values are
+strings in the game's own spelling. Labels are English; the window may translate by id.
+
+The core turns this into `ILauncher.GameSettings` (`GameSettingsView`: the schema, every value in
+effect, the ids that are set, `Editable`, a `Note`) and `SetGameSettingAsync`,
+`ResetGameSettingAsync`, `ResetGameSettingsAsync`, which never throw: a refusal is the view's note.
+
+Do not declare what the game or MKWMP's install depends on (paths to the game files, the mods
+list, save or profile folders), nor cheats.
+
+**mkw-recomp** (`Targets/MkwRecomp/RecompSettings.cs`, the file edits in `RecompIni.cs`): the
+Screen, Graphics, Sound, Controls, General and Advanced tabs of its menu (0.1.15 and
+0.1.15-mkwmp), from `runtime/core/base/cfg.c`. They are `key = value` lines of
+`<data dir>/mkw.ini` (beside mkw.exe unless `game_dir` there names another installation; the same
+place on Windows, under Proton and in the Linux build), written as the game's own `cfg_save_to`
+writes them. The game reads the file at start and holds the values while it runs, so writes are
+refused then. An `MKW_<KEY>` environment variable wins over the file: that setting is locked.
+Defaults follow the game's device profile (the Steam Deck: fullscreen, 1280x800, VSync, 720p; Big
+Picture / Gaming Mode: fullscreen), read from the launcher's environment.
+
 ### An emulator, concretely
 
 - `Detect`: the emulator's executable (and version, from its file version or a hash table).

@@ -223,6 +223,7 @@ public sealed class MkwRecompTarget : IGameTarget
                 {
                     InstallBundle(game, package, running);
                 }
+                SyncWineOverride(game);
                 return Inspect(install, package);
             },
             cancel);
@@ -307,6 +308,7 @@ public sealed class MkwRecompTarget : IGameTarget
                 {
                     _note($"uninstall: {line}");
                 }
+                SyncWineOverride(install.Root);
             },
             cancel);
     }
@@ -355,6 +357,7 @@ public sealed class MkwRecompTarget : IGameTarget
     {
         ArgumentNullException.ThrowIfNull(install);
         ArgumentNullException.ThrowIfNull(options);
+        SyncWineOverride(install.Root);
         var command = options.CustomCommand?.Trim() ?? "";
         var start = command.Length == 0
             ? new ProcessStartInfo(install.Executable, "--play")
@@ -372,6 +375,22 @@ public sealed class MkwRecompTarget : IGameTarget
         }
     }
 
+    /// <summary>
+    /// Under Wine/Proton the probe (winmm.dll beside mkw.exe) loads only with the per-app DLL
+    /// override <c>winmm=native,builtin</c> for mkw.exe (Infinity Launcher found the environment
+    /// variable alone never reaches the child): set while our probe is there and the mod does not
+    /// carry the patch, removed otherwise. On Windows nothing happens.
+    /// </summary>
+    private void SyncWineOverride(string game)
+    {
+        if (!Platform.WineHost.Detected)
+        {
+            return;
+        }
+        var want = File.Exists(Path.Combine(game, Probe.ProbeDll)) && (Probe.DevProbe || Recomp.ActiveMod(game) is null);
+        _note($"wine: winmm override for mkw.exe: {Platform.WineHost.EnsureDllOverride("mkw.exe", "winmm", want)}");
+    }
+
     /// <summary>Is mkw.exe running (also when Steam or the player started it)?</summary>
     public bool IsRunning(GameInstall install)
     {
@@ -386,12 +405,54 @@ public sealed class MkwRecompTarget : IGameTarget
             {
                 p.Dispose();
             }
-            return found.Length > 0;
+            if (found.Length > 0)
+            {
+                return true;
+            }
         }
         catch (Exception e) when (e is InvalidOperationException or Win32Exception or NotSupportedException)
         {
-            return false;
+            // the Linux process list below may still tell
         }
+        // Under Wine / Proton the process list is this prefix's only: a game Steam started from its own shortcut
+        // (another prefix) shows in Linux's list (as the Rust launcher looked on Linux).
+        return Platform.WineHost.LinuxRoot is { } root && ProcHasGame(Path.Combine(root, "proc"));
+    }
+
+    /// <summary>
+    /// Whether a process in Linux's <c>/proc</c> (<paramref name="proc"/>, as Wine maps it) was
+    /// started with an argument that names mkw.exe: <c>&lt;pid&gt;/cmdline</c> holds the arguments,
+    /// each ended by a NUL (Wine's own process for the game, or Proton's wrapper around it).
+    /// </summary>
+    internal static bool ProcHasGame(string proc)
+    {
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(proc))
+            {
+                if (!Path.GetFileName(dir).All(char.IsAsciiDigit))
+                {
+                    continue;
+                }
+                try
+                {
+                    var arguments = System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(Path.Combine(dir, "cmdline"))).Split('\0');
+                    if (arguments.Any(a => a.Split('/', '\\')[^1].Equals(Recomp.Exe, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return true;
+                    }
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    // the process ended meanwhile, or is another user's
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // no /proc to read
+        }
+        return false;
     }
 
     public IEnumerable<string> NativeLibraryFolders(GameInstall install)

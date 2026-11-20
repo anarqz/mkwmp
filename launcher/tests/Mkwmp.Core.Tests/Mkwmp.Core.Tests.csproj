@@ -13,6 +13,8 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <ProjectReference Include="..\..\src\Mkwmp.Core\Mkwmp.Core.csproj" />
+    <!-- Copies of real game files the tests edit (mkw.ini from an mkw-recomp 0.1.15 install, paths made generic). -->
+    <None Update="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

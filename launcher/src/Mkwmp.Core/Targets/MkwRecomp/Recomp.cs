@@ -204,9 +204,14 @@ internal static class Recomp
     /// Where mkw-recomp keeps this installation's data (mkwgame.dll, mkw.ini, logs/, profile/):
     /// the folder with mkw.exe, unless mkw-recomp 0.1.12's "choose game folder" wrote
     /// <c>game_dir = "&lt;path&gt;"</c> into the mkw.ini beside mkw.exe (absolute, or relative to that
-    /// folder). The game patch's own files always stay beside mkw.exe.
+    /// folder). The game patch's own files always stay beside mkw.exe. Under Wine / Proton a
+    /// Linux path there (<c>/home/deck/mkw</c>, written by the Linux build of mkw-recomp) is the
+    /// same folder on the drive Wine maps the Linux root to (<c>Z:\home\deck\mkw</c>).
     /// </summary>
-    public static string DataDir(string game)
+    public static string DataDir(string game) => DataDir(game, Platform.WineHost.LinuxRoot);
+
+    /// <param name="linuxRoot">The Linux root as this process sees it (<c>Z:\</c>); null on Windows.</param>
+    internal static string DataDir(string game, string? linuxRoot)
     {
         if (ReadText(Path.Combine(game, "mkw.ini")) is not { } ini)
         {
@@ -223,6 +228,10 @@ internal static class Recomp
             if (v.Length == 0)
             {
                 break;
+            }
+            if (linuxRoot is not null && v[0] == '/' && (v.Length == 1 || v[1] != '/'))
+            {
+                return Path.Combine(linuxRoot, v[1..].Replace('/', '\\'));
             }
             var absolute = v[0] is '/' or '\\' || (v.Length > 1 && v[1] == ':');
             return absolute ? v : Path.Combine(game, v);

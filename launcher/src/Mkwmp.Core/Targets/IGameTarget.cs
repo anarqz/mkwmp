@@ -78,6 +78,43 @@ public interface IGameTarget
 
     /// <summary>Folders of this install that may hold MKWMP's native libraries (mkwmp-camera.dll) for the launcher's own device tests.</summary>
     IEnumerable<string> NativeLibraryFolders(GameInstall install) => [];
+
+    /// <summary>
+    /// A per-player setting that MKWMP's hook keeps inside the game (mkw-recomp: the mod's
+    /// <c>camera</c> / <c>camera_view</c>, see <see cref="MkwRecomp.ModSettings"/>); null when unset
+    /// or when this target has none. The default serves mkw-recomp installs and no other.
+    /// </summary>
+    string? ReadModSetting(GameInstall install, string key) => MkwRecomp.ModSettings.Read(install, key);
+
+    /// <summary>
+    /// Changes such a setting (null removes it) while the game is closed. False: this target has
+    /// none. Throws <see cref="LauncherException"/> with what the player must do (close the game,
+    /// start it once) or why the file could not be written.
+    /// </summary>
+    bool WriteModSetting(GameInstall install, string key, string? value) => MkwRecomp.ModSettings.Write(this, install, key, value);
+
+    /// <summary>
+    /// The game's own settings (video, sound, controls...) that the launcher may edit for this
+    /// install, as data the window draws (launcher/docs/TARGETS.md, "Game settings"); null when
+    /// this target has none. Called often: keep it to reading a small file, and return the same
+    /// object while nothing changed. The default serves mkw-recomp installs and no other.
+    /// </summary>
+    GameSettingsSchema? GameSettings(GameInstall install) => MkwRecomp.RecompSettings.Schema(install);
+
+    /// <summary>
+    /// The values the game has set, by setting id; a setting at its default is absent (see
+    /// <see cref="GameSettingsSchema.Effective"/>). Never throws: an unreadable file reads as empty.
+    /// </summary>
+    IReadOnlyDictionary<string, string> ReadGameSettings(GameInstall install) => MkwRecomp.RecompSettings.Read(install);
+
+    /// <summary>
+    /// Changes settings (id to value; null puts a setting back to its default), atomically and
+    /// keeping everything else in the game's file as it is. Throws <see cref="LauncherException"/>
+    /// with a message for the player: an unknown setting, a value it does not take
+    /// (<see cref="GameSetting.Normalize"/>), a locked setting, a game that runs and would not see
+    /// the change or would write over it, a file that cannot be written.
+    /// </summary>
+    void WriteGameSettings(GameInstall install, IReadOnlyDictionary<string, string?> changes) => MkwRecomp.RecompSettings.Write(this, install, changes);
 }
 
 /// <param name="Name">The file's name in the release and in SHA256SUMS.</param>

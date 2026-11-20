@@ -80,6 +80,43 @@ public interface ILauncher : IAsyncDisposable
     Task<string> SaveBugReportAsync();
 
     void ShowTestToast();
+
+    // The game's own settings (video, sound, controls...), declared by the target in use
+    /// <summary>What "Game settings" shows: the target's schema, every value in effect, and whether they can be changed now.</summary>
+    GameSettingsView GameSettings { get; }
+
+    /// <summary>
+    /// Changes one game setting (a preset also sets what it presets). Never throws: a refusal
+    /// (unknown setting, bad value, the game is running) is the view's <see cref="GameSettingsView.Note"/>.
+    /// </summary>
+    Task SetGameSettingAsync(string id, string value);
+
+    /// <summary>Puts one game setting back to its default.</summary>
+    Task ResetGameSettingAsync(string id);
+
+    /// <summary>Puts every game setting of the schema back to its default (locked ones stay).</summary>
+    Task ResetGameSettingsAsync();
+}
+
+/// <summary>The game's own settings, for the window (see <see cref="IGameTarget.GameSettings"/>).</summary>
+/// <param name="Schema">The pages and settings; null when there is no game folder or this game has none (see <paramref name="Note"/>).</param>
+/// <param name="Values">The value in effect of every setting of the schema, by id: what the game has set, else the default.</param>
+/// <param name="Changed">The ids the game has a value set for (the others are at their default; resetting one takes it out).</param>
+/// <param name="Editable">False while nothing can be changed: no schema, or the game is running.</param>
+/// <param name="Note">Why it is not editable, or what the last change was refused for; null when fine.</param>
+public sealed record GameSettingsView(
+    GameSettingsSchema? Schema,
+    IReadOnlyDictionary<string, string> Values,
+    IReadOnlySet<string> Changed,
+    bool Editable,
+    string? Note,
+    bool NoteIsError)
+{
+    /// <summary>The value in effect of a setting ("" for an id the schema lacks).</summary>
+    public string Value(string id) => Values.TryGetValue(id, out var v) ? v : "";
+
+    /// <summary>Whether a setting's condition holds now (<see cref="GameSetting.VisibleWhen"/>).</summary>
+    public bool IsVisible(GameSetting setting) => GameSettingsSchema.IsVisible(setting, Values);
 }
 
 public sealed record Toast(string Title, string Body, ToastKind Kind);

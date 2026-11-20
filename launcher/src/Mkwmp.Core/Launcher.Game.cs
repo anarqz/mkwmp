@@ -62,6 +62,7 @@ public sealed partial class Launcher
                 _integration = integration;
             }
         });
+        FollowGameSettings();
     }
 
     /// <summary>
