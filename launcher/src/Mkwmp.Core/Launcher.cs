@@ -1,0 +1,637 @@
+// Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
+using System.Security.Cryptography;
+using Mkwmp.Core.Devices;
+using Mkwmp.Core.Net;
+using Mkwmp.Core.Targets;
+using Mkwmp.Core.Targets.MkwRecomp;
+using Mkwmp.Core.Updates;
+
+namespace Mkwmp.Core;
+
+/// <summary>
+/// The launcher's engine (the port of rust/client's Core), shared by the window and
+/// <c>--headless</c>: settings, the server's public status, the profile, friends, the PLAY session
+/// (seat + game), the game's integration and updates. It knows no game: everything about one way
+/// of running the game is behind <see cref="IGameTarget"/>, picked by
+/// <see cref="LauncherSettings.Target"/>.
+/// <para>
+/// Thread-safe. The views are immutable and replaced as a whole under one lock;
+/// <see cref="Changed"/> is raised outside it, on whatever thread made the change.
+/// </para>
+/// </summary>
+public sealed partial class Launcher : ILauncher, ILocalApiHost
+{
+    private readonly Lock _gate = new();
+    /// <summary>One config write at a time (the window and the local API both save).</summary>
+    private readonly Lock _configWrite = new();
+    private readonly LauncherOptions _options;
+    private readonly TimeProvider _clock;
+    private readonly HttpClient _http;
+    private readonly TargetRegistry _targets;
+    private readonly Updater _updater;
+    private readonly LocalApi _local;
+    private readonly DeviceLab _devices;
+    private readonly CancellationTokenSource _life = new();
+    private readonly string _userAgent;
+    private readonly IReadOnlyList<TargetInfo> _targetInfos;
+
+    // ---- the state the views are built from (under _gate) ---------------------------------
+    private ClientConfig _config;
+    private RegisterState _register;
+    private string? _registerMessage;
+    private ServerView _server = new(ServerState.Checking, null, 0, 0, 0, null);
+    private SessionState _sessionState;
+    private SeatSnapshot? _seatSnapshot;
+    private bool _gameRunning;
+    private string? _sessionError;
+    private string? _saveError;
+    private FriendList? _friendList;
+    private (string Text, bool IsError)? _friendsNote;
+    private bool _friendsBusy;
+    private bool? _reportLoaded;
+    private OpenReport? _openReport;
+    private (string Text, bool IsError)? _reportNote;
+    private bool _reportBusy;
+    private GameInstall? _install;
+    private TargetCheck? _check;
+    private IntegrationReport? _integration;
+    private bool _searching;
+    private bool _gameWorking;
+    private (string Text, bool IsError)? _gameNote;
+    private bool _localApiUp;
+    private int _stars;
+
+    // ---- the views (replaced by Rebuild, read without the lock) ---------------------------
+    private volatile LauncherSettings _settingsView;
+    private volatile ServerView _serverView;
+    private volatile ProfileView _profileView;
+    private volatile SessionView _sessionView;
+    private volatile FriendsView _friendsView;
+    private volatile GameView _gameView;
+    private volatile VoiceView _voiceView;
+    private volatile ReportView _reportView;
+    private volatile UpdateView _updateView = new(UpdateState.Checking, null, null, 0, null, "");
+    private volatile string? _playProblem;
+
+    /// <summary>
+    /// Opens the launcher on a settings file. Throws <see cref="LauncherException"/> when
+    /// client.toml exists but cannot be read or parsed (the player must fix or delete it; starting
+    /// with defaults would overwrite their PIN on the first save).
+    /// </summary>
+    /// <param name="configPath">client.toml (it need not exist yet).</param>
+    /// <param name="launcherFolder">The folder of the executable: <c>logs/</c> and the bundled <c>game/</c> folder live there.</param>
+    /// <param name="options">The command line and host overrides.</param>
+    /// <param name="http">Every request goes through this handler (tests: a fake server).</param>
+    /// <param name="clock">Time, for tests.</param>
+    public Launcher(string configPath, string launcherFolder, LauncherOptions? options = null, HttpMessageHandler? http = null, TimeProvider? clock = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(configPath);
+        ArgumentException.ThrowIfNullOrEmpty(launcherFolder);
+        ConfigPath = configPath;
+        LauncherFolder = launcherFolder;
+        _options = options ?? new LauncherOptions();
+        _clock = clock ?? TimeProvider.System;
+        Version = _options.Version ?? LauncherOptions.AssemblyVersion;
+        _userAgent = $"mkwmp-launcher/{Version}";
+        // Each call sets its own time limit (a status check: 10 s; the friends long-poll: 40 s).
+        _http = http is null ? new HttpClient() : new HttpClient(http, disposeHandler: false);
+        _http.Timeout = Timeout.InfiniteTimeSpan;
+        Log = new SessionLog(launcherFolder, _clock, echo: true);
+        AppDomain.CurrentDomain.UnhandledException += OnCrash;
+        _config = ClientConfig.LoadOrDefault(configPath);
+        _targets = new TargetRegistry(_options.Targets ?? [new MkwRecompTarget(Version, Log.Note)]);
+        _targetInfos = _targets.Infos;
+        _updater = new Updater(_http, _userAgent, _options.UpdateApi, _options.ReleaseKeys);
+        _local = new LocalApi(this, _clock);
+        _devices = new DeviceLab(CameraFolders, Log.Note);
+        Token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+        // A launcher dropped into the game folder (or beside it) finds the game next to it.
+        if (_config.Settings.Game.Length == 0
+            && GameFinder.Find(_targets, null, null, launcherFolder, _config.Settings.Target, searchRoots: []) is { } near)
+        {
+            _config = _config with { Settings = _config.Settings with { Game = near.Install.Root, Target = near.Target.Id } };
+        }
+        _localApiUp = !_options.BindLocalApi;
+        _settingsView = _config.Settings;
+        _serverView = _server;
+        _profileView = null!;
+        _sessionView = null!;
+        _friendsView = null!;
+        _gameView = null!;
+        _voiceView = null!;
+        _reportView = null!;
+        InspectGame(out _install, out _check, out _integration);
+        lock (_gate)
+        {
+            Rebuild();
+        }
+    }
+
+    public event EventHandler? Changed;
+
+    public event EventHandler<Toast>? Toasted;
+
+    public string ConfigPath { get; }
+
+    public string LauncherFolder { get; }
+
+    /// <summary>This session's log (the window may add its own lines).</summary>
+    public SessionLog Log { get; }
+
+    public string Version { get; }
+
+    /// <summary>The bearer token of the local API, random per start, written into the game's session file.</summary>
+    internal string Token { get; }
+
+    /// <summary>The port the local API listens on (0 until bound).</summary>
+    public int LocalApiPort => _local.Port;
+
+    /// <summary>
+    /// The game's local API is listening in this process. While it is not (another launcher holds
+    /// the port), PLAY is refused: the game would reach the other launcher.
+    /// </summary>
+    public bool LocalApiUp
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _localApiUp;
+            }
+        }
+    }
+
+    public LauncherSettings Settings => _settingsView;
+
+    public ServerView Server => _serverView;
+
+    public ProfileView Profile => _profileView;
+
+    public SessionView Session => _sessionView;
+
+    public FriendsView Friends => _friendsView;
+
+    public GameView Game => _gameView;
+
+    public VoiceView Voice => _voiceView;
+
+    public ReportView Report => _reportView;
+
+    public UpdateView Update => _updateView;
+
+    public int GitHubStars
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _stars;
+            }
+        }
+    }
+
+    public IDeviceLab Devices => _devices;
+
+    public string? PlayProblem => _playProblem;
+
+    /// <summary>The registered game targets (the selected one first is not implied: see <see cref="LauncherSettings.Target"/>).</summary>
+    public TargetRegistry Targets => _targets;
+
+    // ILocalApiHost
+    string ILocalApiHost.Token => Token;
+
+    SeatSession? ILocalApiHost.Seat => _seat;
+
+    IReadOnlyList<Friend>? ILocalApiHost.FriendsOrNull
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _friendList?.Friends;
+            }
+        }
+    }
+
+    ClientConfig ILocalApiHost.Config => Config;
+
+    string? ILocalApiHost.EditVoice(Func<ClientConfig, ClientConfig> edit)
+    {
+        try
+        {
+            EditConfig(edit, wakeFriends: false);
+            return null;
+        }
+        catch (LauncherException e)
+        {
+            return e.Message;
+        }
+    }
+
+    internal ClientConfig Config
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _config;
+            }
+        }
+    }
+
+    private bool LaunchesGame(LauncherSettings s) => s.Launch && !_options.NoLaunch;
+
+    private bool UpdatesOn(LauncherSettings s) => s.AutoUpdate && !_options.NoUpdate;
+
+    private void Note(string message) => Log.Note(message);
+
+    // ---- state changes --------------------------------------------------------------------
+
+    /// <summary>Changes the state under the lock, rebuilds the views, and tells the window when one of them is different.</summary>
+    private void Mutate(Action change)
+    {
+        if (MutateQuietly(change))
+        {
+            RaiseChanged();
+        }
+    }
+
+    /// <summary>As <see cref="Mutate"/>, for a caller that holds another lock: it raises <see cref="Changed"/> itself after letting go.</summary>
+    private bool MutateQuietly(Action change)
+    {
+        lock (_gate)
+        {
+            change();
+            return Rebuild();
+        }
+    }
+
+    private void RaiseChanged()
+    {
+        try
+        {
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception e) when (e is InvalidOperationException or ObjectDisposedException or TaskCanceledException)
+        {
+            // a window that is closing must not stop a background loop
+        }
+    }
+
+    private void Toast(Toast toast)
+    {
+        try
+        {
+            Toasted?.Invoke(this, toast);
+        }
+        catch (Exception e) when (e is InvalidOperationException or ObjectDisposedException or TaskCanceledException)
+        {
+            // as above
+        }
+    }
+
+    /// <summary>What is missing in the settings before PLAY can work, in the order the player fixes it.</summary>
+    internal static string? ConfigProblem(LauncherSettings s, bool gameFound, string folderHint)
+    {
+        if (!s.AdultConsent)
+        {
+            return Strings.NoConsent;
+        }
+        if (!ClientConfig.ValidName(s.Name))
+        {
+            return Strings.PickGamertag;
+        }
+        if (!ClientConfig.ValidPin(s.Pin))
+        {
+            return Strings.NeedPin;
+        }
+        if (string.IsNullOrWhiteSpace(s.Server))
+        {
+            return Strings.SetServer;
+        }
+        if (!gameFound)
+        {
+            return Strings.SetGameFolder(folderHint);
+        }
+        return s.Patch ? null : Strings.InstallPatchFirst;
+    }
+
+    /// <summary>Rebuilds every view from the state (under the lock); true when one changed.</summary>
+    private bool Rebuild()
+    {
+        var changed = false;
+        void Put<T>(ref T field, T value)
+            where T : class
+        {
+            if (!EqualityComparer<T>.Default.Equals(field, value))
+            {
+                field = value;
+                changed = true;
+            }
+        }
+
+        var s = _config.Settings;
+        var target = _targets.Get(s.Target);
+        var configProblem = ConfigProblem(s, _install is not null, target.FolderHint);
+        var settings = _settingsView;
+        Put(ref settings, s);
+        _settingsView = settings;
+
+        var server = _serverView;
+        Put(ref server, _server);
+        _serverView = server;
+
+        var nameValid = ClientConfig.ValidName(s.Name);
+        var (message, isError) = s.Name.Length > 0 && !nameValid ? (Strings.NameRule, true)
+            : _register == RegisterState.Failed ? (_registerMessage ?? Strings.ServerError, true)
+            : _register == RegisterState.Deleted && s.Name.Length == 0 ? (Strings.ProfileDeleted, false)
+            : _register == RegisterState.Taken && s.Pin.Length != 6 ? (Strings.NameIsRegistered, true)
+            : s.Pin.Length == 6 ? (Strings.KeepYourPin, false)
+            : (Strings.RegisterToPlay, false);
+        var profile = _profileView;
+        Put(ref profile, new ProfileView(s.Name, s.Pin, nameValid, nameValid && s.Pin.Length == 6, _register, message, isError));
+        _profileView = profile;
+
+        var steam = !LaunchesGame(s);
+        var snap = _seatSnapshot;
+        var (status, tone) = _sessionState switch
+        {
+            SessionState.Idle => configProblem is null ? (Strings.Ready, "plain") : (configProblem.ToUpperInvariant(), "warn"),
+            SessionState.Starting => (Strings.Connecting, "info"),
+            SessionState.Failed => (_sessionError ?? "", "bad"),
+            _ => snap switch
+            {
+                { Phase: SeatPhase.Refused } => (snap.Message ?? "", "bad"),
+                { Phase: SeatPhase.Busy } => (snap.Message ?? "", "warn"),
+                { Phase: SeatPhase.Queued } => (Strings.Queued(snap.Position), "warn"),
+                { Phase: SeatPhase.WaitingForGame } => (steam && !_gameRunning ? Strings.StartFromSteam : Strings.PickOnlinePlay, "info"),
+                { Phase: SeatPhase.Seated } => (steam && !_gameRunning ? Strings.SeatedStartFromSteam : Strings.SeatedHaveFun, "good"),
+                _ => (Strings.TakingASeat, "info"),
+            },
+        };
+        if (_saveError is not null)
+        {
+            (status, tone) = (_saveError, "bad");
+        }
+        var running = _sessionState == SessionState.Running;
+        var session = _sessionView;
+        Put(ref session, new SessionView(
+            _sessionState,
+            running ? snap?.Phase ?? SeatPhase.Joining : null,
+            running && snap is { Phase: SeatPhase.Queued } ? snap.Position : 0,
+            running && _gameRunning,
+            steam,
+            status,
+            tone));
+        _sessionView = session;
+
+        var friends = _friendsView;
+        Put(ref friends, new FriendsView(
+            _friendList is not null,
+            _friendList?.Friends ?? [],
+            _friendList?.Incoming ?? [],
+            _friendList?.Outgoing ?? [],
+            _friendsNote?.Text,
+            _friendsNote?.IsError ?? false,
+            _friendsBusy));
+        _friendsView = friends;
+
+        var voice = _voiceView;
+        Put(ref voice, new VoiceView(_config.Inputs, _config.Outputs, _config.Mutes));
+        _voiceView = voice;
+
+        var report = _reportView;
+        Put(ref report, new ReportView(_reportLoaded, _openReport, Strings.ReportReasons, _reportNote?.Text, _reportNote?.IsError ?? false, _reportBusy));
+        _reportView = report;
+
+        // What blocks PLAY, in the Rust window's order: the settings, the game's gates, the local API, the integration.
+        var check = _check;
+        var integrationProblem = _integration is { Ok: false } bad ? bad.Summary : null;
+        var problem = configProblem ?? check?.Problem ?? LocalApiProblem(s) ?? integrationProblem;
+        if (check is { Status: TargetStatus.Ready } && integrationProblem is not null)
+        {
+            check = check with { Status = TargetStatus.NoIntegration, Problem = integrationProblem };
+        }
+        var game = _gameView;
+        Put(ref game, new GameView(_targetInfos, _install, check, _integration, _searching, _gameWorking, _gameNote?.Text, _gameNote?.IsError ?? false));
+        _gameView = game;
+
+        if (_playProblem != problem)
+        {
+            _playProblem = problem;
+            changed = true;
+        }
+        return changed;
+    }
+
+    private string? LocalApiProblem(LauncherSettings s) => _localApiUp ? null : Strings.AnotherLauncher(s.LocalPort);
+
+    // ---- settings -------------------------------------------------------------------------
+
+    /// <summary>Changes client.toml in place and saves it at once when something changed; throws <see cref="LauncherException"/> when it cannot be written.</summary>
+    private void EditConfig(Func<ClientConfig, ClientConfig> edit, bool wakeFriends)
+    {
+        bool changed;
+        lock (_configWrite)
+        {
+            var before = Config;
+            var after = edit(before);
+            if (after.SameAs(before))
+            {
+                return;
+            }
+            after.Save(ConfigPath);
+            changed = MutateQuietly(() => _config = after);
+        }
+        // Outside the lock: a window that handles this by saving something itself must not wait on us.
+        if (changed)
+        {
+            RaiseChanged();
+        }
+        if (wakeFriends)
+        {
+            // Another name or PIN signs in again; the status pill follows another server at once.
+            _friendsWake.Set();
+            _statusWake.Set();
+        }
+    }
+
+    public Task SaveSettingsAsync(LauncherSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        // Off the caller's thread (the window's): the file write, and the look at a new game folder.
+        return Task.Run(() => SaveSettingsCore(settings));
+    }
+
+    private void SaveSettingsCore(LauncherSettings settings)
+    {
+        var before = Settings;
+        // A PIN belongs to one name: a new name never goes out with the old name's PIN.
+        if (!string.Equals(settings.Name, before.Name, StringComparison.OrdinalIgnoreCase) && settings.Pin == before.Pin)
+        {
+            settings = settings with { Pin = "" };
+        }
+        string? error = null;
+        try
+        {
+            // The voice lists the game owns (its devices, its mutes) are kept as they are now.
+            EditConfig(c => c with { Settings = settings }, wakeFriends: true);
+        }
+        catch (LauncherException e)
+        {
+            error = e.Message;
+        }
+        if (error is null && settings.Background.StartWithSystem != before.Background.StartWithSystem)
+        {
+            error = ApplyAutostart(settings.Background.StartWithSystem);
+        }
+        Mutate(() =>
+        {
+            _saveError = error;
+            if (settings.Name != before.Name)
+            {
+                (_register, _registerMessage) = (RegisterState.Idle, null); // the last REGISTER outcome was about another name
+            }
+        });
+        if (error is null && settings.AdultConsent != before.AdultConsent)
+        {
+            ConsentChanged();
+        }
+        if (settings.Game != before.Game || settings.Target != before.Target)
+        {
+            RefreshGame();
+        }
+    }
+
+    public Task SetConsentAsync(bool adult) => SaveSettingsAsync(Settings with { AdultConsent = adult });
+
+    private string? ApplyAutostart(bool on)
+    {
+        var exe = _options.Executable ?? LauncherOptions.SelfExecutable();
+        if (exe is null)
+        {
+            return null; // run from the dotnet host (development): nothing to register
+        }
+        try
+        {
+            (_options.Autostart ?? new RegistryAutostart()).Apply(on, exe);
+            return null;
+        }
+        catch (LauncherException e)
+        {
+            Note(e.Message);
+            return e.Message;
+        }
+    }
+
+    public void ShowTestToast() => Toast(new Toast(Strings.TestToastTitle, Strings.TestToastBody, ToastKind.FriendOnline));
+
+    /// <summary>
+    /// The window was closed into the tray: says so once ever (the player may think the launcher
+    /// quit, and friends would see them online).
+    /// </summary>
+    public void ShowTrayHint()
+    {
+        var s = Settings;
+        if (s.Background.TrayHintShown)
+        {
+            return;
+        }
+        try
+        {
+            EditConfig(c => c with { Settings = c.Settings with { Background = c.Settings.Background with { TrayHintShown = true } } }, wakeFriends: false);
+        }
+        catch (LauncherException e)
+        {
+            Note(e.Message);
+        }
+        Toast(new Toast(Strings.TrayHintTitle, Strings.TrayHintBody, ToastKind.Info));
+    }
+
+    public Task<string> SaveBugReportAsync() => Task.Run(() =>
+    {
+        var s = Settings;
+        var target = _targets.Get(s.Target);
+        var (_, zip) = SupportBundle.Save(LauncherFolder, Version, target, GameFinder.Detect(target, s.Game), _clock);
+        Note($"bug report saved: {zip}");
+        return zip;
+    });
+
+    private IEnumerable<string> CameraFolders()
+    {
+        yield return LauncherFolder;
+        var s = Settings;
+        var target = _targets.Get(s.Target);
+        if (GameFinder.Detect(target, s.Game) is { } install)
+        {
+            foreach (var folder in target.NativeLibraryFolders(install))
+            {
+                yield return folder;
+            }
+        }
+    }
+
+    internal HttpClient HttpClient => _http;
+
+    private SeatApi Api(string server) => new(_http, server, _userAgent);
+
+    private SeatApi Api() => Api(Settings.Server);
+
+
+    /// <summary>A crash is the first thing a bug report needs: it goes to the session log before the process dies.</summary>
+    private void OnCrash(object sender, UnhandledExceptionEventArgs e) => Log.Line($"PANIC: {e.ExceptionObject}");
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_life.IsCancellationRequested)
+        {
+            return;
+        }
+        AppDomain.CurrentDomain.UnhandledException -= OnCrash;
+        // Window closed: free the seat and show offline before leaving.
+        await WaitIdleAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        await _life.CancelAsync().ConfigureAwait(false);
+        _local.Dispose();
+        _devices.Dispose();
+        _http.Dispose();
+        Log.Dispose();
+    }
+}
+
+/// <summary>
+/// A wake-up that is remembered when nobody waits yet (tokio's Notify): a settings save between
+/// two long-polls must not be lost.
+/// </summary>
+internal sealed class Signal : IDisposable
+{
+    public void Dispose() => _permit.Dispose();
+
+    private readonly SemaphoreSlim _permit = new(0, 1);
+    private readonly Lock _gate = new();
+
+    public void Set()
+    {
+        lock (_gate)
+        {
+            if (_permit.CurrentCount == 0)
+            {
+                _permit.Release();
+            }
+        }
+    }
+
+    /// <summary>True when woken; false after <paramref name="timeout"/>.</summary>
+    public Task<bool> WaitAsync(TimeSpan timeout, CancellationToken cancel) => _permit.WaitAsync(timeout, cancel);
+
+    /// <summary>Forgets a wake-up nobody waited for.</summary>
+    public void Reset()
+    {
+        lock (_gate)
+        {
+            if (_permit.CurrentCount > 0)
+            {
+                _permit.Wait(0);
+            }
+        }
+    }
+}
