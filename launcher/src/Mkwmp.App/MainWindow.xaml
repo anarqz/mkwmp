@@ -1,0 +1,53 @@
+<Window x:Class="Mkwmp.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:Mkwmp.App.Controls"
+        xmlns:v="clr-namespace:Mkwmp.App.Views"
+        Title="MKWMP" Icon="pack://application:,,,/Assets/mkwmp.ico" Width="1280" Height="720" MinWidth="800" MinHeight="500"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource Brush.Background}"
+        FontFamily="{StaticResource Font.Ui}" FontSize="{StaticResource Size.Body}"
+        TextElement.Foreground="{DynamicResource Brush.Text}"
+        UseLayoutRounding="True" SnapsToDevicePixels="True" FocusVisualStyle="{x:Null}">
+  <!-- DataContext: ShellViewModel.
+       Root is the window in real pixels; Stage is the same area in stage units: always 1080 high
+       (a 16:10 screen gets a narrower stage, 1728 wide, never bars). Everything is laid out in
+       stage units and scaled by Stage's LayoutTransform. -->
+  <Grid x:Name="Root" Background="{DynamicResource Brush.Background}">
+    <Grid x:Name="Stage" Width="1920" Height="1080" HorizontalAlignment="Left" VerticalAlignment="Top">
+      <Grid.LayoutTransform>
+        <ScaleTransform x:Name="StageScale" />
+      </Grid.LayoutTransform>
+
+      <!-- 0: the page (with the top bar on home) -->
+      <Grid x:Name="BaseLayer">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+          <RowDefinition Height="112" />
+        </Grid.RowDefinitions>
+        <c:TopBar Visibility="{Binding ShowTopBar, Converter={StaticResource Conv.Visible}}" />
+        <c:PageHost x:Name="Pages" Grid.Row="1" Navigator="{Binding Nav}" />
+      </Grid>
+
+      <!-- 1: the friends panel, from the right, on any page -->
+      <Border x:Name="FriendsScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnFriendsScrim"
+              Visibility="{Binding IsFriendsOpen, Converter={StaticResource Conv.Visible}}" />
+      <c:SlideHost x:Name="FriendsLayer" IsOpen="{Binding IsFriendsOpen}" Edge="Right" HorizontalAlignment="Right" Width="700">
+        <v:FriendsPanel DataContext="{Binding FriendsPanel}" />
+      </c:SlideHost>
+
+      <!-- 2: a bottom sheet -->
+      <Border x:Name="SheetScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnSheetScrim"
+              Visibility="{Binding IsSheetOpen, Converter={StaticResource Conv.Visible}}" />
+      <c:BottomSheet x:Name="SheetLayer" IsOpen="{Binding IsSheetOpen}" Content="{Binding Sheet}" />
+
+      <!-- the hint bar stays readable over the panel and the sheet -->
+      <c:HintBar x:Name="Hints" />
+
+      <!-- 3: the modal, over everything but the toasts -->
+      <c:ModalHost x:Name="ModalLayer" />
+      <c:ToastHost />
+    </Grid>
+  </Grid>
+</Window>

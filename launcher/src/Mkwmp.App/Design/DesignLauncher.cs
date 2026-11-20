@@ -1,0 +1,440 @@
+// Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
+using Mkwmp.Core;
+using Mkwmp.Core.Devices;
+using Mkwmp.Core.Targets;
+
+namespace Mkwmp.App.Design;
+
+/// <summary>
+/// A launcher that only pretends (<c>--demo</c>, and the screenshot harness): a server with 12 of
+/// 32 seats taken, a signed-in player with friends and requests, a found game, an update to
+/// download. Nothing touches the network, the disk or the game. Every action answers after a
+/// short delay, as the real one would.
+/// </summary>
+public sealed class DesignLauncher : ILauncher
+{
+    private static readonly string[] Visitors = ["Luna", "Mateus", "Rin", "Sofia", "Kai"];
+
+    private readonly Lock _gate = new();
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly DesignDeviceLab _devices = new();
+    private CancellationTokenSource? _play;
+    private int _visitor;
+
+    public event EventHandler? Changed;
+
+    public event EventHandler<Toast>? Toasted;
+
+    public string Version => "1.4.0";
+
+    public LauncherSettings Settings { get; private set; } = new()
+    {
+        Name = "Alex",
+        Pin = "482913",
+        Game = @"C:\Games\Mario Kart World\mkw-recomp",
+        AdultConsent = true,
+        Ui = new UiSettings { SetupDone = true },
+        Voice = new VoiceSettings { ChatIntroDone = false },
+    };
+
+    public ServerView Server { get; private set; } = new(ServerState.Online, "MKWMP", 32, 12, 0, null);
+
+    public ProfileView Profile { get; private set; } = new("Alex", "482913", true, true, RegisterState.Idle, null, false);
+
+    public SessionView Session { get; private set; } = new(SessionState.Idle, null, 0, false, false, "Ready to play", "plain");
+
+    public FriendsView Friends { get; private set; } = new(
+        true,
+        [
+            new Friend("Luna", FriendState.Playing), new Friend("Kai", FriendState.Playing),
+            new Friend("Mateus", FriendState.Online), new Friend("Sofia", FriendState.Online), new Friend("Rin", FriendState.Online),
+            new Friend("Jonas", FriendState.Offline), new Friend("Bea", FriendState.Offline), new Friend("Theo", FriendState.Offline),
+        ],
+        [new FriendRequest("Nico", DateTimeOffset.Now.AddMinutes(-12)), new FriendRequest("Yuki", DateTimeOffset.Now.AddHours(-3))],
+        [new FriendRequest("Carol", DateTimeOffset.Now.AddDays(-1))],
+        null, false, false);
+
+    public GameView Game { get; private set; } = new(
+        [new TargetInfo("mkw-recomp", "mkw-recomp", "the folder with mkw.exe",
+            TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch)],
+        new GameInstall("mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp\mkw.exe", "0.1.15-mkwmp", "1.8.0", null),
+        new TargetCheck(TargetStatus.Ready, null, null, null, null),
+        new IntegrationReport(IntegrationState.Installed, "Installed (v1.4.0, verified)",
+            ["winmm.dll: v1.4.0, verified", "mkwmp-voice.dll: v1.4.0, verified", "mkwmp-camera.dll: v1.4.0, verified"]),
+        false, false, null, false);
+
+    public VoiceView Voice { get; private set; } = new(
+        [new AudioDevice("mic-1", "Headset Microphone"), new AudioDevice("mic-2", "Webcam Microphone")],
+        [new AudioDevice("out-1", "Headset"), new AudioDevice("out-2", "TV Speakers")],
+        [new MutedPlayer("acc-51", "Shellshock"), new MutedPlayer("acc-77", "DriftKing99")]);
+
+    public ReportView Report { get; private set; } = new(
+        true, null,
+        [new ReportReason("cheating", "Cheating"), new ReportReason("abuse", "Abusive voice or camera"), new ReportReason("name", "Offensive name"), new ReportReason("other", "Something else")],
+        null, false, false);
+
+    public UpdateView Update { get; private set; } = new(
+        UpdateState.Available, "1.4.1",
+        "• Party Chat: the camera now follows the room you are in\n• A new full-screen launcher made for controllers\n• Fixes for the Steam Deck's microphone after sleep\n• Smaller downloads: only what changed",
+        0, null, "Version 1.4.1 is available");
+
+    public int GitHubStars => 248;
+
+    public IDeviceLab Devices => _devices;
+
+    public string? PlayProblem => null;
+
+    public Task StartAsync(CancellationToken cancel)
+    {
+        _ = VisitAsync(_lifetime.Token);
+        return Task.CompletedTask;
+    }
+
+    private async Task VisitAsync(CancellationToken cancel)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(14), cancel).ConfigureAwait(false);
+            while (true)
+            {
+                var name = Visitors[_visitor++ % Visitors.Length];
+                var playing = _visitor % 2 == 0;
+                Toasted?.Invoke(this, new Toast(name, playing ? "is racing online now" : "is online", playing ? ToastKind.FriendPlaying : ToastKind.FriendOnline));
+                await Task.Delay(TimeSpan.FromSeconds(24), cancel).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // closed
+        }
+    }
+
+    private void Change(Action change)
+    {
+        lock (_gate)
+        {
+            change();
+        }
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static Task Pause(int milliseconds = 500) => Task.Delay(milliseconds);
+
+    public Task SaveSettingsAsync(LauncherSettings settings)
+    {
+        Change(() => Settings = settings);
+        return Task.CompletedTask;
+    }
+
+    public Task SetConsentAsync(bool adult)
+    {
+        Change(() => Settings = Settings with { AdultConsent = adult });
+        return Task.CompletedTask;
+    }
+
+    public async Task RegisterAsync(string name)
+    {
+        Change(() => Profile = Profile with { Name = name, Register = RegisterState.Working, Message = null });
+        await Pause(900).ConfigureAwait(false);
+        Change(() =>
+        {
+            Profile = new ProfileView(name, "482913", true, true, RegisterState.Idle, "Your PIN is 482913. Keep it: it is your key on another device.", false);
+            Settings = Settings with { Name = name, Pin = "482913" };
+        });
+    }
+
+    public async Task UsePinAsync(string name, string pin)
+    {
+        Change(() => Profile = Profile with { Register = RegisterState.Working });
+        await Pause(700).ConfigureAwait(false);
+        Change(() => Profile = new ProfileView(name, pin, true, pin.Length == 6, RegisterState.Idle, pin.Length == 6 ? null : "The PIN has 6 digits.", pin.Length != 6));
+    }
+
+    public async Task DeleteProfileAsync()
+    {
+        await Pause(700).ConfigureAwait(false);
+        Change(() =>
+        {
+            Profile = new ProfileView("", "", false, false, RegisterState.Deleted, "The profile was deleted.", false);
+            Friends = new FriendsView(false, [], [], [], null, false, false);
+        });
+    }
+
+    public async Task FindGameAsync()
+    {
+        Change(() => Game = Game with { Searching = true });
+        await Pause(1200).ConfigureAwait(false);
+        Change(() => Game = Game with { Searching = false });
+    }
+
+    public async Task<bool> ChooseGameFolderAsync(string folder)
+    {
+        await Pause(400).ConfigureAwait(false);
+        return true;
+    }
+
+    public async Task InstallIntegrationAsync()
+    {
+        Change(() => Game = Game with { Working = true });
+        await Pause(1500).ConfigureAwait(false);
+        Change(() => Game = Game with
+        {
+            Working = false,
+            Integration = new IntegrationReport(IntegrationState.Installed, "Installed (v1.4.0, verified)", ["winmm.dll: v1.4.0, verified"]),
+        });
+    }
+
+    public async Task UninstallIntegrationAsync()
+    {
+        Change(() => Game = Game with { Working = true });
+        await Pause(1000).ConfigureAwait(false);
+        Change(() => Game = Game with { Working = false, Integration = new IntegrationReport(IntegrationState.Missing, "Not installed", []) });
+    }
+
+    public async Task PlayAsync()
+    {
+        if (Session.Busy)
+        {
+            return;
+        }
+        var play = new CancellationTokenSource();
+        _play = play;
+        try
+        {
+            Change(() => Session = new SessionView(SessionState.Starting, null, 0, false, false, "Starting the game…", "info"));
+            await Task.Delay(1500, play.Token).ConfigureAwait(false);
+            Change(() => Session = new SessionView(SessionState.Running, SeatPhase.Joining, 0, true, false, "Joining the server…", "info"));
+            await Task.Delay(1500, play.Token).ConfigureAwait(false);
+            Change(() =>
+            {
+                Session = new SessionView(SessionState.Running, SeatPhase.Queued, 2, true, false, "In the queue: #2", "warn");
+                Server = Server with { Queued = 2 };
+            });
+            await Task.Delay(1800, play.Token).ConfigureAwait(false);
+            Change(() =>
+            {
+                Session = new SessionView(SessionState.Running, SeatPhase.Seated, 0, true, false, "Online: you have a seat", "good");
+                Server = Server with { Queued = 0, Seated = 13 };
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // stopped
+        }
+    }
+
+    public Task StopAsync()
+    {
+        _play?.Cancel();
+        _play?.Dispose();
+        _play = null;
+        Change(() =>
+        {
+            Session = new SessionView(SessionState.Idle, null, 0, false, false, "Ready to play", "plain");
+            Server = Server with { Queued = 0, Seated = 12 };
+        });
+        return Task.CompletedTask;
+    }
+
+    public async Task AddFriendAsync(string name)
+    {
+        Change(() => Friends = Friends with { Busy = true });
+        await Pause().ConfigureAwait(false);
+        Change(() => Friends = Friends with
+        {
+            Busy = false,
+            Outgoing = [.. Friends.Outgoing, new FriendRequest(name, DateTimeOffset.Now)],
+            Note = $"Request sent to {name}.",
+            NoteIsError = false,
+        });
+    }
+
+    public async Task AcceptFriendAsync(string name)
+    {
+        await Pause(300).ConfigureAwait(false);
+        Change(() => Friends = Friends with
+        {
+            Incoming = [.. Friends.Incoming.Where(r => r.Name != name)],
+            Friends = [.. Friends.Friends, new Friend(name, FriendState.Online)],
+        });
+    }
+
+    public async Task RemoveFriendAsync(string name, FriendRemoval why)
+    {
+        await Pause(300).ConfigureAwait(false);
+        Change(() => Friends = Friends with
+        {
+            Incoming = [.. Friends.Incoming.Where(r => r.Name != name)],
+            Outgoing = [.. Friends.Outgoing.Where(r => r.Name != name)],
+            Friends = [.. Friends.Friends.Where(f => f.Name != name)],
+        });
+    }
+
+    public Task UnmuteAsync(string account)
+    {
+        Change(() => Voice = Voice with { Mutes = [.. Voice.Mutes.Where(m => m.Account != account)] });
+        return Task.CompletedTask;
+    }
+
+    public async Task SendReportAsync(string name, string reason, string? details)
+    {
+        Change(() => Report = Report with { Busy = true });
+        await Pause(800).ConfigureAwait(false);
+        Change(() => Report = Report with { Busy = false, Open = new OpenReport(name, reason, details, DateTimeOffset.Now), Note = "Report sent.", NoteIsError = false });
+    }
+
+    public Task WithdrawReportAsync()
+    {
+        Change(() => Report = Report with { Open = null, Note = "Report withdrawn." });
+        return Task.CompletedTask;
+    }
+
+    public async Task CheckForUpdatesAsync()
+    {
+        var found = Update;
+        Change(() => Update = Update with { State = UpdateState.Checking, Status = "Checking for updates…" });
+        await Pause(1200).ConfigureAwait(false);
+        Change(() => Update = found with { State = found.AvailableVersion is null ? UpdateState.UpToDate : UpdateState.Available });
+    }
+
+    public async Task ApplyUpdateAsync(CancellationToken cancel)
+    {
+        const int Steps = 160;
+        try
+        {
+            for (var i = 0; i <= Steps; i++)
+            {
+                var fraction = (double)i / Steps;
+                var left = TimeSpan.FromSeconds((Steps - i) * 0.05 * 60); // pretend minutes, so the text is worth reading
+                Change(() => Update = Update with { State = UpdateState.Downloading, Progress = fraction, Remaining = left, Status = "Downloading 1.4.1…" });
+                await Task.Delay(50, cancel).ConfigureAwait(false);
+            }
+            Change(() => Update = Update with { State = UpdateState.Restarting, Progress = 1, Remaining = null, Status = "Verified. The launcher restarts now (not in the demo)." });
+            await Task.Delay(2500, cancel).ConfigureAwait(false);
+            Change(() => Update = new UpdateView(UpdateState.UpToDate, null, null, 0, null, "Up to date"));
+        }
+        catch (OperationCanceledException)
+        {
+            Change(() => Update = Update with { State = UpdateState.Available, Progress = 0, Remaining = null, Status = "Version 1.4.1 is available" });
+        }
+    }
+
+    /// <summary>For screenshots: the download frozen at a fraction.</summary>
+    public void FreezeDownloadAt(double fraction) =>
+        Change(() => Update = Update with { State = UpdateState.Downloading, Progress = fraction, Remaining = TimeSpan.FromMinutes(13), Status = "Downloading 1.4.1…" });
+
+    public async Task<string> SaveBugReportAsync()
+    {
+        await Pause(900).ConfigureAwait(false);
+        return @"C:\Users\Alex\Desktop\mkwmp-report-demo.zip";
+    }
+
+    public void ShowTestToast() => Toasted?.Invoke(this, new Toast("Luna", "is racing online now", ToastKind.FriendPlaying));
+
+    public ValueTask DisposeAsync()
+    {
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+        _play?.Dispose();
+        _devices.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}
+
+/// <summary>The demo's camera and microphone: moving gradient frames, a sine for the level.</summary>
+public sealed class DesignDeviceLab : IDeviceLab
+{
+    private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+    private Timer? _mic;
+    private int _width;
+    private int _height;
+    private bool _mirror;
+    private uint _serial;
+
+    public bool CameraAvailable => true;
+
+    public string? CameraProblem => null;
+
+    public CameraStatus CameraStatus { get; private set; } = CameraStatus.Idle;
+
+    public event EventHandler<float>? MicLevel;
+
+    public Task<IReadOnlyList<CameraDevice>> CameraDevicesAsync() =>
+        Task.FromResult<IReadOnlyList<CameraDevice>>([new CameraDevice("cam-1", "USB Camera"), new CameraDevice("cam-2", "Capture Card")]);
+
+    public void StartCamera(string deviceId, int width, int height, int fps, bool mirror)
+    {
+        _width = width;
+        _height = height;
+        _mirror = mirror;
+        CameraStatus = CameraStatus.Running;
+    }
+
+    public void SetCameraMirror(bool mirror) => _mirror = mirror;
+
+    public void StopCamera() => CameraStatus = CameraStatus.Idle;
+
+    public bool TryCopyFrame(Span<byte> rgba, ref uint serial)
+    {
+        if (CameraStatus != CameraStatus.Running || rgba.Length < _width * _height * 4)
+        {
+            return false;
+        }
+        var now = (uint)(_clock.ElapsedMilliseconds / 33);
+        if (now == _serial && serial == _serial)
+        {
+            return false;
+        }
+        _serial = now;
+        serial = now;
+        var t = _clock.Elapsed.TotalSeconds;
+        var ballX = (0.5 + 0.35 * Math.Sin(t * 0.9)) * _width;
+        var ballY = (0.5 + 0.3 * Math.Cos(t * 1.3)) * _height;
+        var radius = _height * 0.16;
+        for (var y = 0; y < _height; y++)
+        {
+            for (var x = 0; x < _width; x++)
+            {
+                var u = (double)(_mirror ? _width - 1 - x : x) / _width;
+                var v = (double)y / _height;
+                var i = (y * _width + x) * 4;
+                var dx = (_mirror ? _width - 1 - x : x) - ballX;
+                var dy = y - ballY;
+                var inBall = dx * dx + dy * dy < radius * radius;
+                rgba[i] = (byte)(inBall ? 255 : 40 + 120 * u + 40 * Math.Sin(t + v * 3));
+                rgba[i + 1] = (byte)(inBall ? 240 : 70 + 90 * v);
+                rgba[i + 2] = (byte)(inBall ? 200 : 200 - 90 * u + 30 * Math.Cos(t * 0.7));
+                rgba[i + 3] = 255;
+            }
+        }
+        return true;
+    }
+
+    public Task<IReadOnlyList<AudioDevice>> InputDevicesAsync() =>
+        Task.FromResult<IReadOnlyList<AudioDevice>>([new AudioDevice("mic-1", "Headset Microphone"), new AudioDevice("mic-2", "Webcam Microphone")]);
+
+    public Task<IReadOnlyList<AudioDevice>> OutputDevicesAsync() =>
+        Task.FromResult<IReadOnlyList<AudioDevice>>([new AudioDevice("out-1", "Headset"), new AudioDevice("out-2", "TV Speakers")]);
+
+    public void StartMicTest(string deviceId, int gainPercent, bool echoToOutput, string outputId)
+    {
+        StopMicTest();
+        var gain = gainPercent / 100.0;
+        _mic = new Timer(_ =>
+        {
+            var t = _clock.Elapsed.TotalSeconds;
+            var level = Math.Clamp(gain * (0.35 + 0.3 * Math.Sin(t * 2.1) + 0.2 * Math.Sin(t * 7.3)), 0, 1);
+            MicLevel?.Invoke(this, (float)level);
+        }, null, 0, 33);
+    }
+
+    public void StopMicTest()
+    {
+        _mic?.Dispose();
+        _mic = null;
+    }
+
+    public Task PlayTestSoundAsync(string outputId, int gainPercent) => Task.Delay(600);
+
+    public void Dispose() => StopMicTest();
+}

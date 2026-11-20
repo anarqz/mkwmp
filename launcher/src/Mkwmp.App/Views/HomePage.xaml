@@ -1,0 +1,84 @@
+<UserControl x:Class="Mkwmp.App.Views.HomePage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             Focusable="False">
+  <!-- DataContext: HomeViewModel. STUB that shows the design system: the title of the focused tile,
+       the carousel, the status, the dock. The top bar and the hint bar are the shell's. -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="76" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="1.1*" />
+    </Grid.RowDefinitions>
+
+    <!-- the title of the tile under the focus -->
+    <StackPanel Orientation="Horizontal" Margin="160,0,0,0" VerticalAlignment="Bottom">
+      <c:Icon Data="{StaticResource Icon.Flag}" Width="36" Height="36" Foreground="{DynamicResource Brush.Accent}" StrokeThickness="2.4" />
+      <TextBlock Text="{Binding SelectedTitle}" Style="{StaticResource Text.Accent}" FontSize="36" FontWeight="Regular" Margin="12,0,0,0" />
+    </StackPanel>
+
+    <c:SmoothScrollViewer Grid.Row="1" Style="{StaticResource Carousel}">
+      <ItemsControl ItemsSource="{Binding Tiles}" Focusable="False" Margin="134,26,134,26">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <c:Tile Title="{Binding Title}" Subtitle="{Binding Subtitle}" Badge="{Binding Badge}" Progress="{Binding Progress}"
+                    Seed="{Binding Seed}" Icon="{Binding IconKey, Converter={StaticResource Conv.Icon}}"
+                    Command="{Binding Command}" GotFocus="OnTileFocus" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </c:SmoothScrollViewer>
+
+    <!-- the session's status -->
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+      <c:Spinner Width="34" Height="34" Margin="0,0,14,0" Visibility="{Binding IsBusy, Converter={StaticResource Conv.Visible}}" />
+      <Ellipse x:Name="Tone" Width="16" Height="16" Margin="0,2,14,0" VerticalAlignment="Center">
+        <Ellipse.Style>
+          <Style TargetType="Ellipse">
+            <Setter Property="Fill" Value="{DynamicResource Brush.TextFaint}" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding StatusTone}" Value="good">
+                <Setter Property="Fill" Value="{DynamicResource Brush.Good}" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding StatusTone}" Value="warn">
+                <Setter Property="Fill" Value="{DynamicResource Brush.Warn}" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding StatusTone}" Value="bad">
+                <Setter Property="Fill" Value="{DynamicResource Brush.Bad}" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding StatusTone}" Value="info">
+                <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Ellipse.Style>
+      </Ellipse>
+      <TextBlock Text="{Binding StatusText}" Style="{StaticResource Text.Base}" FontSize="28" Foreground="{DynamicResource Brush.TextMuted}" />
+    </StackPanel>
+
+    <Border Grid.Row="3" Style="{StaticResource Dock}">
+      <StackPanel Orientation="Horizontal">
+        <c:DockButton Icon="{StaticResource Icon.Kart}" Label="{Binding S[home.play]}" Fill="{DynamicResource Brush.Accent}"
+                      Tint="{DynamicResource Brush.OnAccent}" Command="{Binding Tiles[0].Command}" />
+        <c:DockButton Icon="{StaticResource Icon.Friends}" Label="{Binding S[home.friends]}" Tint="#FFF08A1A"
+                      HasDot="{Binding HasRequests}" Command="{Binding FriendsCommand}" />
+        <c:DockButton Icon="{StaticResource Icon.Headset}" Label="{Binding S[home.chat]}" Tint="#FF12A86B" Command="{Binding ChatCommand}" />
+        <c:DockButton Icon="{StaticResource Icon.Download}" Label="{Binding S[home.update]}" Tint="#FFE2498A"
+                      HasDot="{Binding HasUpdate}" Command="{Binding UpdateCommand}" />
+        <c:DockButton Icon="{StaticResource Icon.Fullscreen}" Label="{Binding S[home.fullscreen]}" Tint="#FF0E9DB8"
+                      Command="{Binding FullscreenCommand}" />
+        <c:DockButton Icon="{StaticResource Icon.Settings}" Label="{Binding S[home.settings]}" Command="{Binding SettingsCommand}" />
+        <c:DockButton Icon="{StaticResource Icon.Power}" Label="{Binding S[home.quit]}" Command="{Binding QuitCommand}" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

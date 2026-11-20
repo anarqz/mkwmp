@@ -1,0 +1,85 @@
+<UserControl x:Class="Mkwmp.App.Controls.ModalHost"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             Focusable="False"
+             Visibility="{Binding IsModalOpen, Converter={StaticResource Conv.Visible}}">
+  <!-- DataContext: ShellViewModel; the card shows Shell.Modal (a ModalViewModel). -->
+  <Grid>
+    <Border x:Name="Backdrop" Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnBackdrop" />
+    <Border x:Name="Card" Width="1080" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="14"
+            Background="{DynamicResource Brush.Modal}" DataContext="{Binding Modal}" RenderTransformOrigin="0.5,0.5">
+      <Border.RenderTransform>
+        <ScaleTransform x:Name="CardScale" />
+      </Border.RenderTransform>
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel Margin="112,88,112,56">
+          <TextBlock Text="{Binding Title}" Style="{StaticResource Text.Heading}" FontWeight="Regular" TextWrapping="Wrap" />
+          <c:SmoothScrollViewer MaxHeight="330" Margin="0,12,0,0"
+                                Visibility="{Binding Body, Converter={StaticResource Conv.Visible}}">
+            <TextBlock Text="{Binding Body}" Style="{StaticResource Text.Caption}" FontSize="27" LineHeight="40" Margin="0,0,20,0" />
+          </c:SmoothScrollViewer>
+
+          <ContentPresenter Content="{Binding Content}" Margin="0,24,0,0"
+                            Visibility="{Binding Content, Converter={StaticResource Conv.Visible}}" />
+
+          <!-- a spinner alone -->
+          <c:Spinner Width="64" Height="64" Margin="0,40,0,8" HorizontalAlignment="Center">
+            <c:Spinner.Style>
+              <Style TargetType="c:Spinner" BasedOn="{StaticResource {x:Type c:Spinner}}">
+                <Setter Property="Visibility" Value="Collapsed" />
+                <Style.Triggers>
+                  <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                      <Condition Binding="{Binding ShowSpinner}" Value="True" />
+                      <Condition Binding="{Binding ShowProgress}" Value="False" />
+                    </MultiDataTrigger.Conditions>
+                    <Setter Property="Visibility" Value="Visible" />
+                  </MultiDataTrigger>
+                </Style.Triggers>
+              </Style>
+            </c:Spinner.Style>
+          </c:Spinner>
+
+          <!-- the bar, with the percentage and a line under it -->
+          <StackPanel Margin="60,44,60,0" Visibility="{Binding ShowProgress, Converter={StaticResource Conv.Visible}}">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="64" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="96" />
+              </Grid.ColumnDefinitions>
+              <c:Spinner Width="40" Height="40" HorizontalAlignment="Left"
+                         Visibility="{Binding ShowSpinner, Converter={StaticResource Conv.Visible}, ConverterParameter=hide}" />
+              <ProgressBar Grid.Column="1" Value="{Binding Progress, Mode=OneWay}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="2" Text="{Binding Progress, Converter={StaticResource Conv.Percent}}" Style="{StaticResource Text.Base}"
+                         FontSize="27" HorizontalAlignment="Right" />
+            </Grid>
+            <TextBlock Text="{Binding Detail}" Style="{StaticResource Text.Base}" FontSize="27" HorizontalAlignment="Center" Margin="0,14,0,0"
+                       Visibility="{Binding Detail, Converter={StaticResource Conv.Visible}}" />
+          </StackPanel>
+
+          <ItemsControl ItemsSource="{Binding Actions}" Focusable="False" Margin="0,40,0,0" HorizontalAlignment="Center"
+                        Visibility="{Binding Actions.Count, Converter={StaticResource Conv.Visible}}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <c:ConsoleButton Width="630" Margin="0,8" Kind="{Binding Kind}" Content="{Binding Label}" Command="{Binding Command}"
+                                 input:FocusNav.IsDefault="{Binding IsDefault}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <Grid Grid.Row="1" Visibility="{Binding Bottom, Converter={StaticResource Conv.Visible}}">
+          <c:ConsoleButton Kind="Bottom" Content="{Binding Bottom.Label}" Command="{Binding Bottom.Command}"
+                           input:FocusNav.IsDefault="True" />
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

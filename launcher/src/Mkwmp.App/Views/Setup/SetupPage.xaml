@@ -1,0 +1,51 @@
+<UserControl x:Class="Mkwmp.App.Views.Setup.SetupPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:vm="clr-namespace:Mkwmp.App.ViewModels"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             Focusable="False">
+  <!-- DataContext: SetupViewModel. STUB that shows a consent page: text, a secondary button, a tick
+       box, and Next that stays disabled until the box is ticked. -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <c:PageHeader Title="{Binding Title}">
+      <c:PageDots Count="{x:Static vm:SetupViewModel.StepCount}" Index="{Binding Step}"
+                  Accent="{DynamicResource Brush.Accent}" Foreground="{DynamicResource Brush.Text}" />
+    </c:PageHeader>
+
+    <!-- welcome -->
+    <StackPanel Grid.Row="1" Width="1100" VerticalAlignment="Center"
+                Visibility="{Binding IsWelcome, Converter={StaticResource Conv.Visible}}">
+      <c:Icon Data="{StaticResource Icon.Kart}" Width="150" Height="150" StrokeThickness="1.5" Foreground="{DynamicResource Brush.Accent}"
+              HorizontalAlignment="Center" />
+      <TextBlock Text="{Binding S[setup.welcome.heading]}" Style="{StaticResource Text.Display}" HorizontalAlignment="Center" Margin="0,18,0,0" />
+      <TextBlock Text="{Binding S[setup.welcome.text]}" Style="{StaticResource Text.Body}" FontSize="32" LineHeight="48" TextAlignment="Center"
+                 Margin="0,18,0,0" />
+      <c:ConsoleButton Kind="Secondary" Width="650" Height="116" Margin="0,70,0,0" Content="{Binding S[common.next]}"
+                       Command="{Binding NextCommand}" input:FocusNav.IsDefault="True" />
+    </StackPanel>
+
+    <!-- consent -->
+    <StackPanel Grid.Row="1" Width="1180" VerticalAlignment="Center"
+                Visibility="{Binding IsConsent, Converter={StaticResource Conv.Visible}}">
+      <TextBlock Text="{Binding S[setup.consent.text]}" Style="{StaticResource Text.Body}" FontSize="34" LineHeight="50" />
+      <c:ConsoleButton Kind="Secondary" Width="800" Margin="0,84,0,0" Content="{Binding S[setup.consent.rules]}" />
+      <c:ConsoleCheck Width="580" Margin="0,12,0,0" Content="{Binding S[setup.consent.adult]}" IsChecked="{Binding Adult}"
+                      input:FocusNav.IsDefault="True" />
+      <c:ConsoleButton Kind="Secondary" Width="800" Height="110" Margin="0,56,0,0" Content="{Binding S[common.next]}"
+                       Command="{Binding NextCommand}" />
+    </StackPanel>
+
+    <!-- the steps the setup agent builds -->
+    <StackPanel Grid.Row="1" Width="1100" VerticalAlignment="Center"
+                Visibility="{Binding IsPlaceholder, Converter={StaticResource Conv.Visible}}">
+      <TextBlock Text="{Binding S[setup.placeholder]}" Style="{StaticResource Text.Body}" FontSize="32" TextAlignment="Center" />
+      <c:ConsoleButton Kind="Primary" Width="650" Height="110" Margin="0,70,0,0" Content="{Binding S[common.next]}"
+                       Command="{Binding NextCommand}" input:FocusNav.IsDefault="True" />
+    </StackPanel>
+  </Grid>
+</UserControl>

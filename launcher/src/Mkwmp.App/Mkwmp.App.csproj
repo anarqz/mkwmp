@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The full-screen, controller-first shell. It renders what Mkwmp.Core decides. WPF so the
+       launcher also runs under Wine/Proton on the Steam Deck (as Infinity Launcher does). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Mkwmp.App</RootNamespace>
+    <AssemblyName>mkwmp-launcher</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="Exists('Assets\mkwmp.ico')">Assets\mkwmp.ico</ApplicationIcon>
+    <!-- WPF0001: ThemeMode (Fluent) is still marked experimental in .NET 10. -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mkwmp.Core\Mkwmp.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Art, the icon and the Nunito font (OFL) are resources inside the exe, so nothing goes missing
+       on Windows or under Wine/Proton; a 256 px icon is also copied next to it for Linux shortcuts. -->
+  <ItemGroup>
+    <Resource Include="Assets\**\*.png;Assets\**\*.jpg;Assets\**\*.ico;Assets\Fonts\*.ttf" />
+    <Content Include="Assets\mkwmp-256.png" Link="mkwmp-launcher.png" CopyToOutputDirectory="PreserveNewest" Condition="Exists('Assets\mkwmp-256.png')" />
+    <Content Include="Assets\Fonts\Nunito-LICENSE.txt" Link="licenses\Nunito-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="i18n\*.json" Link="i18n\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

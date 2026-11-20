@@ -1,0 +1,45 @@
+<UserControl x:Class="Mkwmp.App.Controls.HintBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             x:Name="Self" Height="{StaticResource Metric.HintBarHeight}" Focusable="False" VerticalAlignment="Bottom">
+  <!-- DataContext: ShellViewModel. The hints are buttons for the mouse and touch, never focus stops. -->
+  <Grid>
+    <Border Height="1.5" VerticalAlignment="Top" Margin="{StaticResource Metric.PageMargin}" Background="{DynamicResource Brush.Rule}"
+            Visibility="{Binding ShowTopBar, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
+    <Grid Margin="98,0,88,0">
+      <!-- what is in the player's hands: a generic gamepad (a green light when one is connected), else a keyboard -->
+      <Grid HorizontalAlignment="Left" VerticalAlignment="Center">
+        <Grid x:Name="Pad" Visibility="{Binding InputKind, Converter={StaticResource Conv.Visible}, ConverterParameter='=Gamepad'}">
+          <c:Icon Data="{StaticResource IconFill.Gamepad}" Filled="True" Width="66" Height="66" Foreground="{DynamicResource Brush.Glyph}" />
+          <Border Width="12" Height="12" CornerRadius="2.5" Background="{DynamicResource Brush.Good}" HorizontalAlignment="Left"
+                  VerticalAlignment="Top" Margin="4,-4,0,0"
+                  Visibility="{Binding GamepadConnected, Converter={StaticResource Conv.Visible}}" />
+        </Grid>
+        <c:Icon x:Name="Keys" Data="{StaticResource Icon.Keyboard}" Width="62" Height="62" StrokeThickness="1.8"
+                Foreground="{DynamicResource Brush.Glyph}" Visibility="{Binding InputKind, Converter={StaticResource Conv.Visible}, ConverterParameter='!=Gamepad'}" />
+      </Grid>
+
+      <ItemsControl ItemsSource="{Binding Hints}" HorizontalAlignment="Right" VerticalAlignment="Center" Focusable="False">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <StackPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <Button Style="{StaticResource ChromeButton}" Padding="14,10" Margin="6,0,0,0" Click="OnHint">
+              <StackPanel Orientation="Horizontal">
+                <c:HintGlyph Button="{Binding Button}" VerticalAlignment="Center"
+                             Input="{Binding DataContext.InputKind, ElementName=Self}"
+                             Fill="{DynamicResource Brush.Glyph}" Ink="{DynamicResource Brush.OnGlyph}" />
+                <TextBlock Text="{Binding Label}" Style="{StaticResource Text.Base}" FontSize="34" Margin="14,0,0,2" />
+              </StackPanel>
+            </Button>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Grid>
+  </Grid>
+</UserControl>

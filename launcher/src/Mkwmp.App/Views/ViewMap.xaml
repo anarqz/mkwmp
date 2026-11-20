@@ -1,0 +1,29 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:vm="clr-namespace:Mkwmp.App.ViewModels"
+                    xmlns:v="clr-namespace:Mkwmp.App.Views"
+                    xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
+                    xmlns:chat="clr-namespace:Mkwmp.App.Views.Chat"
+                    xmlns:setup="clr-namespace:Mkwmp.App.Views.Setup"
+                    xmlns:dev="clr-namespace:Mkwmp.App.Views.Dev">
+  <!-- Which view shows which view model: pages (PageHost), bottom sheets, custom modal content.
+       A new page or sheet is one line here (and, for a top-level page, a route in ViewModels/Navigation.cs). -->
+  <DataTemplate DataType="{x:Type vm:HomeViewModel}">
+    <v:HomePage />
+  </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+    <settings:SettingsPage />
+  </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:ChatViewModel}">
+    <chat:ChatPage />
+  </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:ChatSheetViewModel}">
+    <chat:ChatSheet />
+  </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:SetupViewModel}">
+    <setup:SetupPage />
+  </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:GalleryViewModel}">
+    <dev:GalleryPage />
+  </DataTemplate>
+</ResourceDictionary>

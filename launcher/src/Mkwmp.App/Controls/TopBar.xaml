@@ -1,0 +1,52 @@
+<UserControl x:Class="Mkwmp.App.Controls.TopBar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             Height="188" Focusable="False">
+  <!-- DataContext: ShellViewModel. Left: the player and the friends who are on (each opens the
+       friends panel). Right: clock, server connection, battery (hidden without one). -->
+  <Grid Margin="62,34,72,0">
+    <ItemsControl ItemsSource="{Binding TopAvatars}" Focusable="False" VerticalAlignment="Center" HorizontalAlignment="Left"
+                  input:FocusNav.IsGroup="True">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <StackPanel Orientation="Horizontal" />
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate>
+          <Button Style="{StaticResource AvatarButton}" Click="OnAvatar">
+            <c:Avatar DisplayName="{Binding Name}" Presence="{Binding Presence}" Count="{Binding Count}" />
+          </Button>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+      <TextBlock Text="{Binding ClockText}" Style="{StaticResource Text.Base}" FontSize="40" FontWeight="SemiBold" />
+      <c:Icon x:Name="Net" Width="46" Height="46" Margin="30,0,0,0" StrokeThickness="2.2" VerticalAlignment="Center"
+              Foreground="{DynamicResource Brush.Text}">
+        <c:Icon.Style>
+          <Style TargetType="c:Icon">
+            <Setter Property="Data" Value="{StaticResource Icon.SignalOff}" />
+            <Setter Property="Opacity" Value="0.45" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsServerOnline}" Value="True">
+                <Setter Property="Data" Value="{StaticResource Icon.Signal}" />
+                <Setter Property="Opacity" Value="1" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </c:Icon.Style>
+      </c:Icon>
+      <StackPanel Orientation="Horizontal" Margin="30,0,0,0" VerticalAlignment="Center"
+                  Visibility="{Binding HasBattery, Converter={StaticResource Conv.Visible}}">
+        <TextBlock Style="{StaticResource Text.Base}" FontSize="40" FontWeight="SemiBold" Text="{Binding BatteryPercent}" />
+        <TextBlock Style="{StaticResource Text.Base}" FontSize="26" FontWeight="SemiBold" Text="%" VerticalAlignment="Bottom" Margin="2,0,0,7" />
+        <c:BatteryIcon Margin="18,2,0,0" VerticalAlignment="Center" Percent="{Binding BatteryPercent}" Charging="{Binding BatteryCharging}"
+                       Foreground="{DynamicResource Brush.Text}" Good="{DynamicResource Brush.Good}" Low="{DynamicResource Brush.Bad}" />
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</UserControl>
