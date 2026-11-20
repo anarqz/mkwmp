@@ -232,3 +232,12 @@ internal static class BeholderClient
         }
     }
 }
+
+/// <summary>What the window may know about the announcer (beholder) address: the release default and whether an address is acceptable.</summary>
+public static class Announcer
+{
+    public static string DefaultUrl => BeholderClient.DefaultUrl;
+
+    /// <summary>https anywhere, http only on this PC or the local network (as the list itself is fetched).</summary>
+    public static bool IsAllowed(string? url) => BeholderClient.Allowed(url) is not null;
+}

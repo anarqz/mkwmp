@@ -27,6 +27,7 @@
     </Style>
   </UserControl.Resources>
 
+  <StackPanel>
   <Grid>
     <!-- ───────── offline: online is off ───────── -->
     <StackPanel Visibility="{Binding OnlineLocked, Converter={StaticResource Conv.Visible}}">
@@ -149,4 +150,32 @@
       <TextBlock Text="{Binding BusyNote}" Style="{StaticResource Note}" Visibility="{Binding BusyNote, Converter={StaticResource Conv.Visible}}" />
     </StackPanel>
   </Grid>
+
+  <!-- ───────── where the server list comes from (both states) ───────── -->
+  <c:SectionHeader Text="{Binding S[settings.online.announcer]}" />
+  <Grid Margin="0,22,0,0">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="Auto" />
+    </Grid.ColumnDefinitions>
+    <TextBox Text="{Binding AnnouncerAddress, UpdateSourceTrigger=PropertyChanged}" MaxLength="200" Height="76" FontSize="28"
+             VerticalContentAlignment="Center" IsEnabled="{Binding NotBusy}" />
+    <c:ConsoleButton Grid.Column="1" Content="{Binding S[settings.online.announcer_save]}" Command="{Binding SaveAnnouncerCommand}"
+                     Height="76" MinWidth="0" Padding="30,0" Margin="16,0,0,0" />
+  </Grid>
+  <TextBlock Text="{Binding AnnouncerNote}">
+    <TextBlock.Style>
+      <Style TargetType="TextBlock" BasedOn="{StaticResource Note}">
+        <Style.Triggers>
+          <DataTrigger Binding="{Binding AnnouncerNoteIsError}" Value="True">
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
+          </DataTrigger>
+        </Style.Triggers>
+      </Style>
+    </TextBlock.Style>
+  </TextBlock>
+  <c:SettingsRow Label="{Binding S[settings.online.announcer_reset]}" Icon="{StaticResource Icon.Refresh}" Margin="0,14,0,0"
+                 Command="{Binding DefaultAnnouncerCommand}" Caption="{Binding S[settings.online.announcer_reset_caption]}"
+                 Visibility="{Binding AnnouncerCustom, Converter={StaticResource Conv.Visible}}" />
+  </StackPanel>
 </UserControl>

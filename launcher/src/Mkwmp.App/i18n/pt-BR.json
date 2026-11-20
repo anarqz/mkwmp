@@ -501,5 +501,13 @@
   "settings.online.seats": "{seated} de {total} vagas ocupadas",
   "settings.privacy.review": "Ler e Aceitar",
   "settings.privacy.review_caption": "Este servidor não tem o seu aceite da política de privacidade atual. Amigos, voz e vaga esperam por ele.",
-  "settings.privacy.policy_caption": "A política deste servidor, mostrada aqui no launcher."
+  "settings.privacy.policy_caption": "A política deste servidor, mostrada aqui no launcher.",
+
+  "settings.online.announcer": "Lista de servidores",
+  "settings.online.announcer_save": "Salvar",
+  "settings.online.announcer_default": "De onde vem a lista de servidores: o diretório do MKWMP, {host}. Os servidores se anunciam lá.",
+  "settings.online.announcer_custom": "A lista vem de {host}, não do diretório do MKWMP.",
+  "settings.online.announcer_invalid": "Esse não é um endereço de anunciador: use https://host (http só neste PC ou na sua rede local).",
+  "settings.online.announcer_reset": "Usar o diretório do MKWMP",
+  "settings.online.announcer_reset_caption": "Volta para a lista que vem com o MKWMP."
 }

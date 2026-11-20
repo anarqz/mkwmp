@@ -501,5 +501,13 @@
   "settings.online.seats": "{seated} of {total} seats taken",
   "settings.privacy.review": "Review and Accept",
   "settings.privacy.review_caption": "This server has no consent from you for its current privacy policy. Friends, voice and a seat wait for it.",
-  "settings.privacy.policy_caption": "This server's own policy, shown here in the launcher."
+  "settings.privacy.policy_caption": "This server's own policy, shown here in the launcher.",
+
+  "settings.online.announcer": "Server List",
+  "settings.online.announcer_save": "Save",
+  "settings.online.announcer_default": "Where the list of servers comes from: MKWMP's directory, {host}. Servers announce themselves there.",
+  "settings.online.announcer_custom": "The list comes from {host}, not MKWMP's directory.",
+  "settings.online.announcer_invalid": "That is not an announcer address: use https://host (http only on this PC or your local network).",
+  "settings.online.announcer_reset": "Use MKWMP's Directory",
+  "settings.online.announcer_reset_caption": "Go back to the list MKWMP ships with."
 }
