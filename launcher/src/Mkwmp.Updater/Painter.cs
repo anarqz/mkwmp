@@ -110,16 +110,10 @@ internal static unsafe class Painter
                 return;
             }
         }
-        // Wine's GDI+ does not find the family in the private collection, has no Segoe UI, and its generic
-        // "sans serif" came out as a serif face under Proton 11: Tahoma and Arial are there (docs/LINUX.md).
-        foreach (var name in (string[])["Segoe UI", "Tahoma", "Arial"])
+        if (Native.GdipCreateFontFamilyFromName("Segoe UI", 0, out _family) != 0 || _family == 0)
         {
-            if (Native.GdipCreateFontFamilyFromName(name, 0, out _family) == 0 && _family != 0)
-            {
-                return;
-            }
+            _ = Native.GdipGetGenericFontFamilySansSerif(out _family);
         }
-        _ = Native.GdipGetGenericFontFamilySansSerif(out _family);
     }
 
     /// <summary>A new bitmap of <see cref="Width"/> × <see cref="Height"/> at <paramref name="scale"/>; the caller disposes it (0: failed).</summary>

@@ -279,6 +279,26 @@ Compatibility, both ways:
 - **Linux**: the launcher runs under Wine/Proton from the Windows zip; `mkwmp-launcher-x86_64-linux`
   is the Rust launcher's and is not touched by any of this.
 
+### Proposal: the SteamOS / Linux installer in the release (not applied)
+
+`tools/linux/install-mkwmp.sh` (docs/LINUX.md) installs the **Windows zip above** under Proton and makes
+the Steam shortcut. It downloads `mkwmp-<version>-windows-x64.zip` and checks it against the same
+signed `SHA256SUMS`, so the zip needs nothing new. What the release adds:
+
+| Asset | What |
+|---|---|
+| `install-mkwmp.sh` | `tools/linux/install-mkwmp.sh` as it is, a loose asset listed in `SHA256SUMS`. The one command for players is then `curl -fsSL https://github.com/anarqz/mkwmp/releases/latest/download/install-mkwmp.sh \| bash` (or the site's `install.sh` replaced by this file). |
+| `artwork.json` | `tools/linux/artwork.json` (links to SteamGridDB only, no picture), a loose asset. The script reads the copy beside itself, else the one of the repository's `main`. |
+
+In the scripts: `release.sh draft` uploads the two files; `sign_sums.py` lists them like any asset;
+`make_zips.py` does not change (neither file goes into a zip: the Windows zip stays what the helper
+installs, and a player on Linux needs the script before any zip). `README-linux.txt` and the Linux
+zip describe the Rust launcher and go away with it.
+
+When the launcher updates itself under Proton it replaces its own files in the same folder
+(section 4); the script is only needed again to move the shortcut to another Proton or to repair it.
+Both keep `client.toml`, `logs/` and `.mkwmp-selfupdate/`, and neither touches `mkw-recomp/`.
+
 ## 9. Tests
 
 `tests/Mkwmp.Core.Tests/SelfUpdateTests.cs` (GitHub is a fake; no process is started, no window
