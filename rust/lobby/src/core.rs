@@ -945,6 +945,9 @@ impl State {
             }
         }
         info!(lobby = %a.lobby, recipients = a.recipients.len(), members = members.len(), late = a.late, "assignment sent");
+        if let Some(l) = self.mm.lobbies.get(&a.lobby) {
+            room_order(l, if a.late { "late join" } else { "assignment" });
+        }
         if a.late {
             let lobby = self.mm.lobbies.get_mut(&a.lobby).expect("exists");
             for tid in &a.recipients {
@@ -1121,6 +1124,9 @@ impl State {
         self.note_game(&uid, game);
         let (lobby, _) = self.mm.create_room(&user, &req.mode, player, req.players.len(), room, ussid, now);
         info!(lobby = %lobby, user = %uid, game = game.unwrap_or("unknown"), rom_id = rom.as_deref().unwrap_or("-"), "friend room created");
+        if let Some(l) = self.mm.lobbies.get(&lobby) {
+            room_order(l, "room created");
+        }
         let name = format!("{}/gameSessionCreationTickets/{creation}", users::tenant(&user));
         Ok(crate::wire::Msg::new().bytes(1, name).into_bytes())
     }
@@ -1251,6 +1257,7 @@ impl State {
                 publish(lobby, &doc, ChangeKind::Added, sends);
             }
             info!(lobby = %lobby_id, user = %uid, players = lobby.players(), "joined by id");
+            room_order(lobby, "join");
         }
         let lobby = self.mm.lobbies.get(&lobby_id).expect("exists");
         let tenant = users::tenant(&user).to_owned();
@@ -1348,6 +1355,9 @@ impl State {
         let lobby_mode = lobby.mode.clone();
         self.mm.remove_seat(lobby_id, uid);
         info!(lobby = %lobby_id, mode = %lobby_mode, user = %uid, reason, "seat left");
+        if let Some(l) = self.mm.lobbies.get(&lobby_id) {
+            room_order(l, "leave");
+        }
         if let Some(lobby) = self.mm.lobbies.get_mut(&lobby_id) {
             if was_host {
                 lobby.host = lobby.seats.first().map(|s| s.uid().to_owned());
@@ -1415,6 +1425,14 @@ impl State {
 }
 
 // ---- lobby-level helpers (no access to other lobbies) ----------------------------------------
+
+/// One line per membership change: who is in the lobby by ussid (the lowest, marked `*`, is the
+/// game's mesh host) and the join order. A game crash record (UTC time, lobby id, ussid) is
+/// matched to its room with it.
+fn room_order(lobby: &Lobby, after: &str) {
+    let (by_ussid, join_order) = lobby.order();
+    info!(lobby = %lobby.id, mode = %lobby.mode, after, players = lobby.seats.len(), by_ussid = %by_ussid, join_order = %join_order, "room order");
+}
 
 /// Queue a change to every listener of `lobby` whose target covers the document.
 fn publish(lobby: &Lobby, doc: &Document, kind: ChangeKind, sends: &mut Sends) {

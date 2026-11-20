@@ -195,6 +195,23 @@ pub struct Room {
 }
 
 impl Lobby {
+    /// The members for the "room order" log line (matching game crash records to a lobby):
+    /// `ussid:user` sorted by ussid, the lowest (the game's mesh host) marked `*`, and the ussids
+    /// in join order.
+    pub fn order(&self) -> (String, String) {
+        let mut by: Vec<&Seat> = self.seats.iter().collect();
+        by.sort_by_key(|s| s.ussid);
+        let by_ussid = by
+            .iter()
+            .enumerate()
+            .map(|(i, s)| format!("{}{}:{}", s.ussid, if i == 0 { "*" } else { "" }, s.uid()))
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut joined: Vec<&Seat> = self.seats.iter().collect();
+        joined.sort_by_key(|s| s.join_seq);
+        (by_ussid, joined.iter().map(|s| s.ussid.to_string()).collect::<Vec<_>>().join(","))
+    }
+
     fn new(mode: &str, game: Option<&'static str>, capacity: usize, now: f64) -> Self {
         let id = Uuid::new_v4();
         let mut referee = Referee::new(id.to_string());
@@ -610,6 +627,20 @@ mod tests {
         assert_ne!(m.lobby_of(&crate::users::ticket_user_id("d")), Some(first));
         let c = m.counts()["Battle24"];
         assert_eq!((c.lobbies, c.players, c.open, c.gathering), (2, 4, 1, 1));
+    }
+
+    #[test]
+    fn room_order_marks_the_lowest_ussid_and_keeps_join_order() {
+        let mut m = mm();
+        for (n, (name, ussid)) in [("a", 7u32), ("b", 2), ("c", 5)].into_iter().enumerate() {
+            let t = m.create(&format!("tenants/t/users/{}", crate::users::ticket_user_id(name)), "Normal24", vec![], 1);
+            m.track(t, (n as u64 + 1, 1), ussid, 0.0);
+        }
+        let l = m.lobbies.values().next().unwrap();
+        let (by, join) = l.order();
+        let ids: Vec<&str> = by.split(',').map(|e| e.split(':').next().unwrap()).collect();
+        assert_eq!(ids, vec!["2*", "5", "7"]);
+        assert_eq!(join, "7,2,5");
     }
 
     #[test]
