@@ -74,7 +74,8 @@ public sealed class ConsoleSlider : Slider
 /// <param name="SeparatorBefore">A thin rule above this entry (a new group).</param>
 /// <param name="Heading">A small group heading above this entry ("Game settings"); "" for none.</param>
 /// <param name="Icon">An icon before the title, by its name in Icons.xaml without "Icon." ("Volume"); "" for none.</param>
-public sealed record CategoryEntry(string Key, string Title, bool SeparatorBefore = false, string Heading = "", string Icon = "")
+/// <param name="Locked">A small lock after the title: the category needs a server and none is set (locked online).</param>
+public sealed record CategoryEntry(string Key, string Title, bool SeparatorBefore = false, string Heading = "", string Icon = "", bool Locked = false)
 {
     /// <summary>The resource key of <see cref="Icon"/> ("Icon.Volume"), or "".</summary>
     public string IconKey => Icon.Length == 0 ? "" : "Icon." + Icon;

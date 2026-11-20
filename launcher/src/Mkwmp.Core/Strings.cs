@@ -14,7 +14,7 @@ public static class Strings
     public const string Unreachable = "Server unreachable: retry";
     public const string WrongPin = "Wrong PIN for this gamertag";
     public const string NotRegistered = "Register this gamertag first";
-    public const string NoConsent = "Confirm you're 18 or older and accept the privacy policy (SETTINGS > PRIVACY)";
+    public const string NoConsent = "Confirm you're 18 or older and accept the privacy policy (SETTINGS > ONLINE)";
     public const string PrivacyUrl = "https://anarqz.github.io/mkwmp/#privacy";
     public const string GuideUrl = "https://anarqz.github.io/mkwmp/";
     public const string InUse = "This gamertag is in use (another launcher, or a seat not expired yet): retrying";
@@ -64,8 +64,58 @@ public static class Strings
     public static string ExpiredAndTaken(string name) =>
         $"{name} expired on the server and someone else registered it: pick another gamertag";
 
+    // ---- offline first: no server chosen ---------------------------------------------------
+    /// <summary>An online action asked for while no server is set (register, friends, reports).</summary>
+    public const string OnlineOff = "Online is off: connect to a server first (SETTINGS > ONLINE)";
+
+    /// <summary>What the game's Online Play gets from the launcher while no server is set (shown by the mod as a notice).</summary>
+    /// <remarks>Plain ASCII without quotes, &lt;, &gt; or &amp;: the mod reads it out of the JSON as it is written, and keeps 127 characters.</remarks>
+    public const string OnlineOffInGame = "Online is off: connect to a server in the MKWMP launcher (Settings, Online)";
+
+    /// <summary>The profile card while offline: the name is only on this device.</summary>
+    public const string LocalNameOnly = "This is your name on this device. Connect to a server to register it there.";
+
+    public const string PickLocalName = "Pick your name: 3-16 letters, digits, - or _ (no spaces).";
+
+    // ---- asking a server who it is (Connect) ----------------------------------------------
+    public const string ProbeInvalid = "Type the server's address, like mkw.example.net or 192.168.0.10:8080";
+    public const string ProbeUnreachable = "Nothing answered at that address: check it, and that the server is up";
+    public const string ProbeNotMkwmp = "That address answered, but it is not an MKWMP server";
+    public const string ProbeTooOld = "That MKWMP server is too old for this launcher: its host must update it";
+
+    /// <summary>"MKWMP server · 20/32 seats free" (and the queue, when there is one).</summary>
+    public static string ProbeOk(ServerProbe probe)
+    {
+        ArgumentNullException.ThrowIfNull(probe);
+        return string.Create(CultureInfo.InvariantCulture, $"MKWMP server · {probe.SeatsFree}/{probe.SeatsTotal} seats free")
+            + (probe.Queued > 0 ? string.Create(CultureInfo.InvariantCulture, $" · {probe.Queued} in queue") : "");
+    }
+
+    // ---- the server list (the beholder) and the privacy policy ----------------------------
+    public const string BeholderUnreachable = "The server list could not be read right now";
+    public const string BeholderTooLarge = "the server list is too large";
+    public const string PrivacyUnreachable = "The server's own privacy policy could not be read right now: this is MKWMP's";
+    public const string ConsentNotStored = "The server could not store your answer right now: try again";
+    public const string PrivacyChanged = "The server's privacy policy changed: read it again, then accept";
+
+    /// <summary>MKWMP's own short policy, shown for a server that publishes none (the Rust window's three paragraphs).</summary>
+    public const string PrivacyFallbackMarkdown =
+        "# Privacy\n\n"
+        + "MKWMP's online play, friends and voice chat are for adults: you must be **18 or older**.\n\n"
+        + "## What the server keeps\n\n"
+        + "- your gamertag\n- a hash of your PIN (never the PIN itself)\n- your friends\n- any report you file\n\n"
+        + "Unused gamertags are deleted after a month. You can delete yours at any time in *Settings, Online*.\n\n"
+        + "## Voice and camera\n\n"
+        + "Voice chat works only in private rooms, relayed live to the players in your room. A camera you turn on is shown only to mutual friends there. "
+        + "Neither is ever recorded.\n\n"
+        + "## The full policy\n\n"
+        + "The server you play on may have its own policy; the project's is at [anarqz.github.io/mkwmp](https://anarqz.github.io/mkwmp/#privacy).\n";
+
     // ---- the status pill (the session's state machine) ------------------------------------
     public const string Ready = "READY · PRESS PLAY";
+    public const string ReadyOffline = "READY · PLAY OFFLINE";
+    public const string StartingGame = "STARTING THE GAME…";
+    public const string PlayingOffline = "PLAYING OFFLINE";
     public const string Connecting = "CONNECTING…";
     public const string TakingASeat = "TAKING A SEAT…";
     public const string StartFromSteam = "START THE GAME FROM STEAM";

@@ -67,7 +67,7 @@
           </StackPanel>
           <StackPanel Orientation="Horizontal" Margin="-4,40,0,0">
             <c:Tile Title="Play Online" Subtitle="12 of 32 seats" Badge="NEW" Icon="{StaticResource Icon.Kart}" Seed="#0" Width="300" Height="300" />
-            <c:Tile Title="Party Chat" Icon="{StaticResource Icon.Headset}" Seed="#1" Progress="0.4" Width="300" Height="300" />
+            <c:Tile Title="Voice &amp; Camera" Icon="{StaticResource Icon.Headset}" Seed="#1" Progress="0.4" Width="300" Height="300" />
           </StackPanel>
           <Border Style="{StaticResource Dock}" Margin="0,44,0,0" HorizontalAlignment="Left">
             <StackPanel Orientation="Horizontal">

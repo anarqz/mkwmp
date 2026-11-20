@@ -137,7 +137,7 @@ internal sealed class OverlayController : IDisposable
             return;
         }
         var settings = _shell.Settings;
-        _bridge.Enabled = !_foreign && settings.Ui.SetupDone && settings.AdultConsent && _shell.Page is not SetupViewModel
+        _bridge.Enabled = !_foreign && settings.Ui.SetupDone && _shell.Page is not SetupViewModel
             && _shell.Update.State is not (UpdateState.Downloading or UpdateState.Restarting);
     }
 

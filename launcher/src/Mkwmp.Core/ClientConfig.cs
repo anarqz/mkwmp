@@ -14,6 +14,7 @@ namespace Mkwmp.Core;
 /// </summary>
 internal sealed record ClientConfig
 {
+    /// <summary>The project's own server. Not a default any more: a fresh install is offline until the player chooses a server.</summary>
     public const string OfficialServer = "https://mkw.anarqz.dev";
     private const string Header = "# mkwmp launcher settings (edited by the launcher window).\n# Guide: https://anarqz.github.io/mkwmp/\n\n";
 
@@ -25,6 +26,48 @@ internal sealed record ClientConfig
     public IReadOnlyList<MutedPlayer> Mutes { get; init; } = [];
     public IReadOnlyList<AudioDevice> Inputs { get; init; } = [];
     public IReadOnlyList<AudioDevice> Outputs { get; init; } = [];
+
+    /// <summary>
+    /// The profile on every server this launcher registered or signed in on (<c>[servers."address"]</c>,
+    /// the most recently used last): switching servers, or disconnecting, never loses a PIN.
+    /// <see cref="LauncherSettings.Pin"/> is the one of the server in use.
+    /// </summary>
+    public IReadOnlyList<ServerProfile> Servers { get; init; } = [];
+
+    /// <summary>The same server, however it was typed (scheme, trailing slash, letter case).</summary>
+    public static bool SameServer(string a, string b) => string.Equals(ServerBase(a), ServerBase(b), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The PIN kept for <paramref name="name"/> on <paramref name="server"/>, or "" (a PIN belongs to one name on one server).</summary>
+    public string PinFor(string server, string name) =>
+        Servers.FirstOrDefault(p => SameServer(p.Server, server) && string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Pin ?? "";
+
+    /// <summary>Whether the consent was given for <paramref name="name"/> on <paramref name="server"/> (false for a server or a name not seen before).</summary>
+    public bool ConsentFor(string server, string name) =>
+        Servers.FirstOrDefault(p => SameServer(p.Server, server) && string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))?.Consent ?? false;
+
+    /// <summary>
+    /// The settings' own profile (server + name + PIN, when all three are there) written into
+    /// <see cref="Servers"/>, as the last entry. Every load and save goes through it: it is also
+    /// how the old single <c>pin</c> becomes the profile of the server it was used on.
+    /// </summary>
+    public ClientConfig Remembering()
+    {
+        var s = Settings;
+        var server = ServerBase(s.Server);
+        if (server.Length == 0 || !ValidName(s.Name) || !ValidPin(s.Pin))
+        {
+            return this;
+        }
+        var entry = new ServerProfile(server, s.Name, s.Pin, s.AdultConsent);
+        if (Servers.Count > 0 && Servers[^1] == entry)
+        {
+            return this;
+        }
+        return this with { Servers = [.. Servers.Where(p => !SameServer(p.Server, server)), entry] };
+    }
+
+    /// <summary>Forgets the profile kept for a server (it was deleted there).</summary>
+    public ClientConfig Forgetting(string server) => this with { Servers = [.. Servers.Where(p => !SameServer(p.Server, server))] };
 
     /// <summary>The same name rules as the server: 3-16 of [A-Za-z0-9_-].</summary>
     public static bool ValidName(string name) =>
@@ -50,7 +93,7 @@ internal sealed record ClientConfig
         return s.TrimEnd('/');
     }
 
-    /// <summary>The defaults for a first start: SteamOS starts the game from Steam, so no launch there.</summary>
+    /// <summary>The defaults for a first start: offline (no server), and on SteamOS the game starts from Steam, so no launch there.</summary>
     public static ClientConfig Default() => new() { Settings = new LauncherSettings { Launch = !IsSteamOs() } };
 
     /// <summary>
@@ -113,7 +156,7 @@ internal sealed record ClientConfig
         var ui = Table(t, "ui");
         var settings = new LauncherSettings
         {
-            Server = ServerBase(Str(t, "server", d.Server)),
+            Server = ServerBase(Str(t, "server", "")),
             Name = Str(t, "name", ""),
             Pin = Str(t, "pin", ""),
             Target = Str(t, "target", d.Target),
@@ -124,6 +167,7 @@ internal sealed record ClientConfig
             AutoUpdate = Bool(t, "update", true),
             Slot = Int(t, "slot", 1, 0, 255),
             LaunchCommand = Str(t, "launch_command", ""),
+            Beholder = Str(t, "beholder", "").Trim(),
             Patch = Bool(t, "patch", true),
             AdultConsent = Bool(t, "adult_consent", false),
             Background = new BackgroundSettings
@@ -154,13 +198,26 @@ internal sealed record ClientConfig
                 SetupDone = Bool(ui, "setup_done", false),
             },
         };
+        var servers = new List<ServerProfile>();
+        if (Table(t, "servers") is { } table)
+        {
+            foreach (var (address, value) in table)
+            {
+                if (value is TomlTable row && ServerBase(address) is { Length: > 0 } server && ValidPin(Str(row, "pin", ""))
+                    && !servers.Any(p => SameServer(p.Server, server)))
+                {
+                    servers.Add(new ServerProfile(server, Str(row, "name", ""), Str(row, "pin", ""), Bool(row, "consent", false)));
+                }
+            }
+        }
         return new ClientConfig
         {
+            Servers = servers,
             Settings = settings,
             Mutes = [.. Rows(voice, "mutes").Select(r => new MutedPlayer(Str(r, "account", ""), Str(r, "name", ""))).Where(m => m.Account.Length > 0)],
             Inputs = [.. Rows(voice, "inputs").Select(r => new AudioDevice(Str(r, "id", ""), Str(r, "name", ""))).Where(x => x.Id.Length > 0)],
             Outputs = [.. Rows(voice, "outputs").Select(r => new AudioDevice(Str(r, "id", ""), Str(r, "name", ""))).Where(x => x.Id.Length > 0)],
-        };
+        }.Remembering();
     }
 
     /// <summary>
@@ -196,6 +253,7 @@ internal sealed record ClientConfig
         Line(b, "update", s.AutoUpdate);
         Line(b, "slot", s.Slot);
         Line(b, "launch_command", s.LaunchCommand);
+        Line(b, "beholder", s.Beholder);
         Line(b, "patch", s.Patch);
         Line(b, "adult_consent", s.AdultConsent);
 
@@ -245,11 +303,20 @@ internal sealed record ClientConfig
                 Line(b, "name", x.Name);
             }
         }
+        // The profile on each server (the top-level `pin` stays the one of `server`, as the Rust launcher reads it).
+        foreach (var p in Servers)
+        {
+            b.Append("\n[servers.").Append(Quote(p.Server)).Append("]\n");
+            Line(b, "name", p.Name);
+            Line(b, "pin", p.Pin);
+            Line(b, "consent", p.Consent);
+        }
         return b.ToString();
     }
 
     public bool SameAs(ClientConfig other) =>
-        Settings == other.Settings && Mutes.SequenceEqual(other.Mutes) && Inputs.SequenceEqual(other.Inputs) && Outputs.SequenceEqual(other.Outputs);
+        Settings == other.Settings && Mutes.SequenceEqual(other.Mutes) && Inputs.SequenceEqual(other.Inputs) && Outputs.SequenceEqual(other.Outputs)
+        && Servers.SequenceEqual(other.Servers);
 
     private static void Line(StringBuilder b, string key, string value) => b.Append(key).Append(" = ").Append(Quote(value)).Append('\n');
 
@@ -308,3 +375,10 @@ internal sealed record ClientConfig
         };
     }
 }
+
+/// <summary>
+/// The profile kept for one server: the gamertag registered there, its PIN, and whether the
+/// consent was given for that server (each server has its own policy; one that keeps consent
+/// itself says so again at every sign-in).
+/// </summary>
+internal sealed record ServerProfile(string Server, string Name, string Pin, bool Consent = false);

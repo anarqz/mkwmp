@@ -43,13 +43,56 @@ public interface ILauncher : IAsyncDisposable
     /// </summary>
     bool OnlineEnabled => !string.IsNullOrWhiteSpace(Settings.Server);
 
+    /// <summary>
+    /// Asks a server who it is (its public status), without saving anything: what "Connect" shows
+    /// before the address becomes <see cref="LauncherSettings.Server"/> through
+    /// <see cref="SaveSettingsAsync"/>. Never throws: the answer says unreachable, not an MKWMP
+    /// server, or too old. (The consent comes later: after signing in on the server, which keeps it.)
+    /// </summary>
+    Task<ServerProbe> ProbeServerAsync(string address);
+
+    /// <summary>
+    /// The servers this launcher has a profile on (name + PIN kept per server, so that switching
+    /// or disconnecting never loses one), the most recently used last. Saving a server that is
+    /// listed here with the current name brings its PIN back.
+    /// </summary>
+    IReadOnlyList<SavedServer> SavedServers { get; }
+
     /// <summary>Starts the background loops (status, friends, notifications, local API, update check).</summary>
     Task StartAsync(CancellationToken cancel);
 
     /// <summary>Saves the settings (keeps the game-owned voice lists), wakes the friends long-poll.</summary>
     Task SaveSettingsAsync(LauncherSettings settings);
 
+    /// <summary>
+    /// Gives or withdraws the consent (18+, the privacy policy). It belongs to the profile on the
+    /// server: asked for after signing in, stored there (with the version of the policy shown by
+    /// <see cref="GetPrivacyPolicyAsync"/>) and mirrored in <see cref="LauncherSettings.AdultConsent"/>,
+    /// which a sign-in brings back on another device. A server that should have stored it and
+    /// could not leaves it unchanged (<see cref="ProfileView.Message"/> says why). A server older
+    /// than server-side consent: kept here only, as before.
+    /// </summary>
     Task SetConsentAsync(bool adult);
+
+    /// <summary>
+    /// The privacy policy of the server in use, as Markdown to show inside the launcher (never in a
+    /// browser): the server's own (<c>GET /privacy</c>), else the project's short text with its link.
+    /// Never throws.
+    /// </summary>
+    Task<PrivacyPolicy> GetPrivacyPolicyAsync();
+
+    /// <summary>
+    /// The servers the beholder lists (a small public directory servers announce themselves to),
+    /// each with its latency to the server itself, sorted by it. <see cref="ServerListState.Off"/>
+    /// when no beholder is set: then only a typed address connects.
+    /// </summary>
+    ServerListView Servers { get; }
+
+    /// <summary>Reads the list again and measures every server (the page asks when it opens, and for its refresh button).</summary>
+    Task RefreshServersAsync();
+
+    /// <summary>Measures the latencies again, without reading the list (the page asks every few seconds while it is open).</summary>
+    Task MeasureServersAsync();
 
     // Profile
     Task RegisterAsync(string name);
@@ -165,6 +208,81 @@ public sealed record GameSettingsView(
     public bool IsVisible(GameSetting setting) => GameSettingsSchema.IsVisible(setting, Values);
 }
 
+public enum ServerProbeState
+{
+    /// <summary>An MKWMP server answered: its name and seats are in the probe.</summary>
+    Ok,
+
+    /// <summary>The address is empty or not one.</summary>
+    Invalid,
+
+    /// <summary>Nothing answered there (no network, wrong address, the server is down).</summary>
+    Unreachable,
+
+    /// <summary>Something answered, but it is not an MKWMP server.</summary>
+    NotMkwmp,
+
+    /// <summary>An MKWMP server too old for this launcher (it names no lobby).</summary>
+    TooOld,
+}
+
+/// <summary>What <see cref="ILauncher.ProbeServerAsync"/> learned.</summary>
+/// <param name="Address">The address as it would be saved (a bare host:port is http).</param>
+/// <param name="Name">The server's own name; null unless <see cref="ServerProbeState.Ok"/> or <see cref="ServerProbeState.TooOld"/>.</param>
+/// <param name="Message">What went wrong, for the player; null when <see cref="ServerProbeState.Ok"/>.</param>
+public sealed record ServerProbe(ServerProbeState State, string Address, string? Name, int SeatsTotal, int Seated, int Queued, string? Message)
+{
+    public bool Ok => State == ServerProbeState.Ok;
+
+    public int SeatsFree => Math.Max(0, SeatsTotal - Seated);
+}
+
+/// <summary>A privacy policy to show (<see cref="ILauncher.GetPrivacyPolicyAsync"/>).</summary>
+/// <param name="Markdown">The text, as Markdown.</param>
+/// <param name="Version">The sha256 of the server's text (what a consent names); null for the built-in text.</param>
+/// <param name="FromServer">The server's own policy; false: the project's short text (the server has none, or could not be reached).</param>
+/// <param name="Link">Where the same policy is on the web (shown as text; the launcher renders the Markdown itself).</param>
+/// <param name="Note">Why the server's own policy is not the one shown, when it should have been; else null.</param>
+public sealed record PrivacyPolicy(string Markdown, string? Version, bool FromServer, string Link, string? Note)
+{
+    /// <summary>The project's own short policy text: for a server that has none of its own, and when it cannot be reached.</summary>
+    public static PrivacyPolicy Fallback(string? note) => new(Strings.PrivacyFallbackMarkdown, null, false, Strings.PrivacyUrl, note);
+}
+
+public enum ServerListState
+{
+    /// <summary>No beholder is set: there is no list.</summary>
+    Off,
+    Loading,
+    Ready,
+
+    /// <summary>The beholder did not answer: the last good list is shown.</summary>
+    Cached,
+
+    /// <summary>The beholder did not answer and there is no earlier list.</summary>
+    Failed,
+}
+
+/// <summary>A server of the beholder's list. Its fields are the server's own words until <paramref name="Online"/> is true: then seats and queue are what the server itself just answered.</summary>
+/// <param name="Address">The server's address, as it would be saved.</param>
+/// <param name="LatencyMs">The median round trip to the server itself; null until measured, and when it did not answer.</param>
+/// <param name="Online">null: not measured yet; false: it did not answer as an MKWMP server.</param>
+public sealed record ListedServer(string Name, string Address, string? Region, string? Version, int Capacity, int Seated, int Queued, int? LatencyMs, bool? Online)
+{
+    /// <summary>0 (no answer, or not measured) to 3 (under 60 ms; 2 under 150 ms).</summary>
+    public int Bars => LatencyMs switch { null => 0, < 60 => 3, < 150 => 2, _ => 1 };
+}
+
+/// <param name="Busy">The list is being read or the servers measured.</param>
+/// <param name="Note">Why the list is cached or missing; null when fine.</param>
+public sealed record ServerListView(ServerListState State, IReadOnlyList<ListedServer> Items, bool Busy, string? Note)
+{
+    public static ServerListView Off { get; } = new(ServerListState.Off, [], false, null);
+}
+
+/// <summary>A server the launcher keeps a profile for (<see cref="ILauncher.SavedServers"/>). The PIN itself stays in the settings file.</summary>
+public sealed record SavedServer(string Address, string Name, bool HasPin);
+
 public sealed record Toast(string Title, string Body, ToastKind Kind);
 
 public enum ToastKind { FriendOnline, FriendPlaying, FriendRequest, Info }
@@ -174,8 +292,11 @@ public enum FriendRemoval { Reject, Cancel, Unfriend }
 /// <summary>client.toml, as the window edits it.</summary>
 public sealed record LauncherSettings
 {
-    public string Server { get; init; } = "https://mkw.anarqz.dev";
+    /// <summary>The server's address; "" (a fresh install) is offline: no server is contacted and online features are locked.</summary>
+    public string Server { get; init; } = "";
+    /// <summary>The player's name: local until a server is chosen, then the gamertag registered on it.</summary>
     public string Name { get; init; } = "";
+    /// <summary>The PIN of <see cref="Name"/> on <see cref="Server"/> (kept per server in the file; "" while offline or not registered).</summary>
     public string Pin { get; init; } = "";
     /// <summary>The game target id (<c>mkw-recomp</c>).</summary>
     public string Target { get; init; } = "mkw-recomp";
@@ -186,7 +307,10 @@ public sealed record LauncherSettings
     public bool AutoUpdate { get; init; } = true;
     public int Slot { get; init; } = 1;
     public string LaunchCommand { get; init; } = "";
+    /// <summary>The beholder (server directory) to list servers from; "" = this release's default (none yet).</summary>
+    public string Beholder { get; init; } = "";
     public bool Patch { get; init; } = true;
+    /// <summary>The consent (18+, privacy policy). With a server that keeps it, a mirror of what that server holds for the profile.</summary>
     public bool AdultConsent { get; init; }
     public BackgroundSettings Background { get; init; } = new();
     public VoiceSettings Voice { get; init; } = new();
@@ -215,7 +339,7 @@ public sealed record VoiceSettings
     /// <summary>Camera device id for the launcher's camera test ("" = first). The in-game camera on/off is the mod's setting.</summary>
     public string Camera { get; init; } = "";
     public bool CameraMirror { get; init; } = true;
-    /// <summary>The Party Chat introduction and consent pages were seen and accepted.</summary>
+    /// <summary>Kept for old settings files (the launcher once had an introduction to its chat pages); nothing reads it.</summary>
     public bool ChatIntroDone { get; init; }
 }
 
@@ -225,7 +349,7 @@ public sealed record UiSettings
     /// <summary>"light" or "dark".</summary>
     public string Theme { get; init; } = "light";
     public string Locale { get; init; } = "";
-    /// <summary>First-run setup (welcome, consent, gamertag, game folder) finished.</summary>
+    /// <summary>The first-start welcome flow (name, game, "go online?") finished, or was never needed (a working online profile was already here).</summary>
     public bool SetupDone { get; init; }
 }
 

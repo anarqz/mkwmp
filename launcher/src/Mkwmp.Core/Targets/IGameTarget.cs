@@ -203,7 +203,19 @@ public sealed record IntegrationPackage(string Version, IReadOnlyDictionary<stri
 
 /// <summary>What the hook reads (mkwmp.toml): see docs/contracts/LAUNCHER_API.md.</summary>
 /// <param name="LauncherExe">The launcher's executable with forward slashes, for the mod to start it as its overlay host later; null when unknown (run from the dotnet host).</param>
-public sealed record SessionFile(string Server, string Name, string Launcher, string LauncherToken, int VoicePort, string? Ticket, int Slot, string? LobbyCaPem, string? LauncherExe = null);
+public sealed record SessionFile(string Server, string Name, string Launcher, string LauncherToken, int VoicePort, string? Ticket, int Slot, string? LobbyCaPem, string? LauncherExe = null)
+{
+    /// <summary>
+    /// The session file of a game started with no server chosen: only how to reach this launcher
+    /// (for the overlay). A target writes no lobby, name, ticket or certificate for it, so the hook
+    /// stays out of the game's online play.
+    /// </summary>
+    public static SessionFile Offline(string launcher, string launcherToken, string? launcherExe) =>
+        new("", "", launcher, launcherToken, 0, null, 1, null, launcherExe);
+
+    /// <summary>No server: see <see cref="Offline"/>.</summary>
+    public bool IsOffline => Server.Length == 0;
+}
 
 public sealed record LaunchOptions(string? CustomCommand);
 

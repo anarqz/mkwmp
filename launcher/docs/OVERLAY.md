@@ -2,7 +2,7 @@
 
 In the game, the Guide button (or Select+Start, or Select held for a second) brings the MKWMP launcher over the game
 the way the Switch 2's HOME button does: the picture the game was showing shrinks into the Play tile of Home, the
-player looks at friends, settings or Party Chat, and "back to the game" grows the thumbnail back to the full screen.
+player looks at friends or settings, and "back to the game" grows the thumbnail back to the full screen.
 mkw-recomp's own menu does not open on that button.
 
 Status: built and wired end to end (the mod's part, the launcher's Core, the window helpers, the shell's overlay mode
@@ -309,7 +309,7 @@ How it behaves:
   is hidden first, so that the show is a map (gamescope's rule, section 4).
 - **Overlay mode**: home's Play tile is "Back to the Game" with the picture; A on it, B on home, the dock's first
   button or Guide (`GuideWatcher`) go back. PLAY / STOP start and stop nothing. "mkw-recomp menu" (dock) is there when
-  the game said `menu=1` and returns with `OverlayReturn.Menu`. Friends, Settings and Party Chat work as always; the
+  the game said `menu=1` and returns with `OverlayReturn.Menu`. Friends and Settings (with Voice & Camera) work as always; the
   game's settings say "close the game" because the target sees it running.
 - **Back**: the picture grows from the tile over the stage, `GameWindow.GiveBack` hides the launcher and focuses the
   game, `bridge.ReturnToGame`. The launcher's window is then hidden, on Windows too.

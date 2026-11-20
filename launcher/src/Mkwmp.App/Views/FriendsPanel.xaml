@@ -4,10 +4,12 @@
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              xmlns:vm="clr-namespace:Mkwmp.App.ViewModels"
+             xmlns:v="clr-namespace:Mkwmp.App.Views"
              Focusable="False">
   <!-- DataContext: FriendsPanelViewModel. Header, "add a friend", one message line, then the list in
        sections (requests, friends, sent). The shell slides it in from the right and dims the page; the
-       bottom 112 units belong to the hint bar. -->
+       bottom 112 units belong to the hint bar. Without a server (Locked) only the header and the locked
+       state: no field, no list. -->
   <UserControl.Resources>
     <!-- a small button inside a line of the list -->
     <Style x:Key="RowButton" TargetType="c:ConsoleButton" BasedOn="{StaticResource {x:Type c:ConsoleButton}}">
@@ -105,7 +107,7 @@
       </Grid>
 
       <!-- add a friend by gamertag, and the one message line -->
-      <StackPanel Grid.Row="1" Margin="56,26,56,0">
+      <StackPanel Grid.Row="1" Margin="56,26,56,0" Visibility="{Binding Unlocked, Converter={StaticResource Conv.Visible}}">
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -150,9 +152,14 @@
         <TextBlock Text="{Binding S[friends.empty]}" Style="{StaticResource Text.Caption}" TextAlignment="Center" Margin="0,18,0,0" />
       </StackPanel>
 
-      <c:SmoothScrollViewer Grid.Row="2" Padding="44,0,44,18">
+      <c:SmoothScrollViewer Grid.Row="2" Padding="44,0,44,18" Visibility="{Binding Unlocked, Converter={StaticResource Conv.Visible}}">
         <ItemsControl ItemsSource="{Binding Rows}" Focusable="False" input:FocusNav.IsGroup="True" />
       </c:SmoothScrollViewer>
+
+      <!-- locked online: friends live on a server, and none is set -->
+      <v:OnlineLocked Grid.Row="1" Grid.RowSpan="2" VerticalAlignment="Center" Margin="64,0,64,70"
+                      Title="{Binding S[friends.locked.title]}" Text="{Binding S[friends.locked.text]}"
+                      Visibility="{Binding Locked, Converter={StaticResource Conv.Visible}}" />
     </Grid>
   </Border>
 </UserControl>

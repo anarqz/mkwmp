@@ -14,7 +14,7 @@ namespace Mkwmp.App.ViewModels;
 /// window's SETTINGS modal and PLAYER card could change is here (rust/client/src/gui.rs is the
 /// reference for every rule and text). A change is saved at once (<c>SaveSettingsAsync</c>);
 /// what the old window disabled while playing is disabled while <c>Session.Busy</c>.
-/// Party Chat's pane is in SettingsViewModel.Chat.cs.
+/// Voice &amp; Camera's pane, and the lock of the categories that need a server, are in SettingsViewModel.Voice.cs.
 /// </summary>
 public sealed partial class SettingsViewModel : PageViewModel
 {
@@ -27,12 +27,11 @@ public sealed partial class SettingsViewModel : PageViewModel
         Categories =
         [
             new CategoryEntry("profile", S["settings.profile"]),
+            new CategoryEntry(Routes.OnlineCategory, S["settings.online"]), // the server, the profile on it, privacy (SettingsViewModel.Online.cs)
             new CategoryEntry("game", S["settings.game"]),
-            new CategoryEntry("chat", S["settings.chat"]),
+            new CategoryEntry("voice", S["settings.voice"]),
             new CategoryEntry("notifications", S["settings.notifications"]),
-            new CategoryEntry("privacy", S["settings.privacy"]),
-            new CategoryEntry("server", S["settings.server"], SeparatorBefore: true),
-            new CategoryEntry("appearance", S["settings.appearance"]),
+            new CategoryEntry("appearance", S["settings.appearance"], SeparatorBefore: true),
             new CategoryEntry("updates", S["settings.updates"]),
             new CategoryEntry("support", S["settings.support"]),
             new CategoryEntry("about", S["settings.about"]),
@@ -55,8 +54,16 @@ public sealed partial class SettingsViewModel : PageViewModel
         CheckUpdateCommand = RelayCommand.Async(() => Launcher.CheckForUpdatesAsync(), () => Launcher.Update.State is not (UpdateState.Checking or UpdateState.Downloading or UpdateState.Restarting));
         UpdateCommand = new RelayCommand(Shell.ShowUpdateModal);
         SaveLogsCommand = RelayCommand.Async(SaveLogsAsync, () => !_savingLogs);
-        InitChat();
+        InitVoice();
         InitGameSettings();
+        InitOnline();
+        Profile.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ProfileForm.PinRevealed))
+            {
+                RefreshHints(); // the eye was pressed: X now says the other thing
+            }
+        };
     }
 
     /// <summary>The fixed categories, and one per page of the game's own settings (SettingsViewModel.GameSettings.cs).</summary>
@@ -69,7 +76,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         {
             if (value is not null && Set(ref _category, value))
             {
-                if (value.Key != "chat")
+                FollowServers(true);
+                if (value.Key != "voice")
                 {
                     Mic.Stop();
                 }
@@ -80,10 +88,10 @@ public sealed partial class SettingsViewModel : PageViewModel
         }
     }
 
-    /// <summary>The pane to show ("gs" for every page of the game's own settings).</summary>
-    public string CategoryKey => IsGameSettings ? "gs" : _category.Key;
+    /// <summary>The pane to show ("gs" for every page of the game's own settings; "locked" for one that needs a server while none is set).</summary>
+    public string CategoryKey => IsGameSettings ? "gs" : CategoryLocked ? "locked" : _category.Key;
 
-    /// <summary>Opens on a category (<c>Shell.Navigate(new SettingsViewModel(Shell).At("chat"))</c>).</summary>
+    /// <summary>Opens on a category (<c>Shell.Navigate(new SettingsViewModel(Shell).At("voice"))</c>).</summary>
     public SettingsViewModel At(string key)
     {
         if (Categories.FirstOrDefault(c => c.Key == key) is { } entry)
@@ -111,20 +119,28 @@ public sealed partial class SettingsViewModel : PageViewModel
     {
         Profile.Refresh();
         Game.Refresh();
-        EnterChat();
+        EnterVoice();
+        FollowServers(true);
     }
 
     public override void OnLeave()
     {
-        LeaveChat();
+        FollowServers(false);
+        LeaveVoice();
         FlushGameRows();
     }
 
     public override void OnStateChanged()
     {
+        if (_localName == Launcher.Settings.Name)
+        {
+            _localName = null; // saved: the box follows the settings again
+        }
         Profile.Refresh();
         Game.Refresh();
-        RefreshChat();
+        Servers.Sync();
+        FollowServers(true);
+        RefreshVoice();
         SyncGameCategories();
         base.OnStateChanged();
         RefreshHints();
@@ -233,22 +249,7 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     public ICommand PolicyCommand { get; }
 
-    // ── server ──
-
-    public string ServerUrl
-    {
-        get => Launcher.Settings.Server;
-        set
-        {
-            var url = (value ?? "").Trim();
-            if (Busy || url == Launcher.Settings.Server)
-            {
-                Raise();
-                return;
-            }
-            Save(s => s with { Server = url });
-        }
-    }
+    // ── server (its address is chosen in the connect flow: SettingsViewModel.Online.cs) ──
 
     public string ServerStatus => CoreStrings.ServerPill(Launcher.Server);
 

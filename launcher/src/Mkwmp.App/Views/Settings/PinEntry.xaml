@@ -1,0 +1,27 @@
+<UserControl x:Class="Mkwmp.App.Views.Settings.PinEntry"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             x:Name="Self" Focusable="False">
+  <!-- Typing a PIN: masked as it is typed (also on the on-screen keyboard), with the same eye button as
+       PinField to see the digits. Properties: Pin (two-way), IsRevealed (two-way), Hint, Title (the
+       on-screen keyboard's). Hidden again when it leaves the screen. -->
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" />
+      <ColumnDefinition Width="Auto" />
+    </Grid.ColumnDefinitions>
+    <Grid>
+      <PasswordBox x:Name="Masked" MaxLength="6" PasswordChar="•" FontFamily="{StaticResource Font.Ui}" FontWeight="ExtraBold"
+                   input:TextEntry.Charset="Digits" input:TextEntry.Title="{Binding Title, ElementName=Self}" PasswordChanged="OnMasked" />
+      <TextBox x:Name="Plain" MaxLength="6" InputScope="Number" Visibility="Collapsed"
+               input:TextEntry.Charset="Digits" input:TextEntry.Title="{Binding Title, ElementName=Self}" TextChanged="OnPlain" />
+      <TextBlock x:Name="HintText" Text="{Binding Hint, ElementName=Self}" Style="{StaticResource Text.Base}"
+                 Foreground="{DynamicResource Brush.TextFaint}" Margin="28,0" IsHitTestVisible="False" />
+    </Grid>
+    <c:ConsoleButton Grid.Column="1" Kind="Secondary" Width="88" MinWidth="88" Height="88" Padding="0" Margin="14,0,0,0" Click="OnEye">
+      <c:Icon x:Name="EyeIcon" Data="{StaticResource Icon.Eye}" Width="40" Height="40" />
+    </c:ConsoleButton>
+  </Grid>
+</UserControl>

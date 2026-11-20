@@ -112,6 +112,16 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         {
             _config = _config with { Settings = _config.Settings with { Game = near.Install.Root, Target = near.Target.Id } };
         }
+        // Someone who already plays online here (a server, a registered name, the consent) never meets the first-start welcome.
+        if (!_config.Settings.Ui.SetupDone && IsOnline(_config.Settings) && _config.Settings.AdultConsent && Ident(_config.Settings) is not null)
+        {
+            _config = _config with { Settings = _config.Settings with { Ui = _config.Settings.Ui with { SetupDone = true } } };
+        }
+        // Offline (no server chosen): the server is never asked, so there is nothing to be "checking".
+        if (!IsOnline(_config.Settings))
+        {
+            _server = NotAsked;
+        }
         _localApiUp = !_options.BindLocalApi;
         _settingsView = _config.Settings;
         _serverView = _server;
@@ -195,6 +205,17 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
     public IDeviceLab Devices => _devices;
 
     public string? PlayProblem => _playProblem;
+
+    private static readonly ServerView NotAsked = new(ServerState.NotAsked, null, 0, 0, 0, null);
+
+    private volatile IReadOnlyList<SavedServer> _savedServersView = [];
+
+    public IReadOnlyList<SavedServer> SavedServers => _savedServersView;
+
+    /// <summary>A server is chosen (<see cref="ILauncher.OnlineEnabled"/>): without one, no server is ever contacted and PLAY starts the game offline.</summary>
+    internal static bool IsOnline(LauncherSettings s) => !string.IsNullOrWhiteSpace(s.Server);
+
+    bool ILocalApiHost.Online => IsOnline(Settings);
 
     /// <summary>The registered game targets (the selected one first is not implied: see <see cref="LauncherSettings.Target"/>).</summary>
     public TargetRegistry Targets => _targets;
@@ -292,24 +313,27 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         }
     }
 
-    /// <summary>What is missing in the settings before PLAY can work, in the order the player fixes it.</summary>
+    /// <summary>
+    /// What is missing in the settings before PLAY can work, in the order the player fixes it.
+    /// Offline (no server) only the game is asked for: consent, gamertag and PIN belong to a server.
+    /// </summary>
     internal static string? ConfigProblem(LauncherSettings s, bool gameFound, string folderHint)
     {
-        if (!s.AdultConsent)
+        if (IsOnline(s))
         {
-            return Strings.NoConsent;
-        }
-        if (!ClientConfig.ValidName(s.Name))
-        {
-            return Strings.PickGamertag;
-        }
-        if (!ClientConfig.ValidPin(s.Pin))
-        {
-            return Strings.NeedPin;
-        }
-        if (string.IsNullOrWhiteSpace(s.Server))
-        {
-            return Strings.SetServer;
+            // The order of the flow: a server, a profile on it (sign in), then the consent that server keeps.
+            if (!ClientConfig.ValidName(s.Name))
+            {
+                return Strings.PickGamertag;
+            }
+            if (!ClientConfig.ValidPin(s.Pin))
+            {
+                return Strings.NeedPin;
+            }
+            if (!s.AdultConsent)
+            {
+                return Strings.NoConsent;
+            }
         }
         if (!gameFound)
         {
@@ -343,24 +367,36 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         Put(ref server, _server);
         _serverView = server;
 
+        var online = IsOnline(s);
+        var saved = _savedServersView;
+        if (!saved.Select(p => (p.Address, p.Name)).SequenceEqual(_config.Servers.Select(p => (p.Server, p.Name))))
+        {
+            _savedServersView = [.. _config.Servers.Select(p => new SavedServer(p.Server, p.Name, true))];
+            changed = true;
+        }
+
         var nameValid = ClientConfig.ValidName(s.Name);
         var (message, isError) = s.Name.Length > 0 && !nameValid ? (Strings.NameRule, true)
             : _register == RegisterState.Failed ? (_registerMessage ?? Strings.ServerError, true)
+            : !online ? (nameValid ? Strings.LocalNameOnly : Strings.PickLocalName, false)
             : _register == RegisterState.Deleted && s.Name.Length == 0 ? (Strings.ProfileDeleted, false)
             : _register == RegisterState.Taken && s.Pin.Length != 6 ? (Strings.NameIsRegistered, true)
             : s.Pin.Length == 6 ? (Strings.KeepYourPin, false)
             : (Strings.RegisterToPlay, false);
         var profile = _profileView;
-        Put(ref profile, new ProfileView(s.Name, s.Pin, nameValid, nameValid && s.Pin.Length == 6, _register, message, isError));
+        // Signed in is about a server: a local name alone (offline) is not a profile anywhere.
+        Put(ref profile, new ProfileView(s.Name, online ? s.Pin : "", nameValid, online && nameValid && s.Pin.Length == 6, _register, message, isError));
         _profileView = profile;
 
         var steam = !LaunchesGame(s);
         var snap = _seatSnapshot;
+        var offlinePlay = _offlineSession;
         var (status, tone) = _sessionState switch
         {
-            SessionState.Idle => configProblem is null ? (Strings.Ready, "plain") : (configProblem.ToUpperInvariant(), "warn"),
-            SessionState.Starting => (Strings.Connecting, "info"),
+            SessionState.Idle => configProblem is null ? (online ? Strings.Ready : Strings.ReadyOffline, "plain") : (configProblem.ToUpperInvariant(), "warn"),
+            SessionState.Starting => (offlinePlay ? Strings.StartingGame : Strings.Connecting, "info"),
             SessionState.Failed => (_sessionError ?? "", "bad"),
+            _ when offlinePlay => _gameRunning ? (Strings.PlayingOffline, "good") : (steam ? Strings.StartFromSteam : Strings.StartingGame, "info"),
             _ => snap switch
             {
                 { Phase: SeatPhase.Refused } => (snap.Message ?? "", "bad"),
@@ -379,7 +415,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         var session = _sessionView;
         Put(ref session, new SessionView(
             _sessionState,
-            running ? snap?.Phase ?? SeatPhase.Joining : null,
+            running && !offlinePlay ? snap?.Phase ?? SeatPhase.Joining : null, // offline: no seat, so no phase
             running && snap is { Phase: SeatPhase.Queued } ? snap.Position : 0,
             running && _gameRunning,
             steam,
@@ -452,7 +488,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         lock (_configWrite)
         {
             var before = Config;
-            var after = edit(before);
+            var after = edit(before).Remembering(); // the profile in use is also the one kept for its server
             if (after.SameAs(before))
             {
                 return;
@@ -483,10 +519,19 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
     private void SaveSettingsCore(LauncherSettings settings)
     {
         var before = Settings;
-        // A PIN belongs to one name: a new name never goes out with the old name's PIN.
-        if (!string.Equals(settings.Name, before.Name, StringComparison.OrdinalIgnoreCase) && settings.Pin == before.Pin)
+        settings = settings with { Server = ClientConfig.ServerBase(settings.Server) };
+        var serverChanged = !ClientConfig.SameServer(settings.Server, before.Server);
+        // A PIN belongs to one name on one server: another name, or another server, never goes out with this one's PIN.
+        // The one kept for that name on that server comes back instead (connecting again, switching servers).
+        if ((serverChanged || !string.Equals(settings.Name, before.Name, StringComparison.OrdinalIgnoreCase)) && settings.Pin == before.Pin)
         {
-            settings = settings with { Pin = "" };
+            settings = settings with { Pin = Config.PinFor(settings.Server, settings.Name) };
+        }
+        // The consent is given to one server (its own policy): another server starts without it, a known one with what
+        // was given there. (A server that keeps consent itself says so again at the sign-in.) Offline it means nothing.
+        if (serverChanged && IsOnline(settings) && settings.AdultConsent == before.AdultConsent)
+        {
+            settings = settings with { AdultConsent = Config.ConsentFor(settings.Server, settings.Name) };
         }
         string? error = null;
         try
@@ -498,6 +543,10 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         {
             error = e.Message;
         }
+        if (error is null && serverChanged)
+        {
+            ServerChanged(before.Server);
+        }
         if (error is null && settings.Background.StartWithSystem != before.Background.StartWithSystem)
         {
             error = ApplyAutostart(settings.Background.StartWithSystem);
@@ -505,7 +554,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         Mutate(() =>
         {
             _saveError = error;
-            if (settings.Name != before.Name)
+            if (settings.Name != before.Name || serverChanged)
             {
                 (_register, _registerMessage) = (RegisterState.Idle, null); // the last REGISTER outcome was about another name
             }
@@ -520,7 +569,6 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         }
     }
 
-    public Task SetConsentAsync(bool adult) => SaveSettingsAsync(Settings with { AdultConsent = adult });
 
     private string? ApplyAutostart(bool on)
     {

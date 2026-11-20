@@ -16,7 +16,7 @@ public sealed partial class ShellViewModel
 
     // ── shortcuts into pages ──
 
-    /// <summary>Settings, on one category (<c>profile</c>, <c>game</c>, <c>chat</c>, <c>notifications</c>, <c>appearance</c>, <c>updates</c>, <c>about</c>).</summary>
+    /// <summary>Settings, on one category (<c>profile</c>, <c>game</c>, <c>voice</c>, <c>notifications</c>, <c>appearance</c>, <c>updates</c>, <c>about</c>).</summary>
     public void OpenSettings(string? category = null)
     {
         if (Page is not SettingsViewModel)
@@ -25,6 +25,26 @@ public sealed partial class ShellViewModel
         }
         if (category is not null && Page is SettingsViewModel settings
             && settings.Categories.FirstOrDefault(c => string.Equals(c.Key, category, StringComparison.OrdinalIgnoreCase)) is { } entry)
+        {
+            settings.Category = entry;
+        }
+    }
+
+    // ── locked online (docs/DESIGN.md, section 12) ──
+
+    /// <summary>
+    /// A server is set (<see cref="ILauncher.OnlineEnabled"/>). False: the launcher is a shell for
+    /// the game, and everything that needs a server shows a lock and leads to <see cref="ConfigureOnline"/>.
+    /// </summary>
+    public bool OnlineEnabled => Launcher.OnlineEnabled;
+
+    /// <summary>"Configure online": Settings › Online, from wherever a lock was (the friends panel closes).</summary>
+    public void ConfigureOnline()
+    {
+        IsFriendsOpen = false;
+        OpenSettings();
+        if (Page is SettingsViewModel settings
+            && settings.Categories.FirstOrDefault(c => c.Key == Routes.OnlineCategory) is { } entry)
         {
             settings.Category = entry;
         }

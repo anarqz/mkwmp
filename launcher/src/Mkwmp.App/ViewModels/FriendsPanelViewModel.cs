@@ -130,7 +130,8 @@ public sealed class FriendSentRow : FriendsRow
 /// <summary>
 /// The friends panel that slides in from the right on any page (Y / RB / F): the Rust launcher's
 /// FRIENDS card. Add a friend by gamertag, one message line, then REQUESTS (Accept / Decline),
-/// FRIENDS (A: Remove friend, after a confirmation) and SENT (Cancel).
+/// FRIENDS (A: Remove friend, after a confirmation) and SENT (Cancel). Without a server
+/// (<see cref="Locked"/>) it is only the locked state: friends live on a server.
 /// </summary>
 public sealed class FriendsPanelViewModel : LayerViewModel
 {
@@ -143,6 +144,7 @@ public sealed class FriendsPanelViewModel : LayerViewModel
     {
         _shell = shell ?? throw new ArgumentNullException(nameof(shell));
         AddCommand = new RelayCommand(Add);
+        ConfigureOnlineCommand = new RelayCommand(shell.ConfigureOnline);
         Build();
     }
 
@@ -152,8 +154,16 @@ public sealed class FriendsPanelViewModel : LayerViewModel
 
     private FriendsView Friends => Launcher.Friends;
 
+    /// <summary>No server is set: no list, no add field, only "Configure online".</summary>
+    public bool Locked => !Launcher.OnlineEnabled;
+
+    public bool Unlocked => !Locked;
+
+    /// <summary>The locked state's button: Settings › Online (the panel closes).</summary>
+    public ICommand ConfigureOnlineCommand { get; }
+
     /// <summary>A valid gamertag and its PIN: without them there is no friends list.</summary>
-    public bool SignedIn => Launcher.Profile.SignedIn;
+    public bool SignedIn => !Locked && Launcher.Profile.SignedIn;
 
     /// <summary>"5 of 8 online"; nothing before the list is there.</summary>
     public string Summary => SignedIn && Friends.Loaded && Friends.Friends.Count > 0

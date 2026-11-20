@@ -19,6 +19,8 @@ public sealed class ProfileForm : ObservableObject
     private string _pin = "";
     private bool _editing;
     private bool _havePin;
+    private bool _pinRevealed;
+    private bool _entryRevealed;
 
     public ProfileForm(ShellViewModel shell)
     {
@@ -30,7 +32,26 @@ public sealed class ProfileForm : ObservableObject
         EditCommand = new RelayCommand(() => Editing = true, () => CanEdit);
         CancelEditCommand = new RelayCommand(() => Editing = false);
         DeleteCommand = RelayCommand.Async(DeleteAsync, () => CanDelete);
-        ShowPinCommand = new RelayCommand(ShowPin, () => Profile.SignedIn);
+    }
+
+    /// <summary>
+    /// After REGISTER, the PIN is shown in a modal (masked, with its eye) until "I wrote it down".
+    /// False where the next page does that (the welcome flow's "Your PIN").
+    /// </summary>
+    public bool RevealAfterRegister { get; init; } = true;
+
+    /// <summary>The saved PIN's eye is on (bound to the PinField; a page offers the same on X).</summary>
+    public bool PinRevealed
+    {
+        get => _pinRevealed;
+        set => Set(ref _pinRevealed, value);
+    }
+
+    /// <summary>The eye of the PIN being typed.</summary>
+    public bool EntryRevealed
+    {
+        get => _entryRevealed;
+        set => Set(ref _entryRevealed, value);
     }
 
     public Strings S => _shell.S;
@@ -62,7 +83,18 @@ public sealed class ProfileForm : ObservableObject
 
     public string SavedName => Profile.Name;
 
-    public string SavedPin => Profile.Pin.Length == 6 ? $"{Profile.Pin[..3]} {Profile.Pin[3..]}" : Profile.Pin;
+    /// <summary>For a PinField only: a PIN is never bound to plain text.</summary>
+    public string SavedPin => Profile.Pin;
+
+    /// <summary>The server the profile is (or will be) on, without its scheme.</summary>
+    public string ServerName => HostOf(Launcher.Settings.Server);
+
+    public static string HostOf(string? server)
+    {
+        var s = (server ?? "").Trim();
+        var at = s.IndexOf("://", StringComparison.Ordinal);
+        return (at >= 0 ? s[(at + 3)..] : s).TrimEnd('/');
+    }
 
     /// <summary>The gamertag being typed: no spaces, at most 16.</summary>
     public string Name
@@ -194,8 +226,6 @@ public sealed class ProfileForm : ObservableObject
 
     public ICommand DeleteCommand { get; }
 
-    public ICommand ShowPinCommand { get; }
-
     /// <summary>Raised after a profile was registered or taken into use (the setup moves on).</summary>
     public event EventHandler? SignedInNow;
 
@@ -220,7 +250,10 @@ public sealed class ProfileForm : ObservableObject
             _havePin = false;
             _pin = "";
             RaiseAll();
-            await RevealAsync(profile.Name, profile.Pin).ConfigureAwait(true);
+            if (RevealAfterRegister)
+            {
+                await RevealAsync(profile.Name, profile.Pin).ConfigureAwait(true);
+            }
             SignedInNow?.Invoke(this, EventArgs.Empty);
             return;
         }
@@ -247,11 +280,10 @@ public sealed class ProfileForm : ObservableObject
     private Task RevealAsync(string name, string pin)
     {
         var done = new TaskCompletionSource();
-        var modal = new ModalViewModel
+        var modal = new PinModal(S, new PinRevealViewModel(name, pin))
         {
             Title = S.Format("settings.profile.pin_title", ("name", name)),
             Body = S["settings.profile.pin_body"],
-            Content = new PinRevealViewModel(name, pin),
         };
         modal.Bottom = new ModalAction(S["settings.profile.pin_ok"], () =>
         {
@@ -263,16 +295,30 @@ public sealed class ProfileForm : ObservableObject
         return done.Task;
     }
 
-    private void ShowPin() => _ = RevealAsync(Profile.Name, Profile.Pin);
-
     /// <summary>The Rust window's DELETE YOUR PROFILE FROM SERVER? dialog.</summary>
     private async Task DeleteAsync()
     {
+        // The PIN that stops working is on the card: masked, as everywhere.
         var name = Profile.Name;
-        if (!await _shell.ConfirmAsync(
-                S["settings.profile.delete_title"],
-                S.Format("settings.profile.delete_body", ("name", name)),
-                S["settings.profile.delete_yes"]).ConfigureAwait(true))
+        var answer = new TaskCompletionSource<bool>();
+        var modal = new PinModal(S, new PinRevealViewModel(name, Profile.Pin))
+        {
+            Title = S["settings.profile.delete_title"],
+            Body = S.Format("settings.profile.delete_body", ("name", name), ("server", ServerName)),
+        };
+        modal.Actions.Add(new ModalAction(S["settings.profile.delete_yes"], () =>
+        {
+            _shell.CloseModal(modal);
+            answer.TrySetResult(true);
+        }));
+        modal.Bottom = new ModalAction(S["common.cancel"], () =>
+        {
+            _shell.CloseModal(modal);
+            answer.TrySetResult(false);
+        });
+        modal.Dismissed += (_, _) => answer.TrySetResult(false);
+        _shell.ShowModal(modal);
+        if (!await answer.Task.ConfigureAwait(true))
         {
             return;
         }

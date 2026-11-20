@@ -11,7 +11,8 @@ shows every control and icon on one page.
 - **The focus card** is the signature: the focused control becomes a white card with a slowly turning
   blue / cyan / violet / pink border and a faint halo (`c:FocusRing`). Every focusable control style has
   it already. Never draw another focus indicator, never remove it.
-- Ours only. No console maker's logos, glyphs, names or box art. The chat is called **Party Chat**. Button
+- Ours only. No console maker's logos, glyphs, names or box art. There is no chat in the launcher: voice and
+  camera exist only inside the game, and the launcher only configures them (Settings › **Voice & Camera**). Button
   hints are plain discs with a letter; the controller picture is a generic gamepad. Icons are the vector
   geometries of `Themes/Icons.xaml`, drawn for this launcher. No icon fonts, no system fonts (Nunito, OFL,
   is inside the exe): the launcher must look the same under Wine/Proton on the Steam Deck.
@@ -102,7 +103,7 @@ Sizes: `Size.Display/Title/Heading/Body/Caption/Small`. Metrics: `Metric.RowHeig
 ### Icons (`Themes/Icons.xaml`)
 
 Line icons, 24 x 24 grid, stroked by `c:Icon` in the inherited text colour:
-`Icon.Home Play User Friends UserPlus Chat Mic MicOff Camera CameraOff Volume Headset Settings Power
+`Icon.Home Play User Friends FriendsLocked UserPlus Mic MicOff Camera CameraOff Volume Headset Settings Power
 Download Refresh Fullscreen Window Globe Signal SignalOff ChevronRight ChevronLeft ChevronDown Check
 Close Plus Minus Menu Info Warning Bell Flag Folder Moon Sun Trash Exit Star Lock Search Shield Clock
 Block Keyboard Kart Trophy Backspace Shift Stop Tray`. Solid ones (use `Filled="True"`): `IconFill.Gamepad Play Star User`.
@@ -127,7 +128,7 @@ Styles are implicit: just use the element.
 | `TextBox`, `PasswordBox` | text entry (implicit styles) | |
 | `c:SectionHeader` | "▍Title" and the rule under it | `Text`, `ShowRule` |
 | `c:PageHeader` | icon, title, rule; content at the right | `Title`, `Icon`, content (e.g. `c:PageDots`) |
-| `c:CategoryList` | the left navigation of settings (a ListBox) | `ItemsSource` of `CategoryEntry(Key, Title, SeparatorBefore)`, `SelectedItem` two-way. Focus selects |
+| `c:CategoryList` | the left navigation of settings (a ListBox) | `ItemsSource` of `CategoryEntry(Key, Title, SeparatorBefore, Heading, Icon, Locked)` (`Locked`: a small lock after the title, section 12), `SelectedItem` two-way. Focus selects |
 | `c:Tile` | carousel card (372 x 372) | `Title`, `Subtitle`, `Icon`, `Seed` (generated art; `#0`…`#7` picks a gradient), `Image` (instead of the art), `Badge`, `Progress` (0..1, NaN hides), `Art`, `Command` |
 | `c:DockButton` | round icon button (104); the label shows under it while focused | `Icon`, `Label`, `Tint` (icon colour), `Fill` (disc), `HasDot`, `IsSolid`, `Command` |
 | `c:Avatar` | disc with initials on a colour hashed from the name | `DisplayName`, `Presence` = `None` / `Online` / `Playing` / `Offline`, `Count` (text above), `Image`; size by Width/Height (88) |
@@ -265,7 +266,8 @@ public sealed class RoomsViewModel : PageViewModel
 | `ShowUpdateModal()` | the update card (follows `Launcher.Update`) |
 | `OpenSheet(LayerViewModel)`, `CloseSheet()` | bottom sheet; its view is a DataTemplate in `Views/ViewMap.xaml` |
 | `IsFriendsOpen`, `ToggleFriends()`, `OpenFriends(name?)` | friends panel (with the focus on that friend's line) |
-| `OpenSettings(category?)` | settings on a category (`profile`, `game`, `chat`, `notifications`, `appearance`, `updates`, `about`) |
+| `OpenSettings(category?)` | settings on a category (`online`, `game`, `voice`, `notifications`, `appearance`, `updates`, `about`) |
+| `OnlineEnabled`, `ConfigureOnline()` | a server is set; Settings › Online from wherever a lock was (section 12) |
 | `OpenKeyboard(KeyboardViewModel)`, `CloseKeyboard()`, `IsKeyboardOpen` | the on-screen keyboard (text boxes open it by themselves, section 5) |
 | `TrayAvailable`, `HideToTray()`, `IsQuitting`, `ToastSink` | the desktop integration's (section 10) |
 | `IsOverlay`, `OverlayThumb`, `OverlayHasMenu`, `EnterOverlay(frame, again)`, `LeaveOverlay(toMenu?)`, `EndOverlay()` | overlay mode: the launcher over a running game (section 11) |
@@ -299,8 +301,8 @@ Sheets, the friends panel and modals derive from `LayerViewModel` (`Hints`, `OnB
 exe. A key missing in pt-BR falls back to English, then shows the key. In XAML: `{Binding S[settings.title]}`
 (pages and layers expose `S`). The locale is `UiSettings.Locale`, else the OS culture (`--locale pt-BR`
 forces one). Texts that come from `ILauncher` (status, notes, problems) are shown verbatim.
-Add your keys to **both** files; prefix them with your area (`home.`, `settings.`, `chat.`, `setup.`,
-`friends.`).
+Add your keys to **both** files; prefix them with your area (`home.`, `settings.`, `setup.`, `friends.`,
+`online.`).
 
 ## 8. Who owns what
 
@@ -308,9 +310,10 @@ Add your keys to **both** files; prefix them with your area (`home.`, `settings.
 | --- | --- |
 | Home | `ViewModels/HomeViewModel.cs`, `Views/HomePage.xaml(.cs)` |
 | Friends panel | `ViewModels/FriendsPanelViewModel.cs`, `Views/FriendsPanel.xaml(.cs)` |
-| First-run setup | `ViewModels/SetupViewModel.cs`, `Views/Setup/*` |
+| Welcome flow, Settings › Online (section 13) | `ViewModels/SetupViewModel*.cs`, `Views/Setup/*`, `ViewModels/SettingsViewModel.Online.cs`, `Views/Settings/OnlinePane.xaml`, `Parts/ProfileForm.cs`, `Parts/ServerPicker.cs`, `ViewModels/PrivacyViewModel.cs`, `Views/Settings/{PinField,PinEntry,PinReveal,ServerList,LatencyBars,MarkdownView,PrivacyPage}*` |
 | Settings | `ViewModels/SettingsViewModel.cs`, `Views/Settings/*` |
-| Party Chat | `ViewModels/ChatViewModel.cs` (also holds `ChatSheetViewModel`), `Views/Chat/*` |
+| Voice & Camera (a settings pane) | `ViewModels/SettingsViewModel.Voice.cs`, `Views/Settings/VoicePane.xaml`, `ViewModels/CameraTestViewModel.cs`, `Views/Settings/CameraTestPage.xaml`, `ViewModels/Parts/DeviceTests.cs` |
+| Locked online (section 12) | `Views/OnlineLocked.xaml(.cs)`, `Shell.ConfigureOnline()` (`ShellViewModel.Desktop.cs`), `OnlineOnly` (`SettingsViewModel.Voice.cs`) |
 | Shared (small, additive edits only) | `Views/ViewMap.xaml`, `ViewModels/Navigation.cs` (`Routes`), `i18n/*.json`, `Themes/Icons.xaml` |
 | On-screen keyboard | `Controls/OnScreenKeyboard.xaml(.cs)`, `ViewModels/KeyboardViewModel.cs`, `Input/TextEntry.cs` |
 | Desktop (tray, close-to-tray, notifications) | `Desktop/*`, `ViewModels/ShellViewModel.Desktop.cs` |
@@ -326,16 +329,16 @@ If a control lacks something, add a property to it rather than restyling it in a
 .\run.ps1 --demo --windowed                 # the fake launcher in a window (F11: full screen)
 .\run.ps1 --demo --windowed --page settings
 .\shot.ps1 out.png                          # home, 1920x1080, rendered off-screen, then exits
-.\shot.ps1 out.png --page settings --category chat --press right,down --size 1280x800 --theme dark
+.\shot.ps1 out.png --page settings --category voice --press right,down --size 1280x800 --theme dark
 .\shot.ps1 out.png --modal update           # also: available, confirm, message, progress
-.\shot.ps1 out.png --friends      .\shot.ps1 out.png --page chat --sheet      .\shot.ps1 out.png --toast
+.\shot.ps1 out.png --friends      .\shot.ps1 out.png --toast      .\shot.ps1 out.png --demo-offline --friends
 ```
 
 `shot.ps1` builds, runs `mkwmp-launcher --demo --shot <png> …`, waits about 2 s for animations to
-settle and writes the PNG. Options: `--page home|settings|chat|setup|gallery`, `--category <key>`
+settle and writes the PNG. Options: `--page home|settings|settings/online|setup|connect|privacy|gallery` (section 13 for the last three), `--category <key>`
 (settings), `--press a,b,x,y,up,down,left,right,start` (pressed in order before the shot: the way to
 put the focus somewhere or to walk into a sub-step), `--size WxH`, `--theme dark`, `--battery 93`,
-`--input keyboard`, `--locale pt-BR`, `-NoBuild`; `--then a,down,…` presses after the panel / sheet / modal is open
+`--input keyboard`, `--locale pt-BR`, `-NoBuild`; `--then a,down,…` presses after the panel / modal is open
 (`--friends --then a`: the on-screen keyboard on the friend field); `--state blocked|offline|signedout|nofriends|uptodate|queued|seated`
 puts the demo in another situation; `--with-tray` shows what Windows with a tray shows ("Hide to Tray"); `--overlay` is overlay mode
 (section 11). Look at every state at 1920x1080 and 1280x800, light and dark.
@@ -379,7 +382,7 @@ Play tile, and the shell is in **overlay mode** (`Shell.IsOverlay`) until the pl
 | PLAY / STOP | not offered: nothing starts or stops a session from the overlay |
 | Status line | "THE GAME IS RUNNING", unless the launcher's own session has something to say |
 | Full screen switch | hidden: the window covers the game |
-| Everything else | as always: friends panel, Settings, Party Chat, toasts. The game's settings show "close the game" (the target sees it running) |
+| Everything else | as always: friends panel, Settings, toasts. The game's settings show "close the game" (the target sees it running) |
 
 A page needs nothing for it. A page that offers something which makes no sense beside a running game checks
 `Shell.IsOverlay`; one that wants to send the player back calls `Shell.LeaveOverlay()`. Never call `Launcher.PlayAsync`
@@ -407,3 +410,103 @@ comes in. Buttons are ignored while it runs.
 
 Live, in the demo: `.\run.ps1 --demo --windowed`, then **F9** opens the overlay with the drawn race (the picture
 fills the window and shrinks) and F9 again goes back.
+
+## 12. Locked online: before a server is chosen
+
+A fresh install has no server (`ILauncher.OnlineEnabled` is false, `Shell.OnlineEnabled` for bindings): the launcher
+is a shell for the game, and everything that needs a server is **locked**. The rule: a locked thing stays where it
+is, shows the lock (`Icon.Lock`), says in one line what lives on a server, and offers exactly one way out,
+**"Configure Online"** (`online.configure`), which is always `Shell.ConfigureOnline()` → Settings › Online
+(`Routes.OnlineCategory`). Nothing locked is hidden without a trace, nothing locked shows stale data, and nothing
+asks the server anything.
+
+| Place | Locked (`!OnlineEnabled`) |
+| --- | --- |
+| Home, Play tile | "Play", badge "Offline": starts the game with no seat. Overlay mode is unchanged ("Back to the Game") |
+| Home, Friends tile | the same tile (it keeps its place and the focus) becomes "Configure Online" with the lock and "Play with friends on an MKWMP server" |
+| Home, status line | the session's status only: no rule, no server part |
+| Home, dock | the Friends button draws `Icon.FriendsLocked`, is labelled "Configure Online" and goes there; no request dot |
+| Top bar | only the player's own disc, from the local name (`Settings.Name`), with no request count; no friends |
+| Friends panel (Y / RB / F) | header, then `v:OnlineLocked` ("Friends live on an MKWMP server"): no add field, no list |
+| Settings, a category of `OnlineOnly` (Voice & Camera, with the reports) | a lock after its title (`CategoryEntry.Locked`); `CategoryKey` is `"locked"`, so its pane is replaced by `v:OnlineLocked` ("Configure online first") |
+| Settings, Notifications | the three friend switches are replaced by one locked row that goes to Online |
+| Toasts, system notifications | none of the friend kinds (`ToastKind.Friend*`) are shown |
+| Power menu | no "your seat is given back" line |
+
+With a server everything is as before; the lock follows `Changed` (choosing a server in Settings › Online unlocks
+the rest at once, the chosen category stays chosen).
+
+To lock something of your own:
+
+```xml
+<!-- xmlns:v="clr-namespace:Mkwmp.App.Views"; the DataContext needs S and ConfigureOnlineCommand -->
+<v:OnlineLocked Title="{Binding S[friends.locked.title]}" Text="{Binding S[friends.locked.text]}"
+                Visibility="{Binding Locked, Converter={StaticResource Conv.Visible}}" />
+```
+
+```csharp
+public bool Locked => !Launcher.OnlineEnabled;                       // re-read on every change
+ConfigureOnlineCommand = new RelayCommand(Shell.ConfigureOnline);
+```
+
+A whole settings category: add its key to `OnlineOnly` in `SettingsViewModel.Voice.cs` (the lock in the list and the
+locked pane come by themselves). A single row or button: keep it, swap its icon for the lock, and send it to
+`Shell.ConfigureOnline()`.
+
+**Voice & Camera** is the one place that says what voice and camera are, in a card at its top: they work only inside
+Mario Kart World, in **private rooms**, with **friends added on the server** (never in public lobbies), with **up to
+4 friends** at a time, live and never recorded, the camera only for mutual friends. The launcher never opens a voice
+or camera session itself: the pane sets the switch, devices and volumes the game reads, and tests them locally.
+
+Checking it: `--demo-offline` is the demo set up but with no server (`--demo-fresh`: a first start).
+
+```powershell
+.\shot.ps1 out.png --demo-offline                                        # home, locked
+.\shot.ps1 out.png --demo-offline --friends                              # the friends panel, locked
+.\shot.ps1 out.png --demo-offline --page settings --category voice       # a locked category
+.\shot.ps1 out.png --page settings --category voice --press right,down   # Voice & Camera, with a server
+```
+## 13. Offline first: the welcome flow, Settings › Online, PINs
+
+A fresh install has no server and is complete that way: PLAY starts the game alone (status "READY · PLAY OFFLINE"),
+no server is contacted, and section 12's locks lead to **Settings › Online** (`Routes.SettingsOnline`, category key
+`Routes.OnlineCategory` = `online`, `Shell.ConfigureOnline()`).
+
+**The welcome flow** (`SetupViewModel`, shown while `Ui.SetupDone` is false; it resumes at the first open step, and
+Core marks a working online profile as done so an existing player never meets it):
+
+| Step (`SetupStep`) | What |
+| --- | --- |
+| `Welcome` | what MKWMP is; "Built on mkw-recomp (MIT)" |
+| `Name` | the local name (gamertag rules), saved locally; nothing is asked of a server |
+| `Game` | `GameStage`: download mkw-recomp (`RuntimeModal`: bytes, speed, time left, Cancel) or "I already have it"; the player's own copy (file, folder, or a typed path; the legal line); the setup (step, bar, time left, Stop; Try Again and Open Log when it failed); MKWMP's files (by itself). "Later" always works |
+| `Online` | "Want to go online?": **Not Now** → `Done` → home, locked; **Go Online** → the next four |
+| `Server` | the beholder's list (`ServerPicker` / `ServerList`: latency bars and ms measured to each server, name, region, version, players, queue; nearest first; Refresh; re-measured every 15 s while shown) and a typed address; Connect asks the server who it is ("MKWMP server · 20/32 seats free", or why not) |
+| `Register` | sign in: register the name (a new PIN), or, for a name that exists, "It's Mine" with its PIN (masked) |
+| `Consent` | only **after** signing in (the server keeps the consent): the three paragraphs, "Read the Privacy Policy" (`PrivacyViewModel`: the server's Markdown rendered by `MarkdownView`, never a browser), the 18+ box; skipped when the sign-in said the server already has it |
+| `Pin` | the PIN, masked, with its eye (and X) |
+| `Done` | what is ready and what waits |
+
+The same class with only the online steps is Settings › Online's connect pages: `SetupViewModel.Connect(shell, address?)`
+(pushed over Settings, ends back there) and `SetupViewModel.ConsentOnly(shell)`.
+
+**A PIN is never bound to text.** Use `settings:PinField` (`Pin`, `IsRevealed` two-way, `DigitSize`): dots drawn as
+shapes, an eye button, hidden again whenever it leaves the screen. Typing one is `settings:PinEntry` (a password box,
+dots also on the on-screen keyboard, the same eye). A page that shows a PIN adds `PinHint.For(S, revealed)` to its
+hints and toggles on X; a modal that shows one is a `PinModal`.
+
+Harness (all with a demo start: `--demo` online, `--demo-offline`, `--demo-fresh` a bare machine):
+
+```powershell
+.\shot.ps1 out.png --demo-fresh --page setup --state named,need-dump --step game
+.\shot.ps1 out.png --demo-fresh --page setup --state named,game-ready --step server=mkw.example.net
+.\shot.ps1 out.png --demo-fresh --page setup --state named,game-ready,registered --step pin --press x
+.\shot.ps1 out.png --demo-offline --page settings/online        # also --page connect, --page privacy
+```
+
+`--step welcome|name|game|online|server|register|consent|pin|done[=text]` jumps to that page (`=text` types into it:
+`name=Alex`, `server=down.example.net` for an error). `--state` takes several, comma-separated: `named`,
+`downloading`, `download-failed`, `need-dump`, `setting-up`, `setup-failed`, `need-mod`, `game-ready`, `connected`
+(a server, no profile), `taken`, `signed-in` (a profile, no consent yet), `registered`, `no-list` (no beholder),
+`list-cached`. In the demo a name of the demo's friends ("Luna") is taken, and an address with `down`, `other` or
+`old` in it fails in that way.

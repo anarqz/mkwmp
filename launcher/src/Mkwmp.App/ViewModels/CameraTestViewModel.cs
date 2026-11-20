@@ -5,7 +5,7 @@ using Mkwmp.Core.Devices;
 namespace Mkwmp.App.ViewModels;
 
 /// <summary>
-/// Settings › Party Chat › Test Camera: the chosen camera's live picture, full page. Only this
+/// Settings › Voice &amp; Camera › Test Camera: the chosen camera's live picture, full page. Only this
 /// screen sees it; the camera stops when the page is left. (View: Views/Settings/CameraTestPage.xaml.)
 /// </summary>
 public sealed class CameraTestViewModel : PageViewModel

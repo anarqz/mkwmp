@@ -3,7 +3,6 @@
                     xmlns:vm="clr-namespace:Mkwmp.App.ViewModels"
                     xmlns:v="clr-namespace:Mkwmp.App.Views"
                     xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
-                    xmlns:chat="clr-namespace:Mkwmp.App.Views.Chat"
                     xmlns:setup="clr-namespace:Mkwmp.App.Views.Setup"
                     xmlns:dev="clr-namespace:Mkwmp.App.Views.Dev">
   <!-- Which view shows which view model: pages (PageHost), bottom sheets, custom modal content.
@@ -14,12 +13,6 @@
   <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
     <settings:SettingsPage />
   </DataTemplate>
-  <DataTemplate DataType="{x:Type vm:ChatViewModel}">
-    <chat:ChatPage />
-  </DataTemplate>
-  <DataTemplate DataType="{x:Type vm:ChatSheetViewModel}">
-    <chat:ChatSheet />
-  </DataTemplate>
   <DataTemplate DataType="{x:Type vm:SetupViewModel}">
     <setup:SetupPage />
   </DataTemplate>
@@ -28,6 +21,9 @@
   </DataTemplate>
   <DataTemplate DataType="{x:Type vm:ChoiceListViewModel}">
     <settings:ChoiceList />
+  </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:PrivacyViewModel}">
+    <settings:PrivacyPage />
   </DataTemplate>
   <DataTemplate DataType="{x:Type vm:PinRevealViewModel}">
     <settings:PinReveal />

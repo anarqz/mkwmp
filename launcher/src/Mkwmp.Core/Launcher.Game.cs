@@ -140,7 +140,7 @@ public sealed partial class Launcher
     /// <summary>UNINSTALL: turn the integration off (so nothing puts it back), save, and remove every MKWMP file from the game folder.</summary>
     public Task UninstallIntegrationAsync() => IntegrationJobAsync(async () =>
     {
-        if (_seat is not null)
+        if (SessionHoldsGame)
         {
             throw new LauncherException(Strings.PressStopFirst);
         }

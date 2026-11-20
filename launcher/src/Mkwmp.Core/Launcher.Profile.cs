@@ -17,7 +17,7 @@ public sealed partial class Launcher
     private (string Server, string Name, string Pin)? _reportAskedFor;
 
     private static (string Server, string Name, string Pin)? Ident(LauncherSettings s) =>
-        ClientConfig.ValidName(s.Name) && s.Pin.Length == 6 ? (s.Server, s.Name.ToLowerInvariant(), s.Pin) : null;
+        IsOnline(s) && ClientConfig.ValidName(s.Name) && s.Pin.Length == 6 ? (s.Server, s.Name.ToLowerInvariant(), s.Pin) : null;
 
     /// <summary>What PLAY shows for an API error (the details of a network failure go to the log).</summary>
     private string Reason(ApiException e)
@@ -40,11 +40,13 @@ public sealed partial class Launcher
         {
             await SaveSettingsAsync(Settings with { Name = name, Pin = "" }).ConfigureAwait(false);
         }
-        if (!Settings.AdultConsent)
+        if (!IsOnline(Settings))
         {
-            Mutate(() => (_register, _registerMessage) = (RegisterState.Failed, Strings.NoConsent));
+            // No server chosen: the name stays a local one, and nothing is asked of anyone.
+            Mutate(() => (_register, _registerMessage) = (RegisterState.Failed, Strings.OnlineOff));
             return;
         }
+        // Signing in comes before the consent: the consent is the server's to keep (Launcher.Privacy.cs), asked for right after.
         Mutate(() => (_register, _registerMessage) = (RegisterState.Working, null));
         (RegisterState State, string? Message) outcome;
         try
@@ -65,13 +67,47 @@ public sealed partial class Launcher
         Mutate(() => (_register, _registerMessage) = outcome);
     }
 
-    /// <summary>The name is someone's and the player says it is theirs: keeps its PIN. The server is asked at the next sign-in (the friends card says when the PIN is wrong).</summary>
+    /// <summary>
+    /// Recover: the name is on the server already and the player has its PIN. The PIN is kept and,
+    /// with a server chosen, tried at once (a sign-in): a wrong one is not kept and says so. A
+    /// server that cannot be reached leaves the PIN in place, to be tried at the next sign-in.
+    /// </summary>
     public async Task UsePinAsync(string name, string pin)
     {
         ArgumentNullException.ThrowIfNull(name);
         ArgumentNullException.ThrowIfNull(pin);
         await SaveSettingsAsync(Settings with { Name = name, Pin = pin }).ConfigureAwait(false);
-        Mutate(() => (_register, _registerMessage) = (RegisterState.Idle, null));
+        if (Ident(Settings) is null)
+        {
+            Mutate(() => (_register, _registerMessage) = (RegisterState.Idle, null));
+            return;
+        }
+        Mutate(() => (_register, _registerMessage) = (RegisterState.Working, null));
+        (RegisterState State, string? Message) outcome = (RegisterState.Idle, null);
+        try
+        {
+            await PresenceTokenAsync(_life.Token, needConsent: false).ConfigureAwait(false);
+            Note($"signed in as {name} with its PIN");
+        }
+        catch (ApiException e) when (e.Kind == ApiError.Refused)
+        {
+            // Not this name's PIN: it does not stay, so the profile does not look signed in.
+            try
+            {
+                EditConfig(c => c with { Settings = c.Settings with { Pin = "" } }, wakeFriends: false);
+            }
+            catch (LauncherException save)
+            {
+                Note(save.Message);
+            }
+            outcome = (RegisterState.Failed, e.Message);
+        }
+        catch (Exception e) when (e is ApiException or OperationCanceledException)
+        {
+            Note($"could not try the PIN now: {e.Message}");
+        }
+        Mutate(() => (_register, _registerMessage) = outcome);
+        _friendsWake.Set();
     }
 
     /// <summary>
@@ -83,6 +119,11 @@ public sealed partial class Launcher
         if (Session.Busy)
         {
             Mutate(() => (_register, _registerMessage) = (RegisterState.Failed, Strings.StopBeforeDelete));
+            return;
+        }
+        if (!IsOnline(Settings))
+        {
+            Mutate(() => (_register, _registerMessage) = (RegisterState.Failed, Strings.OnlineOff));
             return;
         }
         Mutate(() => (_register, _registerMessage) = (RegisterState.Working, null));
@@ -105,7 +146,7 @@ public sealed partial class Launcher
     /// <summary>Forgets the profile: name, PIN, its voice mutes, its friends and presence, and the ticket in the game's session file.</summary>
     private void ForgetProfile()
     {
-        EditConfig(c => c with { Settings = c.Settings with { Name = "", Pin = "" }, Mutes = [] }, wakeFriends: false);
+        EditConfig(c => (c with { Settings = c.Settings with { Name = "", Pin = "" }, Mutes = [] }).Forgetting(c.Settings.Server), wakeFriends: false);
         var s = Settings;
         var target = _targets.Get(s.Target);
         if (GameFinder.Detect(target, s.Game) is { } install)
@@ -135,13 +176,38 @@ public sealed partial class Launcher
         _friendWatch = new FriendWatch();
     }
 
-    /// <summary>The 18+ consent changed: sign in again (or stop being signed in).</summary>
-    private void ConsentChanged()
+    /// <summary>
+    /// Another server, or none (Disconnect): this launcher leaves the old one at once (friends there
+    /// see it offline), forgets what it knew of it (friends, the open report, its status), and the
+    /// loops follow the new one, or go quiet when there is none.
+    /// </summary>
+    private void ServerChanged(string oldServer)
     {
         string? token = null;
+        var online = IsOnline(Settings);
         Mutate(() =>
         {
             token = _presence?.Token;
+            _presence = null;
+            ClearFriendsAndReport();
+            _server = online ? new ServerView(ServerState.Checking, null, 0, 0, 0, null) : NotAsked;
+        });
+        if (token is not null && !string.IsNullOrWhiteSpace(oldServer))
+        {
+            _ = Api(oldServer).PresenceEndAsync(token);
+        }
+        Note(online ? $"server: {Settings.Server}" : "server: none (offline)");
+        _friendsWake.Set();
+        _statusWake.Set();
+    }
+
+    /// <summary>The 18+ consent changed: sign in again (or stop being signed in).</summary>
+    private void ConsentChanged()
+    {
+        ((string Server, string Name, string Pin) Who, string Token)? was = null;
+        Mutate(() =>
+        {
+            was = _presence;
             _presence = null;
             ClearFriendsAndReport();
             if (_register == RegisterState.Failed && _registerMessage == Strings.NoConsent)
@@ -149,9 +215,9 @@ public sealed partial class Launcher
                 (_register, _registerMessage) = (RegisterState.Idle, null);
             }
         });
-        if (token is not null)
+        if (was is { } left)
         {
-            _ = Api().PresenceEndAsync(token);
+            _ = Api(left.Who.Server).PresenceEndAsync(left.Token);
         }
         _friendsWake.Set();
         _statusWake.Set();
@@ -159,17 +225,29 @@ public sealed partial class Launcher
 
     /// <summary>
     /// The presence token for the current name + PIN, signing in if needed. A profile the server
-    /// deleted (a month unused) is registered again with the saved PIN first. Nothing reaches the
-    /// server before the player's consent (18+, privacy policy).
+    /// deleted (a month unused) is registered again with the saved PIN first. Signing in tells what
+    /// the server holds of the player's consent (Launcher.Privacy.cs); everything but the consent
+    /// itself (<paramref name="needConsent"/> false) is then refused until it is given: friends,
+    /// reports, a seat.
     /// </summary>
-    private async Task<string> PresenceTokenAsync(CancellationToken cancel)
+    private async Task<string> PresenceTokenAsync(CancellationToken cancel, bool needConsent = true)
     {
         var s = Settings;
-        if (!s.AdultConsent)
+        if (!IsOnline(s))
+        {
+            throw ApiException.Refused(Strings.OnlineOff); // no server chosen: nobody to ask
+        }
+        var id = Ident(s) ?? throw ApiException.Refused(Strings.RegisterFirst);
+        var token = await SignInAsync(s, id, cancel).ConfigureAwait(false);
+        if (needConsent && !Settings.AdultConsent)
         {
             throw ApiException.Refused(Strings.NoConsent);
         }
-        var id = Ident(s) ?? throw ApiException.Refused(Strings.RegisterFirst);
+        return token;
+    }
+
+    private async Task<string> SignInAsync(LauncherSettings s, (string Server, string Name, string Pin) id, CancellationToken cancel)
+    {
         lock (_gate)
         {
             if (_presence is { } p && p.Who == id)
@@ -178,10 +256,10 @@ public sealed partial class Launcher
             }
         }
         var api = Api(s.Server);
-        string token;
+        Presence presence;
         try
         {
-            token = await api.PresenceAsync(id.Name, id.Pin, cancel).ConfigureAwait(false);
+            presence = await api.PresenceAsync(id.Name, id.Pin, cancel).ConfigureAwait(false);
         }
         catch (ApiException e) when (e.Kind == ApiError.Refused && e.Message == Strings.NotRegistered)
         {
@@ -212,34 +290,38 @@ public sealed partial class Launcher
                 Note($"{s.Name} had expired on the server; registered it again (new PIN)");
                 id = (id.Server, id.Name, pin);
             }
-            token = await api.PresenceAsync(id.Name, id.Pin, cancel).ConfigureAwait(false);
+            presence = await api.PresenceAsync(id.Name, id.Pin, cancel).ConfigureAwait(false);
         }
         lock (_gate)
         {
-            _presence = (id, token);
+            _presence = (id, presence.Token);
         }
-        return token;
+        ConsentFromServer(id.Server, presence);
+        return presence.Token;
     }
 
     /// <summary>Leaving: friends see this launcher offline at once.</summary>
     private async Task SignOutAsync()
     {
-        string? token;
+        ((string Server, string Name, string Pin) Who, string Token)? was;
         lock (_gate)
         {
-            token = _presence?.Token;
+            was = _presence;
             _presence = null;
         }
-        if (token is not null)
+        if (was is { } left)
         {
-            await Api().PresenceEndAsync(token).ConfigureAwait(false);
+            await Api(left.Who.Server).PresenceEndAsync(left.Token).ConfigureAwait(false);
         }
     }
 
     // ---- friends --------------------------------------------------------------------------
 
-    private void FriendsProblem(ApiException e) =>
+    private void FriendsProblem(ApiException e)
+    {
+        ConsentRefused(e);
         Mutate(() => _friendsNote = (e.Kind == ApiError.Transient ? Strings.CantReachNow : e.Message, true));
+    }
 
     /// <summary>
     /// Keeps the friends list current while the launcher runs (window, tray or headless): a
@@ -384,6 +466,7 @@ public sealed partial class Launcher
         }
         catch (ApiException e)
         {
+            ConsentRefused(e);
             note = (e.Kind == ApiError.Transient ? Strings.CantReachNow : e.Message, true);
         }
         catch (OperationCanceledException)
@@ -490,6 +573,7 @@ public sealed partial class Launcher
         }
         catch (ApiException e)
         {
+            ConsentRefused(e);
             error = e.Kind == ApiError.Transient ? Strings.CantReachNow : e.Message;
         }
         catch (OperationCanceledException)

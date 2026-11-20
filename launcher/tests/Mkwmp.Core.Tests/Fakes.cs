@@ -46,6 +46,27 @@ internal sealed class FakeSeatServer : HttpMessageHandler
     /// <summary>The whole network is gone.</summary>
     public bool Unreachable { get; init; }
 
+    /// <summary>The server's own privacy policy (<c>GET /privacy</c>); null: a server older than server-side consent (no policy, no <c>privacyAccepted</c>, no <c>PUT /seat/v1/privacy</c>).</summary>
+    public string? PrivacyText { get; set; }
+
+    /// <summary>What a server with <see cref="PrivacyText"/> holds of the profile's consent.</summary>
+    public bool PrivacyAccepted { get; set; }
+
+    /// <summary><c>[privacy] enforce</c>: seats, friends and reports answer 403 PRIVACY_REQUIRED until accepted.</summary>
+    public bool PrivacyEnforced { get; init; } = true;
+
+    /// <summary>The policy's version: the lower-case hex SHA-256 of its bytes (the quoted ETag of <c>GET /privacy</c>).</summary>
+    public string PrivacyVersion => Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(PrivacyText ?? "")));
+
+    private HttpResponseMessage PrivacyError(int status, string code) =>
+        Json(status, JsonSerializer.Serialize(new { error = new { code, message = $"{code} from the fake", privacyVersion = PrivacyVersion } }));
+
+    /// <summary>The bodies of <c>PUT /seat/v1/privacy</c>.</summary>
+    public List<string> PrivacyPuts { get; } = [];
+
+    /// <summary><c>PUT /seat/v1/privacy</c> answers this status instead of storing (0: stores).</summary>
+    public int PrivacyPutFails { get; set; }
+
     public JsonObject FriendsBody { get; set; } = new() { ["cursor"] = 1, ["friends"] = new JsonArray(), ["incoming"] = new JsonArray(), ["outgoing"] = new JsonArray() };
 
     public int Joins { get; private set; }
@@ -86,6 +107,40 @@ internal sealed class FakeSeatServer : HttpMessageHandler
         lock (_gate)
         {
             Requests.Add($"{method} {path}");
+            if (PrivacyText is not null)
+            {
+                switch (method, path)
+                {
+                    // SEAT_API.md 2c, as the 1.4.0 server answers
+                    case ("GET", "/privacy"):
+                        var policy = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(PrivacyText, Encoding.UTF8, "text/markdown") };
+                        policy.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue($"\"{PrivacyVersion}\"");
+                        return policy;
+                    case ("GET", "/ping"):
+                        return new HttpResponseMessage(HttpStatusCode.NoContent);
+                    case ("PUT", "/seat/v1/privacy"):
+                        if (PrivacyPutFails != 0)
+                        {
+                            return Error(PrivacyPutFails, "REGISTRY_ERROR");
+                        }
+                        PrivacyPuts.Add(body);
+                        var put = JsonNode.Parse(body)!;
+                        var accepted = put["accepted"]!.GetValue<bool>();
+                        if (accepted && put["version"]?.GetValue<string>() != PrivacyVersion)
+                        {
+                            return PrivacyError(409, "PRIVACY_VERSION");
+                        }
+                        PrivacyAccepted = accepted;
+                        return new HttpResponseMessage(HttpStatusCode.NoContent);
+                    case ("POST", "/seat/v1/presence") when Mood == SeatMood.Seated:
+                        return Json(200, JsonSerializer.Serialize(new { token = "p1", name = "Ana", ttlMs = 90000, privacyAccepted = PrivacyAccepted, privacyVersion = PrivacyVersion, privacyEnforced = PrivacyEnforced }));
+                    case ("POST", "/seat/v1/sessions") or ("GET", "/seat/v1/friends") or ("POST", "/seat/v1/friends") or ("GET", "/seat/v1/reports") or ("POST", "/seat/v1/reports")
+                        when PrivacyEnforced && !PrivacyAccepted:
+                        return PrivacyError(403, "PRIVACY_REQUIRED");
+                    default:
+                        break;
+                }
+            }
             switch (method, path)
             {
                 case ("GET", "/seat/v1/status"):

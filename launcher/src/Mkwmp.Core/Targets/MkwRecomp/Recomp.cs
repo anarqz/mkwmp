@@ -59,8 +59,8 @@ internal readonly record struct RecompId(RecompKind Kind, string? Version)
 /// symbols, fiber and host-function layout), so MKWMP runs only with the releases in
 /// <see cref="Supported"/>. Each release's mkw.exe (the Windows build, also what runs under
 /// Proton) is identified by its SHA-256, taken from the release zips: the official ones and
-/// MKWMP's fork, 0.1.15-mkwmp (github.com/anarqz/mkw-recomp), which adds the camera to the
-/// plugin API. The patch also hooks one game version (guest addresses): <see cref="Games"/>
+/// MKWMP's fork, 0.1.15-mkwmp (github.com/anarqz/mkw-recomp), which added the camera to the
+/// plugin API before upstream took it in 0.1.16. The patch also hooks one game version (guest addresses): <see cref="Games"/>
 /// lists the ones it has tables for, read from mkw-recomp's setup-state.json.
 /// </summary>
 internal static class Recomp
@@ -68,7 +68,7 @@ internal static class Recomp
     public const string Exe = "mkw.exe";
 
     /// <summary>The runtimes the game patch supports.</summary>
-    public static readonly string[] Supported = ["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp"];
+    public static readonly string[] Supported = ["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16"];
 
     /// <summary>What the window recommends installing.</summary>
     public const string Recommended = "0.1.15-mkwmp";
@@ -83,13 +83,17 @@ internal static class Recomp
         ("0.1.13", "1c47ffa2502a1ee92c2d01da0791802c18bf6c3365040c2b4fa1c91dacbc8695"),
         ("0.1.15", "511148040eac4f71cc3f003ace2d100fef784f1756339d88ca939896016d86e9"),
         ("0.1.15-mkwmp", "c6d732115683fff57ab1cd7e68414934c4fa132b2a5afc48247a8826797d58b9"),
+        ("0.1.16", "e1829a08a7e24ab0f54425fd5e6a400a6fe5c54798757a80a104268e6c18e029"),
     ];
 
     /// <summary>MKWMP's mod folder name, under mkw-recomp's <c>mods/</c>.</summary>
     public const string Mod = "mkwmp";
 
-    /// <summary>The supported releases that load mods (MKW_MODS, plugin API 3).</summary>
-    public static readonly string[] ModRuntimes = ["0.1.15", "0.1.15-mkwmp"];
+    /// <summary>
+    /// The supported releases that load mods (MKW_MODS): plugin API 1 in 0.1.15, 3 in 0.1.15-mkwmp
+    /// and 0.1.16. The mod asks the runtime which version it has and leaves out what is missing.
+    /// </summary>
+    public static readonly string[] ModRuntimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16"];
 
     /// <summary>
     /// Game versions the game patch has guest-address tables for. On any other version its hooks
@@ -109,6 +113,7 @@ internal static class Recomp
         ("0.1.13", "c0dd6cf12c07c23a"),
         ("0.1.15", "c9bbcb75a9ac9a49"),
         ("0.1.15-mkwmp", "c0dd6cf12c07c23a"),
+        ("0.1.16", "c9bbcb75a9ac9a49"), // unchanged from 0.1.15: a game set up by it needs no rebuild
     ];
 
     private static readonly string[] ModLibraries = ["mkwmp.dll", "libmkwmp.so", "mkwmp.so"];

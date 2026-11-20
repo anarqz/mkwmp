@@ -92,23 +92,36 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     public bool IsServerOnline => Launcher.Server.State == ServerState.Online;
 
-    /// <summary>The player, then up to five friends who are playing or online.</summary>
+    /// <summary>
+    /// The player, then up to five friends who are playing or online. Without a server (locked
+    /// online): only the player, from the local name, with no request count.
+    /// </summary>
     public IReadOnlyList<TopAvatar> TopAvatars
     {
         get
         {
             var list = new List<TopAvatar>();
             var profile = Launcher.Profile;
-            if (profile.SignedIn)
+            if (!OnlineEnabled)
             {
-                var requests = Launcher.Friends.Incoming.Count;
-                list.Add(new TopAvatar(profile.Name, AvatarPresence.None, requests > 0 ? requests.ToString(CultureInfo.CurrentCulture) : "", true));
+                if (Launcher.Settings.Name.Trim() is { Length: > 0 } local)
+                {
+                    list.Add(new TopAvatar(local, AvatarPresence.None, "", true));
+                }
             }
-            list.AddRange(Launcher.Friends.Friends
-                .Where(f => f.State != FriendState.Offline)
-                .OrderBy(f => f.State)
-                .Take(5)
-                .Select(f => new TopAvatar(f.Name, f.State == FriendState.Playing ? AvatarPresence.Playing : AvatarPresence.Online, "", false)));
+            else
+            {
+                if (profile.SignedIn)
+                {
+                    var requests = Launcher.Friends.Incoming.Count;
+                    list.Add(new TopAvatar(profile.Name, AvatarPresence.None, requests > 0 ? requests.ToString(CultureInfo.CurrentCulture) : "", true));
+                }
+                list.AddRange(Launcher.Friends.Friends
+                    .Where(f => f.State != FriendState.Offline)
+                    .OrderBy(f => f.State)
+                    .Take(5)
+                    .Select(f => new TopAvatar(f.Name, f.State == FriendState.Playing ? AvatarPresence.Playing : AvatarPresence.Online, "", false)));
+            }
             if (!list.SequenceEqual(_topAvatars))
             {
                 _topAvatars = list; // the same instance while nothing changed: the discs (and a focus on one) stay
@@ -134,16 +147,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     public bool ShowTopBar => Page?.ShowTopBar ?? false;
 
-    public void Navigate(string route)
-    {
-        // Party Chat is its sheet, over the current page; its introduction (a page) only until it was seen.
-        if (route == Routes.Chat && Launcher.Settings.Voice.ChatIntroDone)
-        {
-            OpenSheet(new ChatSheetViewModel(this));
-            return;
-        }
-        Nav.Navigate(route);
-    }
+    public void Navigate(string route) => Nav.Navigate(route);
 
     public void Navigate(PageViewModel page) => Nav.Navigate(page);
 
@@ -576,6 +580,10 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     private void OnLauncherToasted(object? sender, Toast toast) =>
         _dispatcher.BeginInvoke(() =>
         {
+            if (!OnlineEnabled && toast.Kind is ToastKind.FriendOnline or ToastKind.FriendPlaying or ToastKind.FriendRequest)
+            {
+                return; // locked online: there are no friends to hear from, here or in the system's notifications
+            }
             if (ToastSink?.Invoke(toast) != true)
             {
                 ShowToast(toast.Title, toast.Body, toast.Kind);

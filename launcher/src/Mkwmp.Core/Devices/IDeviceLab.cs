@@ -2,7 +2,7 @@
 namespace Mkwmp.Core.Devices;
 
 /// <summary>
-/// The launcher's own device tests (Settings → Party Chat): list and preview the webcam through
+/// The launcher's own device tests (Settings → Voice &amp; Camera): list and preview the webcam through
 /// mkwmp-camera.dll (the same DLL and device ids the mod uses, docs/contracts/VIDEO_API.md), and
 /// list microphones/outputs, meter the mic and play a test sound. Nothing here sends anything to
 /// the network; the in-game voice engine (mkwmp-voice.dll) stays the game's.

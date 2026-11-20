@@ -33,10 +33,12 @@ public sealed class MuteRow
 }
 
 /// <summary>
-/// Settings › Party Chat: the voice switch, devices and volumes (the game polls them through the
-/// local API), the launcher's own microphone / output / camera tests, the in-game camera switches
+/// Settings › Voice &amp; Camera: the voice switch, devices and volumes (the game polls them through
+/// the local API), the launcher's own microphone / output / camera tests, the in-game camera switches
 /// (the mod's settings, changed while the game is closed), muted players and the report form.
-/// The voice and camera of a friend room run inside the game; this pane only configures and tests.
+/// Voice and camera exist only inside the game (private rooms, friends added on the server, up to
+/// four at a time); this pane only configures and tests. Locked until a server is set, as every
+/// category of <see cref="OnlineOnly"/>.
 /// </summary>
 public sealed partial class SettingsViewModel
 {
@@ -79,9 +81,7 @@ public sealed partial class SettingsViewModel
 
     public ICommand WithdrawReportCommand { get; private set; } = null!;
 
-    public ICommand ReplayIntroCommand { get; private set; } = null!;
-
-    private void InitChat()
+    private void InitVoice()
     {
         InputCommand = RelayCommand.Async(() => PickAudioAsync(input: true), () => VoiceEnabled);
         OutputCommand = RelayCommand.Async(() => PickAudioAsync(input: false), () => VoiceEnabled);
@@ -91,24 +91,71 @@ public sealed partial class SettingsViewModel
         ReasonCommand = RelayCommand.Async(PickReasonAsync);
         SendReportCommand = RelayCommand.Async(SendReportAsync, () => CanSendReport);
         WithdrawReportCommand = RelayCommand.Async(() => Launcher.WithdrawReportAsync(), () => !Launcher.Report.Busy);
-        ReplayIntroCommand = new RelayCommand(() => Shell.Navigate(new ChatViewModel(Shell, replay: true)));
+        ConfigureOnlineCommand = new RelayCommand(Shell.ConfigureOnline);
         SyncMutes();
+        SyncOnlineLock();
     }
 
-    private void EnterChat()
+    // ── locked online: the categories that need a server ──
+
+    /// <summary>The categories that are nothing without a server: a lock in the list, and the "Configure online first" pane instead of theirs.</summary>
+    private static readonly HashSet<string> OnlineOnly = ["voice"];
+
+    /// <summary>A server is set (Settings › Online).</summary>
+    public bool OnlineEnabled => Launcher.OnlineEnabled;
+
+    public bool OnlineLocked => !OnlineEnabled;
+
+    /// <summary>The chosen category needs a server and there is none: <c>CategoryKey</c> is "locked".</summary>
+    private bool CategoryLocked => OnlineLocked && OnlineOnly.Contains(_category.Key);
+
+    /// <summary>The button of every locked place: Settings › Online.</summary>
+    public ICommand ConfigureOnlineCommand { get; private set; } = null!;
+
+    /// <summary>Puts the lock on (or takes it off) the entries of <see cref="OnlineOnly"/>; the chosen one stays chosen.</summary>
+    private void SyncOnlineLock()
+    {
+        for (var i = 0; i < Categories.Count; i++)
+        {
+            var entry = Categories[i];
+            var locked = OnlineLocked && OnlineOnly.Contains(entry.Key);
+            if (entry.Locked == locked)
+            {
+                continue;
+            }
+            var chosen = ReferenceEquals(entry, _category);
+            var changed = entry with { Locked = locked };
+            if (chosen)
+            {
+                _category = changed; // before the list tells the view its selected entry is gone
+            }
+            Categories[i] = changed;
+            if (chosen)
+            {
+                Raise(nameof(Category));
+                if (locked)
+                {
+                    Mic.Stop();
+                }
+            }
+        }
+    }
+
+    private void EnterVoice()
     {
         ReadMod(force: true);
         RelayCommand.Async(LoadDevicesAsync).Execute(null);
     }
 
-    private void LeaveChat()
+    private void LeaveVoice()
     {
         Mic.Stop();
         FlushGains();
     }
 
-    private void RefreshChat()
+    private void RefreshVoice()
     {
+        SyncOnlineLock();
         SyncMutes();
         ReadMod(force: false);
     }
@@ -125,7 +172,7 @@ public sealed partial class SettingsViewModel
 
     // ── voice ──
 
-    /// <summary>"Talk with the players in my friend room" (voice.enabled; the game polls it).</summary>
+    /// <summary>"Use voice in private rooms" (voice.enabled; the game polls it).</summary>
     public bool VoiceEnabled
     {
         get => Launcher.Settings.Voice.Enabled;

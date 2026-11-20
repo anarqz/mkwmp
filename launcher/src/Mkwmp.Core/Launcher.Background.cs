@@ -32,7 +32,7 @@ public sealed partial class Launcher
         Log.Line($"mkwmp-launcher {Version}");
         Log.Line($"os: {SupportBundle.Os}");
         Log.Line($"config: {ConfigPath}");
-        Log.Line($"server: {s.Server}");
+        Log.Line($"server: {(IsOnline(s) ? s.Server : "none (offline)")}");
         Log.Line($"game folder: {s.Game}");
         Log.Line($"seat mode: {s.Seat}");
         if ((_options.Executable ?? LauncherOptions.SelfExecutable()) is { } exe)
@@ -143,7 +143,11 @@ public sealed partial class Launcher
             CancellationToken.None);
     }
 
-    /// <summary>The server's public status, every 5 s, for whatever server is set. Not asked before the player's consent.</summary>
+    /// <summary>
+    /// The server's public status, every 5 s, for whatever server is set (choosing one is what asks
+    /// for it; the consent comes after signing in). Never while offline (no server chosen): the
+    /// loop then only waits to be woken.
+    /// </summary>
     private async Task StatusLoopAsync(CancellationToken life)
     {
         while (!life.IsCancellationRequested)
@@ -151,10 +155,10 @@ public sealed partial class Launcher
             try
             {
                 var s = Settings;
-                if (!s.AdultConsent)
+                if (!IsOnline(s))
                 {
-                    Mutate(() => _server = new ServerView(ServerState.NotAsked, null, 0, 0, 0, null));
-                    await _statusWake.WaitAsync(TimeSpan.FromSeconds(1), life).ConfigureAwait(false);
+                    Mutate(() => _server = NotAsked);
+                    await _statusWake.WaitAsync(TimeSpan.FromSeconds(30), life).ConfigureAwait(false);
                     continue;
                 }
                 ServerView view;
@@ -167,7 +171,8 @@ public sealed partial class Launcher
                 {
                     view = new ServerView(ServerState.Offline, null, 0, 0, 0, e.Message);
                 }
-                Mutate(() => _server = view);
+                // The answer of a server that was left meanwhile (Disconnect, another server) is nobody's.
+                Mutate(() => _server = ClientConfig.SameServer(_config.Settings.Server, s.Server) ? view : _server);
                 await _statusWake.WaitAsync(TimeSpan.FromSeconds(5), life).ConfigureAwait(false);
             }
             catch (OperationCanceledException)

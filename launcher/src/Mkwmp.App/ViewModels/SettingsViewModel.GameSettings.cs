@@ -267,10 +267,15 @@ public sealed partial class SettingsViewModel
 
     public override IReadOnlyList<Hint> Hints => IsGameSettings && _focusedRow is { CanReset: true }
         ? [new Hint(PadButton.Y, S["settings.gs.reset"]), new Hint(PadButton.B, S["hint.back"]), new Hint(PadButton.A, S["hint.ok"])]
+        : PinHintNow is { } pin ? [pin, .. Shell.DefaultHints()]
         : Shell.DefaultHints();
 
     public override bool OnButton(PadButton button)
     {
+        if (TogglePin(button))
+        {
+            return true;
+        }
         if (button == PadButton.Y && IsGameSettings && _focusedRow is { CanReset: true } row)
         {
             row.ResetCommand.Execute(null);

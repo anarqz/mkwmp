@@ -177,9 +177,17 @@ public static class Routes
 {
     public const string Home = "home";
     public const string Settings = "settings";
-    public const string Chat = "chat";
     public const string Setup = "setup";
     public const string Gallery = "gallery";
+
+    /// <summary>
+    /// Settings, opened on Online: where a server is chosen ("Configure online"), and with one, the
+    /// profile on it, its PIN, the privacy consent and Disconnect. <c>Shell.Navigate(Routes.SettingsOnline)</c>.
+    /// </summary>
+    public const string SettingsOnline = "settings/online";
+
+    /// <summary>The key of that category (<c>Shell.OpenSettings(Routes.OnlineCategory)</c>).</summary>
+    public const string OnlineCategory = "online";
 
     /// <summary>Every top-level page. Add a line here for a new one (and its DataTemplate in Views/ViewMap.xaml).</summary>
     public static void RegisterAll(ShellViewModel shell)
@@ -187,7 +195,7 @@ public static class Routes
         ArgumentNullException.ThrowIfNull(shell);
         shell.Nav.Register(Home, () => new HomeViewModel(shell));
         shell.Nav.Register(Settings, () => new SettingsViewModel(shell));
-        shell.Nav.Register(Chat, () => new ChatViewModel(shell));
+        shell.Nav.Register(SettingsOnline, () => new SettingsViewModel(shell).At(OnlineCategory));
         shell.Nav.Register(Setup, () => new SetupViewModel(shell));
         shell.Nav.Register(Gallery, () => new GalleryViewModel(shell));
     }

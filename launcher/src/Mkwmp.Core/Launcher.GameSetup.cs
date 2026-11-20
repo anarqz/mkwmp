@@ -127,7 +127,7 @@ public sealed partial class Launcher
             {
                 throw new LauncherException(Strings.SetGameFolder(target.FolderHint));
             }
-            if (_seat is not null)
+            if (SessionHoldsGame)
             {
                 throw new LauncherException(Strings.PressStopFirst);
             }

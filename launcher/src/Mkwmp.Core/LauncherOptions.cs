@@ -71,6 +71,9 @@ public sealed record LauncherOptions
     /// <summary>The GitHub API base (null: <c>MKWMP_UPDATE_API</c>, else api.github.com).</summary>
     public string? UpdateApi { get; init; }
 
+    /// <summary>The beholder (server directory) to use when client.toml names none (tests: a fake); null = the release default.</summary>
+    public string? Beholder { get; init; }
+
     /// <summary>The game targets (null: the built-in ones, mkw-recomp).</summary>
     public IReadOnlyList<IGameTarget>? Targets { get; init; }
 

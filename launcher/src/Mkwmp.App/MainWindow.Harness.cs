@@ -12,8 +12,8 @@ namespace Mkwmp.App;
 
 /// <summary>
 /// The screenshot harness (see docs/DESIGN.md, "Checking your page"):
-/// <c>mkwmp-launcher --demo --shot out.png [--page home|settings|chat|setup|gallery] [--category key]
-/// [--modal update|available|confirm|message|progress] [--friends] [--sheet] [--toast]
+/// <c>mkwmp-launcher --demo --shot out.png [--page home|settings|setup|gallery] [--category key]
+/// [--modal update|available|confirm|message|progress] [--friends] [--toast]
 /// [--press right,down,a,…] [--size 1920x1080] [--theme dark] [--battery 93] [--input keyboard] [--locale pt-BR]
 /// [--overlay [--overlay-frame png|none] [--overlay-no-menu] [--overlay-progress 0..1 | --overlay-return 0..1]]</c>
 /// renders the stage at that size once everything has settled, saves the PNG and exits. The window
@@ -92,6 +92,20 @@ public partial class MainWindow
         {
             _vm.Nav.ResetTo(page);
         }
+        else if (page == "privacy")
+        {
+            // the privacy policy as the launcher renders it (the server's Markdown), over Settings › Online
+            _vm.Nav.ResetTo(Routes.Home);
+            _vm.Navigate(Routes.SettingsOnline);
+            _vm.Navigate(new PrivacyViewModel(_vm));
+        }
+        else if (page == "connect")
+        {
+            // Settings › Online's "Connect to a Server": the welcome flow's online pages over Settings
+            _vm.Nav.ResetTo(Routes.Home);
+            _vm.Navigate(Routes.SettingsOnline);
+            _vm.Navigate(SetupViewModel.Connect(_vm));
+        }
         else
         {
             _vm.Nav.ResetTo(Routes.Home);
@@ -120,6 +134,17 @@ public partial class MainWindow
     {
         // --state blocked|offline|signedout|nofriends|uptodate|queued|seated: another demo situation; --with-tray: as on Windows
         (_vm.Launcher as DesignLauncher)?.Pretend(App.Option(args, "--state"));
+        // --step welcome|name|game|online|consent|server|register|pin|done[=text]: that page of the welcome flow
+        // (--page setup), or of Settings › Online's connect pages (--page connect); "=text" types into it (server=mkw.example.net)
+        if (App.Option(args, "--step") is { } step && _vm.Page is SetupViewModel flow)
+        {
+            await Task.Delay(120).ConfigureAwait(true); // the pretended state first
+            flow.JumpTo(step);
+            if (step.Contains('=', StringComparison.Ordinal))
+            {
+                await Task.Delay(900).ConfigureAwait(true); // a server asked answers
+            }
+        }
         _vm.TrayAvailable = args.Contains("--with-tray");
         // --overlay [--overlay-frame <png>|none] [--overlay-no-menu]: overlay mode, as after a request of the game
         ImageSource? overlayPicture = null;
@@ -153,17 +178,6 @@ public partial class MainWindow
         {
             _vm.IsFriendsOpen = true;
         }
-        if (args.Contains("--sheet"))
-        {
-            var sheet = new ChatSheetViewModel(_vm);
-            _vm.OpenSheet(sheet);
-            if (args.Contains("--sheet-tests"))
-            {
-                // the sheet with its camera preview and microphone test running
-                sheet.CameraCommand.Execute(null);
-                sheet.MicCommand.Execute(null);
-            }
-        }
         switch (App.Option(args, "--modal"))
         {
             case "update":
@@ -177,7 +191,7 @@ public partial class MainWindow
                 _ = _vm.ConfirmAsync(_vm.S["quit.title"], _vm.S["quit.body"], _vm.S["quit.yes"]);
                 break;
             case "message":
-                _ = _vm.MessageAsync("Your PIN is 482913", "Keep it: it is your key to this profile on another device.");
+                _ = _vm.MessageAsync("The game is set up", "Mario Kart World 1.8.0 is ready on this device.");
                 break;
             case "progress":
                 _vm.ShowProgress("Installing…", "Copying the online play files into the game folder.").Report(0.65, "3 files left");
@@ -189,7 +203,7 @@ public partial class MainWindow
         }
         await Task.Delay(300).ConfigureAwait(true);
         SyncFocus();
-        // --then a,down,…: pressed after the panel / sheet / modal is open (into the on-screen keyboard, a menu of the panel)
+        // --then a,down,…: pressed after the panel / modal is open (into the on-screen keyboard, a menu of the panel)
         foreach (var name in (App.Option(args, "--then") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             if (Enum.TryParse<PadButton>(name, ignoreCase: true, out var button))

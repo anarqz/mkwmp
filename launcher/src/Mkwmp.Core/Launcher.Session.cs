@@ -5,11 +5,30 @@ using Mkwmp.Core.Targets;
 
 namespace Mkwmp.Core;
 
-/// <summary>PLAY: take a seat (or queue), write the game's session file, start the game, keep the seat.</summary>
+/// <summary>
+/// PLAY: take a seat (or queue), write the game's session file, start the game, keep the seat.
+/// Offline (no server chosen) it only starts the game: no seat, no server asked, and a session
+/// file that names this launcher for the overlay and nothing else.
+/// </summary>
 public sealed partial class Launcher
 {
     private readonly Signal _stop = new();
     private volatile SeatSession? _seat;
+
+    /// <summary>The session under way is an offline one (under <see cref="_gate"/>): its status says so, and it has no seat phase.</summary>
+    private bool _offlineSession;
+
+    /// <summary>A session has the game (a seat is held, or an offline game was started): the integration and the setup wait for STOP.</summary>
+    private bool SessionHoldsGame
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _seat is not null || (_offlineSession && _sessionState is SessionState.Starting or SessionState.Running);
+            }
+        }
+    }
     private Task _sessionTask = Task.CompletedTask;
 
     /// <summary>The running (or last) PLAY session: completes when it ends.</summary>
@@ -37,6 +56,7 @@ public sealed partial class Launcher
                 return;
             }
             (_sessionState, _sessionError, _seatSnapshot, _gameRunning) = (SessionState.Starting, null, null, false);
+            _offlineSession = !IsOnline(_config.Settings);
             _stop.Reset(); // a STOP pressed while idle is not for this session
             _sessionTask = Task.Run(RunSessionAsync);
         });
@@ -77,6 +97,7 @@ public sealed partial class Launcher
         }
         catch (ApiException e)
         {
+            ConsentRefused(e);
             error = Reason(e);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or OperationCanceledException)
@@ -124,6 +145,11 @@ public sealed partial class Launcher
         if (target.SetupNeeded(install) is { } setup)
         {
             throw new LauncherException(setup.Message);
+        }
+        if (!IsOnline(s))
+        {
+            await OfflineSessionAsync(s, target, install, life).ConfigureAwait(false);
+            return;
         }
         var api = Api(s.Server);
         var seat = new SeatSession(api, s.Seat, s.Name, s.Pin, Note, _clock, _options.BusyRetry);
@@ -214,6 +240,84 @@ public sealed partial class Launcher
         finally
         {
             await seat.ReleaseAsync().ConfigureAwait(false);
+            game?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// PLAY with no server: the game, and nothing online. The integration is still brought in line
+    /// (the overlay is MKWMP's), and the session file names only this launcher's local API
+    /// (<c>launcher</c>, <c>launcher_token</c>, <c>launcher_exe</c>): with no <c>server</c>,
+    /// <c>name</c> or <c>ticket</c> the mod stays dormant for online play (its Online Play asks the
+    /// local API for a seat and is refused with <see cref="Strings.OnlineOffInGame"/>) and still
+    /// brings the launcher over the game. The session lasts while the game runs.
+    /// </summary>
+    private async Task OfflineSessionAsync(LauncherSettings s, IGameTarget target, GameInstall install, CancellationToken life)
+    {
+        try
+        {
+            await SyncIntegrationAsync(force: false).ConfigureAwait(false);
+        }
+        catch (LauncherException e)
+        {
+            Note($"game patch: {e.Message}");
+        }
+        var integration = target.Inspect(install, Package);
+        if (!integration.Ok)
+        {
+            throw new LauncherException($"{integration.Summary} ({string.Join("; ", integration.Lines)})");
+        }
+        var address = string.Create(CultureInfo.InvariantCulture, $"127.0.0.1:{(_local.Port != 0 ? _local.Port : s.LocalPort)}");
+        // Also takes away what an online session left there: the server, the name, a ticket, the lobby's certificate.
+        target.WriteSession(install, SessionFile.Offline(address, Token, LauncherExe));
+        Note("playing offline: no server is set (SETTINGS > ONLINE), so no seat is taken and no server is contacted");
+
+        IGameProcess? game = null;
+        try
+        {
+            var launches = LaunchesGame(s) && target.Capabilities.HasFlag(TargetCapabilities.Launch);
+            if (launches)
+            {
+                Note("starting the game");
+                game = target.Launch(install, new LaunchOptions(s.LaunchCommand.Length == 0 ? null : s.LaunchCommand));
+            }
+            else
+            {
+                Note("ready: start the game from Steam");
+            }
+            var seen = false; // started elsewhere (Steam): the session ends when that game does
+            while (true)
+            {
+                bool running;
+                if (game is not null)
+                {
+                    if (game.HasExited)
+                    {
+                        Note(string.Create(CultureInfo.InvariantCulture, $"game exited (exit code: {game.ExitCode})"));
+                        return;
+                    }
+                    running = true;
+                }
+                else
+                {
+                    running = target.IsRunning(install);
+                    if (seen && !running)
+                    {
+                        Note("the game was closed");
+                        return;
+                    }
+                    seen |= running;
+                }
+                Mutate(() => (_sessionState, _gameRunning) = (SessionState.Running, running));
+                if (await _stop.WaitAsync(_options.Tick, life).ConfigureAwait(false))
+                {
+                    Note("stopped");
+                    return;
+                }
+            }
+        }
+        finally
+        {
             game?.Dispose();
         }
     }

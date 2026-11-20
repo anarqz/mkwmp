@@ -83,7 +83,9 @@ public partial class MainWindow : Window
         }
 
         ApplyFullscreen();
-        shell.Nav.ResetTo(shell.Settings.Ui.SetupDone && shell.Settings.AdultConsent ? Routes.Home : Routes.Setup);
+        // The welcome flow until it was finished once (or was never needed: Core marks a working online profile as done).
+        // Offline is a complete state: no consent is asked for to reach home.
+        shell.Nav.ResetTo(shell.Settings.Ui.SetupDone ? Routes.Home : Routes.Setup);
         if (App.Option(args, "--page") is { } page)
         {
             shell.Navigate(page);

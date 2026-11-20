@@ -39,12 +39,79 @@ public sealed class DesignLauncher : ILauncher
         if (start == DemoStart.Offline)
         {
             Settings = Settings with { Server = "", Pin = "", AdultConsent = false };
-            Server = new ServerView(ServerState.NotAsked, null, 0, 0, 0, null);
+            SavedServers = [new SavedServer(DemoServer, "Alex", true)]; // disconnected: the PIN is kept for that server
         }
         else if (start == DemoStart.Fresh)
         {
+            // A bare machine: no name, no game (the pinned runtime not installed), no server.
             Settings = new LauncherSettings { Server = "", Ui = new UiSettings { SetupDone = false } };
+            Game = Game with { Install = null, Check = null, Integration = null };
+            Runtime = Runtime with { State = RuntimeState.NotInstalled, InstalledVersion = null, Folder = @"C:\Users\Alex\AppData\Local\MKWMP\mkw-recomp" };
+            GameSetup = GameSetupView.None;
+        }
+        Sync();
+    }
+
+    private const string DemoServer = "https://mkw.example.net";
+    private const string DemoPin = "482913";
+
+    /// <summary>A problem a <c>--state</c> put there: it stays whatever the settings say.</summary>
+    private string? _pretended;
+
+    /// <summary>
+    /// What the real launcher derives from its settings, in short: with no server the launcher is
+    /// offline (no profile on any server, no friends, the server never asked, PLAY asks only for
+    /// the game); with one, the consent, the gamertag and its PIN come first.
+    /// </summary>
+    private void Sync()
+    {
+        var s = Settings;
+        var online = !string.IsNullOrWhiteSpace(s.Server);
+        var named = s.Name.Length is >= 3 and <= 16 && s.Name.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
+        var signedIn = online && named && s.Pin.Length == 6;
+        if (!online)
+        {
             Server = new ServerView(ServerState.NotAsked, null, 0, 0, 0, null);
+            Friends = new FriendsView(false, [], [], [], null, false, false);
+            Profile = new ProfileView(s.Name, "", named, false, Profile.Register == RegisterState.Failed ? RegisterState.Failed : RegisterState.Idle,
+                named ? CoreStrings.LocalNameOnly : CoreStrings.PickLocalName, false);
+        }
+        else
+        {
+            if (Server.State == ServerState.NotAsked)
+            {
+                Server = new ServerView(ServerState.Online, "MKWMP", 32, 12, 0, null);
+            }
+            if (Profile.Register is not (RegisterState.Working or RegisterState.Taken or RegisterState.Deleted) || signedIn)
+            {
+                Profile = new ProfileView(s.Name, s.Pin, named, signedIn, RegisterState.Idle, signedIn ? CoreStrings.KeepYourPin : CoreStrings.RegisterToPlay, false);
+            }
+            if (!signedIn || !s.AdultConsent)
+            {
+                // friends are the server's, and it gives none before the consent
+                Friends = new FriendsView(false, [], [], [], null, false, false);
+            }
+            else if (!Friends.Loaded)
+            {
+                Friends = DemoFriends;
+            }
+        }
+        var problem = _pretended
+            ?? (online ? !named ? CoreStrings.PickGamertag : !signedIn ? CoreStrings.NeedPin : !s.AdultConsent ? CoreStrings.NoConsent : null : null)
+            ?? (Game.Install is null ? CoreStrings.SetGameFolder("the one with mkw.exe") : null)
+            ?? GameSetup.State switch
+            {
+                GameSetupState.Running => CoreStrings.SetupRunning,
+                GameSetupState.NeedsSetup or GameSetupState.Failed => GameSetup.Message ?? CoreStrings.SetupNotSetUp,
+                _ => null,
+            }
+            ?? (Game.Integration is { Ok: false } bad ? bad.Summary : null);
+        PlayProblem = problem;
+        if (!Session.Busy)
+        {
+            Session = problem is null
+                ? new SessionView(SessionState.Idle, null, 0, false, false, online ? CoreStrings.Ready : CoreStrings.ReadyOffline, "plain")
+                : new SessionView(SessionState.Idle, null, 0, false, false, problem.ToUpperInvariant(), "warn");
         }
     }
 
@@ -58,7 +125,6 @@ public sealed class DesignLauncher : ILauncher
         Game = @"C:\Games\Mario Kart World\mkw-recomp",
         AdultConsent = true,
         Ui = new UiSettings { SetupDone = true },
-        Voice = new VoiceSettings { ChatIntroDone = false },
     };
 
     public ServerView Server { get; private set; } = new(ServerState.Online, "MKWMP", 32, 12, 0, null);
@@ -67,7 +133,9 @@ public sealed class DesignLauncher : ILauncher
 
     public SessionView Session { get; private set; } = new(SessionState.Idle, null, 0, false, false, CoreStrings.Ready, "plain");
 
-    public FriendsView Friends { get; private set; } = new(
+    public FriendsView Friends { get; private set; } = DemoFriends;
+
+    private static readonly FriendsView DemoFriends = new(
         true,
         [
             new Friend("Luna", FriendState.Playing), new Friend("Kai", FriendState.Playing),
@@ -99,7 +167,7 @@ public sealed class DesignLauncher : ILauncher
 
     public UpdateView Update { get; private set; } = new(
         UpdateState.Available, "1.4.1",
-        "• Party Chat: the camera now follows the room you are in\n• A new full-screen launcher made for controllers\n• Fixes for the Steam Deck's microphone after sleep\n• Smaller downloads: only what changed",
+        "• Voice & Camera: the camera now follows the room you are in\n• A new full-screen launcher made for controllers\n• Fixes for the Steam Deck's microphone after sleep\n• Smaller downloads: only what changed",
         0, null, "Version 1.4.1 is available");
 
     public int GitHubStars => 248;
@@ -114,8 +182,87 @@ public sealed class DesignLauncher : ILauncher
     /// <summary>For screenshots and trying things (<c>--state</c>): another situation than the happy one.</summary>
     public void Pretend(string? state)
     {
+        if (state is not null && state.Contains(',', StringComparison.Ordinal))
+        {
+            foreach (var one in state.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                Pretend(one); // several at once: --state named,need-dump
+            }
+            return;
+        }
+        var folder = @"C:\Games\Mario Kart World\mkw-recomp";
+        var bare = new GameInstall("mkw-recomp", folder, folder + @"\mkw.exe", DemoRuntime.Version, null, null);
+        var ready = new TargetCheck(TargetStatus.Ready, null, null, null, null);
+        var noMod = new IntegrationReport(IntegrationState.Missing, "Not installed: press INSTALL", []);
         switch (state)
         {
+            // ── the welcome flow's situations (with --demo-fresh) ──
+            case "named":
+                Change(() =>
+                {
+                    Settings = Settings with { Name = "Alex" };
+                    Sync();
+                });
+                break;
+            case "downloading":
+                PretendRuntime(RuntimeState.Downloading);
+                break;
+            case "download-failed":
+                PretendRuntime(RuntimeState.Failed);
+                break;
+            case "need-dump" or "setting-up" or "setup-failed":
+                Change(() => (Game, Runtime) = (Game with { Install = bare, Check = ready, Integration = noMod }, Runtime with { State = RuntimeState.Installed, InstalledVersion = DemoRuntime.Version }));
+                PretendGameSetup(state switch { "need-dump" => GameSetupState.NeedsSetup, "setting-up" => GameSetupState.Running, _ => GameSetupState.Failed });
+                break;
+            case "need-mod" or "game-ready":
+                Change(() =>
+                {
+                    Game = Game with { Install = bare with { GameVersion = "1.8.0" }, Check = ready, Integration = state == "need-mod" ? noMod : new IntegrationReport(IntegrationState.Mod, "MKWMP runs as a mod in this game", []) };
+                    Runtime = Runtime with { State = RuntimeState.Installed, InstalledVersion = DemoRuntime.Version };
+                    GameSetup = DemoSetupIdle;
+                    Settings = Settings with { Game = folder };
+                    Sync();
+                });
+                break;
+            case "connected":
+                // a server is chosen, no profile on it yet
+                Change(() =>
+                {
+                    Settings = Settings with { AdultConsent = false, Server = DemoServer, Pin = "" };
+                    Sync();
+                });
+                break;
+            case "taken":
+                Change(() =>
+                {
+                    Settings = Settings with { AdultConsent = false, Server = DemoServer, Name = "Luna", Pin = "" };
+                    Sync();
+                    Profile = new ProfileView("Luna", "", true, false, RegisterState.Taken, CoreStrings.NameIsRegistered, true);
+                });
+                break;
+            case "signed-in":
+                // registered on the server, the consent not given yet (it is asked for right after signing in)
+                Change(() =>
+                {
+                    Settings = Settings with { AdultConsent = false, Server = DemoServer, Name = Settings.Name.Length > 0 ? Settings.Name : "Alex", Pin = DemoPin };
+                    SavedServers = [new SavedServer(DemoServer, Settings.Name, true)];
+                    Sync();
+                });
+                break;
+            case "no-list":
+                PretendServers(ServerListState.Off);
+                break;
+            case "list-cached":
+                PretendServers(ServerListState.Cached);
+                break;
+            case "registered":
+                Change(() =>
+                {
+                    Settings = Settings with { AdultConsent = true, Server = DemoServer, Name = Settings.Name.Length > 0 ? Settings.Name : "Alex", Pin = DemoPin };
+                    SavedServers = [new SavedServer(DemoServer, Settings.Name, true)];
+                    Sync();
+                });
+                break;
             case "blocked":
                 Change(() =>
                 {
@@ -127,6 +274,7 @@ public sealed class DesignLauncher : ILauncher
                             "Download the build below, extract it over your game folder (keep setup\\), then press PLAY again.",
                             new Uri("https://github.com/anarqz/mkw-recomp/releases"), "Get 0.1.15-mkwmp"),
                     };
+                    _pretended = PlayProblem;
                 });
                 break;
             case "offline":
@@ -203,24 +351,160 @@ public sealed class DesignLauncher : ILauncher
 
     public Task SaveSettingsAsync(LauncherSettings settings)
     {
-        Change(() => Settings = settings);
+        Change(() =>
+        {
+            var before = Settings;
+            // as the real one: a PIN belongs to one name on one server, and the one kept for a server comes back with it
+            if ((settings.Server != before.Server || !string.Equals(settings.Name, before.Name, StringComparison.OrdinalIgnoreCase)) && settings.Pin == before.Pin)
+            {
+                var kept = SavedServers.Any(p => p.Address == settings.Server && string.Equals(p.Name, settings.Name, StringComparison.OrdinalIgnoreCase));
+                settings = settings with { Pin = kept ? DemoPin : "" };
+            }
+            if (settings.Server != before.Server)
+            {
+                Server = new ServerView(ServerState.NotAsked, null, 0, 0, 0, null);
+                Friends = new FriendsView(false, [], [], [], null, false, false);
+                Profile = Profile with { Register = RegisterState.Idle };
+            }
+            Settings = settings;
+            Sync();
+        });
         return Task.CompletedTask;
     }
 
-    public Task SetConsentAsync(bool adult)
+    public Task SetConsentAsync(bool adult) => SaveSettingsAsync(Settings with { AdultConsent = adult });
+
+    /// <summary>Any address answers as an MKWMP server with 20 of 32 seats free; one with "down", "other" or "old" in it shows that failure.</summary>
+    public async Task<ServerProbe> ProbeServerAsync(string address)
     {
-        Change(() => Settings = Settings with { AdultConsent = adult });
-        return Task.CompletedTask;
+        var typed = (address ?? "").Trim();
+        var url = typed.Length == 0 || typed.Contains("://", StringComparison.Ordinal) ? typed.TrimEnd('/') : "http://" + typed.TrimEnd('/');
+        if (url.Length == 0)
+        {
+            return new ServerProbe(ServerProbeState.Invalid, url, null, 0, 0, 0, CoreStrings.ProbeInvalid);
+        }
+        await Pause(700).ConfigureAwait(false);
+        return typed switch
+        {
+            _ when typed.Contains("down", StringComparison.OrdinalIgnoreCase) => new ServerProbe(ServerProbeState.Unreachable, url, null, 0, 0, 0, CoreStrings.ProbeUnreachable),
+            _ when typed.Contains("other", StringComparison.OrdinalIgnoreCase) => new ServerProbe(ServerProbeState.NotMkwmp, url, null, 0, 0, 0, CoreStrings.ProbeNotMkwmp),
+            _ when typed.Contains("old", StringComparison.OrdinalIgnoreCase) => new ServerProbe(ServerProbeState.TooOld, url, "MKWMP", 32, 12, 0, CoreStrings.ProbeTooOld),
+            _ => new ServerProbe(ServerProbeState.Ok, url, "MKWMP", 32, 12, 0, null),
+        };
+    }
+
+    public IReadOnlyList<SavedServer> SavedServers { get; private set; } = [];
+
+    // ---- the beholder's list: five servers, near to far, one that does not answer ----------
+    private static readonly ListedServer[] DemoServers =
+    [
+        new("MKWMP", DemoServer, "sa-east", "1.4.0", 32, 12, 0, 23, true),
+        new("Rainbow Road Club", "https://rainbow.example.org", "sa-east", "1.4.0", 24, 24, 3, 41, true),
+        new("Kart Night EU", "https://kartnight.example.eu", "eu-west", "1.4.0", 32, 7, 0, 118, true),
+        new("Blue Shell Lounge", "https://blueshell.example.com", "us-east", "1.3.2", 16, 2, 0, 204, true),
+        new("Coconut Mall", "https://coconut.example.jp", "ap-northeast", "1.4.0", 12, 0, 0, null, false),
+    ];
+
+    private int _measure;
+
+    public ServerListView Servers { get; private set; } = new(ServerListState.Ready, DemoServers, false, null);
+
+    /// <summary>For screenshots: no beholder (only a typed address), or the list still loading.</summary>
+    public void PretendServers(ServerListState state) =>
+        Change(() => Servers = state switch
+        {
+            ServerListState.Off => ServerListView.Off,
+            ServerListState.Loading => new ServerListView(state, [], true, null),
+            ServerListState.Cached => new ServerListView(state, DemoServers, false, CoreStrings.BeholderUnreachable),
+            ServerListState.Failed => new ServerListView(state, [], false, CoreStrings.BeholderUnreachable),
+            _ => new ServerListView(state, DemoServers, false, null),
+        });
+
+    public async Task RefreshServersAsync()
+    {
+        if (Servers.State == ServerListState.Off || Servers.Busy)
+        {
+            return;
+        }
+        Change(() => Servers = Servers with { Busy = true });
+        await Pause(900).ConfigureAwait(false);
+        Jitter();
+    }
+
+    public async Task MeasureServersAsync()
+    {
+        if (Servers.Items.Count == 0 || Servers.Busy)
+        {
+            return;
+        }
+        Change(() => Servers = Servers with { Busy = true });
+        await Pause(500).ConfigureAwait(false);
+        Jitter();
+    }
+
+    /// <summary>A new measure: every latency moves a little, as real ones do.</summary>
+    private void Jitter()
+    {
+        var turn = ++_measure;
+        Change(() => Servers = Servers with
+        {
+            Busy = false,
+            Items = [.. DemoServers.Select((s, i) => s.LatencyMs is { } ms ? s with { LatencyMs = ms + ((turn * (i + 3)) % 7) - 3 } : s).OrderBy(s => s.LatencyMs ?? int.MaxValue)],
+        });
+    }
+
+    // ---- the server's own privacy policy, as Markdown ------------------------------------
+    private const string DemoPrivacy =
+        "# Privacy Policy\n\n"
+        + "*Example Kart Club, updated on 2 November 2026.*\n\n"
+        + "This server is run by volunteers. Online play, friends and voice chat are for adults: you must be **18 or older**.\n\n"
+        + "## What we keep\n\n"
+        + "- your **gamertag**\n- a hash of your PIN (never the PIN itself)\n- your friends list\n- reports you file, until they are reviewed\n\n"
+        + "## What we never keep\n\n"
+        + "1. Voice: it is relayed live to the players in your room, and never recorded.\n"
+        + "2. Camera: shown only to mutual friends in your room, and never recorded.\n"
+        + "3. Your game: your copy stays on your device.\n\n"
+        + "## Deleting your data\n\n"
+        + "Use *Settings, Online, Delete My Profile on This Server*. Unused gamertags are deleted after a month.\n\n"
+        + "> If something here is unclear, ask before you agree.\n\n"
+        + "## Contact\n\n"
+        + "Write to the host at [mkw.example.net/contact](https://mkw.example.net/contact). The server's source is `mkwmp-server 1.4.0`.\n";
+
+    public async Task<PrivacyPolicy> GetPrivacyPolicyAsync()
+    {
+        if (!((ILauncher)this).OnlineEnabled)
+        {
+            return PrivacyPolicy.Fallback(null);
+        }
+        await Pause(400).ConfigureAwait(false);
+        return new PrivacyPolicy(DemoPrivacy, "3f6c0a1d9b2e47c58a6f1d0e9c7b5a43210fedcba9876543210fedcba9876543", true, Settings.Server + "/privacy", null);
     }
 
     public async Task RegisterAsync(string name)
     {
-        Change(() => Profile = Profile with { Name = name, Register = RegisterState.Working, Message = null });
+        if (!((ILauncher)this).OnlineEnabled)
+        {
+            Change(() => Profile = Profile with { Register = RegisterState.Failed, Message = CoreStrings.OnlineOff, MessageIsError = true });
+            return;
+        }
+        Change(() =>
+        {
+            Settings = Settings with { Name = name, Pin = "" };
+            Profile = new ProfileView(name, "", true, false, RegisterState.Working, null, false);
+        });
         await Pause(900).ConfigureAwait(false);
         Change(() =>
         {
-            Profile = new ProfileView(name, "482913", true, true, RegisterState.Idle, "Your PIN is 482913. Keep it: it is your key on another device.", false);
-            Settings = Settings with { Name = name, Pin = "482913" };
+            // a name of the demo's friends is someone's: the page asks for its PIN ("It's mine")
+            if (DemoFriends.Friends.Any(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                Profile = new ProfileView(name, "", true, false, RegisterState.Taken, CoreStrings.NameIsRegistered, true);
+                return;
+            }
+            Settings = Settings with { Name = name, Pin = DemoPin };
+            SavedServers = [.. SavedServers.Where(p => p.Address != Settings.Server), new SavedServer(Settings.Server, name, true)];
+            Profile = Profile with { Register = RegisterState.Idle };
+            Sync();
         });
     }
 
@@ -228,7 +512,12 @@ public sealed class DesignLauncher : ILauncher
     {
         Change(() => Profile = Profile with { Register = RegisterState.Working });
         await Pause(700).ConfigureAwait(false);
-        Change(() => Profile = new ProfileView(name, pin, true, pin.Length == 6, RegisterState.Idle, pin.Length == 6 ? null : "The PIN has 6 digits.", pin.Length != 6));
+        Change(() =>
+        {
+            Settings = Settings with { Name = name, Pin = pin };
+            Profile = Profile with { Register = RegisterState.Idle };
+            Sync();
+        });
     }
 
     public async Task DeleteProfileAsync()
@@ -236,8 +525,10 @@ public sealed class DesignLauncher : ILauncher
         await Pause(700).ConfigureAwait(false);
         Change(() =>
         {
-            Profile = new ProfileView("", "", false, false, RegisterState.Deleted, "The profile was deleted.", false);
-            Friends = new FriendsView(false, [], [], [], null, false, false);
+            SavedServers = [.. SavedServers.Where(p => p.Address != Settings.Server)];
+            Settings = Settings with { Name = "", Pin = "" };
+            Sync();
+            Profile = new ProfileView("", "", false, false, RegisterState.Deleted, CoreStrings.ProfileDeleted, false);
         });
     }
 
@@ -258,10 +549,14 @@ public sealed class DesignLauncher : ILauncher
     {
         Change(() => Game = Game with { Working = true });
         await Pause(1500).ConfigureAwait(false);
-        Change(() => Game = Game with
+        Change(() =>
         {
-            Working = false,
-            Integration = new IntegrationReport(IntegrationState.Installed, "Installed (v1.4.0, verified)", ["winmm.dll: v1.4.0, verified"]),
+            Game = Game with
+            {
+                Working = false,
+                Integration = new IntegrationReport(IntegrationState.Installed, "Installed (v1.4.0, verified)", ["winmm.dll: v1.4.0, verified"]),
+            };
+            Sync();
         });
     }
 
@@ -282,6 +577,14 @@ public sealed class DesignLauncher : ILauncher
         _play = play;
         try
         {
+            if (!((ILauncher)this).OnlineEnabled)
+            {
+                // no server: the game alone, no seat
+                Change(() => Session = new SessionView(SessionState.Starting, null, 0, false, false, CoreStrings.StartingGame, "info"));
+                await Task.Delay(1500, play.Token).ConfigureAwait(false);
+                Change(() => Session = new SessionView(SessionState.Running, null, 0, true, false, CoreStrings.PlayingOffline, "good"));
+                return;
+            }
             Change(() => Session = new SessionView(SessionState.Starting, null, 0, false, false, CoreStrings.Connecting, "info"));
             await Task.Delay(1500, play.Token).ConfigureAwait(false);
             Change(() => Session = new SessionView(SessionState.Running, SeatPhase.Joining, 0, true, false, CoreStrings.TakingASeat, "info"));
@@ -312,7 +615,11 @@ public sealed class DesignLauncher : ILauncher
         Change(() =>
         {
             Session = new SessionView(SessionState.Idle, null, 0, false, false, CoreStrings.Ready, "plain");
-            Server = Server with { Queued = 0, Seated = 12 };
+            if (Server.State == ServerState.Online)
+            {
+                Server = Server with { Queued = 0, Seated = 12 };
+            }
+            Sync();
         });
         return Task.CompletedTask;
     }
@@ -590,10 +897,27 @@ public sealed class DesignLauncher : ILauncher
                     await Task.Delay(50, both.Token).ConfigureAwait(false);
                 }
             }
-            Change(() => Runtime = Runtime with
+            Change(() =>
             {
-                State = RuntimeState.Installed, InstalledVersion = DemoRuntime.Version, Foreign = false, Progress = 0, BytesDone = 0, BytesTotal = 0,
-                BytesPerSecond = 0, Remaining = null, Note = CoreStrings.RuntimeInstalled(DemoRuntime.Name, DemoRuntime.Version),
+                Runtime = Runtime with
+                {
+                    State = RuntimeState.Installed, InstalledVersion = DemoRuntime.Version, Foreign = false, Progress = 0, BytesDone = 0, BytesTotal = 0,
+                    BytesPerSecond = 0, Remaining = null, Note = CoreStrings.RuntimeInstalled(DemoRuntime.Name, DemoRuntime.Version),
+                };
+                if (Game.Install is null)
+                {
+                    // a new install: the game is not built yet, and MKWMP's files are not in it
+                    var root = Runtime.Folder ?? @"C:\Games\mkw-recomp";
+                    Game = Game with
+                    {
+                        Install = new GameInstall("mkw-recomp", root, root + @"\mkw.exe", DemoRuntime.Version, null, null),
+                        Check = new TargetCheck(TargetStatus.Ready, null, null, null, null),
+                        Integration = new IntegrationReport(IntegrationState.Missing, "Not installed: press INSTALL", []),
+                    };
+                    Settings = Settings with { Game = root };
+                    GameSetup = DemoSetupIdle with { State = GameSetupState.NeedsSetup, Reason = GameSetupReason.NotSetUp, Message = CoreStrings.SetupNotSetUp, NeedsDump = true, DumpPath = null, GameVersion = null };
+                }
+                Sync();
             });
         }
         catch (OperationCanceledException)
@@ -731,7 +1055,11 @@ public sealed class DesignLauncher : ILauncher
             Change(() =>
             {
                 GameSetup = DemoSetupIdle with { State = GameSetupState.Done, Message = CoreStrings.SetupDone, DumpPath = dumpPath ?? before.DumpPath ?? DemoDump };
-                PlayProblem = null;
+                if (Game.Install is { GameVersion: null } built)
+                {
+                    Game = Game with { Install = built with { GameVersion = "1.8.0" } };
+                }
+                Sync();
             });
         }
         catch (OperationCanceledException)

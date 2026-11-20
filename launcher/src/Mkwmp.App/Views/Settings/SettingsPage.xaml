@@ -4,6 +4,7 @@
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
+             xmlns:v="clr-namespace:Mkwmp.App.Views"
              Focusable="False">
   <!-- DataContext: SettingsViewModel. PageHeader, the CategoryList at the left, the chosen category's
        pane at the right (SectionHeader + SettingsRow; text boxes in "Field" rows). -->
@@ -50,47 +51,45 @@
       <c:SmoothScrollViewer Grid.Column="2" Padding="62,0,60,60" EdgePadding="90" input:FocusNav.IsGroup="True" input:FocusNav.IsColumn="True">
         <Grid>
 
-          <!-- ═════════ Profile ═════════ -->
+          <!-- ═════════ Profile: the name on this device ═════════ -->
           <StackPanel Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=profile'}">
-            <StackPanel DataContext="{Binding Profile}" Visibility="{Binding SignedIn, Converter={StaticResource Conv.Visible}}">
-              <Border Style="{StaticResource Card}" Margin="0,38,0,0">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
-                  <c:Avatar DisplayName="{Binding SavedName}" Width="116" Height="116" />
-                  <StackPanel Grid.Column="1" Margin="28,0,0,0" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding SavedName}" Style="{StaticResource Text.Title}" />
-                    <TextBlock Text="{Binding S[settings.profile.signed_in]}" Style="{StaticResource Text.Caption}" />
-                  </StackPanel>
-                  <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="24,0,8,0">
-                    <TextBlock Text="{Binding S[settings.profile.pin]}" Style="{StaticResource Text.Small}" HorizontalAlignment="Right" />
-                    <TextBlock Text="{Binding SavedPin}" Style="{StaticResource Text.Value}" FontSize="46" FontWeight="ExtraBold" HorizontalAlignment="Right" />
-                  </StackPanel>
+            <Border Style="{StaticResource Card}" Margin="0,38,0,0">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <c:Avatar DisplayName="{Binding LocalNameShown}" Width="116" Height="116" />
+                <StackPanel Grid.Column="1" Margin="28,0,0,0" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding LocalNameShown}" Style="{StaticResource Text.Title}" />
+                  <TextBlock Text="{Binding LocalNameNote}" Style="{StaticResource Text.Caption}" />
+                </StackPanel>
+              </Grid>
+            </Border>
+            <c:SectionHeader Text="{Binding S[settings.profile.local]}" />
+            <Border Style="{StaticResource Field}" Visibility="{Binding CanEditLocalName, Converter={StaticResource Conv.Visible}}">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding S[settings.profile.local_label]}" Style="{StaticResource FieldLabel}" />
+                <Grid Grid.Column="1">
+                  <TextBox x:Name="LocalNameBox" Text="{Binding LocalName, UpdateSourceTrigger=PropertyChanged}" MaxLength="16"
+                           input:TextEntry.Title="{Binding S[settings.profile.local_label]}" input:TextEntry.Charset="Gamertag" />
+                  <TextBlock Text="{Binding S[setup.name.hint]}" Style="{StaticResource Hint}"
+                             Visibility="{Binding Text, ElementName=LocalNameBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
                 </Grid>
-              </Border>
-              <c:SectionHeader Text="{Binding S[settings.profile.gamertag]}" />
-              <c:SettingsRow Label="{Binding S[settings.profile.show_pin]}" Kind="Chevron" Icon="{StaticResource Icon.Lock}"
-                             Command="{Binding ShowPinCommand}" Caption="{Binding Message}" />
-              <c:SettingsRow Label="{Binding S[settings.profile.change]}" Kind="Chevron" Icon="{StaticResource Icon.User}"
-                             Command="{Binding EditCommand}" Caption="{Binding S[settings.profile.change_caption]}" />
-              <c:SectionHeader Text="{Binding S[settings.profile.delete_section]}" />
-              <c:SettingsRow Label="{Binding S[settings.profile.delete]}" Icon="{StaticResource Icon.Trash}"
-                             Command="{Binding DeleteCommand}" Caption="{Binding S[settings.profile.delete_caption]}" />
-              <TextBlock Text="{Binding BusyNote}" Style="{StaticResource Note}"
-                         Visibility="{Binding BusyNote, Converter={StaticResource Conv.Visible}}" />
-            </StackPanel>
-
-            <StackPanel DataContext="{Binding Profile}" Visibility="{Binding ShowEntry, Converter={StaticResource Conv.Visible}}">
-              <c:SectionHeader Text="{Binding S[settings.profile.gamertag]}" />
-              <settings:ProfileEntry Margin="0,26,0,0" />
-              <c:SettingsRow Label="{Binding S[settings.profile.keep]}" Value="{Binding SavedName}" Kind="Chevron" Margin="0,26,0,0"
-                             Command="{Binding CancelEditCommand}" Caption="{Binding S[settings.profile.keep_caption]}"
-                             Visibility="{Binding Editing, Converter={StaticResource Conv.Visible}}" />
-            </StackPanel>
+              </Grid>
+            </Border>
+            <TextBlock Text="{Binding S[settings.profile.local_caption]}" Style="{StaticResource Note}" />
+            <c:SettingsRow Label="{Binding S[settings.online]}" Kind="Chevron" Icon="{StaticResource Icon.Globe}" Margin="0,18,0,0"
+                           Command="{Binding OnlineCommand}" Caption="{Binding S[settings.profile.online_caption]}" />
+            <TextBlock Text="{Binding BusyNote}" Style="{StaticResource Note}" Visibility="{Binding BusyNote, Converter={StaticResource Conv.Visible}}" />
           </StackPanel>
+
+          <!-- ═════════ Online: the server, the profile on it, privacy (Views/Settings/OnlinePane.xaml) ═════════ -->
+          <settings:OnlinePane Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=online'}" />
 
           <!-- ═════════ Game ═════════ -->
           <StackPanel Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=game'}">
@@ -281,157 +280,25 @@
             </StackPanel>
           </StackPanel>
 
-          <!-- ═════════ Party Chat ═════════ -->
-          <StackPanel Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=chat'}">
-            <c:SectionHeader Text="{Binding S[settings.chat.voice]}" />
-            <c:SettingsRow Label="{Binding S[settings.chat.enabled]}" Kind="Toggle" IsOn="{Binding VoiceEnabled}"
-                           Caption="{Binding S[settings.chat.enabled_caption]}" />
-            <c:SettingsRow Label="{Binding S[settings.chat.input]}" Kind="Chevron" Icon="{StaticResource Icon.Mic}"
-                           Value="{Binding InputName}" Command="{Binding InputCommand}" />
-            <c:SettingsRow Label="{Binding S[settings.chat.output]}" Kind="Chevron" Icon="{StaticResource Icon.Headset}"
-                           Value="{Binding OutputName}" Command="{Binding OutputCommand}" Caption="{Binding DevicesCaption}" />
-            <c:ConsoleSlider Label="{Binding S[settings.chat.mic_volume]}" Value="{Binding InputGain, Mode=TwoWay}" Minimum="1" Maximum="100"
-                             IsEnabled="{Binding VoiceEnabled}" />
-            <c:ConsoleSlider Label="{Binding S[settings.chat.volume]}" Value="{Binding OutputGain, Mode=TwoWay}" Minimum="1" Maximum="100"
-                             IsEnabled="{Binding VoiceEnabled}" />
+          <!-- ═════════ Voice & Camera (Views/Settings/VoicePane.xaml) ═════════ -->
+          <settings:VoicePane Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=voice'}" />
 
-            <c:SectionHeader Text="{Binding S[settings.chat.tests]}" />
-            <c:SettingsRow Label="{Binding S[settings.chat.mic_test]}" Kind="Toggle" IsOn="{Binding MicTesting}"
-                           Caption="{Binding S[settings.chat.mic_test_caption]}">
-              <Grid Width="300" Height="16" Margin="0,0,30,0" Visibility="{Binding MicTesting, Converter={StaticResource Conv.Visible}}">
-                <Border x:Name="MeterTrack" CornerRadius="8" Background="{DynamicResource Brush.Track}" />
-                <Border CornerRadius="8" Background="{DynamicResource Brush.Good}" HorizontalAlignment="Left">
-                  <Border.Width>
-                    <MultiBinding Converter="{StaticResource Conv.Fraction}">
-                      <Binding Path="Mic.Level" />
-                      <Binding Path="ActualWidth" ElementName="MeterTrack" />
-                    </MultiBinding>
-                  </Border.Width>
-                </Border>
-              </Grid>
-            </c:SettingsRow>
-            <c:SettingsRow Label="{Binding S[settings.chat.hear]}" Kind="Toggle" IsOn="{Binding HearMyself}"
-                           Caption="{Binding S[settings.chat.hear_caption]}"
-                           Visibility="{Binding MicTesting, Converter={StaticResource Conv.Visible}}" />
-            <c:SettingsRow Label="{Binding S[settings.chat.output_test]}" Icon="{StaticResource Icon.Volume}" Command="{Binding TestOutputCommand}"
-                           Caption="{Binding S[settings.chat.output_test_caption]}" />
-
-            <c:SectionHeader Text="{Binding S[settings.chat.camera]}" />
-            <c:SettingsRow Label="{Binding S[settings.chat.camera_device]}" Kind="Chevron" Icon="{StaticResource Icon.Camera}"
-                           Value="{Binding CameraName}" Command="{Binding CameraCommand}" />
-            <c:SettingsRow Label="{Binding S[settings.chat.mirror]}" Kind="Toggle" IsOn="{Binding CameraMirror}"
-                           IsEnabled="{Binding CameraTestAvailable}" />
-            <c:SettingsRow Label="{Binding S[settings.chat.camera_test]}" Kind="Chevron" Command="{Binding TestCameraCommand}"
-                           Caption="{Binding S[settings.chat.camera_test_caption]}" />
-            <Border Style="{StaticResource Card}" Margin="0,18,0,0" Visibility="{Binding CameraNote, Converter={StaticResource Conv.Visible}}">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <c:Icon Data="{StaticResource Icon.Info}" Width="40" Height="40" VerticalAlignment="Top" Margin="0,2,20,0"
-                        Foreground="{DynamicResource Brush.TextMuted}" />
-                <TextBlock Grid.Column="1" Text="{Binding CameraNote}" Style="{StaticResource Text.Caption}" />
-              </Grid>
-            </Border>
-
-            <StackPanel Visibility="{Binding HasGameCamera, Converter={StaticResource Conv.Visible}}">
-              <c:SectionHeader Text="{Binding S[settings.chat.game_camera]}" />
-              <c:SettingsRow Label="{Binding S[settings.chat.show_mine]}" Kind="Toggle" IsOn="{Binding ShowMyCamera}"
-                             IsEnabled="{Binding CanShowMyCamera}" />
-              <c:SettingsRow Label="{Binding S[settings.chat.see_friends]}" Kind="Toggle" IsOn="{Binding SeeFriendsCameras}"
-                             IsEnabled="{Binding CanChangeGameCamera}" />
-              <TextBlock Text="{Binding GameCameraCaption}" Style="{StaticResource Note}" />
-            </StackPanel>
-
-            <c:SectionHeader Text="{Binding S[settings.chat.muted]}" />
-            <TextBlock Text="{Binding S[settings.chat.muted_none]}" Style="{StaticResource Note}"
-                       Visibility="{Binding NoMutes, Converter={StaticResource Conv.Visible}}" />
-            <ItemsControl ItemsSource="{Binding Mutes}" Focusable="False">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Border Style="{StaticResource Field}" Padding="20,10,10,10">
-                    <Grid>
-                      <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                      </Grid.ColumnDefinitions>
-                      <c:Avatar DisplayName="{Binding Name}" Width="64" Height="64" />
-                      <TextBlock Grid.Column="1" Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="32" Margin="22,0" />
-                      <c:ConsoleButton Grid.Column="2" MinWidth="210" Height="78" Padding="26,0" Content="{Binding DataContext.S[settings.chat.unmute], RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                       Command="{Binding UnmuteCommand}" />
-                      <c:ConsoleButton Grid.Column="3" Kind="Secondary" MinWidth="210" Height="78" Padding="26,0" Margin="14,0,0,0"
-                                       Icon="{StaticResource Icon.Flag}"
-                                       Content="{Binding DataContext.S[settings.chat.report], RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                       Command="{Binding ReportCommand}" />
-                    </Grid>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <c:SectionHeader Text="{Binding S[settings.report.title]}" />
-            <TextBlock Text="{Binding S[settings.report.gate]}" Style="{StaticResource Note}"
-                       Visibility="{Binding ReportState, Converter={StaticResource Conv.Visible}, ConverterParameter='=gate'}" />
-            <TextBlock Text="{Binding ReportChecking}" Style="{StaticResource Note}"
-                       Visibility="{Binding ReportState, Converter={StaticResource Conv.Visible}, ConverterParameter='=checking'}" />
-            <StackPanel Visibility="{Binding ReportState, Converter={StaticResource Conv.Visible}, ConverterParameter='=open'}">
-              <TextBlock Text="{Binding OpenReportText}" Style="{StaticResource Text.Body}" Margin="20,18,20,0" />
-              <c:SettingsRow Label="{Binding S[settings.report.withdraw]}" Icon="{StaticResource Icon.Close}" Command="{Binding WithdrawReportCommand}"
-                             Caption="{Binding S[settings.report.one]}" Margin="0,6,0,0" />
-            </StackPanel>
-            <StackPanel Visibility="{Binding ReportState, Converter={StaticResource Conv.Visible}, ConverterParameter='=form'}">
-              <Border Style="{StaticResource Field}">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                  </Grid.ColumnDefinitions>
-                  <TextBlock Text="{Binding S[settings.profile.gamertag]}" Style="{StaticResource FieldLabel}" />
-                  <Grid Grid.Column="1">
-                    <TextBox x:Name="ReportNameBox" Text="{Binding ReportName, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" />
-                    <TextBlock Text="{Binding S[settings.report.name_hint]}" Style="{StaticResource Hint}" FontSize="25"
-                               Visibility="{Binding Text, ElementName=ReportNameBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
-                  </Grid>
-                </Grid>
-              </Border>
-              <c:SettingsRow Label="{Binding S[settings.report.what]}" Kind="Chevron" Value="{Binding ReportReasonName}" Command="{Binding ReasonCommand}" />
-              <Border Style="{StaticResource Field}">
-                <Grid>
-                  <TextBox x:Name="ReportDetailsBox" Text="{Binding ReportDetails, UpdateSourceTrigger=PropertyChanged}" Height="170"
-                           MaxLength="{Binding ReportDetailsMax, Mode=OneTime}" TextWrapping="Wrap" />
-                  <TextBlock Text="{Binding S[settings.report.details_hint]}" Style="{StaticResource Hint}" FontSize="25"
-                             Visibility="{Binding Text, ElementName=ReportDetailsBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
-                </Grid>
-              </Border>
-              <c:SettingsRow Label="{Binding S[settings.report.send]}" Icon="{StaticResource Icon.Flag}" Command="{Binding SendReportCommand}"
-                             Caption="{Binding S[settings.report.caption]}" />
-            </StackPanel>
-            <TextBlock Text="{Binding ReportNote}" Margin="20,10,20,0" Visibility="{Binding ReportNote, Converter={StaticResource Conv.Visible}}">
-              <TextBlock.Style>
-                <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
-                  <Setter Property="Foreground" Value="{DynamicResource Brush.Good}" />
-                  <Style.Triggers>
-                    <DataTrigger Binding="{Binding ReportNoteIsError}" Value="True">
-                      <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
-                    </DataTrigger>
-                  </Style.Triggers>
-                </Style>
-              </TextBlock.Style>
-            </TextBlock>
-
-            <c:SectionHeader Text="{Binding S[settings.chat.about]}" />
-            <c:SettingsRow Label="{Binding S[settings.chat.replay]}" Kind="Chevron" Command="{Binding ReplayIntroCommand}" />
-          </StackPanel>
+          <!-- ═════════ Locked online: a category that needs a server, and none is set ═════════ -->
+          <v:OnlineLocked Margin="0,96,0,0" Title="{Binding S[settings.locked.title]}" Text="{Binding S[settings.locked.text]}"
+                          Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=locked'}" />
 
           <!-- ═════════ Notifications and background ═════════ -->
           <StackPanel Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=notifications'}">
             <c:SectionHeader Text="{Binding S[settings.notify.when]}" />
-            <c:SettingsRow Label="{Binding S[settings.notify.online]}" Kind="Toggle" IsOn="{Binding NotifyOnline}" />
-            <c:SettingsRow Label="{Binding S[settings.notify.playing]}" Kind="Toggle" IsOn="{Binding NotifyPlaying}" />
-            <c:SettingsRow Label="{Binding S[settings.notify.requests]}" Kind="Toggle" IsOn="{Binding NotifyRequests}" />
+            <!-- locked online: friends' news needs a server -->
+            <c:SettingsRow Label="{Binding S[settings.notify.locked]}" Kind="Chevron" Icon="{StaticResource Icon.Lock}" Value="{Binding S[online.configure]}"
+                           Command="{Binding ConfigureOnlineCommand}"
+                           Visibility="{Binding OnlineLocked, Converter={StaticResource Conv.Visible}}" />
+            <StackPanel Visibility="{Binding OnlineEnabled, Converter={StaticResource Conv.Visible}}">
+              <c:SettingsRow Label="{Binding S[settings.notify.online]}" Kind="Toggle" IsOn="{Binding NotifyOnline}" />
+              <c:SettingsRow Label="{Binding S[settings.notify.playing]}" Kind="Toggle" IsOn="{Binding NotifyPlaying}" />
+              <c:SettingsRow Label="{Binding S[settings.notify.requests]}" Kind="Toggle" IsOn="{Binding NotifyRequests}" />
+            </StackPanel>
             <c:SettingsRow Label="{Binding S[settings.notify.test]}" Icon="{StaticResource Icon.Bell}" Command="{Binding TestToastCommand}"
                            Caption="{Binding S[settings.notify.test_caption]}" />
 
@@ -443,39 +310,6 @@
             <TextBlock Text="{Binding TrayCaption}" Style="{StaticResource Note}" />
             <TextBlock Text="{Binding S[settings.background.autostart_linux]}" Style="{StaticResource Note}"
                        Visibility="{Binding IsWine, Converter={StaticResource Conv.Visible}}" />
-          </StackPanel>
-
-          <!-- ═════════ Privacy ═════════ -->
-          <StackPanel Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=privacy'}">
-            <c:SectionHeader Text="{Binding S[setup.consent.title]}" />
-            <Border Style="{StaticResource Card}" Margin="0,18,0,6">
-              <StackPanel>
-                <TextBlock Text="{Binding S[setup.consent.p1]}" Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.Text}" />
-                <TextBlock Text="{Binding S[setup.consent.p2]}" Style="{StaticResource Text.Caption}" Margin="0,12,0,0" />
-                <TextBlock Text="{Binding S[setup.consent.p3]}" Style="{StaticResource Text.Caption}" Margin="0,12,0,0" />
-              </StackPanel>
-            </Border>
-            <c:SettingsRow Label="{Binding S[setup.consent.adult]}" Kind="Toggle" IsOn="{Binding Adult}" IsEnabled="{Binding NotBusy}"
-                           Caption="{Binding S[settings.privacy.adult_caption]}" />
-            <c:SettingsRow Label="{Binding S[settings.privacy.policy]}" Kind="Chevron" Icon="{StaticResource Icon.Shield}"
-                           Command="{Binding PolicyCommand}" Caption="https://anarqz.github.io/mkwmp/#privacy" />
-            <c:SectionHeader Text="{Binding S[settings.privacy.account]}" />
-            <c:SettingsRow Label="{Binding S[settings.privacy.delete]}" Icon="{StaticResource Icon.Trash}" Command="{Binding Profile.DeleteCommand}"
-                           Caption="{Binding S[settings.privacy.delete_caption]}" />
-          </StackPanel>
-
-          <!-- ═════════ Server ═════════ -->
-          <StackPanel Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=server'}">
-            <c:SectionHeader Text="{Binding S[settings.server]}" />
-            <Border Style="{StaticResource Field}">
-              <StackPanel>
-                <TextBlock Text="{Binding S[settings.server.url]}" Style="{StaticResource FieldLabel}" Margin="0,0,0,12" />
-                <TextBox Text="{Binding ServerUrl, UpdateSourceTrigger=LostFocus}" IsEnabled="{Binding NotBusy}" InputScope="Url" />
-                <TextBlock Text="{Binding S[settings.server.caption]}" Style="{StaticResource Text.Caption}" Margin="0,10,0,0" />
-              </StackPanel>
-            </Border>
-            <settings:StatusLines DataContext="{Binding ServerLines}" />
-            <TextBlock Text="{Binding BusyNote}" Style="{StaticResource Note}" Visibility="{Binding BusyNote, Converter={StaticResource Conv.Visible}}" />
           </StackPanel>
 
           <!-- ═════════ Appearance ═════════ -->

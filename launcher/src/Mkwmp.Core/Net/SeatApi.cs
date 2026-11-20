@@ -51,7 +51,15 @@ internal sealed record SeatTicket(string Token, long ExpiresAt, string Lobby);
 internal sealed record SeatView(string BootId, string SessionId, string Name, string? SessionKey, string State, int? Position, int SeatsTotal, int SeatsFree, long NextPollMs, SeatTicket? Ticket);
 
 /// <param name="VoicePort">UDP port of the lobby's voice relay (0 = voice off); servers older than voice leave it out (8907).</param>
-internal sealed record SeatStatus(string Name, int SeatsTotal, int Seated, int Queued, string? LobbyEndpoint, string? LobbyCa, int VoicePort);
+/// <param name="PrivacyVersion">The version of the server's privacy policy (SEAT_API.md §2c); null from a server before 1.4.0.</param>
+/// <param name="PrivacyEnforced">The server refuses seats, friends and reports until the policy is accepted.</param>
+internal sealed record SeatStatus(string Name, int SeatsTotal, int Seated, int Queued, string? LobbyEndpoint, string? LobbyCa, int VoicePort,
+    string? PrivacyVersion = null, bool PrivacyEnforced = false);
+
+/// <summary>A sign-in's answer. <paramref name="PrivacyAccepted"/> null: the server does not keep consent (the launcher's own setting decides).</summary>
+/// <param name="PrivacyVersion">The server's current policy version.</param>
+/// <param name="PrivacyEnforced">The server refuses seats, friends and reports until that version is accepted.</param>
+internal sealed record Presence(string Token, bool? PrivacyAccepted, string? PrivacyVersion, bool PrivacyEnforced = false);
 
 internal sealed record FriendList(long Cursor, IReadOnlyList<Friend> Friends, IReadOnlyList<FriendRequest> Incoming, IReadOnlyList<FriendRequest> Outgoing);
 
@@ -132,6 +140,7 @@ internal sealed class SeatApi(HttpClient http, string baseUrl, string userAgent)
         {
             "PIN_WRONG" => Strings.WrongPin,
             "PROFILE_NOT_FOUND" => Strings.NotRegistered,
+            "PRIVACY_REQUIRED" => Strings.NoConsent, // the server holds no consent for the policy it has now
             _ => body.At("error").At("message").Str() ?? Strings.ServerError,
         };
         throw ClientError(status) ? ApiException.Refused(message) : ApiException.Transient(message);
@@ -166,11 +175,44 @@ internal sealed class SeatApi(HttpClient http, string baseUrl, string userAgent)
         {
             throw ApiException.Transient(Strings.ServerAnswered((int)status));
         }
-        if (v.At("name").Str() is not { } name || v.At("seatsTotal").Long() is not { } total || v.At("seated").Long() is not { } seated || v.At("queued").Long() is not { } queued)
+        return ParseStatus(v) ?? throw ApiException.Transient(Strings.NotAnMkwmpServer("no name, seatsTotal, seated and queued"));
+    }
+
+    private static SeatStatus? ParseStatus(JsonElement? v) =>
+        v.At("name").Str() is not { } name || v.At("seatsTotal").Long() is not { } total || v.At("seated").Long() is not { } seated || v.At("queued").Long() is not { } queued
+            ? null
+            : new SeatStatus(name, (int)total, (int)seated, (int)queued, v.At("lobbyEndpoint").Str(), v.At("lobbyCa").Str(), (int)(v.At("voicePort").Long() ?? 8907),
+                v.At("privacy").At("version").Str(), v.At("privacy").At("enforced").Bool() ?? false);
+
+    /// <summary><c>GET /ping</c> (servers from 1.4.0: 204, empty, unlimited), for the latency measure. False: the server has none (time its status instead).</summary>
+    public async Task<bool> PingAsync(TimeSpan timeout, CancellationToken cancel)
+    {
+        var (status, _, _) = await SendAsync(HttpMethod.Get, "/ping", null, null, timeout, cancel).ConfigureAwait(false);
+        return status == HttpStatusCode.NoContent;
+    }
+
+    /// <summary>
+    /// The status of a server the player is about to choose, telling apart what the status pill does
+    /// not need to: nothing answered (<c>Answered</c> false: no network, a wrong address, a server
+    /// in trouble), or something answered that is not an MKWMP server (no <c>Status</c>).
+    /// </summary>
+    public async Task<(SeatStatus? Status, bool Answered, string? Why)> ProbeAsync(CancellationToken cancel)
+    {
+        HttpStatusCode status;
+        JsonElement? v;
+        try
         {
-            throw ApiException.Transient(Strings.NotAnMkwmpServer("no name, seatsTotal, seated and queued"));
+            (status, v, _) = await SendAsync(HttpMethod.Get, "/seat/v1/status", null, null, Timeout, cancel).ConfigureAwait(false);
         }
-        return new SeatStatus(name, (int)total, (int)seated, (int)queued, v.At("lobbyEndpoint").Str(), v.At("lobbyCa").Str(), (int)(v.At("voicePort").Long() ?? 8907));
+        catch (ApiException e)
+        {
+            return (null, false, e.Message);
+        }
+        if ((int)status >= 500)
+        {
+            return (null, false, Strings.ServerAnswered((int)status)); // a gateway without its server, or a server that is failing
+        }
+        return Ok(status) && ParseStatus(v) is { } parsed ? (parsed, true, null) : (null, true, Strings.ServerAnswered((int)status));
     }
 
     /// <summary>Where the game connects: the lobby, the certificate the game should trust for it, the voice relay's UDP port.</summary>
@@ -293,16 +335,103 @@ internal sealed class SeatApi(HttpClient http, string baseUrl, string userAgent)
             "PRESENCE_NOT_FOUND" => ApiException.SignedOut(),
             "PIN_WRONG" => ApiException.Refused(Strings.WrongPin),
             "PROFILE_NOT_FOUND" => ApiException.Refused(Strings.NotRegistered),
+            "PRIVACY_REQUIRED" => ApiException.Refused(Strings.NoConsent),
             _ when ClientError(status) => ApiException.Refused(message),
             _ => ApiException.Transient(message),
         };
     }
 
-    /// <summary>Signs the launcher in (no seat); returns the presence token.</summary>
-    public async Task<string> PresenceAsync(string name, string pin, CancellationToken cancel)
+    /// <summary>
+    /// Signs the launcher in (no seat): the presence token, and what the server holds of the
+    /// player's consent (<c>privacyAccepted</c>, <c>privacyVersion</c>; both absent from a server
+    /// older than server-side consent, where the launcher's own <c>adult_consent</c> decides).
+    /// </summary>
+    public async Task<Presence> PresenceAsync(string name, string pin, CancellationToken cancel)
     {
         var v = await FriendlyAsync(HttpMethod.Post, "/seat/v1/presence", new { name, pin }, null, Timeout, cancel).ConfigureAwait(false);
-        return v.At("token").Str() ?? throw ApiException.Transient(Strings.BadAnswer);
+        return new Presence(v.At("token").Str() ?? throw ApiException.Transient(Strings.BadAnswer), v.At("privacyAccepted").Bool(), v.At("privacyVersion").Str(),
+            v.At("privacyEnforced").Bool() ?? false);
+    }
+
+    /// <summary>The largest privacy policy the launcher reads.</summary>
+    public const int MaxPrivacyBytes = 256 * 1024;
+
+    /// <summary>
+    /// The server's own privacy policy (<c>GET /privacy</c>, Markdown, no sign-in), or null when the
+    /// server has none to give (older than it, or anything that is not Markdown text): the caller
+    /// then shows the project's policy link. Network trouble is an <see cref="ApiException"/>.
+    /// </summary>
+    public async Task<(string Markdown, string Version)?> PrivacyTextAsync(CancellationToken cancel)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, Base + "/privacy");
+        req.Headers.TryAddWithoutValidation("User-Agent", userAgent);
+        req.Headers.TryAddWithoutValidation("Accept", "text/markdown");
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel);
+        limit.CancelAfter(Timeout);
+        try
+        {
+            using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, limit.Token).ConfigureAwait(false);
+            var type = res.Content.Headers.ContentType?.MediaType ?? "";
+            if (!Ok(res.StatusCode) || !(type.Equals("text/markdown", StringComparison.OrdinalIgnoreCase) || type.Equals("text/plain", StringComparison.OrdinalIgnoreCase))
+                || res.Content.Headers.ContentLength is > MaxPrivacyBytes)
+            {
+                return null;
+            }
+            await using var body = await res.Content.ReadAsStreamAsync(limit.Token).ConfigureAwait(false);
+            var bytes = new byte[MaxPrivacyBytes + 1];
+            var read = 0;
+            for (int n; read < bytes.Length && (n = await body.ReadAsync(bytes.AsMemory(read), limit.Token).ConfigureAwait(false)) > 0;)
+            {
+                read += n;
+            }
+            if (read is 0 or > MaxPrivacyBytes)
+            {
+                return null;
+            }
+            // The version is the ETag (quoted, as HTTP wants): the lower-case hex SHA-256 of these bytes, which is what
+            // stands in when a proxy dropped the header.
+            var tag = res.Headers.ETag?.Tag.Trim('"') ?? "";
+            var version = tag.Length == 64 && tag.All(char.IsAsciiHexDigitLower)
+                ? tag
+                : Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes.AsSpan(0, read)));
+            return (new UTF8Encoding(false).GetString(bytes, 0, read), version);
+        }
+        catch (OperationCanceledException) when (!cancel.IsCancellationRequested)
+        {
+            throw ApiException.Transient(Strings.CannotReach("timed out"));
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException or UriFormatException)
+        {
+            throw ApiException.Transient(Strings.CannotReach(e.InnerException?.Message ?? e.Message));
+        }
+    }
+
+    /// <summary>
+    /// Stores the player's consent on the server (<c>PUT /seat/v1/privacy</c>): accepted, with the
+    /// version (sha256) of the policy the launcher showed, or withdrawn. False: the server has no
+    /// such route (older than server-side consent), so the launcher's own setting is all there is.
+    /// </summary>
+    public async Task<bool> PrivacyPutAsync(string token, bool accepted, string? version, CancellationToken cancel)
+    {
+        object body = accepted ? new { accepted, version = version ?? "" } : new { accepted };
+        var (status, v, _) = await SendAsync(HttpMethod.Put, "/seat/v1/privacy", body, token, Timeout, cancel).ConfigureAwait(false);
+        if (Ok(status))
+        {
+            return true;
+        }
+        var code = v.At("error").At("code").Str() ?? "";
+        if (status is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed && code.Length == 0)
+        {
+            return false;
+        }
+        throw code switch
+        {
+            "PRESENCE_NOT_FOUND" => ApiException.SignedOut(),
+            "PRIVACY_VERSION" => ApiException.Refused(Strings.PrivacyChanged), // the policy changed since it was shown: read it again
+            _ when status == HttpStatusCode.TooManyRequests => ApiException.Transient(Strings.ServerAnswered(429)),
+            _ when ClientError(status) => ApiException.Refused(v.At("error").At("message").Str() ?? Strings.ServerError),
+            _ => ApiException.Transient(v.At("error").At("message").Str() ?? Strings.ServerAnswered((int)status)),
+        };
     }
 
     /// <summary>The launcher quits: friends see it offline at once. Best effort, short.</summary>

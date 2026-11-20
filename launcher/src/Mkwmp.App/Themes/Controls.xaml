@@ -499,6 +499,9 @@
               <DockPanel Margin="68,0,24,0" VerticalAlignment="Center">
                 <c:Icon Data="{Binding IconKey, Converter={StaticResource Conv.Icon}}" Width="40" Height="40" Margin="0,0,18,0" StrokeThickness="1.8"
                         Visibility="{Binding IconKey, Converter={StaticResource Conv.Visible}}" />
+                <!-- locked online (CategoryEntry.Locked): the category needs a server -->
+                <c:Icon DockPanel.Dock="Right" Data="{StaticResource Icon.Lock}" Width="30" Height="30" Margin="14,0,0,0" StrokeThickness="2"
+                        Opacity="0.6" Visibility="{Binding Locked, Converter={StaticResource Conv.Visible}}" />
                 <TextBlock Text="{Binding Title}" FontFamily="{StaticResource Font.Ui}" FontSize="32"
                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
               </DockPanel>
@@ -590,7 +593,7 @@
                   <TextBlock Text="{TemplateBinding Title}" Foreground="White" FontSize="38" FontWeight="ExtraBold"
                              TextWrapping="Wrap" LineHeight="42" LineStackingStrategy="BlockLineHeight" MaxHeight="88" TextTrimming="CharacterEllipsis" />
                   <TextBlock Text="{TemplateBinding Subtitle}" Foreground="#E6FFFFFF" FontSize="23" FontWeight="SemiBold" Margin="0,6,0,0"
-                             TextTrimming="CharacterEllipsis"
+                             TextTrimming="CharacterEllipsis" TextWrapping="Wrap" LineHeight="29" LineStackingStrategy="BlockLineHeight" MaxHeight="62"
                              Visibility="{Binding Subtitle, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource Conv.Visible}}" />
                 </StackPanel>
                 <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,22,22,0" Height="44" CornerRadius="22"

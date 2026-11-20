@@ -17,6 +17,9 @@ internal interface ILocalApiHost
     /// <summary>The live seat (null until PLAY).</summary>
     SeatSession? Seat { get; }
 
+    /// <summary>A server is chosen. False (offline): the game never gets a seat, and its Online Play is told why.</summary>
+    bool Online => true;
+
     /// <summary>Accepted friends as the server orders them; null until the first list arrives.</summary>
     IReadOnlyList<Friend>? FriendsOrNull { get; }
 
@@ -315,6 +318,11 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
 
     private async Task<LocalResponse> SeatAsync(CancellationToken cancel)
     {
+        if (!host.Online)
+        {
+            // Offline: a refusal (409) ends the game's wait at once and its text is what the mod shows; the game stays offline.
+            return State(409, "refused", Strings.OnlineOffInGame);
+        }
         if (host.Seat is not { } seat)
         {
             return State(503, "unavailable", Strings.PressPlayInLauncher);

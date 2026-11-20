@@ -131,6 +131,8 @@ public class LauncherTests
     [Fact]
     public async Task Nothing_reaches_the_server_without_consent()
     {
+        // The consent comes after signing in (the server keeps it), so a sign-in may reach the server without it;
+        // what it gates does not: a seat, friends, reports.
         var server = new FakeSeatServer();
         await using var rig = new Rig(server);
         await rig.Launcher.SetConsentAsync(false);
@@ -139,15 +141,14 @@ public class LauncherTests
         await rig.Launcher.PlayAsync();
         var session = await rig.SettleSession();
         Assert.Equal((SessionState.Failed, Strings.NoConsent), (session.State, session.Status));
-        await rig.Launcher.RegisterAsync("Ana");
-        Assert.Equal((RegisterState.Failed, Strings.NoConsent), (rig.Launcher.Profile.Register, rig.Launcher.Profile.Message));
         await rig.Launcher.AddFriendAsync("Bia");
         Assert.Equal((Strings.NoConsent, true), (rig.Launcher.Friends.Note, rig.Launcher.Friends.NoteIsError));
+        await rig.Launcher.SendReportAsync("Bia", "other", null);
+        Assert.Equal((Strings.NoConsent, true), (rig.Launcher.Report.Note, rig.Launcher.Report.NoteIsError));
         Assert.False(rig.Started);
-        Assert.Empty(server.Requests);
-        // Consenting again clears the refusal it caused.
+        Assert.DoesNotContain(server.Requests, r => r is "POST /seat/v1/sessions" or "POST /seat/v1/friends" or "GET /seat/v1/friends" or "POST /seat/v1/reports");
         await rig.Launcher.SetConsentAsync(true);
-        Assert.Equal(RegisterState.Idle, rig.Launcher.Profile.Register);
+        Assert.Null(rig.Launcher.PlayProblem);
     }
 
     [Fact]
@@ -309,13 +310,13 @@ public class LauncherTests
     [Fact]
     public async Task Play_problems_come_in_the_order_the_player_fixes_them()
     {
-        await using var rig = new Rig(new FakeSeatServer(), s => s with { AdultConsent = false, Name = "a b", Pin = "", Server = " ", Patch = false }, installPatch: false);
+        // With a server, what belongs to it comes first: the consent, the gamertag, its PIN. (Without one: Offline_* below.)
+        await using var rig = new Rig(new FakeSeatServer(), s => s with { AdultConsent = false, Name = "a b", Pin = "", Patch = false }, installPatch: false);
         var l = rig.Launcher;
-        Assert.Equal(Strings.NoConsent, l.PlayProblem);
-        Assert.Equal((Strings.NoConsent.ToUpperInvariant(), "warn"), (l.Session.Status, l.Session.Tone));
-        Assert.Equal(ServerState.Checking, l.Server.State);
-        await l.SetConsentAsync(true);
+        // A server, then a profile on it, then the consent that server keeps.
         Assert.Equal(Strings.PickGamertag, l.PlayProblem);
+        Assert.Equal((Strings.PickGamertag.ToUpperInvariant(), "warn"), (l.Session.Status, l.Session.Tone));
+        Assert.Equal(ServerState.Checking, l.Server.State);
         Assert.Equal((Strings.NameRule, true), (l.Profile.Message, l.Profile.MessageIsError));
         await l.SaveSettingsAsync(l.Settings with { Name = "Ana" });
         Assert.Equal(Strings.NeedPin, l.PlayProblem);
@@ -323,8 +324,9 @@ public class LauncherTests
         await l.UsePinAsync("Ana", "123456");
         Assert.True(l.Profile.SignedIn);
         Assert.Equal(Strings.KeepYourPin, l.Profile.Message);
-        Assert.Equal(Strings.SetServer, l.PlayProblem);
-        await l.SaveSettingsAsync(l.Settings with { Server = FakeSeatServer.Url, Game = Path.Combine(rig.Root, "nowhere") });
+        Assert.Equal(Strings.NoConsent, l.PlayProblem);
+        await l.SetConsentAsync(true);
+        await l.SaveSettingsAsync(l.Settings with { Game = Path.Combine(rig.Root, "nowhere") });
         Assert.Equal("Set the game folder (the one with mkw.exe)", l.PlayProblem);
         Assert.Null(l.Game.Install);
         Assert.False(await l.ChooseGameFolderAsync(rig.Root));

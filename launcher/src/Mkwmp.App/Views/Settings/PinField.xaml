@@ -1,0 +1,22 @@
+<UserControl x:Class="Mkwmp.App.Views.Settings.PinField"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             x:Name="Self" Focusable="False">
+  <!-- A PIN wherever one is shown: six dots, and an eye button that shows the digits. Hidden by default
+       and hidden again whenever it leaves the screen (another page, another pane, a closed modal), so a
+       screenshot never holds a PIN the player did not ask to see. Properties: Pin, IsRevealed (two-way:
+       bind it to offer the same toggle on a button, X), DigitSize, ShowEye. -->
+  <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+    <Grid VerticalAlignment="Center">
+      <!-- the digits keep their room while hidden, so nothing moves when the eye is pressed -->
+      <TextBlock x:Name="Digits" FontFamily="{StaticResource Font.Ui}" FontWeight="ExtraBold" Foreground="{DynamicResource Brush.Accent}"
+                 FontSize="{Binding DigitSize, ElementName=Self}" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Hidden" />
+      <StackPanel x:Name="Dots" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center" />
+    </Grid>
+    <c:ConsoleButton x:Name="Eye" Kind="Secondary" Width="88" MinWidth="88" Height="88" Padding="0" Margin="26,0,0,0" Click="OnEye"
+                     Visibility="{Binding ShowEye, ElementName=Self, Converter={StaticResource Conv.Visible}}">
+      <c:Icon x:Name="EyeIcon" Data="{StaticResource Icon.Eye}" Width="40" Height="40" />
+    </c:ConsoleButton>
+  </StackPanel>
+</UserControl>

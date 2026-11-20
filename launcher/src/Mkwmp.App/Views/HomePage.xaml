@@ -5,7 +5,8 @@
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              Focusable="False">
   <!-- DataContext: HomeViewModel. The title of the focused tile (centred above it by the code-behind), the
-       carousel, the session's status with the server's, the dock. The top bar and the hint bar are the shell's. -->
+       carousel, the session's status with the server's (no server part while online is locked), the dock.
+       The top bar and the hint bar are the shell's. -->
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="76" />
@@ -99,9 +100,10 @@
         </StackPanel>
       </Button>
 
-      <Border Width="1.5" Height="30" Margin="14,0,30,0" Background="{DynamicResource Brush.Rule}" />
+      <Border Width="1.5" Height="30" Margin="14,0,30,0" Background="{DynamicResource Brush.Rule}"
+              Visibility="{Binding ShowServer, Converter={StaticResource Conv.Visible}}" />
 
-      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Visibility="{Binding ShowServer, Converter={StaticResource Conv.Visible}}">
         <c:Icon Width="30" Height="30" Margin="0,0,12,0" StrokeThickness="2" Foreground="{DynamicResource Brush.TextMuted}">
           <c:Icon.Style>
             <Style TargetType="c:Icon">
@@ -126,9 +128,9 @@
         <!-- over a game that can open its own menu when told to (plugin API 4) -->
         <c:DockButton Icon="{StaticResource Icon.Menu}" Label="{Binding GameMenuLabel}" Tint="#FF5B5BD6" Command="{Binding GameMenuCommand}"
                       Visibility="{Binding ShowGameMenu, Converter={StaticResource Conv.Visible}}" />
-        <c:DockButton Icon="{StaticResource Icon.Friends}" Label="{Binding S[home.friends]}" Tint="#FFF08A1A"
+        <!-- Friends; without a server: the same button with a lock, to Settings › Online -->
+        <c:DockButton Icon="{Binding FriendsIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding FriendsLabel}" Tint="#FFF08A1A"
                       HasDot="{Binding HasRequests}" Command="{Binding FriendsCommand}" />
-        <c:DockButton Icon="{StaticResource Icon.Headset}" Label="{Binding S[home.chat]}" Tint="#FF12A86B" Command="{Binding ChatCommand}" />
         <c:DockButton Icon="{StaticResource Icon.Download}" Label="{Binding S[home.updates]}" Tint="#FFE2498A"
                       HasDot="{Binding HasUpdate}" Command="{Binding UpdateCommand}" />
         <c:DockButton Icon="{Binding FullscreenIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding FullscreenLabel}" Tint="#FF0E9DB8"

@@ -35,22 +35,6 @@ public sealed class ChoiceListViewModel
     public IReadOnlyList<ChoiceItem> Items { get; }
 }
 
-/// <summary>The big digits of a PIN inside a modal (its view: Views/Settings/PinReveal.xaml).</summary>
-public sealed class PinRevealViewModel
-{
-    public PinRevealViewModel(string name, string pin)
-    {
-        ArgumentNullException.ThrowIfNull(pin);
-        Name = name;
-        Pin = pin.Length == 6 ? $"{pin[..3]} {pin[3..]}" : pin;
-    }
-
-    public string Name { get; }
-
-    /// <summary>"482 913".</summary>
-    public string Pin { get; }
-}
-
 /// <summary>A controller-friendly selection list in a modal: every option is a row, the current one is ticked and has the focus.</summary>
 public static class Choice
 {

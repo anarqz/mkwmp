@@ -83,14 +83,15 @@ public sealed class HomeTile : ObservableObject
 }
 
 /// <summary>
-/// Home: the carousel (Play Online, Party Chat, Friends, Game, What's New), the session's status
-/// under it, and the dock. PLAY is the Rust launcher's PLAY / STOP; when something blocks it, A on
-/// it explains what and leads to the place that fixes it.
+/// Home: the carousel (Play Online, Friends, Game, What's New), the session's status under it, and
+/// the dock. PLAY is the Rust launcher's PLAY / STOP; when something blocks it, A on it explains
+/// what and leads to the place that fixes it. Without a server (<see cref="Locked"/>) the launcher
+/// is a shell for the game: "Play" starts it offline, and the Friends tile and dock button are
+/// "Configure online" with a lock (Settings › Online).
 /// </summary>
 public sealed class HomeViewModel : PageViewModel
 {
     private readonly HomeTile _play;
-    private readonly HomeTile _chat;
     private readonly HomeTile _friends;
     private readonly HomeTile _game;
     private readonly HomeTile _update;
@@ -100,8 +101,17 @@ public sealed class HomeViewModel : PageViewModel
         : base(shell)
     {
         PlayCommand = RelayCommand.Async(TogglePlayAsync);
-        FriendsCommand = new RelayCommand(() => Shell.OpenFriends());
-        ChatCommand = new RelayCommand(() => Shell.Navigate(Routes.Chat));
+        FriendsCommand = new RelayCommand(() =>
+        {
+            if (Locked)
+            {
+                Shell.ConfigureOnline();
+            }
+            else
+            {
+                Shell.OpenFriends();
+            }
+        });
         GameCommand = new RelayCommand(() => Shell.OpenSettings("game"));
         UpdateCommand = new RelayCommand(Shell.ShowUpdateModal);
         SettingsCommand = new RelayCommand(() => Shell.OpenSettings());
@@ -117,11 +127,10 @@ public sealed class HomeViewModel : PageViewModel
         });
 
         _play = new HomeTile("play", "Icon.Kart", "#0", () => PlayCommand.Execute(null));
-        _chat = new HomeTile("chat", "Icon.Headset", "#1", () => ChatCommand.Execute(null));
         _friends = new HomeTile("friends", "Icon.Friends", "#3", () => FriendsCommand.Execute(null));
         _game = new HomeTile("game", "Icon.Folder", "#2", () => GameCommand.Execute(null));
         _update = new HomeTile("update", "Icon.Download", "#5", () => UpdateCommand.Execute(null));
-        Tiles = [_play, _chat, _friends, _game, _update];
+        Tiles = [_play, _friends, _game, _update];
         Refresh();
     }
 
@@ -162,6 +171,12 @@ public sealed class HomeViewModel : PageViewModel
 
     public bool IsSettled => !IsWorking;
 
+    /// <summary>No server is set: online features are locked behind "Configure online".</summary>
+    public bool Locked => !Launcher.OnlineEnabled;
+
+    /// <summary>The server's part of the status line: only with a server.</summary>
+    public bool ShowServer => !Locked;
+
     /// <summary>The server pill of the Rust launcher, verbatim ("ONLINE · 20/32 SEATS FREE").</summary>
     public string ServerText => CoreStrings.ServerPill(Launcher.Server);
 
@@ -169,7 +184,7 @@ public sealed class HomeViewModel : PageViewModel
 
     // ── the dock ──
 
-    public string PlayLabel => Overlay ? S["home.overlay.back"] : Busy ? S["home.stop"] : S["home.play"];
+    public string PlayLabel => Overlay ? S["home.overlay.back"] : Busy ? S["home.stop"] : Locked ? S["home.play_offline"] : S["home.play"];
 
     public string PlayIcon => Overlay ? "Icon.Play" : Busy ? "Icon.Stop" : "Icon.Kart";
 
@@ -198,13 +213,17 @@ public sealed class HomeViewModel : PageViewModel
 
     public bool HasUpdate => Launcher.Update.State is UpdateState.Available or UpdateState.Downloading or UpdateState.Failed;
 
-    public bool HasRequests => Launcher.Friends.Incoming.Count > 0;
+    public bool HasRequests => !Locked && Launcher.Friends.Incoming.Count > 0;
+
+    /// <summary>The dock's Friends button; "Configure Online" with a lock while there is no server.</summary>
+    public string FriendsLabel => Locked ? S["online.configure"] : S["home.friends"];
+
+    public string FriendsIcon => Locked ? "Icon.FriendsLocked" : "Icon.Friends";
 
     public ICommand PlayCommand { get; }
 
+    /// <summary>The friends panel; Settings › Online while there is no server.</summary>
     public ICommand FriendsCommand { get; }
-
-    public ICommand ChatCommand { get; }
 
     public ICommand GameCommand { get; }
 
@@ -294,7 +313,7 @@ public sealed class HomeViewModel : PageViewModel
             : game.Install is { } install ? string.IsNullOrEmpty(install.GameVersion) ? "Mario Kart World" : $"Mario Kart World {install.GameVersion}"
             : Overlay ? "Mario Kart World"
             : S["home.no_game"];
-        _play.Badge = Overlay ? S["home.overlay.badge"] : session.Phase switch
+        _play.Badge = Overlay ? S["home.overlay.badge"] : Locked ? S["home.offline"] : session.Phase switch
         {
             SeatPhase.Queued when session.QueuePosition > 0 => S.Format("home.queued", ("n", Number(session.QueuePosition))),
             SeatPhase.Seated => S["home.seated"],
@@ -306,14 +325,14 @@ public sealed class HomeViewModel : PageViewModel
             },
         };
 
-        _chat.Title = S["home.chat"];
-        _chat.Subtitle = S["home.chat_sub"];
-
-        _friends.Title = S["home.friends"];
-        _friends.Subtitle = !Launcher.Profile.SignedIn ? S["home.friends_signin"]
+        // Friends; without a server the same tile is "Configure online" (it keeps its place and the focus)
+        _friends.IconKey = Locked ? "Icon.Lock" : "Icon.Friends";
+        _friends.Title = Locked ? S["online.configure"] : S["home.friends"];
+        _friends.Subtitle = Locked ? S["home.configure_sub"]
+            : !Launcher.Profile.SignedIn ? S["home.friends_signin"]
             : !friends.Loaded ? S["home.friends_loading"]
             : S.Format("home.friends_online", ("n", Number(friends.OnlineCount)));
-        _friends.Badge = friends.Incoming.Count > 0 ? "+" + Number(friends.Incoming.Count) : "";
+        _friends.Badge = !Locked && friends.Incoming.Count > 0 ? "+" + Number(friends.Incoming.Count) : "";
 
         // Game: which way of running the game (the target) and whether MKWMP is in it
         _game.Title = S["home.game"];
@@ -390,13 +409,8 @@ public sealed class HomeViewModel : PageViewModel
             {
                 return (S["home.fix.setup"], () => Shell.Navigate(Routes.Setup));
             }
-            // the age confirmation and the server have their own categories; the gamertag and its PIN are the profile
-            return problem switch
-            {
-                CoreStrings.NoConsent => (S["home.fix.settings"], () => Shell.OpenSettings("privacy")),
-                CoreStrings.SetServer => (S["home.fix.settings"], () => Shell.OpenSettings("server")),
-                _ => (S["home.fix.profile"], () => Shell.OpenSettings("profile")),
-            };
+            // the age confirmation, the gamertag and its PIN all belong to the server: Settings › Online has the three
+            return (problem == CoreStrings.NoConsent ? S["home.fix.settings"] : S["home.fix.profile"], Shell.ConfigureOnline);
         }
         if (check?.FixUrl is { } url)
         {
@@ -419,7 +433,7 @@ public sealed class HomeViewModel : PageViewModel
 
     private void ShowPowerMenu()
     {
-        var modal = new ModalViewModel { Title = S["power.title"], Body = S["quit.body"] };
+        var modal = new ModalViewModel { Title = S["power.title"], Body = Locked ? "" : S["quit.body"] }; // no seat to give back without a server
         void Add(string label, Action run, bool isDefault = false) => modal.Actions.Add(new ModalAction(label, () =>
         {
             Shell.CloseModal(modal);

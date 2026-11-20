@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              xmlns:input="clr-namespace:Mkwmp.App.Input"
+             xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
              Focusable="False">
   <!-- DataContext: ProfileForm. The gamertag box with REGISTER; the PIN box with USE when the name is
        someone's (or "I already have a PIN"); exactly one message line under them. -->
@@ -14,7 +15,7 @@
       </Grid.ColumnDefinitions>
       <Grid>
         <TextBox x:Name="NameBox" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" IsEnabled="{Binding CanEdit}"
-                 input:FocusNav.IsDefault="True" />
+                 input:TextEntry.Title="{Binding S[settings.profile.gamertag]}" input:TextEntry.Charset="Gamertag" />
         <TextBlock Text="{Binding S[settings.profile.name_hint]}" Style="{StaticResource Text.Base}" Foreground="{DynamicResource Brush.TextFaint}"
                    Margin="28,0" IsHitTestVisible="False"
                    Visibility="{Binding Text, ElementName=NameBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
@@ -28,13 +29,9 @@
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
-      <Grid>
-        <TextBox x:Name="PinBox" Text="{Binding Pin, UpdateSourceTrigger=PropertyChanged}" MaxLength="6" IsEnabled="{Binding CanEdit}"
-                 InputScope="Number" />
-        <TextBlock Text="{Binding S[settings.profile.pin_hint]}" Style="{StaticResource Text.Base}" Foreground="{DynamicResource Brush.TextFaint}"
-                   Margin="28,0" IsHitTestVisible="False"
-                   Visibility="{Binding Text, ElementName=PinBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
-      </Grid>
+      <!-- masked as it is typed; its eye shows the digits -->
+      <settings:PinEntry Pin="{Binding Pin}" IsRevealed="{Binding EntryRevealed}" IsEnabled="{Binding CanEdit}"
+                         Hint="{Binding S[settings.profile.pin_hint]}" Title="{Binding S[settings.profile.pin_hint]}" />
       <c:ConsoleButton Grid.Column="1" Width="300" Margin="20,0,0,0" Content="{Binding S[settings.profile.use]}"
                        Command="{Binding UsePinCommand}" />
     </Grid>
