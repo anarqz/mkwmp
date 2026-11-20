@@ -115,7 +115,17 @@ public sealed class HomeViewModel : PageViewModel
                 Shell.OpenFriends();
             }
         });
-        GameCommand = new RelayCommand(() => Shell.OpenSettings("game"));
+        GameCommand = new RelayCommand(() =>
+        {
+            if (Shell.HasGameWork)
+            {
+                Shell.ShowGameWork(); // a download or the setup runs, failed or is needed: its card, not the settings
+            }
+            else
+            {
+                Shell.OpenSettings("game");
+            }
+        });
         UpdateCommand = new RelayCommand(Shell.ShowUpdateModal);
         SettingsCommand = new RelayCommand(() => Shell.OpenSettings());
         FullscreenCommand = RelayCommand.Async(() => Shell.SetFullscreenAsync(!Shell.IsFullscreen));
@@ -162,6 +172,7 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>The session's status, verbatim; what blocks PLAY instead while idle; "in game" over a game the launcher holds no seat for.</summary>
     public string StatusText => Overlay && !Busy ? S["home.overlay.status"]
         : Launcher.Session.State == SessionState.Failed && Launcher.Session.Status.Length > 0 ? Launcher.Session.Status
+        : Problem is { } problem && Shell.GameWorkText is { } work && Shell.GameWorkExplains(problem) ? work // "Setting up the game · 42% · 6 minutes left"
         : Problem ?? Launcher.Session.Status;
 
     /// <summary>good / warn / bad / info / plain.</summary>
@@ -171,7 +182,8 @@ public sealed class HomeViewModel : PageViewModel
     public bool HasProblem => Problem is not null;
 
     /// <summary>Something is on its way (starting the game, taking a seat).</summary>
-    public bool IsWorking => Launcher.Session.State == SessionState.Starting || Launcher.Session.Phase is SeatPhase.Joining;
+    public bool IsWorking => Launcher.Session.State == SessionState.Starting || Launcher.Session.Phase is SeatPhase.Joining
+        || (!Busy && !Overlay && Shell.IsGameWorking);
 
     public bool IsSettled => !IsWorking;
 
@@ -306,6 +318,27 @@ public sealed class HomeViewModel : PageViewModel
 
     private static string Number(int value) => value.ToString(CultureInfo.CurrentCulture);
 
+    /// <summary>The cover last read from its file: home is made again often (a page back, another language), the file is read once.</summary>
+    private static (string Path, System.Windows.Media.ImageSource? Image) _cover = ("", null);
+
+    /// <summary>
+    /// The game's own cover (<see cref="ILauncher.GameCover"/>: a file the core made from the player's copy of the
+    /// game, beside the launcher) as the Play card's art; null when there is none or it cannot be read: the card then
+    /// keeps its drawn art. Only ever shown here.
+    /// </summary>
+    private static System.Windows.Media.ImageSource? Cover(string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return null;
+        }
+        if (_cover.Path != path)
+        {
+            _cover = (path, Mkwmp.App.Overlay.OverlayArt.Load(path));
+        }
+        return _cover.Image;
+    }
+
     private void Refresh()
     {
         var server = Launcher.Server;
@@ -316,7 +349,7 @@ public sealed class HomeViewModel : PageViewModel
         // Play Online: the game and its version; the seats of the server (or where the player is in it)
         _play.Title = PlayLabel;
         _play.IconKey = Overlay ? "Icon.Kart" : PlayIcon;
-        _play.Image = Overlay ? Shell.OverlayThumb : null;
+        _play.Image = Overlay ? Shell.OverlayThumb : Cover(Launcher.GameCover); // over a game its live picture wins; else the game's own cover, when there is one
         _play.Width = Overlay ? HomeTile.WideWidth : HomeTile.SquareWidth;
         _play.Subtitle = Problem is not null ? S["home.play_blocked"]
             : game.Install is { } install ? string.IsNullOrEmpty(install.GameVersion) ? "Mario Kart World" : $"Mario Kart World {install.GameVersion}"
@@ -348,7 +381,18 @@ public sealed class HomeViewModel : PageViewModel
         var targetId = game.Install?.TargetId ?? Launcher.Settings.Target;
         var targetName = game.Targets.FirstOrDefault(t => string.Equals(t.Id, targetId, StringComparison.OrdinalIgnoreCase))?.DisplayName ?? targetId;
         _game.Subtitle = game.Install is { } found ? string.IsNullOrEmpty(found.Version) ? targetName : $"{targetName} {found.Version}" : S["home.no_game"];
+        if (Shell.GameWorkShort is { } working)
+        {
+            // a download or the setup, live: what it is on the tile, how far under it, and the strip
+            _game.Title = Shell.GameWorkTitle;
+            _game.Subtitle = working;
+        }
+        _game.Progress = Shell.GameWorkProgress;
         _game.Badge = game.Searching ? S["home.game_searching"]
+            : Shell.GameWorkPhase is GameWorkPhase.Runtime or GameWorkPhase.Setup ? Shell.GameWorkPercent
+            : Shell.GameWorkPhase is GameWorkPhase.RuntimeFailed or GameWorkPhase.SetupFailed ? S["gamework.state.failed"]
+            : Shell.GameWorkPhase == GameWorkPhase.UpdateNeeded ? S["gamework.state.update"]
+            : Shell.GameWorkPhase == GameWorkPhase.SetupNeeded ? S["home.game_setup"]
             : game.Working ? S["home.game_working"]
             : game.Install is null ? S["home.game_setup"]
             : game.Check is { Status: not TargetStatus.Ready } || game.Integration is { Ok: false } ? S["home.game_attention"]
@@ -395,6 +439,11 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>Says what blocks PLAY; its first button goes to the place that fixes it.</summary>
     private void ExplainProblem(string problem)
     {
+        if (Shell.GameWorkExplains(problem))
+        {
+            Shell.ShowGameWork(); // the step, the bar and the time left, live, with what can be done about it
+            return;
+        }
         var check = Launcher.Game.Check is { } found && found.Problem == problem ? found : null;
         var body = check?.Explain is { Length: > 0 } explain ? problem + "\n\n" + explain : problem;
         var modal = new ModalViewModel { Title = S["home.blocked.title"], Body = body };

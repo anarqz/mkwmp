@@ -3,13 +3,15 @@
     python tools/release/make_zips.py <version> <release key file> <assets dir>
 
 <assets dir> holds the release's loose assets (launchers, winmm.dll,
-mkwmp-voice.dll). Writes into it:
+mkwmp-voice.dll, mkwmp-mod.zip). Writes into it:
 
   mkwmp-<version>-windows-x64.zip and mkwmp-<version>-linux-x64.zip, each:
     mkwmp/mkwmp-launcher(.exe)    the launcher (updates itself)
     mkwmp/game/winmm.dll          the game patch; the launcher's INSTALL copies it
     mkwmp/game/mkwmp-voice.dll    voice chat, next to it in the game folder
-    mkwmp/game/SHA256SUMS(.sig)   signed hashes of the two DLLs: the launcher
+    mkwmp/game/mkwmp-mod.zip      the mkw-recomp mod: what the launcher installs
+                                  on a runtime that loads mods (0.1.15+)
+    mkwmp/game/SHA256SUMS(.sig)   signed hashes of the three: the launcher
                                   checks the game folder against them offline
     mkwmp/LICENSE, NOTICE.md, licenses/, README.txt
 
@@ -24,7 +26,7 @@ import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 HERE = pathlib.Path(__file__).resolve().parent
-DLLS = ["winmm.dll", "mkwmp-voice.dll"]
+DLLS = ["winmm.dll", "mkwmp-voice.dll", "mkwmp-mod.zip"]
 PLATFORMS = {
     "windows": ("mkwmp-launcher-x86_64-windows.exe", "mkwmp-launcher.exe", "README-windows.txt"),
     "linux": ("mkwmp-launcher-x86_64-linux", "mkwmp-launcher", "README-linux.txt"),
@@ -44,7 +46,7 @@ def main():
         sys.exit(__doc__)
     version, key, assets = sys.argv[1], pathlib.Path(sys.argv[2]).resolve(), pathlib.Path(sys.argv[3]).resolve()
     with tempfile.TemporaryDirectory() as tmp:
-        # The inner list: only the two DLLs, signed like SHA256SUMS.
+        # The inner list: only the game's files (the two DLLs and the mod), signed like SHA256SUMS.
         subprocess.run([sys.executable, str(HERE / "sign_sums.py"), version, str(key)] + [str(assets / d) for d in DLLS],
                        cwd=tmp, check=True, stdout=subprocess.DEVNULL)
         inner = {n: (pathlib.Path(tmp) / n).read_bytes() for n in ["SHA256SUMS", "SHA256SUMS.sig"]}

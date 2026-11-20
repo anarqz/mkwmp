@@ -7,11 +7,13 @@ using Mkwmp.Core.Updates;
 namespace Mkwmp.Core.Targets.MkwRecomp;
 
 /// <summary>
-/// mkw-recomp (the static recompilation of Mario Kart World): the folder with mkw.exe. MKWMP gets
-/// in either as the game patch the launcher keeps beside mkw.exe (winmm.dll, the probe, with
-/// mkwmp-voice.dll and the real winmm.dll as winmm_host.dll) or, on runtimes that load mods, as
-/// the MKWMP mod (<c>mods/mkwmp</c>), which then wins: the launcher takes its own patch out. Both
-/// read <c>mkwmp.toml</c> beside mkw.exe and call the launcher's <c>/local/v1</c>.
+/// mkw-recomp (the static recompilation of Mario Kart World): the folder with mkw.exe. On a
+/// runtime that loads mods (<see cref="Recomp.ModRuntimes"/>) MKWMP gets in as the MKWMP mod
+/// (<c>mods/mkwmp</c>, see <see cref="Mod"/>): the launcher installs it from its package, turns it
+/// on in mkw.ini and takes the older game patch out. On an older runtime it is the game patch the
+/// launcher keeps beside mkw.exe (winmm.dll, the probe, with mkwmp-voice.dll and the real
+/// winmm.dll as winmm_host.dll). Both read <c>mkwmp.toml</c> beside mkw.exe and call the
+/// launcher's <c>/local/v1</c>.
 /// </summary>
 public sealed class MkwRecompTarget : IGameTarget
 {
@@ -47,6 +49,16 @@ public sealed class MkwRecompTarget : IGameTarget
         new(Probe.Voice, Required: false, Strings.RecompAssetVoice),
     ];
 
+    /// <summary>The mod where the runtime loads it (zipped, or unpacked in the launcher's game/ folder), else the game patch.</summary>
+    public IReadOnlyList<PackageAsset> PackageAssetsFor(GameInstall install)
+    {
+        ArgumentNullException.ThrowIfNull(install);
+        return UsesMod(install.Root) ? [new(Mod.Zip, Required: true, Strings.RecompAssetMod, Mod.Unpacked)] : PackageAssets;
+    }
+
+    /// <summary>The integration of this install is the mod: a runtime that loads mods, and no developer's probe kept.</summary>
+    private static bool UsesMod(string game) => !Probe.DevProbe && Mod.Capable(game);
+
     public bool KeepsOwnIntegration => Probe.DevProbe;
 
     /// <summary>The mkw-recomp build the launcher installs: one pinned release of MKWMP's fork.</summary>
@@ -67,6 +79,9 @@ public sealed class MkwRecompTarget : IGameTarget
     internal Func<string, long?>? SetupFreeSpace { get; set; }
 
     public GameSetupStatus? SetupStatus(GameInstall install) => RecompSetup.Status(install);
+
+    /// <summary>The game's menu picture and title logo, from the player's own copy (<see cref="RecompCover"/>).</summary>
+    public string? CoverArt(GameInstall install, string cacheFolder) => RecompCover.Find(install, cacheFolder);
 
     /// <summary>
     /// The logic rate: 0.1.16 forces 60 Hz only for LAN and time trial, so an online player at 120 Hz
@@ -245,16 +260,20 @@ public sealed class MkwRecompTarget : IGameTarget
         {
             _lastPackage = package;
         }
-        if (!Probe.DevProbe && Recomp.ActiveMod(game) is { } dir)
+        if (!UsesMod(game))
         {
-            var lines = new List<string> { $"mods/{Recomp.Mod}: enabled ({dir})" };
-            if (File.Exists(Path.Combine(game, Probe.Marker)) || File.Exists(Path.Combine(game, Probe.Voice)))
-            {
-                lines.Add("the launcher's game patch is still beside mkw.exe: close the game, it goes on the next PLAY");
-            }
-            return new IntegrationReport(IntegrationState.Mod, Probe.Summary(IntegrationState.Mod, _version), lines);
+            return Probe.Check(game, ExpectedOf(package), _version);
         }
-        return Probe.Check(game, ExpectedOf(package), _version);
+        var patch = File.Exists(Path.Combine(game, Probe.Marker)) || File.Exists(Path.Combine(game, Probe.Voice));
+        if (!Mod.Present(game) && Probe.Check(game, ExpectedOf(package), _version) is { State: not IntegrationState.Missing } old)
+        {
+            // An install from before the mod: the game patch still works here, until INSTALL (or the next start with the mod's package) moves it to the mod.
+            return old with { Lines = [.. old.Lines, "this mkw-recomp loads MKWMP as a mod: INSTALL replaces the game patch with it"] };
+        }
+        var report = Mod.Check(game, package, _version);
+        return patch && report.State != IntegrationState.Missing
+            ? report with { Lines = [.. report.Lines, "the launcher's game patch is still beside mkw.exe: close the game, it goes on the next PLAY"] }
+            : report;
     }
 
     public Task<IntegrationReport> InstallAsync(GameInstall install, IntegrationPackage package, CancellationToken cancel)
@@ -266,13 +285,32 @@ public sealed class MkwRecompTarget : IGameTarget
             {
                 var game = install.Root;
                 var running = IsRunning(install);
-                if (!Probe.DevProbe && Recomp.ActiveMod(game) is { } dir)
+                if (UsesMod(game))
                 {
-                    // The mod wins: no launcher game patch beside mkw.exe.
-                    _note($"game patch: MKWMP runs as a mod ({dir})");
-                    foreach (var done in Probe.RemoveForMod(game, running))
+                    if (Mod.In(package))
                     {
-                        _note($"game patch: {done} (the mod carries it)");
+                        foreach (var done in Mod.Install(game, package, running))
+                        {
+                            _note($"mod: {done}");
+                        }
+                    }
+                    else if (Recomp.ActiveMod(game) is null)
+                    {
+                        // No mod to install from: an older package may still carry the game patch.
+                        if (!package.Files.ContainsKey(Probe.ProbeDll))
+                        {
+                            throw new LauncherException(Strings.ReleaseListsNo(Strings.RecompAssetMod));
+                        }
+                        InstallBundle(game, package, running);
+                    }
+                    if (Recomp.ActiveMod(game) is { } dir)
+                    {
+                        // The mod wins: no launcher game patch beside mkw.exe.
+                        _note($"game patch: MKWMP runs as a mod ({dir})");
+                        foreach (var done in Probe.RemoveForMod(game, running))
+                        {
+                            _note($"game patch: {done} (the mod carries it)");
+                        }
                     }
                 }
                 else
@@ -360,7 +398,17 @@ public sealed class MkwRecompTarget : IGameTarget
         return Task.Run(
             () =>
             {
-                foreach (var line in Probe.Uninstall(install.Root, IsRunning(install)))
+                var running = IsRunning(install);
+                if (running)
+                {
+                    throw new LauncherException(Strings.RecompCloseGameFirst);
+                }
+                // The mod goes on any runtime: a leftover one would load again after an update of mkw-recomp.
+                foreach (var line in Mod.Uninstall(install.Root, running))
+                {
+                    _note($"uninstall: {line}");
+                }
+                foreach (var line in Probe.Uninstall(install.Root, running))
                 {
                     _note($"uninstall: {line}");
                 }

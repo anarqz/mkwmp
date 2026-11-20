@@ -5,40 +5,61 @@
              xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              Focusable="False">
-  <!-- DataContext: ServerPicker. The servers the beholder lists, nearest first: latency (bars and ms,
-       measured to the server itself), name, region and version, players and queue. A choosing a row
-       connects to it. Collapsed as a whole when there is no beholder (HasList). -->
+  <!-- DataContext: ServerPicker. The servers the beholder lists, the five nearest first: latency (bars and ms,
+       measured to the server itself), name, region and version, players and queue. A on a row connects to it;
+       Y on it (the hint bar says so), or its "…" for the mouse and touch, offers to hide it: the next nearest
+       takes its place. "Show more" adds five. Collapsed as a whole when there is no beholder (HasList). -->
   <StackPanel input:FocusNav.IsGroup="True">
-    <ItemsControl ItemsSource="{Binding Rows}" Focusable="False">
+    <ItemsControl x:Name="RowsHost" ItemsSource="{Binding Rows}" Focusable="False">
       <ItemsControl.ItemTemplate>
         <DataTemplate>
-          <Button Style="{StaticResource CardButton}" Padding="24,12,20,12" Margin="0,0,0,10" Command="{Binding PickCommand}">
-            <Grid>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="196" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-              </Grid.ColumnDefinitions>
-              <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <settings:LatencyBars Bars="{Binding Bars}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding Latency}" Style="{StaticResource Text.Base}" FontSize="25" FontWeight="SemiBold" Margin="14,0,0,0" />
+          <Grid Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button Style="{StaticResource CardButton}" Padding="24,12,20,12" Command="{Binding PickCommand}"
+                    GotKeyboardFocus="OnRowFocus" LostKeyboardFocus="OnRowBlur">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="196" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                  <settings:LatencyBars Bars="{Binding Bars}" VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding Latency}" Style="{StaticResource Text.Base}" FontSize="25" FontWeight="SemiBold" Margin="14,0,0,0" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="6,0,16,0">
+                  <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="29" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Detail}" Style="{StaticResource Text.Small}" FontSize="21" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,18,0"
+                            Visibility="{Binding Players, Converter={StaticResource Conv.Visible}}">
+                  <TextBlock Text="{Binding Players}" Style="{StaticResource Text.Value}" FontSize="29" HorizontalAlignment="Right" />
+                  <TextBlock Text="{Binding Queue}" Style="{StaticResource Text.Small}" FontSize="21" HorizontalAlignment="Right" />
+                </StackPanel>
+                <c:Icon Grid.Column="3" Data="{StaticResource Icon.ChevronRight}" Width="30" Height="30" Foreground="{DynamicResource Brush.TextMuted}" />
+              </Grid>
+            </Button>
+            <!-- "…": the row's menu for the mouse and touch. Not a stop of the D-pad: a controller has Y. -->
+            <Button Grid.Column="1" Style="{StaticResource ChromeButton}" Focusable="False" Width="64" Margin="8,0,0,0" Padding="0"
+                    VerticalAlignment="Stretch" Command="{Binding MenuCommand}" ToolTip="{Binding MenuLabel}"
+                    AutomationProperties.Name="{Binding MenuLabel}">
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Ellipse Width="8" Height="8" Margin="3,0" Fill="{DynamicResource Brush.TextMuted}" />
+                <Ellipse Width="8" Height="8" Margin="3,0" Fill="{DynamicResource Brush.TextMuted}" />
+                <Ellipse Width="8" Height="8" Margin="3,0" Fill="{DynamicResource Brush.TextMuted}" />
               </StackPanel>
-              <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="6,0,16,0">
-                <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="29" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding Detail}" Style="{StaticResource Text.Small}" FontSize="21" TextTrimming="CharacterEllipsis" />
-              </StackPanel>
-              <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,18,0"
-                          Visibility="{Binding Players, Converter={StaticResource Conv.Visible}}">
-                <TextBlock Text="{Binding Players}" Style="{StaticResource Text.Value}" FontSize="29" HorizontalAlignment="Right" />
-                <TextBlock Text="{Binding Queue}" Style="{StaticResource Text.Small}" FontSize="21" HorizontalAlignment="Right" />
-              </StackPanel>
-              <c:Icon Grid.Column="3" Data="{StaticResource Icon.ChevronRight}" Width="30" Height="30" Foreground="{DynamicResource Brush.TextMuted}" />
-            </Grid>
-          </Button>
+            </Button>
+          </Grid>
         </DataTemplate>
       </ItemsControl.ItemTemplate>
     </ItemsControl>
+    <!-- the rest of a long list, five at a time -->
+    <c:SettingsRow Label="{Binding S[servers.more]}" Caption="{Binding MoreCaption}" Icon="{StaticResource Icon.ChevronDown}" Margin="0,0,72,6"
+                   Command="{Binding MoreCommand}" Visibility="{Binding HasMore, Converter={StaticResource Conv.Visible}}" />
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,6"
                 Visibility="{Binding Empty, Converter={StaticResource Conv.Visible}}">
       <c:Spinner Width="34" Height="34" Margin="0,0,14,0" Visibility="{Binding Busy, Converter={StaticResource Conv.Visible}}" />

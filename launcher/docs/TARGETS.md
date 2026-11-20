@@ -14,9 +14,63 @@ is behind `IGameTarget` (`src/Mkwmp.Core/Targets/IGameTarget.cs`), and the targe
   with `Authorization: Bearer <token>` (`Net/LocalApi.cs`; contract: `docs/contracts/LAUNCHER_API.md`,
   `docs/contracts/VOICE_API.md` §4).
 - Finding the files of an integration: the signed `game/` folder next to the launcher, else this
-  launcher's GitHub release, verified against the signed `SHA256SUMS` (`Launcher.Game.cs`).
-- The order of what blocks PLAY: settings, the target's gates, the game's setup, the local API port,
-  the integration.
+  launcher's GitHub release, verified against the signed `SHA256SUMS` (`Launcher.Game.cs`). Kept
+  beside the launcher and nowhere else (portable: never the user's profile or its temporary folder).
+- The order of what blocks PLAY: settings, the target's gates, the runtime the launcher keeps (an
+  update of it that is not installed yet, or its install under way), the game's setup, the local
+  API port, the integration.
+
+### The integration package, and a development package
+
+`game/` next to the launcher holds the assets a target names (`PackageAssetsFor(install)`) with
+`SHA256SUMS` (`# mkwmp <version>` then `<sha256>  <name>` lines) and `SHA256SUMS.sig`, the release
+key's signature of it. It is used only when the signature verifies, the list is for **this**
+launcher's version, and every file matches. Otherwise the same assets come from the release
+`v<version>` and are saved there with the release's own signed list. A zip asset may be there
+unpacked instead (`PackageAsset.Unpacked`: `mods/mkwmp/…`, each file in the list).
+
+A local build cannot be signed. `publish.ps1 -Dev` therefore writes `game/` with an unsigned
+`SHA256SUMS` and a marker file, `game/DEV-PACKAGE`, and the launcher takes such a folder **only when
+it is told to**, never by itself:
+
+- `dev_package = true` in client.toml (a key written by hand or by `publish.ps1 -Dev`; the window
+  never adds it and keeps it when it saves), or
+- `MKWMP_DEV_PACKAGE=1` in the launcher's environment.
+
+The package is then `IntegrationPackage.Development`: the session log says `DEVELOPMENT PACKAGE
+(unsigned)`, Settings › Game says "MKWMP mod installed (v…): development package (unsigned)" with a
+line naming the switch. Without the switch a development package counts for nothing (the release is
+asked instead, and the error names the switch); a folder that has a `SHA256SUMS.sig` is always held
+to it, switch or not. This mirrors `MKWMP_DEV_PROBE=1`, which keeps a developer's own winmm.dll.
+
+### mkw-recomp: the mod is the integration
+
+On a runtime that loads mods (`Recomp.ModRuntimes`: 0.1.15 and later) the integration is the MKWMP
+mod (`Targets/MkwRecomp/Mod.cs`); on an older one (0.1.10 to 0.1.13) it stays the game patch beside
+mkw.exe (`Probe.cs`).
+
+- **Package**: the release asset `mkwmp-mod.zip` (`native/probe/build_plugin.py --package`:
+  `mkwmp/mod.json`, `mkwmp/plugin/mkwmp.dll` and `.so`, the voice and camera libraries), or its files
+  unpacked under `game/mods/mkwmp/`.
+- **Install / update**: into `<data>/mods/mkwmp/` (`<data>` is the game folder unless mkw.ini's
+  `game_dir` moved it). Only files whose hash differs are written: all are staged first
+  (`.mkwmp-new/`), each replaced file keeps its old copy (`.mkwmp-backup/`) until the last is in
+  place, and a failure puts every old one back. Files the package does not have (what the mod keeps
+  in its folder) stay. Nothing is written while the game runs.
+- **Enable**: `mods = a,b,mkwmp` under `[launcher]` of `<data>/mkw.ini`, edited with `RecompIni` the
+  way mkw-recomp's own Mods page writes it (`runtime/ui/launcher/mods.cpp`, `set_enabled`: names
+  between commas, a mod turned on is appended). Every other mod and every other line stays.
+  `mods_played` and `mods_ack` are the game's own (it copies the save aside before the first start
+  with a new set of mods) and are never written.
+- **The older game patch** goes once the mod is active (`Probe.RemoveForMod`; a `winmm.dll` the
+  player had before comes back). An install that still has only the game patch keeps working until
+  INSTALL, or the next start with the mod's package, moves it to the mod.
+- **Inspect**: `Missing`; `Installed` ("MKWMP mod installed (v…)", every file verified against the
+  package); `Mod` (it runs, nothing to verify against: offline); `Outdated` (another version);
+  `Damaged` (a file changed or missing); `Disabled` (the files are there, mkw.ini does not list the
+  mod). The report carries `AsMod`, so the window says "MKWMP mod" instead of "game patch".
+- **Uninstall**: removes `mods/mkwmp` and the name from mkw.ini's list (other mods stay). The
+  player's settings of the mod (`profile/mod-settings/mkwmp.ini`, the host's) are never touched.
 
 ## What the hook inside the game must speak
 
@@ -44,7 +98,7 @@ as `LauncherOptions.Targets` (the default list is in `Launcher`'s constructor). 
 | `Detect(folder)` | The install in that folder, or null. Cheap and never throwing: it runs on every folder of the look-around. Fill `Version` (the runtime's), `GameVersion`, `DataRoot` when known. |
 | `SearchRoots()` | Folders worth a shallow (two-level) look when nothing was chosen. |
 | `Check(install)` | The gates: `Unsupported` (with `FixUrl`/`FixLabel` when there is a build to get), `NeedsRebuild`, else `Ready`. `Problem` is shown verbatim and blocks PLAY; `Explain`, when set, is added in brackets to a failed PLAY. |
-| `PackageAssets` | The release asset names the hook is made of. The core downloads and verifies them and hands them over as an `IntegrationPackage` (name to a verified file on disk, and its sha256). |
+| `PackageAssets`, `PackageAssetsFor(install)` | The release asset names the hook is made of (for this install, when it depends on it: mkw-recomp's mod or game patch). The core finds and verifies them and hands them over as an `IntegrationPackage` (name to a verified file on disk, and its sha256; `Development` when the list was not signed). |
 | `Inspect(install, package)` | The state of the hook's files against the package (null: nothing to compare with): `Installed`, `Outdated`, `Damaged`, `Missing`..., a summary and a line per file. Called every 2 s: keep it to reading files. |
 | `InstallAsync` / `UninstallAsync` | Put the files in place (check each against `package.Sha256` again), or take every MKWMP file out and put back what was there. Refuse while the game runs. Throw `LauncherException` with a message for the player. |
 | `NeedsPackage(install)`, `KeepsOwnIntegration` | Optional. False / true when the game already carries the hook some other way (mkw-recomp: the MKWMP mod is enabled; a developer's build is kept). |
@@ -133,6 +187,7 @@ A target whose setup the launcher can run says so with four optional members
 | `SetupNeeded(install)` | `SetupStatus(install)?.Needed` by default. It blocks PLAY after the game folder and before the integration, and `Launcher` shows it as `GameView.Check` with `NeedsRebuild`. |
 | `RunSetupAsync(install, request, progress, cancel)` | Run it to the end. `request.DumpPath` is the player's own copy (null: repeat the last setup), `request.Mode` link or copy, `request.LogFolder` where the whole log goes. Report `GameSetupProgress` (step, label, both fractions, time left). Never throw for a failure: return a `GameSetupResult` with a stable `ErrorCode` and a `Message` for the player. Refuse while the game runs and while another setup of the install runs. On cancel end every process it started and throw `OperationCanceledException`; a later run must continue, not start over. Only read the player's copy. |
 | `ApplyOwnedSettings(install)` | Write the game settings the launcher keeps for an install it manages, and show them `Locked` in the schema. Called after a runtime install and around a setup; nothing while the game runs. |
+| `CoverArt(install, cacheFolder)` | Optional (null by default): the path of a picture (PNG or JPEG) of the game for Home's Play card, made once from the player's own copy into `cacheFolder` (`cache\` beside the launcher) and found again on later calls. Never throws; null when there is none. Called off the window's thread. The picture is the player's own: it is shown on this PC and goes nowhere else (no report, no upload, never in the repository or a release). mkw-recomp: `RecompCover` puts the game's title logo over the picture behind its main menu, read from the dump's RomFS (a `.nup` through `NupPackage`, or loose files); a dump has no console icon. |
 
 The core turns this into `ILauncher.GameSetup` (`GameSetupView`: `Idle`, `NeedsSetup` with the
 reason, `Running` with the step, `Failed` with a code and a message, `Done`; `DumpPath`,

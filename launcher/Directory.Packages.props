@@ -3,6 +3,9 @@
   <ItemGroup>
     <PackageVersion Include="Tomlyn" Version="0.19.0" />
     <PackageVersion Include="NSec.Cryptography" Version="25.4.0" />
+    <!-- the game's cover for the Play card, read from the player's own copy (Targets/MkwRecomp/Cover): zstd, and ASTC textures; both managed code, MIT -->
+    <PackageVersion Include="ZstdSharp.Port" Version="0.8.8" />
+    <PackageVersion Include="AssetRipper.TextureDecoder" Version="2.6.3" />
     <!-- mkwmp-updater.exe only (Ed25519 without a native library) -->
     <PackageVersion Include="BouncyCastle.Cryptography" Version="2.6.2" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

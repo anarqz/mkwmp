@@ -134,6 +134,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         _reportView = null!;
         InspectGame(out _install, out _check, out _integration);
         _setupStatus = InspectSetup(_install);
+        FollowCover(_install, _setupStatus); // the Play card's picture, already there when the window opens (Launcher.Cover.cs)
         lock (_gate)
         {
             Rebuild();
@@ -449,8 +450,18 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         // A setup the launcher must run first (Launcher.GameSetup.cs) comes after the game folder and its gates, and
         // before everything about the integration: its switch in the settings, the local API, its files.
         var setupProblem = SetupProblem(check);
-        var beforePatchSwitch = setupProblem is not null && configProblem == Strings.InstallPatchFirst;
-        var problem = (beforePatchSwitch ? setupProblem : configProblem) ?? HostedGameProblem ?? check?.Problem ?? setupProblem ?? LocalApiProblem(s) ?? integrationProblem;
+        // The runtime the launcher keeps comes before its setup: an update of ours that is not installed yet (this
+        // launcher is made for the pinned build, and the game is set up again for it), or its install under way.
+        var runtime = _runtimeView;
+        Put(ref runtime, RuntimeNow());
+        _runtimeView = runtime;
+        var runtimeProblem = _install is null || runtime.PinnedVersion is null ? null
+            : runtime.State == RuntimeState.UpdateAvailable ? Strings.RuntimeUpdateNeeded(target.DisplayName, runtime.PinnedVersion)
+            : runtime.Busy ? Strings.RuntimeBusy(target.DisplayName)
+            : null;
+        var gate = runtimeProblem ?? setupProblem;
+        var beforePatchSwitch = gate is not null && configProblem == Strings.InstallPatchFirst;
+        var problem = (beforePatchSwitch ? gate : configProblem) ?? HostedGameProblem ?? check?.Problem ?? gate ?? LocalApiProblem(s) ?? integrationProblem;
         var setup = _gameSetupView;
         Put(ref setup, GameSetupNow(check));
         _gameSetupView = setup;
@@ -465,10 +476,6 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         var game = _gameView;
         Put(ref game, new GameView(_targetInfos, _install, check, _integration, _searching, _gameWorking, _gameNote?.Text, _gameNote?.IsError ?? false));
         _gameView = game;
-
-        var runtime = _runtimeView;
-        Put(ref runtime, RuntimeNow());
-        _runtimeView = runtime;
 
         if (_playProblem != problem)
         {

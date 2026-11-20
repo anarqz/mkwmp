@@ -27,7 +27,7 @@ public sealed partial class Launcher
         var s = Settings;
         // The session header: what a bug report needs to know first.
         Log.Line($"mkwmp-launcher {Version}");
-        Log.Line($"os: {SupportBundle.Os}");
+        Log.Line($"os: {SupportBundle.Os}" + (Platform.WineHost.How is { } wine ? $" under Wine ({wine})" : ""));
         Log.Line($"config: {ConfigPath}");
         Log.Line($"server: {(IsOnline(s) ? s.Server : "none (offline)")}");
         Log.Line($"game folder: {s.Game}");

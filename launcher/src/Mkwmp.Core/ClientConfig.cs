@@ -34,6 +34,16 @@ internal sealed record ClientConfig
     /// </summary>
     public IReadOnlyList<ServerProfile> Servers { get; init; } = [];
 
+    /// <summary>What the file keeps of <see cref="HiddenServers"/>: more than any player hides by hand.</summary>
+    public const int MaxHidden = 500;
+
+    /// <summary>
+    /// The servers the player took out of the server list on this PC (<c>[[server_list.hidden]]</c>: <c>id</c> is the
+    /// server's public key, else its address; <c>name</c> and <c>address</c> are what it was called, for "Hidden
+    /// servers"). Local only: nothing of it is sent anywhere.
+    /// </summary>
+    public IReadOnlyList<HiddenServer> HiddenServers { get; init; } = [];
+
     /// <summary>The same server, however it was typed (scheme, trailing slash, letter case).</summary>
     public static bool SameServer(string a, string b) => string.Equals(ServerBase(a), ServerBase(b), StringComparison.OrdinalIgnoreCase);
 
@@ -169,6 +179,7 @@ internal sealed record ClientConfig
             LaunchCommand = Str(t, "launch_command", ""),
             Beholder = Str(t, "beholder", "").Trim(),
             Patch = Bool(t, "patch", true),
+            DevPackage = Bool(t, "dev_package", false),
             AdultConsent = Bool(t, "adult_consent", false),
             Background = new BackgroundSettings
             {
@@ -210,9 +221,18 @@ internal sealed record ClientConfig
                 }
             }
         }
+        var hidden = new List<HiddenServer>();
+        foreach (var row in Rows(Table(t, "server_list"), "hidden"))
+        {
+            if (Str(row, "id", "").Trim() is { Length: > 0 and <= 255 } id && hidden.Count < MaxHidden && !hidden.Any(h => h.Id == id))
+            {
+                hidden.Add(new HiddenServer(id, Str(row, "name", ""), Str(row, "address", "")));
+            }
+        }
         return new ClientConfig
         {
             Servers = servers,
+            HiddenServers = hidden,
             Settings = settings,
             Mutes = [.. Rows(voice, "mutes").Select(r => new MutedPlayer(Str(r, "account", ""), Str(r, "name", ""))).Where(m => m.Account.Length > 0)],
             Inputs = [.. Rows(voice, "inputs").Select(r => new AudioDevice(Str(r, "id", ""), Str(r, "name", ""))).Where(x => x.Id.Length > 0)],
@@ -255,6 +275,10 @@ internal sealed record ClientConfig
         Line(b, "launch_command", s.LaunchCommand);
         Line(b, "beholder", s.Beholder);
         Line(b, "patch", s.Patch);
+        if (s.DevPackage)
+        {
+            Line(b, "dev_package", true); // a developer's switch: only ever written back, never added
+        }
         Line(b, "adult_consent", s.AdultConsent);
 
         b.Append("\n[background]\n");
@@ -303,6 +327,14 @@ internal sealed record ClientConfig
                 Line(b, "name", x.Name);
             }
         }
+        // The servers hidden from the server list (nothing is written while there are none).
+        foreach (var h in HiddenServers)
+        {
+            b.Append("\n[[server_list.hidden]]\n");
+            Line(b, "id", h.Id);
+            Line(b, "name", h.Name);
+            Line(b, "address", h.Address);
+        }
         // The profile on each server (the top-level `pin` stays the one of `server`, as the Rust launcher reads it).
         foreach (var p in Servers)
         {
@@ -316,7 +348,7 @@ internal sealed record ClientConfig
 
     public bool SameAs(ClientConfig other) =>
         Settings == other.Settings && Mutes.SequenceEqual(other.Mutes) && Inputs.SequenceEqual(other.Inputs) && Outputs.SequenceEqual(other.Outputs)
-        && Servers.SequenceEqual(other.Servers);
+        && Servers.SequenceEqual(other.Servers) && HiddenServers.SequenceEqual(other.HiddenServers);
 
     private static void Line(StringBuilder b, string key, string value) => b.Append(key).Append(" = ").Append(Quote(value)).Append('\n');
 

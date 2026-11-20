@@ -202,15 +202,37 @@ writes one frame as a PNG and opens no window. The card's states are in the laun
 
 ## 8. The release
 
-Build: `launcher/publish.ps1 -Out <folder> [-Version 1.5.0]` gives
+Build: `launcher/publish.ps1 -Out <folder> [-Version 1.5.0] [-Zig <zig.exe>]` gives
 
 ```
-mkwmp-launcher.exe     single file, self-contained          71 MB
+mkwmp-launcher.exe     single file, self-contained, compressed
 mkwmp-updater.exe      the helper, Native AOT              2.4 MB
 mkwmp-launcher.png
 i18n/*.json
 licenses/              Nunito, Noto Sans CJK, BouncyCastle (the helper's)
+game/mkwmp-mod.zip     the MKWMP mod built from this tree (plugin, voice and camera libraries)
+game/SHA256SUMS        "# mkwmp <version>" and the zip's hash, to be signed
 ```
+
+`game/` is the integration package the launcher installs into mkw-recomp (launcher/docs/TARGETS.md,
+"The integration package"). `publish.ps1` builds the mod (`native/voice/build.py`,
+`native/camera/build.py`, `native/probe/build_plugin.py --target all --package`; needs Zig and
+Python; `-NoGame` skips it) and writes the list; the **release machine signs it**
+(`tools/release/sign_sums.py` → `game/SHA256SUMS.sig`; `make_zips.py` does it for the release zip,
+where `mkwmp-mod.zip` is in `game/` beside the older game patch). Without the signature the launcher
+ignores the folder and downloads `mkwmp-mod.zip` from its own release, which is how a launcher that
+updated itself (and so has an older `game/`) gets the new mod.
+
+**Local test builds: `publish.ps1 -Dev`.** No release key on a developer's machine, so `-Dev` also
+writes `game/DEV-PACKAGE` and, when there is none, a `client.toml` with `dev_package = true`. The
+launcher takes an unsigned `game/` only with that key or with `MKWMP_DEV_PACKAGE=1`, and then says
+"development package (unsigned)" in Settings › Game and in its log. A release build never accepts an
+unsigned package silently, and a `-Dev` folder is never to be shipped.
+
+The single file is published like Infinity Launcher's: `PublishSingleFile`,
+`IncludeNativeLibrariesForSelfExtract`, `EnableCompressionInSingleFile`, no symbols,
+`SatelliteResourceLanguages` limited to the launcher's own languages, `UseSystemResourceKeys=false`
+(exception messages stay). WPF is not trimmed (unsupported).
 
 ### Proposal for `tools/release` (not applied)
 

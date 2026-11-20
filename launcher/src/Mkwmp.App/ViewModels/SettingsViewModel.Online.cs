@@ -27,6 +27,8 @@ public sealed partial class SettingsViewModel
                 Shell.Navigate(SetupViewModel.Connect(Shell, server.Address)); // asked at once; then sign in, consent, PIN
             }
         });
+        Servers.HintsChanged += (_, _) => RefreshHints(); // a row has the focus: Y hides it
+        HiddenServersCommand = new RelayCommand(() => Shell.Navigate(new HiddenServersViewModel(Shell)), () => HasHiddenServers);
         PrivacyCommand = new RelayCommand(() => Shell.Navigate(new PrivacyViewModel(Shell)));
         ConsentCommand = new RelayCommand(() => Shell.Navigate(SetupViewModel.ConsentOnly(Shell)), () => !Busy);
         DisconnectCommand = RelayCommand.Async(DisconnectAsync, () => !Busy && OnlineEnabled);
@@ -54,6 +56,23 @@ public sealed partial class SettingsViewModel
             Servers.Stop();
         }
     }
+
+    // ── hidden servers: Y on a row of the list hides it; "Hidden servers (n)" shows them again ──
+
+    /// <summary>The list is on screen (the Online pane, offline) and one of its rows has the focus: "Y Hide" instead of "Y Friends".</summary>
+    private IReadOnlyList<Hint>? ServerHintsNow => IsOnlinePane && OnlineLocked && Servers.Hint is { } hide
+        ? [hide, .. Shell.DefaultHints().Where(h => h.Button != PadButton.Y)]
+        : null;
+
+    private bool HideServer(PadButton button) => IsOnlinePane && OnlineLocked && Servers.OnButton(button);
+
+    public bool HasHiddenServers => Launcher.Servers.Hidden.Count > 0;
+
+    /// <summary>"Hidden servers (2)".</summary>
+    public string HiddenServersLabel => S.Format("servers.hidden", ("n", Launcher.Servers.Hidden.Count.ToString(System.Globalization.CultureInfo.CurrentCulture)));
+
+    /// <summary>The page that lists them, each with "Show again".</summary>
+    public ICommand HiddenServersCommand { get; private set; } = null!;
 
     /// <summary>The privacy policy of the server in use, rendered in the launcher.</summary>
     public ICommand PrivacyCommand { get; private set; } = null!;

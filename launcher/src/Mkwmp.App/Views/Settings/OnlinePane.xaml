@@ -177,5 +177,9 @@
   <c:SettingsRow Label="{Binding S[settings.online.announcer_reset]}" Icon="{StaticResource Icon.Refresh}" Margin="0,14,0,0"
                  Command="{Binding DefaultAnnouncerCommand}" Caption="{Binding S[settings.online.announcer_reset_caption]}"
                  Visibility="{Binding AnnouncerCustom, Converter={StaticResource Conv.Visible}}" />
+  <!-- the servers taken out of the list on this PC (Y on a row), each with "Show again" -->
+  <c:SettingsRow Label="{Binding HiddenServersLabel}" Kind="Chevron" Icon="{StaticResource Icon.EyeOff}" Margin="0,14,0,0"
+                 Command="{Binding HiddenServersCommand}" Caption="{Binding S[servers.hidden.caption]}"
+                 Visibility="{Binding HasHiddenServers, Converter={StaticResource Conv.Visible}}" />
   </StackPanel>
 </UserControl>

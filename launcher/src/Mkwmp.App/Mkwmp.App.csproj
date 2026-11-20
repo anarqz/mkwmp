@@ -12,6 +12,10 @@
     <ApplicationIcon Condition="Exists('Assets\mkwmp.ico')">Assets\mkwmp.ico</ApplicationIcon>
     <!-- WPF0001: ThemeMode (Fluent) is still marked experimental in .NET 10. -->
     <NoWarn>$(NoWarn);WPF0001</NoWarn>
+    <!-- Only the launcher's own languages (Core/Locales.cs): .NET's and WPF's satellite assemblies for every other
+         culture stay out of the single file. Exception messages keep their text (no resource keys in their place). -->
+    <SatelliteResourceLanguages>en;pt-BR;pt-PT;es;fr;de;it;nl;pl;ru;tr;ja;ko;zh-Hans;zh-Hant</SatelliteResourceLanguages>
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
   </PropertyGroup>
 
   <ItemGroup>

@@ -302,7 +302,7 @@ public class LauncherTests
         Assert.True(File.Exists(Path.Combine(rig.Game, "mkwmp.toml")));
         report = rig.Launcher.Game.Integration!;
         Assert.Equal((IntegrationState.Mod, "MKWMP runs as a mod in this game"), (report.State, report.Summary));
-        Assert.Single(report.Lines);
+        Assert.DoesNotContain(report.Lines, l => l.Contains("still beside mkw.exe", StringComparison.Ordinal));
         Assert.Null(rig.Launcher.PlayProblem);
         Assert.Equal(TargetStatus.Ready, rig.Launcher.Game.Check!.Status);
     }

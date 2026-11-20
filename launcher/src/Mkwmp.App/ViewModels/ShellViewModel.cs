@@ -198,6 +198,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
                 old?.OnClosed();
                 value?.OnOpened();
                 Raise(nameof(IsModalOpen));
+                Raise(nameof(ShowGameWorkIndicator));
                 RefreshHints();
             }
         }
@@ -577,6 +578,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         _sheet?.OnStateChanged();
         _modal?.OnStateChanged();
         WatchUpdate(); // a download that finished behind another page (ShellViewModel.Update.cs)
+        WatchGameWork(); // the game's download or setup ended behind another page; its update after a launcher update (ShellViewModel.GameWork.cs)
         OfferCrash(); // the game crashed and the player has not answered yet (ShellViewModel.Crash.cs)
         StateChanged?.Invoke(this, EventArgs.Empty);
     }

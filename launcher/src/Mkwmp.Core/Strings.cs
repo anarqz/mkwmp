@@ -291,6 +291,9 @@ public static class Strings
     public static string PatchInstalled => T("core.patch_installed");
     public static string PatchRemoved => T("core.patch_removed");
     public static string PatchWorking => T("core.patch_working");
+    public static string ModInstalled => T("core.mod_installed");
+    public static string ModWorking => T("core.mod_working");
+    public static string PackageUnavailable(string version, string why) => F("core.package_unavailable", ("version", version), ("why", why));
     public static string NoBundleAndUpdatesOff => T("core.no_bundle_and_updates_off");
     public static string PatchNotSaved => T("core.patch_not_saved");
 
@@ -368,6 +371,8 @@ public static class Strings
     public static string RuntimeInstalled(string name, string version) => F("core.runtime.installed", ("name", name), ("version", version));
 
     public static string RuntimeUpdated(string name, string version) => F("core.runtime.updated", ("name", name), ("version", version));
+    public static string RuntimeUpdateNeeded(string name, string version) => F("core.runtime.update_needed", ("name", name), ("version", version));
+    public static string RuntimeBusy(string name) => F("core.runtime.busy", ("name", name));
 
     // ---- setting the game up (the runtime's setup, run by the launcher) --------------------
     public static string SetupNotSetUp => T("core.setup.not_set_up");
@@ -461,6 +466,7 @@ public static class Strings
     public static string RecompFolderHint => T("core.recomp.folder_hint");
     public static string RecompAssetPatch => T("core.recomp.asset_patch");
     public static string RecompAssetVoice => T("core.recomp.asset_voice");
+    public static string RecompAssetMod => T("core.recomp.asset_mod");
     public static string RecompExplainMissing => T("core.recomp.explain_missing");
     public static string RecompRebuild => T("core.recomp.rebuild");
     public static string RecompCredit => T("core.recomp.credit");
@@ -482,6 +488,8 @@ public static class Strings
         F("core.recomp.game_problem", ("version", version), ("supported", string.Join(T("core.recomp.or"), supported)));
 
     public static string RecompChecksum(string name) => F("core.recomp.checksum", ("name", name));
+    public static string RecompNotTheMod(string name) => F("core.recomp.not_the_mod", ("name", name));
+    public static string DevPackageOff(string env, string why) => F("core.dev_package_off", ("env", env), ("why", why));
     public static string RecompInstallFailed(string what, string why) => F("core.recomp.install_failed", ("what", what), ("why", why));
     public static string RecompInstallPatchFailed(string why) => F("core.recomp.install_patch_failed", ("why", why));
     public static string RecompInstallVoiceFailed(string why) => F("core.recomp.install_voice_failed", ("why", why));

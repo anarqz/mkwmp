@@ -98,8 +98,13 @@
                            Value="{Binding Game.TargetName}" Command="{Binding Game.TargetCommand}" />
             <settings:GamePanel DataContext="{Binding Game}" />
 
-            <c:SectionHeader Text="{Binding S[settings.game.files]}" />
-            <TextBlock Text="{Binding S[settings.game.files_caption]}" Style="{StaticResource Note}" />
+            <!-- the game's setup (and its runtime's download): its state, and the way to its card -->
+            <c:SettingsRow Label="{Binding S[settings.game.setup_row]}" Kind="Chevron" Icon="{StaticResource Icon.Refresh}" Margin="0,14,0,0"
+                           Value="{Binding Game.SetupState}" Command="{Binding Game.SetupCommand}" Caption="{Binding Game.SetupCaption}"
+                           Visibility="{Binding Game.HasSetupRow, Converter={StaticResource Conv.Visible}}" />
+
+            <c:SectionHeader Text="{Binding Game.FilesTitle}" />
+            <TextBlock Text="{Binding Game.FilesCaption}" Style="{StaticResource Note}" />
             <ItemsControl ItemsSource="{Binding Game.Files}" Focusable="False" Margin="66,10,20,0"
                           Visibility="{Binding Game.HasFiles, Converter={StaticResource Conv.Visible}}">
               <ItemsControl.ItemTemplate>
@@ -109,9 +114,9 @@
               </ItemsControl.ItemTemplate>
             </ItemsControl>
             <c:SettingsRow Label="{Binding Game.InstallLabel}" Icon="{StaticResource Icon.Download}" Margin="0,10,0,0"
-                           Command="{Binding Game.InstallCommand}" Caption="{Binding S[settings.game.install_caption]}" />
+                           Command="{Binding Game.InstallCommand}" Caption="{Binding Game.InstallCaption}" />
             <c:SettingsRow Label="{Binding S[settings.game.uninstall]}" Icon="{StaticResource Icon.Trash}"
-                           Command="{Binding Game.UninstallCommand}" Caption="{Binding S[settings.game.uninstall_caption]}" />
+                           Command="{Binding Game.UninstallCommand}" Caption="{Binding Game.UninstallCaption}" />
             <TextBlock Text="{Binding Game.Note}" Margin="20,10,20,0"
                        Visibility="{Binding Game.Note, Converter={StaticResource Conv.Visible}}">
               <TextBlock.Style>

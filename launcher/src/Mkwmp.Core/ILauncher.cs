@@ -94,6 +94,23 @@ public interface ILauncher : IAsyncDisposable
     /// <summary>Measures the latencies again, without reading the list (the page asks every few seconds while it is open).</summary>
     Task MeasureServersAsync();
 
+    /// <summary>
+    /// Takes a server out of the list on this PC (<see cref="ServerListView.Hidden"/>, kept in client.toml by its
+    /// public key, else its address): the next nearest takes its place. False, and nothing changes, for the server in
+    /// use (<see cref="LauncherSettings.Server"/>): disconnect first.
+    /// </summary>
+    Task<bool> HideServerAsync(ListedServer server);
+
+    /// <summary>"Show again": a hidden server (by <see cref="HiddenServer.Id"/>) is listed again.</summary>
+    Task ShowServerAsync(string id);
+
+    /// <summary>
+    /// The game's own cover picture for the Play card, as a file beside the launcher (made once from the player's own
+    /// copy of the game by the target: <see cref="IGameTarget.CoverArt"/>); null while there is none. Shown on this PC
+    /// only: never uploaded, never put in a report.
+    /// </summary>
+    string? GameCover => null;
+
     // Profile
     Task RegisterAsync(string name);
     Task UsePinAsync(string name, string pin);
@@ -309,15 +326,49 @@ public enum ServerListState
 /// <param name="Online">null: not measured yet; false: it did not answer as an MKWMP server.</param>
 public sealed record ListedServer(string Name, string Address, string? Region, string? Version, int Capacity, int Seated, int Queued, int? LatencyMs, bool? Online)
 {
+    /// <summary>The key the server announces itself with (it stays when the address moves); "" when not known.</summary>
+    public string PublicKey { get; init; } = "";
+
+    /// <summary>What a hidden server is remembered by: its public key, else its address.</summary>
+    public string Id => PublicKey.Length > 0 ? PublicKey : Address;
+
     /// <summary>0 (no answer, or not measured) to 3 (under 60 ms; 2 under 150 ms).</summary>
     public int Bars => LatencyMs switch { null => 0, < 60 => 3, < 150 => 2, _ => 1 };
 }
 
+/// <summary>A server the player took out of the list (<see cref="ILauncher.HideServerAsync"/>).</summary>
+/// <param name="Id">Its public key, else its address: what it is recognised by in a later list.</param>
+/// <param name="Name">Its name when it was hidden, for "Hidden servers".</param>
+/// <param name="Address">Its address when it was hidden.</param>
+public sealed record HiddenServer(string Id, string Name, string Address)
+{
+    /// <summary>Whether a listed server is this one: the same key, or (hidden by address) the same address.</summary>
+    public bool Is(ListedServer server) =>
+        server is not null && (string.Equals(Id, server.Id, StringComparison.Ordinal) || ClientConfig.SameServer(Id, server.Address));
+}
+
+/// <param name="Items">
+/// The listed servers the player did not hide, nearest first: the ones that answered by latency, then the ones not
+/// measured (yet, or at all: <see cref="MeasuredAtMost"/>), then the ones that did not answer. The window shows the
+/// first <see cref="PageSize"/> and more on request.
+/// </param>
 /// <param name="Busy">The list is being read or the servers measured.</param>
 /// <param name="Note">Why the list is cached or missing; null when fine.</param>
 public sealed record ServerListView(ServerListState State, IReadOnlyList<ListedServer> Items, bool Busy, string? Note)
 {
+    /// <summary>How many servers the list shows at first, and how many more each "Show more" adds.</summary>
+    public const int PageSize = 5;
+
+    /// <summary>
+    /// Of a long list, only the first this many (in the beholder's order, hidden ones not counted) are measured, plus
+    /// every server the player has a profile on: hundreds of listings never mean hundreds of servers contacted.
+    /// </summary>
+    public const int MeasuredAtMost = 50;
+
     public static ServerListView Off { get; } = new(ServerListState.Off, [], false, null);
+
+    /// <summary>The servers hidden on this PC, in the order they were hidden (also those no longer listed).</summary>
+    public IReadOnlyList<HiddenServer> Hidden { get; init; } = [];
 }
 
 /// <summary>A server the launcher keeps a profile for (<see cref="ILauncher.SavedServers"/>). The PIN itself stays in the settings file.</summary>
@@ -350,6 +401,11 @@ public sealed record LauncherSettings
     /// <summary>The beholder (server directory) to list servers from; "" = this release's default (none yet).</summary>
     public string Beholder { get; init; } = "";
     public bool Patch { get; init; } = true;
+    /// <summary>
+    /// <c>dev_package = true</c>, written by hand (or by <c>publish.ps1 -Dev</c>), never by the window: the launcher
+    /// takes an unsigned development package from its <c>game/</c> folder (launcher/docs/UPDATES.md). Off in every release.
+    /// </summary>
+    public bool DevPackage { get; init; }
     /// <summary>The consent (18+, privacy policy). With a server that keeps it, a mirror of what that server holds for the profile.</summary>
     public bool AdultConsent { get; init; }
     public BackgroundSettings Background { get; init; } = new();

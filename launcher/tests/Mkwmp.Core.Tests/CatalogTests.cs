@@ -87,7 +87,7 @@ public sealed partial class CatalogTests
         Assert.True(texts.Count > 100);
         Assert.Empty(texts.Where(t => t.Text.StartsWith("core.", StringComparison.Ordinal)).Select(t => t.Name));
         Assert.Empty(Strings.ReportReasons.Where(r => r.Label.StartsWith("core.", StringComparison.Ordinal)).Select(r => r.Code));
-        foreach (var state in new[] { "installed", "unverified", "missing", "outdated", "damaged", "host_missing", "dev", "mod" })
+        foreach (var state in new[] { "installed", "unverified", "missing", "outdated", "damaged", "host_missing", "dev", "mod", "mod_installed", "mod_dev", "mod_disabled" })
         {
             Assert.DoesNotContain("core.", Strings.PatchState(state, "1.0.0", "X"), StringComparison.Ordinal);
         }

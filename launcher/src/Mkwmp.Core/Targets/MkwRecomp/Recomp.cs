@@ -143,7 +143,7 @@ internal static class Recomp
     /// Answers keyed by a file's path, size and modification time: hashing 33 MB (or re-reading
     /// the setup state) every time the window asks would be wasteful.
     /// </summary>
-    private sealed class FileCache<T>
+    internal sealed class FileCache<T>
     {
         private readonly ConcurrentDictionary<string, (long Length, DateTime Modified, T Value)> _seen = new(StringComparer.OrdinalIgnoreCase);
 

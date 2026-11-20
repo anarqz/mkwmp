@@ -10,6 +10,20 @@ public sealed partial class Launcher
     /// <summary>The bundled integration files: <c>game/</c> next to the launcher, as in the release zip.</summary>
     public const string BundleFolder = "game";
 
+    /// <summary>
+    /// <c>MKWMP_DEV_PACKAGE=1</c> (or <c>dev_package = true</c> in client.toml): take the <c>game/</c>
+    /// folder's integration files although their SHA256SUMS is not signed, when the folder says it is
+    /// a development package (<see cref="DevPackageMarker"/>, written by <c>publish.ps1 -Dev</c>).
+    /// Never on by itself: a release build without the switch treats such a folder as no package.
+    /// </summary>
+    public const string DevPackageEnv = "MKWMP_DEV_PACKAGE";
+
+    /// <summary>The file that marks <c>game/</c> as an unsigned development package (in place of <c>SHA256SUMS.sig</c>).</summary>
+    public const string DevPackageMarker = "DEV-PACKAGE";
+
+    /// <summary>The player (a developer) turned the development package on, for this run or in client.toml.</summary>
+    internal static bool DevPackageOn(LauncherSettings s) => s.DevPackage || Environment.GetEnvironmentVariable(DevPackageEnv) == "1";
+
     private readonly SemaphoreSlim _integrationWork = new(1, 1);
     private IntegrationPackage? _package;
 
@@ -65,6 +79,7 @@ public sealed partial class Launcher
             }
         });
         FollowGameSettings();
+        FollowCover(install, setup); // the Play card's picture, made once from the player's copy (Launcher.Cover.cs)
         PublishModRecord(); // the mod finds this launcher in its own folder (portable)
     }
 
@@ -135,7 +150,7 @@ public sealed partial class Launcher
         {
             throw new LauncherException($"{bad.Summary}: {string.Join("; ", bad.Lines)}");
         }
-        return Strings.PatchInstalled;
+        return Game.Integration is { AsMod: true } ? Strings.ModInstalled : Strings.PatchInstalled;
     });
 
     /// <summary>UNINSTALL: turn the integration off (so nothing puts it back), save, and remove every MKWMP file from the game folder.</summary>
@@ -192,7 +207,7 @@ public sealed partial class Launcher
             string? packageProblem = null;
             try
             {
-                package = await PackageAsync(target, s).ConfigureAwait(false);
+                package = await PackageAsync(target, s, install).ConfigureAwait(false);
                 lock (_gate)
                 {
                     _package = package;
@@ -256,24 +271,42 @@ public sealed partial class Launcher
     /// (with updates on) downloaded from this launcher's own release, checked against its signed
     /// SHA256SUMS and kept in that folder, so the next start needs no network.
     /// </summary>
-    private async Task<IntegrationPackage> PackageAsync(IGameTarget target, LauncherSettings s)
+    private async Task<IntegrationPackage> PackageAsync(IGameTarget target, LauncherSettings s, GameInstall install)
     {
-        var assets = target.PackageAssets;
+        var assets = target.PackageAssetsFor(install);
         if (assets.Count == 0)
         {
             return IntegrationPackage.Empty(Version);
         }
         var folder = Path.Combine(LauncherFolder, BundleFolder);
         var keys = _options.ReleaseKeys ?? Updater.ReleaseKeys;
-        if (Bundled(folder, Version, keys, assets) is { } bundled)
+        var dev = DevPackageOn(s);
+        if (Bundled(folder, Version, keys, assets, dev) is { } bundled)
         {
+            if (bundled.Development && !_devPackageNoted)
+            {
+                _devPackageNoted = true;
+                Note($"game patch: DEVELOPMENT PACKAGE (unsigned) from {folder}, because {DevPackageEnv}=1 or dev_package = true");
+            }
             return bundled;
         }
+        // A development package that is not turned on is no package: said, so a developer is not left guessing.
+        var unused = !dev && File.Exists(Path.Combine(folder, DevPackageMarker)) && !File.Exists(Path.Combine(folder, "SHA256SUMS.sig"));
         if (!UpdatesOn(s))
         {
-            throw new LauncherException(Strings.NoBundleAndUpdatesOff);
+            throw new LauncherException(unused ? Strings.DevPackageOff(DevPackageEnv, Strings.NoBundleAndUpdatesOff) : Strings.NoBundleAndUpdatesOff);
         }
-        var (release, sums) = await _updater.OwnReleaseAsync(Version, _life.Token).ConfigureAwait(false);
+        Release release;
+        SignedSums sums;
+        try
+        {
+            (release, sums) = await _updater.OwnReleaseAsync(Version, _life.Token).ConfigureAwait(false);
+        }
+        catch (LauncherException e)
+        {
+            // Said whole: "nothing happened" is never an answer to INSTALL.
+            throw new LauncherException(unused ? Strings.DevPackageOff(DevPackageEnv, e.Message) : Strings.PackageUnavailable(Version, e.Message), e);
+        }
         var files = new List<(string Name, byte[] Bytes)>();
         foreach (var asset in assets)
         {
@@ -294,64 +327,96 @@ public sealed partial class Launcher
                 throw new LauncherException(Strings.AssetDownloadFailed(asset.Label, e.Message), e);
             }
         }
-        foreach (var where in new[] { folder, Path.Combine(Path.GetTempPath(), "mkwmp-launcher", $"game-{Version}") })
+        // Portable: kept beside the launcher and nowhere else (never the user's profile or its temporary folder).
+        try
         {
-            try
+            Directory.CreateDirectory(folder);
+            foreach (var (name, bytes) in files)
             {
-                Directory.CreateDirectory(where);
-                foreach (var (name, bytes) in files)
-                {
-                    File.WriteAllBytes(Path.Combine(where, name), bytes);
-                }
-                File.WriteAllBytes(Path.Combine(where, "SHA256SUMS"), sums.Bytes);
-                File.WriteAllText(Path.Combine(where, "SHA256SUMS.sig"), sums.Signature);
-                if (Bundled(where, Version, keys, assets) is { } saved)
-                {
-                    return saved;
-                }
+                File.WriteAllBytes(Path.Combine(folder, name), bytes);
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            File.WriteAllBytes(Path.Combine(folder, "SHA256SUMS"), sums.Bytes);
+            File.WriteAllText(Path.Combine(folder, "SHA256SUMS.sig"), sums.Signature);
+            File.Delete(Path.Combine(folder, DevPackageMarker)); // the release's signed files took the folder over
+            if (Bundled(folder, Version, keys, assets, allowUnsigned: false) is { } saved)
             {
-                Note($"keeping the game patch in {where}: {e.Message}");
+                return saved;
             }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Note($"keeping the game patch in {folder}: {e.Message}");
         }
         throw new LauncherException(Strings.PatchNotSaved);
     }
 
+    private bool _devPackageNoted;
+
     /// <summary>
     /// The integration files in <paramref name="folder"/> (<c>SHA256SUMS</c>, its <c>.sig</c> and
     /// the assets), used only when the list verifies for this launcher's version (after a
-    /// self-update the zip's copy is older) and the files match it.
+    /// self-update the zip's copy is older) and the files match it. A zip asset may be there
+    /// unpacked instead (<see cref="PackageAsset.Unpacked"/>): every file of that folder in the list.
+    /// <para>
+    /// <paramref name="allowUnsigned"/> (<see cref="DevPackageOn"/>): a folder with no
+    /// <c>SHA256SUMS.sig</c> and a <see cref="DevPackageMarker"/> file is taken on its unsigned list
+    /// (a local build cannot be signed), marked <see cref="IntegrationPackage.Development"/>. A folder
+    /// that has a signature is always held to it.
+    /// </para>
     /// </summary>
-    internal static IntegrationPackage? Bundled(string folder, string version, IEnumerable<string> keys, IReadOnlyList<PackageAsset> assets)
+    internal static IntegrationPackage? Bundled(string folder, string version, IEnumerable<string> keys, IReadOnlyList<PackageAsset> assets, bool allowUnsigned = false)
     {
         try
         {
-            if (SemVer.TryParse(version) is not { } v || !File.Exists(Path.Combine(folder, "SHA256SUMS")) || !File.Exists(Path.Combine(folder, "SHA256SUMS.sig")))
+            if (SemVer.TryParse(version) is not { } v || !File.Exists(Path.Combine(folder, "SHA256SUMS")))
             {
                 return null;
             }
-            var sums = Updater.VerifySums(File.ReadAllBytes(Path.Combine(folder, "SHA256SUMS")), File.ReadAllText(Path.Combine(folder, "SHA256SUMS.sig")), keys, v);
+            var signed = File.Exists(Path.Combine(folder, "SHA256SUMS.sig"));
+            if (!signed && !(allowUnsigned && File.Exists(Path.Combine(folder, DevPackageMarker))))
+            {
+                return null;
+            }
+            var list = File.ReadAllBytes(Path.Combine(folder, "SHA256SUMS"));
+            var sums = signed ? Updater.VerifySums(list, File.ReadAllText(Path.Combine(folder, "SHA256SUMS.sig")), keys, v) : Updater.ParseSums(list, v);
             var files = new Dictionary<string, string>(StringComparer.Ordinal);
             var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
+            bool Take(string name, string want)
+            {
+                var path = Path.GetFullPath(Path.Combine(folder, name));
+                if (!path.StartsWith(Path.GetFullPath(folder) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                    || !File.Exists(path) || Updater.Sha256Hex(File.ReadAllBytes(path)) != want)
+                {
+                    return false;
+                }
+                (files[name], hashes[name]) = (path, want);
+                return true;
+            }
+
             foreach (var asset in assets)
             {
-                if (!sums.TryGetValue(asset.Name, out var want))
+                if (sums.TryGetValue(asset.Name, out var want))
                 {
-                    if (asset.Required)
+                    if (!Take(asset.Name, want))
                     {
                         return null;
                     }
                     continue;
                 }
-                var path = Path.Combine(folder, asset.Name);
-                if (!File.Exists(path) || Updater.Sha256Hex(File.ReadAllBytes(path)) != want)
+                var unpacked = asset.Unpacked is { } prefix ? sums.Where(p => p.Key.StartsWith(prefix + "/", StringComparison.Ordinal)).ToList() : [];
+                if (unpacked.Count > 0)
+                {
+                    if (!unpacked.All(p => Take(p.Key, p.Value)))
+                    {
+                        return null;
+                    }
+                }
+                else if (asset.Required)
                 {
                     return null;
                 }
-                (files[asset.Name], hashes[asset.Name]) = (path, want);
             }
-            return new IntegrationPackage(version, files, hashes);
+            return new IntegrationPackage(version, files, hashes) { Development = !signed };
         }
         catch (Exception e) when (e is LauncherException or IOException or UnauthorizedAccessException)
         {

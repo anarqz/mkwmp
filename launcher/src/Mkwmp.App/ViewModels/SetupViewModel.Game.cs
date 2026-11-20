@@ -148,7 +148,7 @@ public sealed partial class SetupViewModel
         GameStage.NeedSetup => Launcher.GameSetup.Message ?? CoreStrings.SetupUnfinished,
         GameStage.SettingUp => S["setup.game.setting_up_text"],
         GameStage.SetupFailed => Launcher.GameSetup.Message ?? "",
-        GameStage.Integrating => CoreStrings.PatchWorking,
+        GameStage.Integrating => Launcher.Game.Integration is { AsMod: true } ? CoreStrings.ModWorking : CoreStrings.PatchWorking,
         GameStage.NeedIntegration => Launcher.Game.Note is { } note && Launcher.Game.NoteIsError ? note : Launcher.Game.Integration?.Summary ?? S["setup.game.integration_text"],
         _ => "",
     };

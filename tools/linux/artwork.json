@@ -1,0 +1,32 @@
+{
+  "_comment": "Steam library artwork for the MKWMP shortcut, picked by hand on 2026-11-20 from SteamGridDB (game 5483943, 'Mario Kart World', verified). Only links are stored: the installer downloads them on the player's machine at install time. If a link is gone, the installer falls back to SteamGridDB's public search (POST https://www.steamgriddb.com/api/public/search/main/games, no key) and picks the first asset that is not nsfw/humor/epilepsy/animated, language en or none, official style first, upvotes-downvotes as the tie-break; and if that fails too, it installs without artwork.",
+  "steamgriddb_game_id": 5483943,
+  "search_term": "Mario Kart World",
+  "assets": {
+    "grid": {
+      "steam_file": "<appid>p.png",
+      "size": "600x900",
+      "url": "https://cdn2.steamgriddb.com/grid/863b6f50285361add8f42ce6474c246a.png"
+    },
+    "wide": {
+      "steam_file": "<appid>.png",
+      "size": "920x430",
+      "url": "https://cdn2.steamgriddb.com/grid/50181163b100f5e5f18aa13ee4c89f4a.png"
+    },
+    "hero": {
+      "steam_file": "<appid>_hero.png",
+      "size": "3840x1240",
+      "url": "https://cdn2.steamgriddb.com/hero/5a9a681bb4032653ffd5c66da8c4b5f1.png"
+    },
+    "logo": {
+      "steam_file": "<appid>_logo.png",
+      "size": "3688x1924",
+      "url": "https://cdn2.steamgriddb.com/logo/bfc0ef1ee5cdc6ccfd71ba755eaa687e.png"
+    },
+    "icon": {
+      "steam_file": "<appid>_icon.png",
+      "size": "256x256",
+      "url": "https://cdn2.steamgriddb.com/icon/8fc6c55e1286828ef424cf6e4f4325a3.png"
+    }
+  }
+}

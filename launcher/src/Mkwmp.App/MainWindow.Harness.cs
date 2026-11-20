@@ -13,7 +13,8 @@ namespace Mkwmp.App;
 /// <summary>
 /// The screenshot harness (see docs/DESIGN.md, "Checking your page"):
 /// <c>mkwmp-launcher --demo --shot out.png [--page home|settings|setup|gallery] [--category key]
-/// [--modal update|available|ready|ready-game|confirm|message|progress|crash|crash-report|bug-report] [--state crashed|crashed-solo|crashed-exit] [--friends] [--toast]
+/// [--modal update|available|ready|ready-game|confirm|message|progress|crash|crash-report|bug-report|gamework|gameupdate|install]
+/// [--state crashed|crashed-solo|crashed-exit|downloading|installing|download-failed|setting-up|setup-failed|need-dump|setup-again|runtime-update|install-fails|dev-package] [--friends] [--toast]
 /// [--press right,down,a,…] [--size 1920x1080] [--theme dark] [--battery 93] [--input keyboard] [--locale pt-BR]
 /// [--overlay [--overlay-frame png|none] [--overlay-no-menu] [--overlay-progress 0..1 | --overlay-return 0..1]]</c>
 /// renders the stage at that size once everything has settled, saves the PNG and exits. The window
@@ -62,6 +63,8 @@ public partial class MainWindow
             return;
         }
 
+        // A screenshot shows the state it was asked for: the launcher starts the game's update by itself only for --modal gameupdate.
+        _vm.AutoGameUpdate = false;
         var keyboard = string.Equals(App.Option(args, "--input"), "keyboard", StringComparison.OrdinalIgnoreCase);
         _vm.InputKind = keyboard ? InputKind.Keyboard : InputKind.Gamepad;
         _vm.GamepadConnected = !keyboard;
@@ -134,6 +137,11 @@ public partial class MainWindow
     {
         // --state blocked|offline|signedout|nofriends|uptodate|queued|seated: another demo situation; --with-tray: as on Windows
         (_vm.Launcher as DesignLauncher)?.Pretend(App.Option(args, "--state"));
+        // --cover <png>: the game's cover on the Play card (a picture made on this PC, never one of the repository)
+        if (App.Option(args, "--cover") is { Length: > 0 } cover)
+        {
+            (_vm.Launcher as DesignLauncher)?.PretendCover(Path.GetFullPath(cover));
+        }
         // --step welcome|name|game|online|consent|server|register|pin|done[=text]: that page of the welcome flow
         // (--page setup), or of Settings › Online's connect pages (--page connect); "=text" types into it (server=mkw.example.net)
         if (App.Option(args, "--step") is { } step && _vm.Page is SetupViewModel flow)
@@ -234,6 +242,22 @@ public partial class MainWindow
                 break;
             case "bug-report":
                 await _vm.ReportAsync(null, open: false).ConfigureAwait(true);
+                break;
+            // "Game setup" (with --state downloading | installing | download-failed | setting-up | setup-failed | need-dump |
+            // setup-again | runtime-update): the card the Game tile, PLAY and Settings › Game open; gameupdate: the flow the
+            // launcher starts by itself after an update of its runtime; install: Settings › Game's INSTALL, to its end
+            case "gamework":
+                _vm.ShowGameWork();
+                break;
+            case "gameupdate":
+                _vm.ShowGameWork(driving: true);
+                break;
+            case "install":
+                if (_vm.Page is SettingsViewModel inGame)
+                {
+                    inGame.Game.InstallCommand.Execute(null);
+                    await Task.Delay(2200).ConfigureAwait(true);
+                }
                 break;
             case "progress":
                 _vm.ShowProgress("Installing…", "Copying the online play files into the game folder.").Report(0.65, "3 files left");

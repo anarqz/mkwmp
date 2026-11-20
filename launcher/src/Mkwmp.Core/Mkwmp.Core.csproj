@@ -12,6 +12,8 @@
   <ItemGroup>
     <PackageReference Include="Tomlyn" />
     <PackageReference Include="NSec.Cryptography" />
+    <PackageReference Include="ZstdSharp.Port" />
+    <PackageReference Include="AssetRipper.TextureDecoder" />
   </ItemGroup>
 
   <!-- The window's catalogs, built in (Catalogs.cs): en.json is the core's own English (Strings.cs), and with the

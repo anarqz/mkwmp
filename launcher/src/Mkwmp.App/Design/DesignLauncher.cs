@@ -99,6 +99,7 @@ public sealed class DesignLauncher : ILauncher
         var problem = _pretended
             ?? (online ? !named ? CoreStrings.PickGamertag : !signedIn ? CoreStrings.NeedPin : !s.AdultConsent ? CoreStrings.NoConsent : null : null)
             ?? (Game.Install is null ? CoreStrings.SetGameFolder("the one with mkw.exe") : null)
+            ?? (Runtime.State == RuntimeState.UpdateAvailable ? CoreStrings.RuntimeUpdateNeeded("mkw-recomp", DemoRuntime.Version) : Runtime.Busy ? CoreStrings.RuntimeBusy("mkw-recomp") : null)
             ?? GameSetup.State switch
             {
                 GameSetupState.Running => CoreStrings.SetupRunning,
@@ -151,9 +152,15 @@ public sealed class DesignLauncher : ILauncher
             TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch)],
         new GameInstall("mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp\mkw.exe", "0.1.15-mkwmp", "1.8.0", null),
         new TargetCheck(TargetStatus.Ready, null, null, null, null),
-        new IntegrationReport(IntegrationState.Installed, "Installed (v1.4.0, verified)",
-            ["winmm.dll: v1.4.0, verified", "mkwmp-voice.dll: v1.4.0, verified", "mkwmp-camera.dll: v1.4.0, verified"]),
+        DemoMod,
         false, false, null, false);
+
+    /// <summary>The MKWMP mod, installed and verified: what an mkw-recomp that loads mods reports.</summary>
+    private static readonly IntegrationReport DemoMod = new(IntegrationState.Installed, CoreStrings.PatchState("mod_installed", "1.4.0"),
+        [@"mods/mkwmp: v1.4.0 (C:\Games\Mario Kart World\mkw-recomp\mods\mkwmp)", "mkw.ini [launcher] mods: enabled", "files: 7 of 7 verified against v1.4.0"]) { AsMod = true };
+
+    /// <summary><c>--state install-fails</c>: INSTALL ends with the error of a launcher that has no package for its version.</summary>
+    private bool _installFails;
 
     public VoiceView Voice { get; private set; } = new(
         [new AudioDevice("mic-1", "Headset Microphone"), new AudioDevice("mic-2", "Webcam Microphone")],
@@ -193,7 +200,7 @@ public sealed class DesignLauncher : ILauncher
         var folder = @"C:\Games\Mario Kart World\mkw-recomp";
         var bare = new GameInstall("mkw-recomp", folder, folder + @"\mkw.exe", DemoRuntime.Version, null, null);
         var ready = new TargetCheck(TargetStatus.Ready, null, null, null, null);
-        var noMod = new IntegrationReport(IntegrationState.Missing, "Not installed: press INSTALL", []);
+        var noMod = new IntegrationReport(IntegrationState.Missing, CoreStrings.PatchState("missing"), [@"mods/mkwmp: not installed (C:\Games\Mario Kart World\mkw-recomp\mods\mkwmp)"]) { AsMod = true };
         switch (state)
         {
             case "crashed" or "crashed-solo" or "crashed-exit":
@@ -209,9 +216,39 @@ public sealed class DesignLauncher : ILauncher
                 break;
             case "downloading":
                 PretendRuntime(RuntimeState.Downloading);
+                Change(Sync);
                 break;
             case "download-failed":
                 PretendRuntime(RuntimeState.Failed);
+                break;
+            // ── the game on its way to playable, after the welcome: home, Settings › Game, the card (--modal gamework) ──
+            case "installing":
+                PretendRuntime(RuntimeState.Installing, 0.8);
+                Change(Sync);
+                break;
+            // a launcher update brought a newer mkw-recomp: PLAY is locked until it is in (--modal gameupdate: the flow itself)
+            case "runtime-update":
+                PretendRuntime(RuntimeState.UpdateAvailable);
+                Change(Sync);
+                break;
+            // the runtime changed: the game is set up again from the copy it was built from (no file is asked for)
+            case "setup-again":
+                PretendGameSetup(GameSetupState.NeedsSetup, GameSetupReason.RuntimeChanged);
+                break;
+            case "install-fails":
+                _installFails = true;
+                Change(() =>
+                {
+                    Game = Game with { Integration = noMod };
+                    Sync();
+                });
+                break;
+            case "dev-package":
+                Change(() => Game = Game with
+                {
+                    Integration = new IntegrationReport(IntegrationState.Installed, CoreStrings.PatchState("mod_dev", "1.4.0-dev.646873e"),
+                        [.. DemoMod.Lines.Take(2), "files: 7 of 7 verified against v1.4.0", "development package (unsigned): used because MKWMP_DEV_PACKAGE=1 or dev_package = true"]) { AsMod = true },
+                });
                 break;
             case "need-dump" or "setting-up" or "setup-failed":
                 Change(() => (Game, Runtime) = (Game with { Install = bare, Check = ready, Integration = noMod }, Runtime with { State = RuntimeState.Installed, InstalledVersion = DemoRuntime.Version }));
@@ -220,7 +257,7 @@ public sealed class DesignLauncher : ILauncher
             case "need-mod" or "game-ready":
                 Change(() =>
                 {
-                    Game = Game with { Install = bare with { GameVersion = "1.8.0" }, Check = ready, Integration = state == "need-mod" ? noMod : new IntegrationReport(IntegrationState.Mod, "MKWMP runs as a mod in this game", []) };
+                    Game = Game with { Install = bare with { GameVersion = "1.8.0" }, Check = ready, Integration = state == "need-mod" ? noMod : DemoMod };
                     Runtime = Runtime with { State = RuntimeState.Installed, InstalledVersion = DemoRuntime.Version };
                     GameSetup = DemoSetupIdle;
                     Settings = Settings with { Game = folder };
@@ -257,6 +294,9 @@ public sealed class DesignLauncher : ILauncher
                 break;
             case "list-cached":
                 PretendServers(ServerListState.Cached);
+                break;
+            case "servers-hidden":
+                PretendHidden();
                 break;
             case "registered":
                 Change(() =>
@@ -398,30 +438,77 @@ public sealed class DesignLauncher : ILauncher
 
     public IReadOnlyList<SavedServer> SavedServers { get; private set; } = [];
 
-    // ---- the beholder's list: five servers, near to far, one that does not answer ----------
+    // ---- the beholder's list: twelve servers, near to far, one that does not answer, two not measured ----------
     private static readonly ListedServer[] DemoServers =
     [
-        new("MKWMP", DemoServer, "sa-east", "1.4.0", 32, 12, 0, 23, true),
-        new("Rainbow Road Club", "https://rainbow.example.org", "sa-east", "1.4.0", 24, 24, 3, 41, true),
-        new("Kart Night EU", "https://kartnight.example.eu", "eu-west", "1.4.0", 32, 7, 0, 118, true),
-        new("Blue Shell Lounge", "https://blueshell.example.com", "us-east", "1.3.2", 16, 2, 0, 204, true),
-        new("Coconut Mall", "https://coconut.example.jp", "ap-northeast", "1.4.0", 12, 0, 0, null, false),
+        new("MKWMP", DemoServer, "sa-east", "1.4.0", 32, 12, 0, 23, true) { PublicKey = "demo-key-01" },
+        new("Rainbow Road Club", "https://rainbow.example.org", "sa-east", "1.4.0", 24, 24, 3, 41, true) { PublicKey = "demo-key-02" },
+        new("Kart Night EU", "https://kartnight.example.eu", "eu-west", "1.4.0", 32, 7, 0, 118, true) { PublicKey = "demo-key-03" },
+        new("Blue Shell Lounge", "https://blueshell.example.com", "us-east", "1.3.2", 16, 2, 0, 204, true) { PublicKey = "demo-key-04" },
+        new("Moo Moo Meadows", "https://moomoo.example.net", "us-west", "1.4.0", 24, 9, 0, 212, true) { PublicKey = "demo-key-05" },
+        new("Toad's Turnpike", "https://turnpike.example.ca", "us-east", "1.4.0", 16, 16, 1, 221, true) { PublicKey = "demo-key-06" },
+        new("Shy Guy Bazaar", "https://bazaar.example.de", "eu-central", "1.4.0", 32, 3, 0, 236, true) { PublicKey = "demo-key-07" },
+        new("Dry Bones Burnout", "https://burnout.example.es", "eu-south", "1.4.0", 12, 5, 0, 249, true) { PublicKey = "demo-key-08" },
+        new("Wario Stadium", "https://stadium.example.au", "ap-southeast", "1.4.0", 32, 20, 0, 318, true) { PublicKey = "demo-key-09" },
+        new("Peach Beach", "https://beach.example.kr", "ap-northeast", "1.4.0", 16, 1, 0, null, null) { PublicKey = "demo-key-10" },
+        new("DK Spaceport", "https://spaceport.example.in", "ap-south", "1.3.2", 8, 0, 0, null, null) { PublicKey = "demo-key-11" },
+        new("Coconut Mall", "https://coconut.example.jp", "ap-northeast", "1.4.0", 12, 0, 0, null, false) { PublicKey = "demo-key-12" },
     ];
 
     private int _measure;
+    private IReadOnlyList<HiddenServer> _hiddenServers = [];
 
     public ServerListView Servers { get; private set; } = new(ServerListState.Ready, DemoServers, false, null);
+
+    /// <summary>The demo's list without the hidden ones, in the real one's order (answered by latency, not measured, no answer).</summary>
+    private ListedServer[] ShownServers(int turn = 0) =>
+        [.. DemoServers.Where(s => !_hiddenServers.Any(h => h.Is(s)))
+            .Select((s, i) => s.LatencyMs is { } ms && turn > 0 ? s with { LatencyMs = ms + ((turn * (i + 3)) % 7) - 3 } : s)
+            .OrderBy(s => s.Online switch { true => 0, null => 1, _ => 2 }).ThenBy(s => s.LatencyMs ?? int.MaxValue)];
 
     /// <summary>For screenshots: no beholder (only a typed address), or the list still loading.</summary>
     public void PretendServers(ServerListState state) =>
         Change(() => Servers = state switch
         {
-            ServerListState.Off => ServerListView.Off,
-            ServerListState.Loading => new ServerListView(state, [], true, null),
-            ServerListState.Cached => new ServerListView(state, DemoServers, false, CoreStrings.BeholderUnreachable),
-            ServerListState.Failed => new ServerListView(state, [], false, CoreStrings.BeholderUnreachable),
-            _ => new ServerListView(state, DemoServers, false, null),
+            ServerListState.Off => ServerListView.Off with { Hidden = _hiddenServers },
+            ServerListState.Loading => new ServerListView(state, [], true, null) { Hidden = _hiddenServers },
+            ServerListState.Cached => new ServerListView(state, ShownServers(), false, CoreStrings.BeholderUnreachable) { Hidden = _hiddenServers },
+            ServerListState.Failed => new ServerListView(state, [], false, CoreStrings.BeholderUnreachable) { Hidden = _hiddenServers },
+            _ => new ServerListView(state, ShownServers(), false, null) { Hidden = _hiddenServers },
         });
+
+    /// <summary>For screenshots (<c>--state servers-hidden</c>): the two nearest after MKWMP's own were hidden.</summary>
+    public void PretendHidden()
+    {
+        _hiddenServers = [.. DemoServers.Skip(1).Take(2).Select(s => new HiddenServer(s.Id, s.Name, s.Address))];
+        Change(() => Servers = Servers with { Items = Servers.Items.Count > 0 ? ShownServers() : [], Hidden = _hiddenServers });
+    }
+
+    public Task<bool> HideServerAsync(ListedServer server)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        if (OnlineNow && server.Address == Settings.Server)
+        {
+            return Task.FromResult(false);
+        }
+        _hiddenServers = [.. _hiddenServers.Where(h => h.Id != server.Id), new HiddenServer(server.Id, server.Name, server.Address)];
+        Change(() => Servers = Servers with { Items = Servers.Items.Count > 0 ? ShownServers() : [], Hidden = _hiddenServers });
+        return Task.FromResult(true);
+    }
+
+    public Task ShowServerAsync(string id)
+    {
+        _hiddenServers = [.. _hiddenServers.Where(h => h.Id != id)];
+        Change(() => Servers = Servers with { Items = Servers.State is ServerListState.Ready or ServerListState.Cached ? ShownServers() : [], Hidden = _hiddenServers });
+        return Task.CompletedTask;
+    }
+
+    private bool OnlineNow => !string.IsNullOrWhiteSpace(Settings.Server);
+
+    /// <summary>The game's cover for the Play card: none in the demo, unless a screenshot gives one (<c>--cover file</c>).</summary>
+    public string? GameCover { get; private set; }
+
+    public void PretendCover(string? path) => Change(() => GameCover = path);
 
     public async Task RefreshServersAsync()
     {
@@ -449,13 +536,8 @@ public sealed class DesignLauncher : ILauncher
     private void Jitter()
     {
         var turn = ++_measure;
-        Change(() => Servers = Servers with
-        {
-            Busy = false,
-            Items = [.. DemoServers.Select((s, i) => s.LatencyMs is { } ms ? s with { LatencyMs = ms + ((turn * (i + 3)) % 7) - 3 } : s).OrderBy(s => s.LatencyMs ?? int.MaxValue)],
-        });
+        Change(() => Servers = Servers with { Busy = false, Items = ShownServers(turn), Hidden = _hiddenServers });
     }
-
     // ---- the server's own privacy policy, as Markdown ------------------------------------
     private const string DemoPrivacy =
         "# Privacy Policy\n\n"
@@ -550,15 +632,13 @@ public sealed class DesignLauncher : ILauncher
 
     public async Task InstallIntegrationAsync()
     {
-        Change(() => Game = Game with { Working = true });
+        Change(() => Game = Game with { Working = true, Note = null, NoteIsError = false });
         await Pause(1500).ConfigureAwait(false);
         Change(() =>
         {
-            Game = Game with
-            {
-                Working = false,
-                Integration = new IntegrationReport(IntegrationState.Installed, "Installed (v1.4.0, verified)", ["winmm.dll: v1.4.0, verified"]),
-            };
+            Game = _installFails
+                ? Game with { Working = false, Note = CoreStrings.PackageUnavailable(Version, "no release v" + Version), NoteIsError = true }
+                : Game with { Working = false, Integration = DemoMod, Note = CoreStrings.ModInstalled, NoteIsError = false };
             Sync();
         });
     }
@@ -567,7 +647,15 @@ public sealed class DesignLauncher : ILauncher
     {
         Change(() => Game = Game with { Working = true });
         await Pause(1000).ConfigureAwait(false);
-        Change(() => Game = Game with { Working = false, Integration = new IntegrationReport(IntegrationState.Missing, "Not installed", []) });
+        Change(() =>
+        {
+            Game = Game with
+            {
+                Working = false, Note = CoreStrings.PatchRemoved, NoteIsError = false,
+                Integration = new IntegrationReport(IntegrationState.Missing, CoreStrings.PatchState("missing"), ["mods/mkwmp: not installed"]) { AsMod = true },
+            };
+            Sync();
+        });
     }
 
     public async Task PlayAsync()

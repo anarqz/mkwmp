@@ -70,6 +70,12 @@ public interface IGameTarget
     IReadOnlyList<PackageAsset> PackageAssets => [];
 
     /// <summary>
+    /// The assets this install needs (mkw-recomp: the MKWMP mod on a runtime that loads mods, the
+    /// game patch on an older one). The default: <see cref="PackageAssets"/>, whatever the install.
+    /// </summary>
+    IReadOnlyList<PackageAsset> PackageAssetsFor(GameInstall install) => PackageAssets;
+
+    /// <summary>
     /// False when <see cref="InstallAsync"/> needs no files for this install right now (mkw-recomp
     /// with the MKWMP mod enabled: installing then only takes the launcher's own patch out). The
     /// core then calls it with <see cref="IntegrationPackage.Empty"/> even when offline.
@@ -162,12 +168,26 @@ public interface IGameTarget
     /// chosen, and written before an online session. (Id, value, why: shown on the locked row.)
     /// </summary>
     IReadOnlyList<(string Id, string Value, string Why)> OnlineOwnedSettings => [];
+
+    /// <summary>
+    /// The game's own cover picture for the launcher's Play card: the path of an image file (PNG or JPEG) under
+    /// <paramref name="cacheFolder"/> (the launcher's <c>cache\</c>, beside its exe), made once from the player's own
+    /// copy of the game and found again on later calls; null when this target has none or the copy cannot be read
+    /// now (never throws). It may read large files: the core calls it off the window's thread. The picture is the
+    /// player's own: shown on this PC only, never sent anywhere and never put in a report or a release.
+    /// </summary>
+    string? CoverArt(GameInstall install, string cacheFolder) => null;
 }
 
 /// <param name="Name">The file's name in the release and in SHA256SUMS.</param>
 /// <param name="Required">A release without it has no integration for this target.</param>
 /// <param name="Label">What the player calls it, for errors ("game patch download failed: …").</param>
-public sealed record PackageAsset(string Name, bool Required, string Label);
+/// <param name="Unpacked">
+/// For a zip: the folder that may stand for it in the launcher's <c>game/</c> folder, with every
+/// file listed as <c>&lt;Unpacked&gt;/&lt;path&gt;</c> in SHA256SUMS (<c>mods/mkwmp</c> for
+/// <c>mkwmp-mod.zip</c>). The package then carries those files by their listed names.
+/// </param>
+public sealed record PackageAsset(string Name, bool Required, string Label, string? Unpacked = null);
 
 [Flags]
 public enum TargetCapabilities
@@ -192,12 +212,16 @@ public enum TargetStatus { Missing, Unsupported, NeedsRebuild, NoIntegration, Re
 /// <param name="FixLabel">Button text for <paramref name="FixUrl"/>, e.g. "Get 0.1.15-mkwmp".</param>
 public sealed record TargetCheck(TargetStatus Status, string? Problem, string? Explain, Uri? FixUrl, string? FixLabel);
 
-public enum IntegrationState { Installed, Unverified, Missing, Outdated, Damaged, HostMissing, Dev, Mod }
+/// <summary><c>Disabled</c>: the files are in the game, and the game is not told to load them (mkw-recomp: the mod is not in mkw.ini's <c>mods</c>).</summary>
+public enum IntegrationState { Installed, Unverified, Missing, Outdated, Damaged, HostMissing, Dev, Mod, Disabled }
 
 /// <param name="Lines">Per-file lines ("winmm.dll: v1.4.0, verified").</param>
 public sealed record IntegrationReport(IntegrationState State, string Summary, IReadOnlyList<string> Lines)
 {
     public bool Ok => State is IntegrationState.Installed or IntegrationState.Unverified or IntegrationState.Dev or IntegrationState.Mod;
+
+    /// <summary>The integration of this install is a mod of the game (mkw-recomp: the MKWMP mod), not files beside its executable: the window words it so.</summary>
+    public bool AsMod { get; init; }
 }
 
 /// <summary>The verified files the launcher carries or downloaded for this version (name → bytes on disk).</summary>
@@ -205,6 +229,13 @@ public sealed record IntegrationPackage(string Version, IReadOnlyDictionary<stri
 {
     /// <summary>No files: for an install whose target says <see cref="IGameTarget.NeedsPackage"/> is false.</summary>
     public static IntegrationPackage Empty(string version) => new(version, new Dictionary<string, string>(), new Dictionary<string, string>());
+
+    /// <summary>
+    /// A development package: its list of hashes is not signed by the release key. The launcher
+    /// takes one only when told to (<c>MKWMP_DEV_PACKAGE=1</c>, or <c>dev_package = true</c> in
+    /// client.toml), and the report of what it installed says so.
+    /// </summary>
+    public bool Development { get; init; }
 }
 
 /// <summary>What the hook reads (mkwmp.toml): see docs/contracts/LAUNCHER_API.md.</summary>

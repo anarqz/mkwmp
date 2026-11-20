@@ -30,6 +30,18 @@
         <c:PageHost x:Name="Pages" Grid.Row="1" Navigator="{Binding Nav}" />
       </Grid>
 
+      <!-- the game's download or setup, while it runs: a spinner, what it is and how far; a click opens its card
+           (ShellViewModel.GameWork.cs). Not a stop of the controller's focus: the Game tile, PLAY and Settings › Game lead there. -->
+      <Button x:Name="GameWorkPill" Style="{StaticResource ChromeButton}" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,22,0,0"
+              Padding="22,10" Focusable="False" Command="{Binding GameWorkCommand}"
+              Visibility="{Binding ShowGameWorkIndicator, Converter={StaticResource Conv.Visible}}">
+        <StackPanel Orientation="Horizontal">
+          <c:Spinner Width="30" Height="30" Margin="0,0,14,0" />
+          <TextBlock Text="{Binding GameWorkTitle}" Style="{StaticResource Text.Base}" FontSize="24" MaxWidth="560" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding GameWorkPercent}" Style="{StaticResource Text.Base}" FontSize="24" FontWeight="SemiBold" Margin="14,0,0,0" />
+        </StackPanel>
+      </Button>
+
       <!-- 1: the friends panel, from the right, on any page -->
       <Border x:Name="FriendsScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnFriendsScrim"
               Visibility="{Binding IsFriendsOpen, Converter={StaticResource Conv.Visible}}" />

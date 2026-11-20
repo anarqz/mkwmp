@@ -52,6 +52,7 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
     {
         _connectOnly = connectOnly;
         Servers = new ServerPicker(shell, PickServer);
+        Servers.HintsChanged += (_, _) => RefreshHints();
         var s = Launcher.Settings;
         _name = s.Name;
         _adult = s.AdultConsent;
@@ -524,6 +525,10 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
             {
                 hints.Add(PinHint.For(S, _pinRevealed));
             }
+            if (_step == SetupStep.Server && Servers.Hint is { } hide)
+            {
+                hints.Add(hide); // a server of the list has the focus: Y hides it
+            }
             if (_connectOnly || StepIndex > 0)
             {
                 hints.Add(new Hint(PadButton.B, S["hint.back"]));
@@ -538,6 +543,10 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         if (button == PadButton.X && _step == SetupStep.Pin)
         {
             PinRevealed = !PinRevealed;
+            return true;
+        }
+        if (_step == SetupStep.Server && Servers.OnButton(button))
+        {
             return true;
         }
         return button is PadButton.Start; // no Settings from inside the flow: it would be a way around it

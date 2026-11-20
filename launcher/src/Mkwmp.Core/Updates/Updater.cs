@@ -112,6 +112,16 @@ public sealed class Updater
         {
             throw new LauncherException("SHA256SUMS signature does not verify");
         }
+        return ParseSums(sums, version);
+    }
+
+    /// <summary>
+    /// The list in a SHA256SUMS for <paramref name="version"/>, WITHOUT any check of who wrote it:
+    /// only after <see cref="VerifySums"/> checked the signature, or for a development package the
+    /// player turned on (<see cref="Launcher.DevPackageEnv"/>).
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> ParseSums(ReadOnlySpan<byte> sums, SemVer version)
+    {
         string text;
         try
         {

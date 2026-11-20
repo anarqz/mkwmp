@@ -31,7 +31,8 @@ public sealed class GameForm : ObservableObject
         SearchCommand = RelayCommand.Async(() => Launcher.FindGameAsync(), () => CanChange && !Game.Searching);
         TargetCommand = RelayCommand.Async(PickTargetAsync, () => CanChange);
         FixCommand = new RelayCommand(() => Links.Open(_shell, Game.Check?.FixUrl?.AbsoluteUri), () => HasFix);
-        InstallCommand = RelayCommand.Async(() => Launcher.InstallIntegrationAsync(), () => CanInstall);
+        InstallCommand = RelayCommand.Async(InstallAsync, () => CanInstall);
+        SetupCommand = new RelayCommand(() => _shell.ShowGameWork());
         UninstallCommand = RelayCommand.Async(UninstallAsync, () => CanUninstall);
     }
 
@@ -100,7 +101,31 @@ public sealed class GameForm : ObservableObject
 
     public string FixCaption => Game.Check?.FixUrl?.AbsoluteUri ?? "";
 
-    public string IntegrationSummary => Game.Working ? CoreStrings.PatchWorking : Game.Integration?.Summary ?? "";
+    /// <summary>The integration of this install is the MKWMP mod (an mkw-recomp that loads mods), not the game patch beside mkw.exe: the page says "MKWMP mod".</summary>
+    public bool AsMod => Game.Integration is { AsMod: true };
+
+    private string WorkingText => AsMod ? CoreStrings.ModWorking : CoreStrings.PatchWorking;
+
+    public string FilesTitle => AsMod ? S["settings.game.mod"] : S["settings.game.files"];
+
+    public string FilesCaption => AsMod ? S["settings.game.mod_caption"] : S["settings.game.files_caption"];
+
+    public string InstallCaption => AsMod ? S["settings.game.mod_install_caption"] : S["settings.game.install_caption"];
+
+    public string UninstallCaption => AsMod ? S["settings.game.mod_uninstall_caption"] : S["settings.game.uninstall_caption"];
+
+    public string IntegrationSummary => Game.Working ? WorkingText : Game.Integration?.Summary ?? "";
+
+    // ── the game's setup (and its runtime's download): a row that leads to its card ──
+
+    /// <summary>"Running · 42%", "Failed", "Needed", "Update needed", "Done"; no row when the launcher sets nothing up here.</summary>
+    public string SetupState => _shell.GameWorkState;
+
+    public bool HasSetupRow => SetupState.Length > 0;
+
+    public string SetupCaption => _shell.GameWorkText ?? (_shell.HasGameWork ? Launcher.PlayProblem ?? "" : S["settings.game.setup_caption"]);
+
+    public ICommand SetupCommand { get; }
 
     /// <summary>INSTALL when the files are missing or wrong, REPAIR when they are fine.</summary>
     public string InstallLabel => Game.Integration is { Ok: true } ? S["settings.game.repair"] : S["settings.game.install"];
@@ -182,7 +207,7 @@ public sealed class GameForm : ObservableObject
         }
         if (Game.Working)
         {
-            lines.Add(new StatusLine("busy", CoreStrings.PatchWorking));
+            lines.Add(new StatusLine("busy", WorkingText));
         }
         else if (Game.Integration is { } report)
         {
@@ -260,11 +285,36 @@ public sealed class GameForm : ObservableObject
         }
     }
 
+    /// <summary>INSTALL / REPAIR. Never silent: a failure is said in a card, with the reason; a success in a toast (the row's note says both too).</summary>
+    private async Task InstallAsync()
+    {
+        await Launcher.InstallIntegrationAsync().ConfigureAwait(true);
+        Refresh();
+        if (Game.NoteIsError)
+        {
+            await _shell.MessageAsync(S["settings.game.install_failed"], Game.Note ?? Game.Integration?.Summary ?? "").ConfigureAwait(true);
+        }
+        else
+        {
+            _shell.ShowToast(Game.Note ?? CoreStrings.PatchInstalled, Game.Integration?.Summary ?? "");
+        }
+    }
+
     private async Task UninstallAsync()
     {
-        if (await _shell.ConfirmAsync(S["settings.game.uninstall_title"], S["settings.game.uninstall_body"], S["settings.game.uninstall"]).ConfigureAwait(true))
+        var mod = AsMod;
+        if (await _shell.ConfirmAsync(S["settings.game.uninstall_title"], mod ? S["settings.game.mod_uninstall_body"] : S["settings.game.uninstall_body"], S["settings.game.uninstall"]).ConfigureAwait(true))
         {
             await Launcher.UninstallIntegrationAsync().ConfigureAwait(true);
+            Refresh();
+            if (Game.NoteIsError)
+            {
+                await _shell.MessageAsync(S["settings.game.uninstall_failed"], Game.Note ?? "").ConfigureAwait(true);
+            }
+            else
+            {
+                _shell.ShowToast(Game.Note ?? CoreStrings.PatchRemoved);
+            }
         }
     }
 }
