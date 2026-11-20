@@ -16,7 +16,7 @@ use std::time::SystemTime;
 use crate::update::sha256_hex;
 
 /// The runtimes the game patch supports (KNOWN names their mkw.exe).
-pub const SUPPORTED: &[&str] = &["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp"];
+pub const SUPPORTED: &[&str] = &["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16"];
 /// What the window recommends installing.
 pub const RECOMMENDED: &str = "0.1.15-mkwmp";
 pub const DOWNLOAD: &str = "https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.15-mkwmp";
@@ -29,6 +29,7 @@ const KNOWN: &[(&str, &str)] = &[
     ("0.1.13", "1c47ffa2502a1ee92c2d01da0791802c18bf6c3365040c2b4fa1c91dacbc8695"),
     ("0.1.15", "511148040eac4f71cc3f003ace2d100fef784f1756339d88ca939896016d86e9"),
     ("0.1.15-mkwmp", "c6d732115683fff57ab1cd7e68414934c4fa132b2a5afc48247a8826797d58b9"),
+    ("0.1.16", "e1829a08a7e24ab0f54425fd5e6a400a6fe5c54798757a80a104268e6c18e029"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,7 +150,7 @@ pub fn data_dir(game: &Path) -> PathBuf {
 /// MKWMP's mod folder name, under mkw-recomp's `mods/`.
 pub const MOD: &str = "mkwmp";
 /// The supported releases that load mods (MKW_MODS, plugin API 3).
-pub const MOD_RUNTIMES: &[&str] = &["0.1.15", "0.1.15-mkwmp"];
+pub const MOD_RUNTIMES: &[&str] = &["0.1.15", "0.1.15-mkwmp", "0.1.16"];
 
 /// The MKWMP mod runs in this game: a runtime that loads mods, and the mod
 /// enabled there ([`mod_dir`]). A leftover `mods = mkwmp` on an older
@@ -254,6 +255,7 @@ const GAME_IDS: &[(&str, &str)] = &[
     ("0.1.13", "c0dd6cf12c07c23a"),
     ("0.1.15", "c9bbcb75a9ac9a49"),
     ("0.1.15-mkwmp", "c0dd6cf12c07c23a"),
+    ("0.1.16", "c9bbcb75a9ac9a49"),
 ];
 
 /// The id the game in this folder was set up for: mkwgame.id, else the
@@ -324,7 +326,7 @@ mod tests {
     fn only_supported_releases_pass() {
         assert_eq!(identify_bytes(b"not mkw.exe"), Recomp::Unknown);
         assert!(!Recomp::Unknown.ok() && Recomp::Unknown.problem().unwrap().contains("0.1.13"));
-        assert!(Recomp::Other("0.1.11").problem().unwrap().contains("0.1.11: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp"));
+        assert!(Recomp::Other("0.1.11").problem().unwrap().contains("0.1.11: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp or 0.1.16"));
         assert_eq!(identify_bytes(&[]), Recomp::Unknown);
         assert!(Recomp::Supported("0.1.10").ok() && Recomp::Supported("0.1.10").problem().is_none());
         assert!(SUPPORTED.iter().all(|v| KNOWN.iter().any(|(k, _)| k == v)), "every supported release has a known hash");
