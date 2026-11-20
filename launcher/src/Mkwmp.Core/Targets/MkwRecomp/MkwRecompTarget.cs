@@ -139,10 +139,7 @@ public sealed class MkwRecompTarget : IGameTarget
         yield return Path.Combine(profile, "Downloads");
         yield return Path.Combine(profile, "Downloads", "GAMES");
         yield return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        if (RuntimeInstaller.DataFolder is { } installs)
-        {
-            yield return installs; // where the launcher installs mkw-recomp itself
-        }
+        yield return LauncherOptions.LauncherFolder; // where the launcher installs mkw-recomp itself (portable: beside it)
         DriveInfo[] drives;
         try
         {

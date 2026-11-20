@@ -18,9 +18,46 @@ public sealed partial class Launcher
     /// mod and for a second launcher. Call once the local API is up; false when it is not, or the
     /// file cannot be written.
     /// </summary>
-    public bool PublishRecord(string? path = null) =>
-        LocalApiPort > 0 && Environment.ProcessPath is { } exe
-        && new LauncherRecord(exe.Replace('\\', '/'), Environment.ProcessId, LocalApiPort, Token).Write(path);
+    public bool PublishRecord(string? path = null)
+    {
+        if (LocalApiPort <= 0 || Environment.ProcessPath is not { } exe)
+        {
+            return false;
+        }
+        var record = new LauncherRecord(exe.Replace('\\', '/'), Environment.ProcessId, LocalApiPort, Token);
+        var written = record.Write(path);
+        if (path is null)
+        {
+            PublishModRecord(record);
+        }
+        return written;
+    }
+
+    private string? _modRecordAt;
+
+    /// <summary>
+    /// The copy the mod reads, in the game's mod folder (<c>&lt;data&gt;\mods\mkwmp\launcher.json</c>),
+    /// so a game started without the launcher finds it: portable, no file in the user's profile.
+    /// Written again when the game folder changes; nothing when the mod is not installed there.
+    /// </summary>
+    private void PublishModRecord(LauncherRecord? record = null)
+    {
+        if (LocalApiPort <= 0 || Environment.ProcessPath is not { } exe || Game.Install is not { } install)
+        {
+            return;
+        }
+        var mod = Path.Combine(install.DataRoot ?? install.Root, "mods", "mkwmp");
+        var at = Path.Combine(mod, "launcher.json");
+        if (!Directory.Exists(mod) || (record is null && at == _modRecordAt))
+        {
+            return;
+        }
+        record ??= new LauncherRecord(exe.Replace('\\', '/'), Environment.ProcessId, LocalApiPort, Token);
+        if (record.Write(at))
+        {
+            _modRecordAt = at;
+        }
+    }
 
     /// <summary>Stands by for the game of <paramref name="args"/> (the overlay host's start); false when the local API is not up or the game is gone.</summary>
     public bool AttachOverlayHost(OverlayHostArgs args) => LocalApiPort > 0 && _local.Instance.Attach(args, LocalApiPort, Token);

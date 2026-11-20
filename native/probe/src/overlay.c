@@ -266,7 +266,7 @@ static int file_there(const char *path) {
     return path[0] && plat_read_file(path, two, sizeof two) > 0;
 }
 
-// "exe": "<path>" of %LOCALAPPDATA%\mkwmp\launcher.json, which the launcher writes at every start (JSON escapes \\ and
+// "exe": "<path>" of the mod folder's launcher.json, which the launcher writes there (JSON escapes \\ and
 // \" undone; anything else is not a path the launcher writes).
 static int record_exe(const char *json, char *out, size_t cap) {
     const char *v = json_value(json, "exe");
@@ -289,10 +289,10 @@ static int host_find(const MkwPluginApi *api) {
     // 2. what the launcher left in mkwmp.toml when it last ran this game (launcher_exe)
     snprintf(g_host_exe, sizeof g_host_exe, "%s", mkwmp_config()->launcher_exe);
     if (file_there(g_host_exe)) return 1;
-    // 3. the launcher's own record for this user, also for players who only ever opened it once
-    char dir[400], path[520], text[2048];
-    if (plat_getenv("LOCALAPPDATA", dir, sizeof dir) &&
-        snprintf(path, sizeof path, "%s/mkwmp/launcher.json", dir) < (int)sizeof path) {
+    // 3. the record the launcher leaves in this mod's folder (portable: nothing in the user's profile), also for
+    //    players who only ever opened the launcher once
+    char path[520], text[2048];
+    if (plat_home_path(path, sizeof path, "launcher.json")) {
         long n = plat_read_file(path, text, sizeof text - 1);
         if (n > 0) {
             text[n] = 0;
@@ -521,7 +521,7 @@ void overlay_install(const MkwPluginApi *api) {
     g_hosted = !(cfg->launcher_port && !cfg->direct);
     if (g_hosted && !host_find(api)) {
         mkwmp_log("overlay: off: no MKWMP launcher runs this game and none is found to start (the setting "
-                  "launcher_path, launcher_exe of mkwmp.toml, %%LOCALAPPDATA%%/mkwmp/launcher.json, the mod's folder)");
+                  "launcher_path, launcher_exe of mkwmp.toml, the mod folder's launcher.json, the mod's folder)");
         return;
     }
     g_api = api;

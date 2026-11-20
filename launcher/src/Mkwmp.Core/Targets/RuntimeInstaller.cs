@@ -132,15 +132,6 @@ public sealed class RuntimeInstaller
 
     public RuntimeManifest Manifest => _manifest;
 
-    /// <summary>
-    /// The launcher's own data folder, <c>%LOCALAPPDATA%\MKWMP</c>: installs go into
-    /// <c>&lt;it&gt;\&lt;<see cref="RuntimeManifest.FolderName"/>&gt;</c> unless the player picks a folder, and
-    /// downloads wait in <c>&lt;it&gt;\downloads</c>. Under Wine / Proton that is inside the prefix
-    /// (<c>C:\users\steamuser\AppData\Local</c>). Null when the system names no such folder.
-    /// </summary>
-    public static string? DataFolder =>
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) is { Length: > 0 } local ? Path.Combine(local, "MKWMP") : null;
-
     /// <summary>The verified download.</summary>
     public string ArchivePath => Path.Combine(_cache, _manifest.Asset);
 

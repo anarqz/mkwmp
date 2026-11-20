@@ -246,7 +246,8 @@ public partial class App : Application
     {
         try
         {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mkwmp");
+            // portable: beside the exe, with the launcher's other logs
+            var dir = Path.Combine(Mkwmp.Core.LauncherOptions.LauncherFolder, "logs");
             Directory.CreateDirectory(dir);
             File.AppendAllText(Path.Combine(dir, "launcher-ui.log"), $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss.fff zzz} {line}{Environment.NewLine}");
         }

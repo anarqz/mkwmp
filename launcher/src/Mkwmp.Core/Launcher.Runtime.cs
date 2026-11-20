@@ -30,7 +30,12 @@ public sealed partial class Launcher
     /// <summary>The runtime this launcher installs for the selected target, if it has one.</summary>
     private RuntimeManifest? RuntimeManifestFor(IGameTarget target) => _options.Runtime ?? target.Runtime;
 
-    private string DataFolder => RuntimeInstaller.DataFolder ?? Path.Combine(LauncherFolder, "data");
+    /// <summary>
+    /// Portable: everything the launcher keeps lives beside its exe (the user's rule, 2026-11-20). The
+    /// runtime installs into <c>&lt;launcher&gt;\mkw-recomp</c> unless the player picks a folder, and its
+    /// download waits in <c>&lt;launcher&gt;\downloads</c>.
+    /// </summary>
+    private string DataFolder => LauncherFolder;
 
     private string DefaultRuntimeFolder(RuntimeManifest manifest) => _options.RuntimeFolder ?? Path.Combine(DataFolder, manifest.FolderName);
 

@@ -65,6 +65,7 @@ public sealed partial class Launcher
             }
         });
         FollowGameSettings();
+        PublishModRecord(); // the mod finds this launcher in its own folder (portable)
     }
 
     /// <summary>

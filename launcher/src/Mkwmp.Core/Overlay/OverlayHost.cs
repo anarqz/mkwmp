@@ -58,15 +58,15 @@ public sealed record OverlayHostArgs(int ParentPid, string SessionPath)
 }
 
 /// <summary>
-/// <c>%LOCALAPPDATA%\mkwmp\launcher.json</c>: where this user's launcher is and, while it runs,
-/// how to reach it. The mod reads <c>exe</c> to start the launcher as its overlay host; a second
-/// launcher reads the rest to hand over to the running one. Under Wine the file belongs to the
-/// prefix, as every path in it does.
+/// <c>launcher.json</c>: where this launcher is and, while it runs, how to reach it. Portable:
+/// it lives beside the launcher's exe (a second launcher of that folder reads it to hand over to
+/// the running one), and a copy goes into the game's mod folder (<c>mods\mkwmp\launcher.json</c>),
+/// where the mod reads <c>exe</c> to start the launcher as its overlay host. Nothing is kept in the
+/// user's profile.
 /// </summary>
 public sealed record LauncherRecord(string Exe, int Pid, int Port, string Token)
 {
-    public static string DefaultPath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mkwmp", "launcher.json");
+    public static string DefaultPath => Path.Combine(LauncherOptions.LauncherFolder, "launcher.json");
 
     /// <summary>Writes the record; false when the file cannot be written (the overlay host then cannot be found).</summary>
     public bool Write(string? path = null)

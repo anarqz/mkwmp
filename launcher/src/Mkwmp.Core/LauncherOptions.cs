@@ -109,10 +109,10 @@ public sealed record LauncherOptions
     /// <summary>The runtime to install instead of the target's pinned one (a small zip served by the test).</summary>
     internal RuntimeManifest? Runtime { get; init; }
 
-    /// <summary>Where the runtime is installed by default (null: <c>%LOCALAPPDATA%\MKWMP\&lt;name&gt;</c>).</summary>
+    /// <summary>Where the runtime is installed by default (null: <c>&lt;launcher&gt;\&lt;name&gt;</c>).</summary>
     internal string? RuntimeFolder { get; init; }
 
-    /// <summary>Where the runtime's download is kept (null: <c>%LOCALAPPDATA%\MKWMP\downloads</c>).</summary>
+    /// <summary>Where the runtime's download is kept (null: <c>&lt;launcher&gt;\downloads</c>).</summary>
     internal string? RuntimeCache { get; init; }
 
     /// <summary>Free bytes on a path's drive (null: the drive's own answer).</summary>
