@@ -35,7 +35,9 @@
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <mutex>
 #include <random>
 #include <string>
@@ -466,12 +468,36 @@ void Log(const char *format, ...) {
 }
 } // namespace fi
 
+// std::terminate in this library (an exception nobody caught on one of its threads, a joinable thread destroyed...)
+// ends the game with no fault for a crash handler to see. On Windows it first raises the probe's crash exception
+// (native/probe/src/crash.h, MKWMP_CRASH_EXCEPTION: the same number, the reason as its argument), which the probe's
+// handler records in <game folder>\mkwmp-crash.log with this thread's stack and a minidump; nobody handles it, so
+// the process then ends as it would have. This library's C++ runtime is its own, so the probe cannot set this.
+#ifdef _WIN32
+static std::terminate_handler g_prev_terminate;
+
+[[noreturn]] static void OnTerminate() {
+    static const char kReason[] = "std::terminate in mkwmp-voice.dll";
+    static std::atomic<bool> once{false};
+    if (!once.exchange(true)) {
+        ULONG_PTR args[1] = {reinterpret_cast<ULONG_PTR>(kReason)};
+        RaiseException(0xE04D4B57u, EXCEPTION_NONCONTINUABLE, 1, args);
+    }
+    if (g_prev_terminate && g_prev_terminate != OnTerminate) g_prev_terminate();
+    std::abort();
+}
+#endif
+
 extern "C" {
 
 MKWMP_VOICE_API int mkwmp_voice_abi(void) { return MKWMP_VOICE_ABI; }
 
 MKWMP_VOICE_API void mkwmp_voice_init(mkwmp_voice_log_fn log) {
     g_log = log;
+#ifdef _WIN32
+    static std::atomic<bool> hooked{false};
+    if (!hooked.exchange(true)) g_prev_terminate = std::set_terminate(OnTerminate);
+#endif
     EnsureThread();
 }
 

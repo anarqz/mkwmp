@@ -243,7 +243,7 @@ static void room_id_poll(void) {
     memcpy(last, id, sizeof last);
     plat_setenv("MKW_SWKBD_ANSWER", id[0] ? id : NULL);
     const char *seen = g_rt.cfg_get ? g_rt.cfg_get("MKW_SWKBD_ANSWER") : NULL;
-    mkwmp_log("room id from the launcher: %s (runtime sees \"%s\")", id[0] ? id : "(none)", seen ? seen : "");
+    mkwmp_event("room id from the launcher: %s (runtime sees \"%s\")", id[0] ? id : "(none)", seen ? seen : "");
 }
 
 static void room_thread(void *unused) {
@@ -340,14 +340,14 @@ void voice_online(const char *lobby_host) {
         snprintf(g_host, sizeof g_host, "%s", lobby_host && *lobby_host ? lobby_host : cfg->host);
         if (!g_thread) g_thread = plat_thread_start(voice_thread, NULL);
         voice_ui_install();
-        mkwmp_log("voice: online (relay %s:%d)", g_host, cfg->voice_port);
+        mkwmp_event("voice: online (relay %s:%d)", g_host, cfg->voice_port);
     }
     plat_unlock(&g_lock);
 }
 
 void voice_offline(void) {
     plat_lock(&g_lock);
-    if (g_online) mkwmp_log("voice: offline");
+    if (g_online) mkwmp_event("voice: offline");
     g_online = 0;
     plat_unlock(&g_lock);
 }

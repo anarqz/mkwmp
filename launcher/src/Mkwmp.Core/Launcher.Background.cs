@@ -48,6 +48,7 @@ public sealed partial class Launcher
             return;
         }
         var life = _life.Token;
+        _ = Task.Run(RefreshCrashes, CancellationToken.None); // a crash from before this start, not answered yet
         _ = Task.Run(() => StatusLoopAsync(life), CancellationToken.None);
         _ = Task.Run(() => FriendsLoopAsync(life), CancellationToken.None);
         _ = Task.Run(() => GameLoopAsync(life), CancellationToken.None);

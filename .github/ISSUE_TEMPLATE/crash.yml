@@ -1,0 +1,66 @@
+name: Crash report
+description: The game stopped unexpectedly (the launcher's crash screen opens this, filled in)
+labels: ["crash"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. After a crash the launcher shows **Mario Kart World stopped unexpectedly**; its **Report** button opens this form with the first box filled in, and saves a zip on your Desktop. **Drag that zip into the last box**: it is what lets us find where the game crashed.
+        **Never paste your PIN, a ticket or a launcher token** into this issue. The zip has them removed.
+  - type: textarea
+    id: report
+    attributes:
+      label: Crash report
+      description: |
+        Filled in by the launcher: the crash (exception, module and offset), its id and UTC time, the versions (MKWMP, mkw-recomp, game, OS, GPU), the top of the stack, the room (players, host, lobby, ussid).
+        If it is empty, paste it: the launcher copied it to the clipboard. Without the launcher: the last record of `mkwmp-crash.log` in the game folder.
+    validations:
+      required: true
+  - type: textarea
+    id: doing
+    attributes:
+      label: What were you doing when it stopped
+      description: Race, battle or friend room; how many players; who created the room; had someone just joined or left; how long you had been playing.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows PC
+        - Steam Deck
+        - Other Linux
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: again
+    attributes:
+      label: Does it happen again
+      options:
+        - Every time
+        - Often
+        - It happened once
+        - I have not tried again
+    validations:
+      required: true
+  - type: textarea
+    id: zip
+    attributes:
+      label: The zip (required)
+      description: |
+        Drag `mkwmp-crash-<id>.zip` from your Desktop here (the launcher showed its path; under Wine / Proton it may be in the `logs` folder next to the launcher).
+        It holds the crash record (`mkwmp-crash.log`, `crash.txt`), the minidump (`mkwmp-crash-<id>.dmp`), MKWMP's logs (`mkwmp.log`, the launcher's), mkw-recomp's own logs and state (`mkw-recomp/`: `mkw.log` and its rotation, `warm.log`, `setup.log`, `setup-state.json`, `mkw.ini`), `system.txt` and `index.txt`.
+
+        Without the launcher's crash screen: **SETTINGS › Support › Found a Bug?** makes the same zip.
+      placeholder: Drag the zip here.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before sending
+      options:
+        - label: I attached the zip and did not paste my PIN, ticket or token.
+          required: true

@@ -461,6 +461,7 @@ public sealed class HomeViewModel : PageViewModel
             Add(Shell.IsFullscreen ? S["power.windowed"] : S["power.fullscreen"],
                 () => RelayCommand.Async(() => Shell.SetFullscreenAsync(!Shell.IsFullscreen)).Execute(null), isDefault: modal.Actions.Count == 0);
         }
+        Add(S["power.bug"], () => RelayCommand.Async(Shell.ReportBugAsync).Execute(null), isDefault: modal.Actions.Count == 0); // "Found a bug?": the report flow
         if (gameRuns)
         {
             Add(S["power.quit_game"], () => RelayCommand.Async(() => Shell.QuitGameAsync()).Execute(null), isDefault: modal.Actions.Count == 0);

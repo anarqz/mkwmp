@@ -148,7 +148,11 @@ internal sealed class OverlayController : IDisposable
             return;
         }
         var settings = _shell.Settings;
-        _bridge.Enabled = !_foreign && settings.Ui.SetupDone && _shell.Page is not SetupViewModel
+        // A launcher the mod started for its game (hosted) opens the overlay even before its welcome
+        // is finished: a player who only installed the mod still gets the HOME menu (with a note to
+        // finish setting up). A launcher the player opened waits for the welcome as before.
+        var ready = settings.Ui.SetupDone || HostedPid != 0;
+        _bridge.Enabled = !_foreign && ready && (HostedPid != 0 || _shell.Page is not SetupViewModel)
             && _shell.Update.State is not (UpdateState.Downloading or UpdateState.Restarting);
     }
 
@@ -278,6 +282,11 @@ internal sealed class OverlayController : IDisposable
         ImageSource picture = frame is null ? Placeholder() : GameWindow.ToBitmap(frame);
         _guide.Stop(); // the press that opened it is not a press to go back
         _shell.EnterOverlay(picture, request.Again);
+        if (!_shell.Settings.Ui.SetupDone && !request.Again)
+        {
+            var s = _shell.S;
+            _shell.ShowToast(s["overlay.setup_pending"], s["overlay.setup_pending_body"]);
+        }
         var bounds = GameWindow.ClientPixels(game);
         var cover = bounds is not null || request.By != OverlayTrigger.Launcher; // the demo's request has no game to cover
         if (cover)

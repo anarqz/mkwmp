@@ -30,19 +30,22 @@ void log_init(void) {
     mkwmp_log("=== mkwmp session log ===");
 }
 
-// All output funnels here: "[   1234ms] <line>\r\n", written under the lock so lines from any
-// thread/fiber stay intact and complete. No flush per line: WriteFile hands the bytes to the OS,
-// which keeps them if the game crashes; a FlushFileBuffers (fsync) per line on the game threads
-// cost the Steam Deck (Proton, SD card) a large share of its frame rate online (2026-11-15).
+// All output funnels here: "[   1234ms] <line>\r\n", one write per line (nothing of a line is held back in this
+// process: the file has no buffer of ours, so a line is the system's the moment this returns and survives the game
+// dying right after), under the lock so lines from any thread/fiber stay in order. No FlushFileBuffers per line:
+// that fsync on the game threads cost the Steam Deck (Proton, SD card) a large share of its frame rate online
+// (2026-11-15); the crash record's writer (crash.c) flushes the file once, after its "CRASH <id>" line.
 static void emit(const char *line, size_t len) {
     if (!g_ready) return;
-    char stamp[24];
-    int sn = snprintf(stamp, sizeof stamp, "[%8llums] ",
-                      (unsigned long long)(plat_ms() - g_start_ms));
+    char out[4096 + 32];
+    int sn = snprintf(out, 24, "[%8llums] ", (unsigned long long)(plat_ms() - g_start_ms));
+    size_t at = sn < 0 ? 0 : sn < 24 ? (size_t)sn : 23;
+    if (len > sizeof out - at - 2) len = sizeof out - at - 2;
+    memcpy(out + at, line, len);
+    at += len;
+    out[at++] = '\r', out[at++] = '\n';
     plat_lock(&g_cs);
-    write_raw(stamp, sn < 0 ? 0 : (size_t)sn);
-    write_raw(line, len);
-    write_raw("\r\n", 2);
+    write_raw(out, at);
     plat_unlock(&g_cs);
 }
 
@@ -54,6 +57,27 @@ void mkwmp_log(const char *fmt, ...) {
     va_end(ap);
     if (n < 0) return;
     emit(buf, n < (int)sizeof buf ? (size_t)n : sizeof buf - 1);
+}
+
+static void (*volatile g_event_sink)(const char *line);
+
+void log_set_event_sink(void (*sink)(const char *line)) { g_event_sink = sink; }
+
+void mkwmp_event(const char *fmt, ...) {
+    char buf[4096];
+    va_list ap;
+    va_start(ap, fmt);
+    int n = vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    if (n < 0) return;
+    emit(buf, n < (int)sizeof buf ? (size_t)n : sizeof buf - 1);
+    void (*sink)(const char *line) = g_event_sink;
+    if (sink) sink(buf);
+}
+
+PlatFile *log_crash_file(uint64_t *start_ms) {
+    *start_ms = g_start_ms;
+    return g_fh;
 }
 
 void log_line(const char *s) { emit(s, strlen(s)); }

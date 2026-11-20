@@ -281,10 +281,10 @@ static int seat(char *buf, size_t cap, const char **body) {
         r = seatapi_poll(C.server, g_sid, g_skey, &v);   // the heartbeat
         if (r.status == 200) return view_reply(&v, buf, cap, body);
         if (r.status != 404) {
-            mkwmp_log("seat: heartbeat: %d %s", r.status, r.message);
+            mkwmp_event("seat: heartbeat: %d %s", r.status, r.message);
             return reply(buf, cap, body, 503, "{\"state\":\"unavailable\",\"message\":\"%s\"}", clean(r.message));
         }
-        mkwmp_log("seat: session gone (server restarted or timed out): joining again");
+        mkwmp_event("seat: session gone (server restarted or timed out): joining again");
         g_sid[0] = g_skey[0] = 0;
     }
     r = seatapi_join(C.server, C.name, C.pin, &v);
@@ -292,13 +292,13 @@ static int seat(char *buf, size_t cap, const char **body) {
     if (r.status == 201 || r.status == 200) {
         snprintf(g_sid, sizeof g_sid, "%s", v.session_id);
         snprintf(g_skey, sizeof g_skey, "%s", v.session_key);
-        mkwmp_log("seat: joined as %s: %s%s", C.name, v.state, v.ticket[0] ? " with a ticket" : "");
+        mkwmp_event("seat: joined as %s: %s%s", C.name, v.state, v.ticket[0] ? " with a ticket" : "");
         return view_reply(&v, buf, cap, body);
     }
     if (r.status == 401 || r.status == 403 || r.status == 404 || r.status == 400 ||
         (r.status == 409 && (!strcmp(r.code, "NAME_TAKEN") || !strcmp(r.code, "NAME_REGISTERED"))))
         return refused(&r, buf, cap, body);
-    mkwmp_log("seat: join: %d %s %s (retry after %d s)", r.status, r.code, r.message, r.retry_after);
+    mkwmp_event("seat: join: %d %s %s (retry after %d s)", r.status, r.code, r.message, r.retry_after);
     return reply(buf, cap, body, 503, "{\"state\":\"unavailable\",\"message\":\"%s\"}", clean(r.message));
 }
 
@@ -443,7 +443,7 @@ void seatd_stop(void) {
         seatapi_set_timeout_ms(1500);   // the process ends right after: a slow server must not hold it
         if (g_sid[0]) {
             SeatApiResult r = seatapi_leave(C.server, g_sid, g_skey);
-            mkwmp_log("seat: given back (%d)", r.status);
+            mkwmp_event("seat: given back (%d)", r.status);
         }
         if (g_presence[0]) seatapi_presence_end(C.server, g_presence);
         seatapi_set_timeout_ms(0);

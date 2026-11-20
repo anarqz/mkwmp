@@ -196,6 +196,9 @@ public sealed class DesignLauncher : ILauncher
         var noMod = new IntegrationReport(IntegrationState.Missing, "Not installed: press INSTALL", []);
         switch (state)
         {
+            case "crashed" or "crashed-solo" or "crashed-exit":
+                PretendCrash(state);
+                break;
             // ── the welcome flow's situations (with --demo-fresh) ──
             case "named":
                 Change(() =>
@@ -715,6 +718,37 @@ public sealed class DesignLauncher : ILauncher
     {
         await Pause(900).ConfigureAwait(false);
         return @"C:\Users\Alex\Desktop\mkwmp-report-demo.zip";
+    }
+
+    // ---- crashes and "Found a bug?": a crash on demand (--state crashed | crashed-solo | crashed-exit), a made-up report
+
+    public Mkwmp.Core.Diagnostics.CrashView? PendingCrash { get; private set; }
+
+    /// <summary>The game "crashed": online in a room of four as the host, offline with no room, or with only an exit code.</summary>
+    public void PretendCrash(string kind) => Change(() => PendingCrash = kind switch
+    {
+        "crashed-solo" => new("20261120T183245Z-9164", "ACCESS_VIOLATION in mkwgame.dll+0x1a2f4c0", DemoCrashTime, null, null, true, true, 0),
+        "crashed-exit" => new("exit-20261120T183245Z-c0000409", "exit code 0xC0000409 (FAIL_FAST)", DemoCrashTime, null, null, false, false, 0),
+        _ => new("20261120T183245Z-9164", "ACCESS_VIOLATION in mkwgame.dll+0x1a2f4c0", DemoCrashTime, 4, true, true, true, 2),
+    });
+
+    private static DateTimeOffset DemoCrashTime => new(2026, 11, 20, 18, 32, 45, TimeSpan.Zero);
+
+    public async Task<Mkwmp.Core.Diagnostics.BugReport> PrepareReportAsync(string? crashId)
+    {
+        await Pause(700).ConfigureAwait(false);
+        var crash = crashId is not null;
+        var zip = crash ? $@"C:\Users\Alex\Desktop\mkwmp-crash-{crashId}.zip" : @"C:\Users\Alex\Desktop\mkwmp-bug-20261120-183245.zip";
+        var title = crash ? "Crash: ACCESS_VIOLATION in mkwgame.dll+0x1a2f4c0 (4 players, host)" : "";
+        var text = crash ? "**Mario Kart World stopped unexpectedly.**\n\n- **Crash**: `ACCESS_VIOLATION in mkwgame.dll+0x1a2f4c0`\n" : "**What happened?**\n";
+        var url = Mkwmp.Core.Diagnostics.BugReportBuilder.Url(crash ? "crash.yml" : "bug_report.yml", crash ? "crash" : "bug", title, crash ? "report" : "what", crash ? text : "");
+        return new(crash, title, url, text, zip, true, null);
+    }
+
+    public Task DismissCrashAsync(string id)
+    {
+        Change(() => PendingCrash = PendingCrash?.Id == id ? null : PendingCrash);
+        return Task.CompletedTask;
     }
 
     public void ShowTestToast() => Toasted?.Invoke(this, new Toast("Luna", "is racing online now", ToastKind.FriendPlaying));

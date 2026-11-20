@@ -574,6 +574,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         FriendsPanel.OnStateChanged();
         _sheet?.OnStateChanged();
         _modal?.OnStateChanged();
+        OfferCrash(); // the game crashed and the player has not answered yet (ShellViewModel.Crash.cs)
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 

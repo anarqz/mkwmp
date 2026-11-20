@@ -202,11 +202,13 @@ public sealed partial class Launcher
             if (launches)
             {
                 Note("starting the game");
+                GameStarting();
                 game = target.Launch(install, new LaunchOptions(s.LaunchCommand.Length == 0 ? null : s.LaunchCommand));
             }
             else
             {
                 Note("ready: start the game from Steam");
+                GameStarting();
             }
 
             while (true)
@@ -222,6 +224,7 @@ public sealed partial class Launcher
                     if (game.HasExited)
                     {
                         Note(string.Create(CultureInfo.InvariantCulture, $"game exited (exit code: {game.ExitCode}); seat released"));
+                        GameEnded(install, game.ExitCode);
                         return;
                     }
                     running = true;
@@ -280,11 +283,13 @@ public sealed partial class Launcher
             if (launches)
             {
                 Note("starting the game");
+                GameStarting();
                 game = target.Launch(install, new LaunchOptions(s.LaunchCommand.Length == 0 ? null : s.LaunchCommand));
             }
             else
             {
                 Note("ready: start the game from Steam");
+                GameStarting();
             }
             var seen = false; // started elsewhere (Steam): the session ends when that game does
             while (true)
@@ -295,6 +300,7 @@ public sealed partial class Launcher
                     if (game.HasExited)
                     {
                         Note(string.Create(CultureInfo.InvariantCulture, $"game exited (exit code: {game.ExitCode})"));
+                        GameEnded(install, game.ExitCode);
                         return;
                     }
                     running = true;
@@ -305,6 +311,7 @@ public sealed partial class Launcher
                     if (seen && !running)
                     {
                         Note("the game was closed");
+                        GameEnded(install, null);
                         return;
                     }
                     seen |= running;

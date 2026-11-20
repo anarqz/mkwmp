@@ -30,7 +30,7 @@ int game_build(void) {
     }
     if (build == GAME_UNKNOWN) build = GAME_OTHER;   // mapped but not a build we know: final
     plat_xchg(&cached, build);
-    mkwmp_log("game build: %s (main+4 = %#x)", game_build_name(build), mod0);
+    mkwmp_event("game build: %s (main+4 = %#x)", game_build_name(build), mod0);
     return build;
 }
 

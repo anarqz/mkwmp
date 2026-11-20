@@ -24,9 +24,11 @@
 // pointer, so a GuestFn is handed to the runtime as an MkwGuestFn as it is. Nothing here reads past that prefix.
 #include "mkw_plugin.h"
 
+#include "breadcrumbs.h"
 #include "camera.h"
 #include "cameratab.h"
 #include "config.h"
+#include "crash.h"
 #include "friends.h"
 #include "guesthook.h"
 #include "launcher.h"
@@ -101,7 +103,7 @@ static int pl_guest_thread(Cpu *c) {
 static void on_game_loaded(void *user) {
     (void)user;
     uint64_t main = g_api->module_base ? g_api->module_base("main") : 0;
-    mkwmp_log("plugin: game %s loaded (build id %s, main at %#llx)", g_api->game_version ? g_api->game_version : "?",
+    mkwmp_event("plugin: game %s loaded (build id %s, main at %#llx)", g_api->game_version ? g_api->game_version : "?",
               g_api->game_id ? g_api->game_id : "?", (unsigned long long)main);
     if (g_seat_early && g_active) seat_take_early();   // connecting... / in line / connected, in the menus already
     if (g_needs_setup && g_api->notice)
@@ -255,6 +257,12 @@ MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_vers
               api->port_version ? api->port_version : "?", (unsigned)api_version, (unsigned)api->size,
               api->game_version ? api->game_version : "?", api->mod_name ? api->mod_name : "?",
               api->mod_dir ? api->mod_dir : "(none)");
+    // Crash records (crash.h): <game folder>\mkwmp-crash.log and a minidump, for the launcher to offer as a report.
+    // The runtime is up already, so its fault handler comes after ours: ours only remembers what that one may repair.
+    crash_install(NULL, 0);
+    crumb_state("loader", "mod");
+    crumb_state("recomp", "%s (plugin API %u)", api->port_version ? api->port_version : "?", (unsigned)api_version);
+    crumb_state("game", "%s", api->game_version ? api->game_version : "?");
 
     const char *missing = !api->override_symbol ? "override_symbol" : !api->guest_symbol ? "guest_symbol"
                         : !api->log ? "log" : !api->call ? "call" : !api->cfg_get ? "cfg_get"

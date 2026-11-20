@@ -1,7 +1,9 @@
 #include "probe.h"
 
+#include "breadcrumbs.h"
 #include "log.h"
 #include "plat.h"
+#include "seat.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -35,6 +37,8 @@ static void apply_env_file(void) {
 
 void probe_log_start(void) {
     log_init();
+    log_set_event_sink(crumb_text);   // mkwmp_event lines are the crash record's events (crash.h)
+    seat_set_room_sink(crumb_room);   // and the room the seat reply names, its "room:" line
     log_line("mkwmp probe " MKWMP_VERSION);
     apply_env_file();
 }

@@ -54,6 +54,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         CheckUpdateCommand = RelayCommand.Async(() => Launcher.CheckForUpdatesAsync(), () => Launcher.Update.State is not (UpdateState.Checking or UpdateState.Downloading or UpdateState.Restarting));
         UpdateCommand = new RelayCommand(Shell.ShowUpdateModal);
         SaveLogsCommand = RelayCommand.Async(SaveLogsAsync, () => !_savingLogs);
+        FoundBugCommand = RelayCommand.Async(Shell.ReportBugAsync);
         InitVoice();
         InitGameSettings();
         InitOnline();
@@ -331,6 +332,9 @@ public sealed partial class SettingsViewModel : PageViewModel
     // ── support ──
 
     public ICommand SaveLogsCommand { get; }
+
+    /// <summary>"Found a bug?": the report flow (a zip on the Desktop, the GitHub issue opened with the details).</summary>
+    public ICommand FoundBugCommand { get; }
 
     public ICommand IssuesCommand { get; }
 

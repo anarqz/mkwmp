@@ -13,7 +13,7 @@ namespace Mkwmp.App;
 /// <summary>
 /// The screenshot harness (see docs/DESIGN.md, "Checking your page"):
 /// <c>mkwmp-launcher --demo --shot out.png [--page home|settings|setup|gallery] [--category key]
-/// [--modal update|available|confirm|message|progress] [--friends] [--toast]
+/// [--modal update|available|confirm|message|progress|crash|crash-report|bug-report] [--state crashed|crashed-solo|crashed-exit] [--friends] [--toast]
 /// [--press right,down,a,…] [--size 1920x1080] [--theme dark] [--battery 93] [--input keyboard] [--locale pt-BR]
 /// [--overlay [--overlay-frame png|none] [--overlay-no-menu] [--overlay-progress 0..1 | --overlay-return 0..1]]</c>
 /// renders the stage at that size once everything has settled, saves the PNG and exits. The window
@@ -211,6 +211,19 @@ public partial class MainWindow
                 break;
             case "message":
                 _ = _vm.MessageAsync("The game is set up", "Mario Kart World 1.8.0 is ready on this device.");
+                break;
+            // the crash screen (with --state crashed | crashed-solo | crashed-exit it is already up: the launcher offers it
+            // by itself) and the card after Report / "Found a bug?"; nothing is opened or copied from a screenshot
+            case "crash":
+                (_vm.Launcher as DesignLauncher)?.PretendCrash("crashed");
+                break;
+            case "crash-report":
+                (_vm.Launcher as DesignLauncher)?.PretendCrash("crashed");
+                await Task.Delay(200).ConfigureAwait(true);
+                await _vm.ReportAsync(_vm.Launcher.PendingCrash?.Id, open: false).ConfigureAwait(true);
+                break;
+            case "bug-report":
+                await _vm.ReportAsync(null, open: false).ConfigureAwait(true);
                 break;
             case "progress":
                 _vm.ShowProgress("Installing…", "Copying the online play files into the game folder.").Report(0.65, "3 files left");

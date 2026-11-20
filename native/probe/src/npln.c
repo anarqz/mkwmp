@@ -10,6 +10,7 @@
 //
 // Env: MKWMP_PORT (default 8900), MKWMP_HOST (default 127.0.0.1).
 #include "rtapi.h"
+#include "breadcrumbs.h"
 #include "log.h"
 #include "config.h"
 #include "lobby_ca.h"
@@ -18,6 +19,7 @@
 #include "gameaddrs.h"
 #include "guesthook.h"
 #include "probe.h"
+#include "uuid5.h"
 #include "voice.h"
 
 #include "plat_net.h"
@@ -39,11 +41,13 @@ static void mlog(const char *fmt, ...) {
     va_end(ap);
     if (n < 0) return;
     mkwmp_log("%s", buf);
+    crumb_text(buf);   // every line here is an event of the session: the crash record keeps the last ones
     if (g_rt.log) g_rt.log("mkwmp: %s", buf);
 }
 static void rlog(const char *s) { mlog("%s", s); }
 // MKWMP_TRACE_EDGES=1: the probe's debugging detail (every call, hex dumps, every packet). Off for players.
 static int g_trace_edges;
+static volatile int32_t g_mesh_role;   // how this player got into the Pia mesh: 1 made it, 2 joined it (0: in none)
 static void dump_args(const char *name, Cpu *c, int n) {
     if (!g_rt.log || !g_trace_edges) return;
     uint64_t a[6] = {0};
@@ -308,6 +312,11 @@ static void ov_nifm_cancel(Cpu *c) {
     if (!stock) stock = stock_handler("_ZN2nn4nifm20CancelNetworkRequestEv");
     if (stock) stock(c);
     if (seat_keepalive_pause()) mlog("left online: seat keepalive paused (the launcher frees the seat in 90 s)");
+    crumb_state("online", "0");
+    crumb_state("mesh", "%s", "");
+    plat_xchg(&g_mesh_role, 0);
+    crumb_peers_reset();
+    crumb_room(NULL, 0, NULL, 0);
     voice_offline();
 }
 // In-game player name: the launcher's `name` (mkw-recomp hardcodes "Local").
@@ -359,7 +368,22 @@ static void ov_nsa_get_id(Cpu *c) {
     uint64_t *o = arg_p(c, 0);
     if (o) *o = nsa_id();
     static volatile int32_t announced;
-    if (plat_cas(&announced, 1, 0) == 0) mlog("account id %#llx", (unsigned long long)nsa_id());
+    if (plat_cas(&announced, 1, 0) == 0) {
+        mlog("account id %#llx", (unsigned long long)nsa_id());
+        // the crash record's "uid": the user id the lobby derives from the name and prints in its room lines
+        const char *name = mkwmp_config()->name;
+        if (name[0]) {
+            char key[11 + 64] = "mkwmp-user/";
+            size_t n = 11;
+            for (; *name && n < sizeof key; name++) key[n++] = *name >= 'A' && *name <= 'Z' ? (char)(*name + 32) : *name;
+            uint8_t u[16];
+            uuid5(kUuidNamespaceUrl, key, n, u);
+            crumb_state("uid", "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", u[0], u[1], u[2], u[3],
+                        u[4], u[5], u[6], u[7], u[8], u[9], u[10], u[11], u[12], u[13], u[14], u[15]);
+            crumb_state("name", "%s", mkwmp_config()->name);
+        }
+        crumb_state("account", "%#llx", (unsigned long long)nsa_id());
+    }
     ret_x(c, 0);
 }
 static void ov_nsa_load_token(Cpu *c) {
@@ -956,6 +980,7 @@ static int pia_log_packet(int send, unsigned bytes, uint32_t ip, uint16_t port) 
     static volatile int32_t nseen;
     plat_inc(&count[send]);
     plat_add(&total[send], bytes);
+    crumb_peer(ip, port);   // who is in the mesh now, for the crash record
     if (g_trace_edges) return 1;
     int fresh = 0;
     uint64_t key = (uint64_t)send << 48 | (uint64_t)ip << 16 | port;
@@ -1195,6 +1220,7 @@ static int in_trace_range(uint64_t a) {
 }
 #define EDGE_SLOTS 16384
 static int g_trace_edges;
+static volatile int32_t g_mesh_role;   // how this player got into the Pia mesh: 1 made it, 2 joined it (0: in none)
 static int g_skip_referee_timeout;
 static volatile int64_t g_edges[EDGE_SLOTS];
 
@@ -1386,6 +1412,15 @@ static void profile_dispatch(Cpu *c) {
     uint64_t before = 0;
     if (job && !guest_readable(job, A.join_error + 4u)) job = NULL;
     if (job) memcpy(&before, job + A.join_step, sizeof before);
+    // The job's last two steps say how this player got into the mesh: CreateMesh (nobody was there: this player made
+    // it, and hosts it until the lobby's order says otherwise) or JoinMesh. For the crash record.
+    if (job) {
+        int32_t now = at(target, A.pia_join_step[GAME_PIA_STEPS - 2]) ? 1 : at(target, A.pia_join_step[GAME_PIA_STEPS - 1]) ? 2 : 0;
+        if (now && plat_xchg(&g_mesh_role, now) != now) {
+            crumb_state("mesh", "%s", now == 1 ? "created" : "joined");
+            crumb(now == 1 ? "pia: CreateMesh (this player made the mesh)" : "pia: JoinMesh (this player joined a mesh)");
+        }
+    }
     // Experiment (MKWMP_SKIP_REFEREE_TIMEOUT=1): drop the race-start referee
     // timeout error (FUN_021271c8 -> FUN_01e46958 posts id 0x606314c9 through
     // error service slot 6) so the race can continue without a server referee.
@@ -1539,6 +1574,7 @@ static void install_profile_dispatch_trace(void) {
              game_build_name(build));
     g_sdk_memmove = g_rt.guest_symbol ? g_rt.guest_symbol("memmove") : 0;
     A = a;   // before the hook goes in: profile_dispatch only ever sees the whole row
+    crumb_state("game", "%s", game_build_name(build));
     mlog("game build %s: version-specific hooks on (error service %s, idle-kick guard %s)", game_build_name(build),
          a.errsvc_post ? "verified" : "off", a.kart_idle_kick ? "available" : "unavailable");
     if (!g_rt.dispatch_hook) {
@@ -1622,6 +1658,8 @@ static void try_activate(void) {
             seat_keepalive_start();
             friends_online(FRIENDS_WAIT_MS);
             mlog("online requested: seated, going active");
+            crumb_state("online", "1");
+            crumb_state("server", "%s:%d", g_lobby_host, g_lobby_port);
             voice_online(g_lobby_host);
             plat_xchg(&g_active, 1);
         } else {
@@ -1655,6 +1693,8 @@ static void eager_seat(void) {
             seat_keepalive_start();
             friends_online(FRIENDS_WAIT_MS);
             mlog("eager sign-in: seated");
+            crumb_state("online", "1");
+            crumb_state("server", "%s:%d", g_lobby_host, g_lobby_port);
             voice_online(g_lobby_host);
             seated = 1;
         } else {

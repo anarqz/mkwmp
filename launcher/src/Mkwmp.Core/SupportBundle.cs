@@ -40,8 +40,14 @@ public static class SupportBundle
         return b.ToString();
     }
 
-    /// <summary>Builds the bundle; the folder and the zip. <paramref name="launcherFolder"/> is where <c>logs/</c> lives.</summary>
-    public static (string Folder, string Zip) Save(string launcherFolder, string version, IGameTarget? target, GameInstall? install, TimeProvider? clock = null)
+    /// <summary>
+    /// Builds the bundle; the folder and the zip. <paramref name="launcherFolder"/> is where <c>logs/</c> lives.
+    /// A crash or bug report (Diagnostics/BugReport.cs) adds its own files through <paramref name="extra"/>
+    /// (called with the folder, before it is zipped; its failures are its own to swallow) and has the zip
+    /// written as <paramref name="zipPath"/> (the Desktop) instead of beside the folder.
+    /// </summary>
+    public static (string Folder, string Zip) Save(string launcherFolder, string version, IGameTarget? target, GameInstall? install, TimeProvider? clock = null,
+        Action<string>? extra = null, string? zipPath = null)
     {
         var now = (clock ?? TimeProvider.System).GetUtcNow();
         var logs = Path.Combine(launcherFolder, "logs");
@@ -96,10 +102,11 @@ public static class SupportBundle
             system.Append("game folder: not set\n");
         }
         system.Append("time: ").Append(SessionLog.Timestamp(now)).Append('\n');
-        var zip = folder + ".zip";
+        var zip = zipPath ?? folder + ".zip";
         try
         {
             File.WriteAllText(Path.Combine(folder, SystemFile), system.ToString());
+            extra?.Invoke(folder);
             File.Delete(zip);
             ZipFile.CreateFromDirectory(folder, zip, CompressionLevel.Optimal, includeBaseDirectory: false);
         }
@@ -111,7 +118,7 @@ public static class SupportBundle
     }
 
     /// <summary>A log may be missing or held open by the game: the bundle is made with what can be read.</summary>
-    private static void Copy(string from, string to)
+    internal static void Copy(string from, string to)
     {
         try
         {

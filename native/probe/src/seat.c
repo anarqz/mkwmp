@@ -60,8 +60,41 @@ void seat_parse(int http_status, const char *body, SeatReply *out) {
     }
 }
 
-static int seat_post_once(SeatReply *out);
-static PlatLock g_ticket_lock = PLAT_LOCK_INIT;
+// The seat reply's optional "room" object: the room as the lobby numbers it,
+//   "room": {"lobby": "<lobby uuid>", "ussid": 3, "ussids": [3, 5, 12]}     (or "room": null: in none)
+// which the game process cannot read itself (Gamesync is TLS inside the guest). Handed to the sink (probe.c: the
+// crash record's breadcrumbs). A reply without the key says nothing and changes nothing.
+static SeatRoomSink g_room_sink;
+
+void seat_set_room_sink(SeatRoomSink sink) { g_room_sink = sink; }
+
+void seat_parse_room(const char *body) {
+    SeatRoomSink sink = g_room_sink;
+    const char *p = body ? strstr(body, "\"room\"") : NULL;
+    if (!sink || !p) return;
+    p += 6;
+    while (*p == ' ' || *p == ':') p++;
+    if (*p != '{') { sink(NULL, 0, NULL, 0); return; }
+    const char *end = strchr(p, '}');
+    if (!end || end - p >= 1024) return;
+    char object[1024];
+    memcpy(object, p, (size_t)(end - p) + 1);
+    object[end - p + 1] = 0;
+    char lobby[40] = "";
+    int ussid = 0, n = 0;
+    uint32_t ussids[24];
+    if (!json_str(object, "lobby", lobby, sizeof lobby) || !json_int(object, "ussid", &ussid) || ussid <= 0) return;
+    const char *list = strstr(object, "\"ussids\"");
+    list = list ? strchr(list, '[') : NULL;
+    for (const char *q = list ? list + 1 : NULL; q && *q && *q != ']' && n < 24;) {
+        while (*q == ' ' || *q == ',') q++;
+        if (*q < '0' || *q > '9') break;
+        ussids[n++] = (uint32_t)strtoul(q, (char **)&q, 10);
+    }
+    sink(lobby, (uint32_t)ussid, ussids, n);
+}
+
+static int seat_post_once(SeatReply *out);static PlatLock g_ticket_lock = PLAT_LOCK_INIT;
 static char g_ticket[520];
 
 int seat_ticket(char *dst, size_t n) {
@@ -87,6 +120,7 @@ static int seat_post_once(SeatReply *out) {
     int status = launcher_request("POST", "/local/v1/seat", buf, sizeof buf, &body);
     if (status < 0) return -1;
     seat_parse(status, status ? body : NULL, out);
+    if (status == 200) seat_parse_room(body);
     return 0;
 }
 
@@ -101,19 +135,19 @@ SeatState seat_acquire(SeatReply *out, int max_wait_ms) {
     for (;;) {
         if (seat_post(out) < 0) { out->state = SEAT_UNAVAILABLE; return out->state; }
         if (out->state == SEAT_SEATED) {
-            mkwmp_log("seat: seated, lobby %s, ticket %u bytes", out->lobby[0] ? out->lobby : "(config)",
+            mkwmp_event("seat: seated, lobby %s, ticket %u bytes", out->lobby[0] ? out->lobby : "(config)",
                       (unsigned)strlen(out->ticket));
             if (tell(SEAT_SEATED)) notify_push(NOTIFY_SUCCESS, "Connected to MKWMP: you have a seat");
             return out->state;
         }
         if (out->state == SEAT_REFUSED) {
-            mkwmp_log("seat: refused: %s", out->message);
+            mkwmp_event("seat: refused: %s", out->message);
             if (tell(SEAT_REFUSED)) notify_push(NOTIFY_ERROR, out->message);
             return out->state;
         }
         if (out->state == SEAT_UNAVAILABLE) {
             int direct = mkwmp_config()->direct;
-            mkwmp_log("seat: %s unavailable", direct ? "seat server" : "launcher or seat server");
+            mkwmp_event("seat: %s unavailable", direct ? "seat server" : "launcher or seat server");
             if (tell(SEAT_UNAVAILABLE))
                 notify_push(NOTIFY_WARN, direct ? "MKWMP server not reachable: playing offline"
                                                 : "MKWMP launcher not reachable");
@@ -122,7 +156,7 @@ SeatState seat_acquire(SeatReply *out, int max_wait_ms) {
         if (out->position != last_pos) {
             char msg[128];
             snprintf(msg, sizeof msg, "All seats are taken: you are #%d in line (%d seats)", out->position, out->total);
-            mkwmp_log("seat: queued %d of %d", out->position, out->total);
+            mkwmp_event("seat: queued %d of %d", out->position, out->total);
             plat_xchg(&g_said, (int32_t)SEAT_QUEUED + 1);
             notify_push(NOTIFY_INFO, msg);
             last_pos = out->position;
@@ -148,7 +182,7 @@ static void keepalive(void *unused) {
         if (g_ka_paused) continue;
         SeatReply r;
         if (seat_post(&r) == 0 && r.state != SEAT_SEATED)
-            mkwmp_log("seat keepalive: state %d (position %d)", (int)r.state, r.position);
+            mkwmp_event("seat keepalive: state %d (position %d)", (int)r.state, r.position);
     }
 }
 

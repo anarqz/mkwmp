@@ -114,9 +114,9 @@ int chatroom_refresh(void) {
             k += snprintf(list + k, sizeof list - (size_t)k, " %#llx%s", (unsigned long long)now.member[i].account,
                           now.member[i].camera ? " (camera)" : "");
         if (!now.id)
-            mkwmp_log("chat room: in no friend room (a matchmade race or battle, or not in a room yet): no voice, no camera");
+            mkwmp_event("chat room: in no friend room (a matchmade race or battle, or not in a room yet): no voice, no camera");
         else
-            mkwmp_log("chat room: friend room %#llx%s: %d mutual friend(s) in it, %d face(s) chosen:%s", (unsigned long long)now.id,
+            mkwmp_event("chat room: friend room %#llx%s: %d mutual friend(s) in it, %d face(s) chosen:%s", (unsigned long long)now.id,
                       loopback ? " (loopback)" : "", now.friends, now.n, now.n ? list : " nobody");
     }
     return changed;

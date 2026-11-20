@@ -130,6 +130,27 @@ public interface ILauncher : IAsyncDisposable
     /// <summary>Collects logs into a zip; returns its path (or throws IOException with the reason).</summary>
     Task<string> SaveBugReportAsync();
 
+    // Crashes and "Found a bug?" (Diagnostics/): nothing is sent by the launcher, the player files the issue
+    /// <summary>
+    /// The game crashed and the player has not answered yet: the newest crash (a record the game
+    /// process wrote in its folder, or only an abnormal exit code), with the count of earlier ones.
+    /// Null when there is none. Set when the game ends and when the launcher starts; answered by
+    /// <see cref="DismissCrashAsync"/>, after which the same crash is never offered again.
+    /// </summary>
+    Diagnostics.CrashView? PendingCrash { get; }
+
+    /// <summary>
+    /// Builds a report: a zip on the Desktop (the crash record and minidump, the game's and the
+    /// launcher's logs, the redacted session file, system.txt; no PIN, ticket or token) and the
+    /// GitHub issue to open, with its full text for the clipboard. <paramref name="crashId"/> null:
+    /// "Found a bug?", without a crash. Never throws: a zip that could not be written is
+    /// <see cref="Diagnostics.BugReport.ZipProblem"/>, and the link and the text are still there.
+    /// </summary>
+    Task<Diagnostics.BugReport> PrepareReportAsync(string? crashId);
+
+    /// <summary>The player answered the crash (reported or ignored), and the earlier ones shown with it: not offered again.</summary>
+    Task DismissCrashAsync(string id);
+
     void ShowTestToast();
 
     // The game's own settings (video, sound, controls...), declared by the target in use

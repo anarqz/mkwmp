@@ -75,7 +75,7 @@ static void tick(void) {
     //    Off in the game's prompt)
     int camera = camera_local_streaming();
     if (camera != camera_bit) {
-        mkwmp_log("room: my camera is %s for the relay (self bit 2)", camera ? "on" : "off");
+        mkwmp_event("room: my camera is %s for the relay (self bit 2)", camera ? "on" : "off");
         voice_room_camera(camera);
         camera_bit = camera;
     }
@@ -113,7 +113,7 @@ static void tick(void) {
     int np = roomnet_pictures(&faces, game, ngame, pics);
     if (np != npictures || memcmp(pics, pictures, (size_t)np * sizeof pics[0])) {
         names_of(pics, np, who, sizeof who);
-        mkwmp_log("room: video subscription:%s (the game asked pictures of %d member(s); %d mutual friend(s) in the friend room)", who,
+        mkwmp_event("room: video subscription:%s (the game asked pictures of %d member(s); %d mutual friend(s) in the friend room)", who,
                   ngame, faces.friends);
         memcpy(pictures, pics, (size_t)np * sizeof pics[0]);
         npictures = np;

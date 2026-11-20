@@ -100,6 +100,9 @@ public sealed record LauncherOptions
     /// <summary>What ends the process after a self-update (tests: nothing).</summary>
     internal Action<int>? Exit { get; init; }
 
+    /// <summary>Where a report's zip goes instead of the Desktop.</summary>
+    internal string? DesktopFolder { get; init; }
+
     /// <summary>The runtime to install instead of the target's pinned one (a small zip served by the test).</summary>
     internal RuntimeManifest? Runtime { get; init; }
 

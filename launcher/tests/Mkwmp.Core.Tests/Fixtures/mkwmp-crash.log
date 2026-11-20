@@ -1,0 +1,184 @@
+=== MKWMP CRASH 20261120T201303Z-25332 ===
+summary: ACCESS_VIOLATION in test_crash.exe+0x3364 (players=~4, host=?, mesh=created)
+time_utc: 2026-11-20T20:13:03.490Z
+uptime_ms: 47
+stage: first-chance
+pid: 25332
+tid: 25516
+exception: 0xc0000005 ACCESS_VIOLATION
+address: 0x00007ff6302b3364 test_crash.exe+0x3364
+access: write 0x0000000000000000
+os: Windows 10.0.26300
+gpu: Intel(R) Graphics (driver 32.0.101.7088)
+state:
+  mkwmp=dev
+  game=1.8.0
+  mesh=created (this player made the mesh)
+  lobby=127.0.0.1:8900
+  uid=6f1c2d3e-0000-5000-8000-00000000abcd
+room: lobby=? ussid=? uid=6f1c2d3e-0000-5000-8000-00000000abcd host=? players=~4 ussids=? age_ms=?
+peers: 3
+module: test_crash.exe base=0x7ff6302b0000 size=0x441000 time=0x8147cc45
+module: crashtest.dll base=0x7ffe38160000 size=0x53000 time=0xfc04bf04
+registers:
+  rax=00007ff6302b3360 rbx=00007ffe38160000 rcx=0000000000000000 rdx=0000000000000000
+  rsi=00007ff6302eb178 rdi=0000015eae47ec50 rbp=00000031fffefbb0 rsp=00000031fffefbb0
+  r8 =00000031fffefbb8 r9 =0000000000000000 r10=0000000000000000 r11=0000000000000246
+  r12=0000015eae47c4f0 r13=0000000000000003 r14=0000000000000003 r15=0000000000000001
+  rip=00007ff6302b3364 eflags=00010206
+stack:
+  #00 test_crash.exe+0x3364
+  #01 test_crash.exe+0x330b
+  #02 test_crash.exe+0x3158
+  #03 test_crash.exe+0x38a8
+  #04 KERNEL32.DLL+0x2dda7
+  #05 ntdll.dll+0xc9c5c
+guest: cpu=0x7ff6302eb178 pc=main+0x1234 lr=main+0x4444 sp=0x7000007ff0 fp=0x7000008000
+  x0=0000000000000000 x1=0000000000000000 x2=0000000000000000 x3=0000000000000000
+  x4=0000000000000000 x5=0000000000000000 x6=0000000000000000 x7=0000000000000000
+  x8=0000000000000000 x19=0000000000000000 x20=0000000000000000 x21=0000000000000000
+guest_stack:
+  g#00 main+0x5678
+  g#01 main+0xabcc
+events:
+  [       0] 20:13:03.443Z t25516 event 21
+  [       0] 20:13:03.443Z t25516 event 22
+  [       0] 20:13:03.443Z t25516 event 23
+  [       0] 20:13:03.443Z t25516 event 24
+  [       0] 20:13:03.443Z t25516 event 25
+  [       0] 20:13:03.443Z t25516 event 26
+  [       0] 20:13:03.443Z t25516 event 27
+  [       0] 20:13:03.443Z t25516 event 28
+  [       0] 20:13:03.443Z t25516 event 29
+  [       0] 20:13:03.443Z t25516 event 30
+  [       0] 20:13:03.443Z t25516 event 31
+  [       0] 20:13:03.443Z t25516 event 32
+  [       0] 20:13:03.443Z t25516 event 33
+  [       0] 20:13:03.443Z t25516 event 34
+  [       0] 20:13:03.443Z t25516 event 35
+  [       0] 20:13:03.443Z t25516 event 36
+  [       0] 20:13:03.443Z t25516 event 37
+  [       0] 20:13:03.443Z t25516 event 38
+  [       0] 20:13:03.443Z t25516 event 39
+  [       0] 20:13:03.443Z t25516 event 40
+  [       0] 20:13:03.443Z t25516 event 41
+  [       0] 20:13:03.443Z t25516 event 42
+  [       0] 20:13:03.443Z t25516 event 43
+  [       0] 20:13:03.443Z t25516 event 44
+  [       0] 20:13:03.443Z t25516 event 45
+  [       0] 20:13:03.443Z t25516 event 46
+  [       0] 20:13:03.443Z t25516 event 47
+  [       0] 20:13:03.443Z t25516 event 48
+  [       0] 20:13:03.443Z t25516 event 49
+  [       0] 20:13:03.443Z t25516 event 50
+  [       0] 20:13:03.443Z t25516 event 51
+  [       0] 20:13:03.443Z t25516 event 52
+  [       0] 20:13:03.443Z t25516 event 53
+  [       0] 20:13:03.443Z t25516 event 54
+  [       0] 20:13:03.443Z t25516 event 55
+  [       0] 20:13:03.443Z t25516 event 56
+  [       0] 20:13:03.443Z t25516 event 57
+  [       0] 20:13:03.443Z t25516 event 58
+  [       0] 20:13:03.443Z t25516 event 59
+  [       0] 20:13:03.443Z t25516 event 60
+  [       0] 20:13:03.443Z t25516 event 61
+  [       0] 20:13:03.443Z t25516 event 62
+  [       0] 20:13:03.443Z t25516 event 63
+  [       0] 20:13:03.443Z t25516 event 64
+  [       0] 20:13:03.443Z t25516 event 65
+  [       0] 20:13:03.443Z t25516 event 66
+  [       0] 20:13:03.443Z t25516 event 67
+  [       0] 20:13:03.443Z t25516 event 68
+  [       0] 20:13:03.443Z t25516 event 69
+  [       0] 20:13:03.443Z t25516 Pia UDP recv 1 <- 10.0.0.2:5000 (88 bytes)
+dump: mkwmp-crash-20261120T201303Z-25332.dmp 166362 bytes (with referenced memory)
+=== END 20261120T201303Z-25332 ===
+=== MKWMP CRASH 20261120T201303Z-21788 ===
+summary: ACCESS_VIOLATION in ntdll.dll+0x16bbd2 (players=3, host=1, mesh=created)
+time_utc: 2026-11-20T20:13:03.613Z
+uptime_ms: 47
+stage: unhandled
+pid: 21788
+tid: 31680
+exception: 0xc0000005 ACCESS_VIOLATION
+address: 0x00007ffe80abbbd2 ntdll.dll+0x16bbd2
+access: read 0x0000000000000020
+os: Windows 10.0.26300
+gpu: Intel(R) Graphics (driver 32.0.101.7088)
+state:
+  mkwmp=dev
+  game=1.8.0
+  mesh=created (this player made the mesh)
+  lobby=127.0.0.1:8900
+  uid=6f1c2d3e-0000-5000-8000-00000000abcd
+room: lobby=0b4e7a10-1111-4222-8333-444455556666 ussid=3 uid=6f1c2d3e-0000-5000-8000-00000000abcd host=1 players=3 ussids=12,5,3 age_ms=16
+peers: 3
+module: test_crash.exe base=0x7ff6302b0000 size=0x441000 time=0x8147cc45
+module: ntdll.dll base=0x7ffe80950000 size=0x26c000 time=0xa2b84216
+module: crashtest.dll base=0x7ffe38160000 size=0x53000 time=0xfc04bf04
+registers:
+  rax=000000362bfffb40 rbx=00007ffe38160000 rcx=000000362bfffb40 rdx=ffffffc9d40004e0
+  rsi=00000138dea11fb0 rdi=00000138dea0f0b0 rbp=000000362bfefb10 rsp=000000362bfefa88
+  r8 =0000000000000040 r9 =0000000000000520 r10=000000000000051e r11=0000000000000060
+  r12=00000138dea0c4f0 r13=0000000000000003 r14=0000000000000003 r15=0000000000000001
+  rip=00007ffe80abbbd2 eflags=00010283
+stack:
+  #00 ntdll.dll+0x16bbd2
+  #01 test_crash.exe+0x31e4
+  #02 test_crash.exe+0x38a8
+  #03 KERNEL32.DLL+0x2dda7
+  #04 ntdll.dll+0xc9c5c
+guest: none (no guest Cpu in the host registers: not a guest thread, or outside lifted code)
+events:
+  [       0] 20:13:03.566Z t31680 event 22
+  [       0] 20:13:03.566Z t31680 event 23
+  [       0] 20:13:03.566Z t31680 event 24
+  [       0] 20:13:03.566Z t31680 event 25
+  [       0] 20:13:03.566Z t31680 event 26
+  [       0] 20:13:03.566Z t31680 event 27
+  [       0] 20:13:03.566Z t31680 event 28
+  [       0] 20:13:03.566Z t31680 event 29
+  [       0] 20:13:03.566Z t31680 event 30
+  [       0] 20:13:03.566Z t31680 event 31
+  [       0] 20:13:03.566Z t31680 event 32
+  [       0] 20:13:03.566Z t31680 event 33
+  [       0] 20:13:03.566Z t31680 event 34
+  [       0] 20:13:03.566Z t31680 event 35
+  [       0] 20:13:03.566Z t31680 event 36
+  [       0] 20:13:03.566Z t31680 event 37
+  [       0] 20:13:03.566Z t31680 event 38
+  [       0] 20:13:03.566Z t31680 event 39
+  [       0] 20:13:03.566Z t31680 event 40
+  [       0] 20:13:03.566Z t31680 event 41
+  [       0] 20:13:03.566Z t31680 event 42
+  [       0] 20:13:03.566Z t31680 event 43
+  [       0] 20:13:03.566Z t31680 event 44
+  [       0] 20:13:03.566Z t31680 event 45
+  [       0] 20:13:03.566Z t31680 event 46
+  [       0] 20:13:03.566Z t31680 event 47
+  [       0] 20:13:03.566Z t31680 event 48
+  [       0] 20:13:03.566Z t31680 event 49
+  [       0] 20:13:03.566Z t31680 event 50
+  [       0] 20:13:03.566Z t31680 event 51
+  [       0] 20:13:03.566Z t31680 event 52
+  [       0] 20:13:03.566Z t31680 event 53
+  [       0] 20:13:03.566Z t31680 event 54
+  [       0] 20:13:03.566Z t31680 event 55
+  [       0] 20:13:03.566Z t31680 event 56
+  [       0] 20:13:03.566Z t31680 event 57
+  [       0] 20:13:03.566Z t31680 event 58
+  [       0] 20:13:03.566Z t31680 event 59
+  [       0] 20:13:03.566Z t31680 event 60
+  [       0] 20:13:03.566Z t31680 event 61
+  [       0] 20:13:03.566Z t31680 event 62
+  [       0] 20:13:03.566Z t31680 event 63
+  [       0] 20:13:03.566Z t31680 event 64
+  [       0] 20:13:03.566Z t31680 event 65
+  [       0] 20:13:03.566Z t31680 event 66
+  [       0] 20:13:03.566Z t31680 event 67
+  [       0] 20:13:03.566Z t31680 event 68
+  [       0] 20:13:03.566Z t31680 event 69
+  [       0] 20:13:03.566Z t31680 Pia UDP recv 1 <- 10.0.0.2:5000 (88 bytes)
+  [      31] 20:13:03.597Z t31680 room: lobby=0b4e7a10-1111-4222-8333-444455556666 ussid=3 host=1 players=3 ussids=12,5,3
+dump: mkwmp-crash-20261120T201303Z-21788.dmp 170002 bytes (with referenced memory)
+=== END 20261120T201303Z-21788 ===

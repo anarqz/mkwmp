@@ -346,6 +346,8 @@
           <!-- ═════════ Support ═════════ -->
           <StackPanel Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=support'}">
             <c:SectionHeader Text="{Binding S[settings.support.bug]}" />
+            <c:SettingsRow Label="{Binding S[settings.support.found_bug]}" Kind="Chevron" Icon="{StaticResource Icon.Warning}" Command="{Binding FoundBugCommand}"
+                           Caption="{Binding S[settings.support.found_bug_caption]}" />
             <c:SettingsRow Label="{Binding S[settings.support.logs]}" Icon="{StaticResource Icon.Download}" Command="{Binding SaveLogsCommand}"
                            Caption="{Binding S[settings.support.logs_caption]}" />
             <c:SettingsRow Label="{Binding S[settings.support.issues]}" Kind="Chevron" Icon="{StaticResource Icon.Flag}" Command="{Binding IssuesCommand}"
