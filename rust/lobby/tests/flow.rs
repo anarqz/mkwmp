@@ -788,3 +788,119 @@ fn known_empty_calls_stay_ok_and_unknown_ones_are_unimplemented() {
     assert_eq!(w.unary(p.conn, "/nn.npln.auth.v1.Auth/ValidateToken", Some(&p.token), &[]), Ok(Vec::new()));
     assert_eq!(w.unary(p.conn, "/nn.npln.auth.v1.Auth/RefreshAnonymousUserToken", Some(&p.token), &[]), Err(12));
 }
+
+const DELEGATION: &str = "/nn.npln.matchmaking.v1.GameSessionService/IssueUserDelegationToken";
+/// A follower's IssueUserDelegationToken: request {1 parent, 2 user, 3 user, 5 packed actions}.
+fn delegate(w: &World, follower: &Player, leader_user: &str) -> Vec<u8> {
+    let body = Msg::new()
+        .bytes(1, "tenants/current")
+        .bytes(2, &follower.user)
+        .bytes(3, leader_user)
+        .bytes(5, [1u8])
+        .into_bytes();
+    w.unary(follower.conn, DELEGATION, Some(&follower.token), &body).expect("delegation answered")
+}
+
+#[test]
+fn delegation_reply_has_the_shape_the_game_parses() {
+    let w = World::new(Policy::default());
+    let ana = sign_in(&w, &dev_ticket("Ana"));
+    let bia = sign_in(&w, &dev_ticket("Bia"));
+    let reply = delegate(&w, &bia, &ana.user);
+    let t = wire::bytes_field(&reply, 1).unwrap().expect("1: UserDelegationToken");
+    assert_eq!(wire::str_field(t, 1).unwrap().as_deref(), Some(bia.user.as_str()), "echo of request 2");
+    assert_eq!(wire::str_field(t, 2).unwrap().as_deref(), Some(ana.user.as_str()), "echo of request 3");
+    assert_eq!(wire::bytes_field(t, 4).unwrap(), Some(&[1u8][..]), "packed actions [1]");
+    assert!(wire::str_field(t, 5).unwrap().unwrap().starts_with("mkwmp-delegation-"));
+    let d = wire::bytes_field(t, 6).unwrap().unwrap();
+    assert_eq!(wire::varint_field(d, 1).unwrap(), Some(12 * 3600));
+    // A malformed user resource is never echoed (the game aborts on one).
+    let body = Msg::new().bytes(2, "nonsense").bytes(3, &ana.user).into_bytes();
+    let reply = w.unary(bia.conn, DELEGATION, Some(&bia.token), &body).unwrap();
+    let t = wire::bytes_field(&reply, 1).unwrap().unwrap();
+    assert_eq!(wire::str_field(t, 1).unwrap(), None);
+    // Not signed in: refused, never an empty OK.
+    assert_eq!(w.unary(w.id(), DELEGATION, None, &body), Err(16));
+}
+
+fn lobby_name(p: &mut Player) -> String {
+    assignment(p).expect("assigned").0
+}
+
+#[test]
+fn a_follower_lands_in_its_leaders_lobby_and_follows_it_to_the_next() {
+    let mut policy = Policy::default();
+    policy.min_start = 1;
+    policy.gather_secs = 0.0;
+    policy.join_window_secs = 600.0;
+    let w = World::new(policy);
+    let mut ana = sign_in(&w, &dev_ticket("Ana"));
+    let mut bia = sign_in(&w, &dev_ticket("Bia"));
+    delegate(&w, &bia, &ana.user); // Bia follows Ana
+    search(&w, &mut ana, "Normal24");
+    let first = lobby_name(&mut ana);
+    search(&w, &mut bia, "Normal24");
+    assert_eq!(lobby_name(&mut bia), first, "the follower joins the leader's lobby");
+
+    // The leader moves on: a new search ends the old seat; the follower follows to the new lobby.
+    w.advance(1.0);
+    search(&w, &mut ana, "Battle24");
+    let second = lobby_name(&mut ana);
+    assert_ne!(second, first);
+    search(&w, &mut bia, "Battle24");
+    assert_eq!(lobby_name(&mut bia), second, "the follower follows the leader");
+}
+
+#[test]
+fn a_leaders_ticket_with_the_token_binds_the_follower() {
+    let mut policy = Policy::default();
+    policy.min_start = 1;
+    policy.gather_secs = 0.0;
+    policy.join_window_secs = 600.0;
+    let w = World::new(policy);
+    let mut ana = sign_in(&w, &dev_ticket("Ana"));
+    let mut bia = sign_in(&w, &dev_ticket("Bia"));
+    // A delegation that names no leader binds nobody yet...
+    let body = Msg::new().bytes(2, "tenants/current/users/current").bytes(5, [1u8]).into_bytes();
+    let reply = w.unary(bia.conn, DELEGATION, Some(&bia.token), &body).unwrap();
+    let token = wire::str_field(wire::bytes_field(&reply, 1).unwrap().unwrap(), 5).unwrap().unwrap();
+    // ...until the leader's ticket carries it (CreateMatchmakingTicket field 3).
+    let player = Msg::new().bytes(1, "tenants/current/users/current").bytes(2, "attrs");
+    let body = Msg::new()
+        .msg(2, &Msg::new().bytes(2, "tenants/current/matchmakingConfigs/Normal24").msg(4, &player))
+        .bytes(3, &token)
+        .into_bytes();
+    let reply = w.unary(ana.conn, CREATE, Some(&ana.token), &body).unwrap();
+    let name = wire::str_field(&reply, 1).unwrap().unwrap();
+    ana.ticket = format!("tenants/current/matchmakingTickets/{}", name.rsplit('/').next().unwrap());
+    let (_, rx) = w.call(ana.conn, TRACK, Some(&ana.token), Some(&Msg::new().bytes(1, &ana.ticket).into_bytes()), true);
+    ana.track = Some(rx);
+    let first = lobby_name(&mut ana);
+    search(&w, &mut bia, "Normal24");
+    assert_eq!(lobby_name(&mut bia), first);
+}
+
+#[test]
+fn a_companion_document_binds_and_unbinds() {
+    let mut policy = Policy::default();
+    policy.min_start = 1;
+    policy.gather_secs = 0.0;
+    policy.join_window_secs = 600.0;
+    let w = World::new(policy);
+    let mut ana = sign_in(&w, &dev_ticket("Ana"));
+    let mut bia = sign_in(&w, &dev_ticket("Bia"));
+    let companion = |state: i64, leader: &str| {
+        let mut f = Fields::default();
+        f.set("companion_state", Value::Int(state));
+        f.set("leader_user_id", Value::str(leader));
+        f
+    };
+    // Bia (not yet seated: its own solo space) says it follows Ana.
+    write(&w, &bia, "docs/Companion/2", companion(3, &ana.uid), None);
+    search(&w, &mut ana, "Normal24");
+    let first = lobby_name(&mut ana);
+    search(&w, &mut bia, "Normal24");
+    assert_eq!(lobby_name(&mut bia), first);
+    // State 0: no follower any more (the group is over; placement is normal again).
+    write(&w, &bia, "docs/Companion/2", companion(0, ""), None);
+}
