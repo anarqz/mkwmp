@@ -126,8 +126,9 @@ None. Checked on the machine:
 - gamescope: in Game Mode it is the session's compositor; no option is needed. On a desktop,
   `gamescope -f -- %command%` is the player's choice and not set.
 - `PROTON_USE_XALIA`: Proton starts Xalia (its gamepad helper for launchers) beside every program;
-  it was running beside the launcher and reading its window. With `XALIA_SUPPORTED_ONLY=1` (Proton's
-  default) it should stay passive for WPF. If Game Mode shows a second focus frame or doubled input:
+  it was running beside the launcher and reading its window through UI Automation. The launcher
+  does not answer it under Wine (section 5, "Does not work", 2), so Xalia has nothing to steer
+  there. If Game Mode still shows a second focus frame or doubled input:
   `--launch-options 'PROTON_USE_XALIA=0 %command%'`. To check in Game Mode.
 
 ## 3. Artwork
@@ -227,10 +228,33 @@ started from a shell with Proton 11.0 inside Steam Linux Runtime 4 with the shor
      and cross-compiles with the native zig), writing the Windows game folder. Faster than any
      compile under Wine, but the launcher under Wine would have to start a host program and the
      folder's paths would have to stay `Z:\` paths. Not tried.
-2. **The launcher's process ended twice without a trace** during this run: once after "Try Again"
-   on the failed setup's card, once 97 s into a running setup (the setup's own processes went on).
-   No crash record, nothing on stderr, no line in its log. Not understood. It has to be reproduced
-   with a debug build before a player sees it.
+2. **The launcher's window was gone twice** during this run, with nothing in its log. Looked at
+   again the same evening, from systemd's journal of the two test units and two hours of trying to
+   make it happen again:
+   - "After Try Again", 20:09:33: not a crash. That unit ended with exit code 0, the launcher's own
+     exit; a crash does not give 0. It left on the key the test sent at 20:09:32; which key is not
+     recorded.
+   - "97 s into a running setup", 20:15:32: a crash. That unit's exit code was 5, the low byte of
+     0xC0000005: an access violation in native code inside the launcher's process. A deliberate
+     one (`--crash-test native`) gives the same 5; an unhandled .NET exception gives 82,
+     `Environment.FailFast` 35, a kill 255. .NET reports such a fault only to the Windows Event
+     Log, which Wine does not keep, and Proton silences Wine's own output, so nothing was written.
+   - It did not happen again: 28 retried setups on the failing install (some with 16 busy threads
+     beside), 20 runs of a stand-in setup with 397 progress steps and 16 processes at a time (one
+     of 240 s, three stopped and continued, as on the day), the real compile once (289 s, 16
+     `clang.exe`), a virtual controller plugged in and out 40 times, all under `WINEDEBUG=+seh`:
+     no access violation in the launcher. So the faulting code is not known.
+   - What was found on the way and is changed:
+     - `logs/launcher-crash.log`: each launcher writes a line when it starts and when it leaves,
+       and an unhandled exception with its stack, each on the disk before the call returns. A
+       start without an exit is a crash or a kill, and the next start says so in
+       `logs/launcher-ui.log`. Section 6 says how to get a native fault's own stack.
+     - Xalia (section 2, "Launch options") was asking the launcher's window for its UI Automation
+       tree, and WPF answered from inside the launcher through Wine's `uiautomationcore`: 600
+       calls in 40 s of a running setup (`WINEDEBUG=+uiautomation`). That is native code running
+       in the launcher on every focus change and progress step, for nobody's use, and it is there
+       only under Proton. The window no longer answers under Wine (`Platform/WineAutomation.cs`):
+       none of those calls are left. Whether this was the fault is not proven.
 
 **Works**
 
@@ -282,6 +306,20 @@ started from a shell with Proton 11.0 inside Steam Linux Runtime 4 with the shor
   `steamapps/compatdata/<id>`, and run `<SteamLinuxRuntime_4>/run -- "<Proton 11.0>/proton"
   waitforexitandrun ./mkwmp-launcher.exe ...` in the install folder. The container kills the
   program when the shell that started it ends: use `systemd-run --user` for a window that stays.
+  `waitforexitandrun` first waits until nothing else runs in the prefix, and `proton run` from a
+  second shell joins the wineserver that is already there: two tests in one prefix are not
+  independent (seen: the launcher's start waited two minutes for another shell's `zig.exe`).
+- A launcher that disappears: `logs/launcher-crash.log` has its start and no exit, and the text of
+  an unhandled .NET exception when it was one. For a native fault, start it once more with
+  `PROTON_LOG=1` (launch options `PROTON_LOG=1 %command%`): `~/steam-<id>.log` then holds .NET's
+  own report with the managed stack, as `err:eventlog:ReportEventW` lines, and with
+  `WINEDEBUG=+seh` the faulting module and address (`dispatch_exception code=c0000005`). The
+  exit code of the unit (or of Steam's game process) tells the kind: 5 a native access violation,
+  82 an unhandled .NET exception, 35 `Environment.FailFast`, 255 a kill, 0 the launcher's own
+  exit. `--crash-test native|thread|failfast|kill|ui|stack` ends the launcher that way on purpose,
+  three seconds after its start, to check what a machine records (`stack`, a stack overflow, hung
+  under Proton 11 instead of ending). `MKWMP_WINE_AUTOMATION=1` makes the window answer UI
+  Automation under Wine again, to compare.
 - At a Proton bump: the launcher's `--shot`, the first-run pages, and one whole setup.
 
 ## 7. Not done

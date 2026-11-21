@@ -153,6 +153,7 @@ public partial class App : Application
         var shell = new ShellViewModel(_launcher, strings) { ForcedLocale = Locales.Find(Option(args, "--locale"))?.Id };
         var window = new MainWindow(shell, args);
         MainWindow = window;
+        Platform.WineAutomation.Attach(window); // Proton: Xalia's questions are not answered from inside this process
         // tray, close-to-tray, system notifications (nothing of it in the screenshot harness, nor for a host)
         Desktop.DesktopIntegration? desktop = null;
         if (hosted)
