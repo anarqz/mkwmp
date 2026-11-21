@@ -1376,6 +1376,7 @@
   "settings.game.overlay": "遊戲內疊加層",
   "settings.game.shortcut": "疊加層快捷鍵",
   "settings.game.shortcut_warning": "某些組合也可能開啟 Steam 或 Xbox 自己的選單（例如 Guide 會開啟 Steam 選單或 Xbox Game Bar）。如果發生這種情況，請換一個。",
+  "settings.game.shortcut_recomp_menu": "mkw-recomp 自己的選單仍可用 F1 / Esc 開啟，也可在疊加層中點「mkw-recomp 選單」。MKWMP 會讓 mkw-recomp 的手把快捷鍵避開這個組合。",
   "overlay.shortcut.guide_or_select_start": "Guide 或 Select + Start",
   "overlay.shortcut.guide_or_select_start.note": "和以前一樣：按住 Select 一秒也可以。Steam 或 Xbox Game Bar 可能會佔用 Guide，部分 Steam 配置會佔用 Select + Start。",
   "overlay.shortcut.guide": "Guide（Home / Xbox 鍵）",

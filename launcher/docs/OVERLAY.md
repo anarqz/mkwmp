@@ -42,7 +42,7 @@ So our triggers collide with it whichever value it has: Select+Start in one, Gui
 
 | Option | Verdict |
 |---|---|
-| The launcher sets `menu_shortcut` to the value we do not use (`IGameTarget.WriteGameSettings`) | Frees one trigger only, and the freed one is not swallowed: with `guide` set, Select+Start reaches the game as Minus and Plus (Plus pauses). It also changes a player's setting behind their back, and is refused while the game runs. Not used. |
+| The launcher sets `menu_shortcut` to the value we do not use (`IGameTarget.WriteGameSettings`) | Frees one trigger only, and the freed one is not swallowed: with `guide` set, Select+Start reaches the game as Minus and Plus (Plus pauses). Not enough by itself; since 1.4.3 it is done besides the filter (section 1.1), so the two never both claim a press. |
 | A host override (`override_symbol`) of the game's input read | The shortcut is decided in the runtime before any guest call; an override of `nn::hid` sees the pad after it. Cannot stop the menu. |
 | A new config value (`menu_shortcut = off`) | One line in the fork, but the mod still cannot hold Select back from the game or make the pad idle, and it needs its own second reading of the pad. |
 | **A pad filter in the plugin API** | Chosen. The mod sees and edits the reading before the runtime's shortcut and the game do. One mechanism gives the trigger, the swallow, the idle pad and "the B that closed it never reaches the game". |
@@ -67,6 +67,28 @@ game's window).
 "Game settings (mkw-recomp)" button that calls `OverlayBridge.ReturnToGame(OverlayReturn.Menu)`, and the mod then
 calls `menu_open(1)`; and whenever the launcher cannot open (`409`, no answer) the mod opens the menu itself for a
 Guide or Select+Start press it had taken. With API 3 nothing is taken from mkw-recomp, so its own shortcut still works.
+
+### 1.1 mkw-recomp's `menu_shortcut` is the launcher's (1.4.3)
+
+The player's call (2026-11-21): the overlay is the only controller menu. The launcher owns `menu_shortcut`
+(`IGameTarget.OverlayOwnedSettings`, `RecompSettings.MenuShortcutFor`): it is written to mkw.ini before every start,
+online or offline, and as soon as the overlay shortcut changes in Settings (when the game is closed: the runtime reads
+mkw.ini only at start, its "live" means its own menu's in-memory change). The row is not shown in Settings ›
+Controls, and it is not part of "reset all".
+
+mkw-recomp has no "off" (`fork: runtime/core/base/cfg.c:135`, `minus_plus|guide`; any other text acts as
+`minus_plus`), so the value is the one that leaves the overlay's buttons alone:
+
+| Overlay shortcut | `menu_shortcut` | Why |
+|---|---|---|
+| Guide | `minus_plus` | the overlay has Guide; Select+Start stays mkw-recomp's |
+| Guide or Select + Start (default) | `guide` | both overlap; Guide is the harmless one: the mod's filter clears Guide from every reading before `input_menu_gate`, and Steam or the Game Bar usually take it first. As `minus_plus`, a short Select given back to the game while Start is held would open mkw-recomp's menu |
+| every other entry | `guide` | none of them uses Guide; Select or Start are in most of them |
+
+The default overlay shortcut is unchanged. mkw-recomp's own menu stays on F1 / Esc and on the overlay's
+"mkw-recomp menu" entry (`menu_open`); the shortcut picker says so. `MKW_MENU_SHORTCUT` in the environment still wins
+(the write is refused and logged). L3+R3 is not a `menu_shortcut` value: it is mkw-recomp's fixed performance-overlay
+chord (`input_overlay_gate`), which the `l3_r3` entry takes over (its note says so).
 
 ### What works on which runtime
 

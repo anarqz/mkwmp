@@ -182,6 +182,20 @@ public static partial class RecompSettings
     /// started by hand or from Steam goes straight in, as it does from the launcher
     /// (<c>mkw.exe --play</c> never shows that screen, whatever this says).
     /// </summary>
+    /// <summary>mkw-recomp's pad shortcut for its own menu: <c>minus_plus</c> (Minus and Plus held together, Select+Start on an Xbox pad) or <c>guide</c>.</summary>
+    public const string MenuShortcut = "menu_shortcut";
+
+    /// <summary>
+    /// The <c>menu_shortcut</c> that leaves the player's overlay shortcut alone (launcher/docs/OVERLAY.md §1.1).
+    /// mkw-recomp has no "off" (cfg.c takes <c>minus_plus|guide</c>; anything else acts as <c>minus_plus</c>), so:
+    /// Guide alone gives mkw-recomp Select+Start; every other choice gives it Guide. For the default, Guide or
+    /// Select + Start, Guide is the harmless one: the mod's pad filter takes Guide from every reading before
+    /// mkw-recomp's shortcut looks (and Steam or the Game Bar usually take it first), while Select+Start as
+    /// mkw-recomp's would also open its menu on a short Select given back to the game with Start held.
+    /// </summary>
+    public static string MenuShortcutFor(Overlay.OverlayShortcut shortcut) =>
+        shortcut == Overlay.OverlayShortcut.Guide ? "minus_plus" : "guide";
+
     internal static (string Id, string Value, string Why)[] Owned =>
     [
         ("update_check", "0", Strings.GameSettingsOwnedUpdateCheck),

@@ -106,6 +106,10 @@ public sealed class MkwRecompTarget : IGameTarget
     public IReadOnlyList<(string Id, string Value, string Why)> OnlineOwnedSettings =>
         [("logic_hz", "60", Strings.GameSettingsOwnedLogicHz)];
 
+    /// <summary>mkw-recomp's <c>menu_shortcut</c>, the one that leaves the overlay's buttons alone (<see cref="RecompSettings.MenuShortcutFor"/>).</summary>
+    public IReadOnlyList<(string Id, string Value)> OverlayOwnedSettings(Overlay.OverlayShortcut shortcut) =>
+        [(RecompSettings.MenuShortcut, RecompSettings.MenuShortcutFor(shortcut))];
+
     public IReadOnlyList<string> ApplyOwnedSettings(GameInstall install)
     {
         var written = RecompSettings.EnforceOwned(this, install);

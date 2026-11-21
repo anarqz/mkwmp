@@ -204,6 +204,7 @@ public sealed partial class Launcher
             }
 
             EnforceOnlineOwned(target, install);
+            EnforceOverlayOwned(target, install);
             var launches = LaunchesGame(s) && target.Capabilities.HasFlag(TargetCapabilities.Launch);
             if (launches)
             {
@@ -285,6 +286,7 @@ public sealed partial class Launcher
         IGameProcess? game = null;
         try
         {
+            EnforceOverlayOwned(target, install);
             var launches = LaunchesGame(s) && target.Capabilities.HasFlag(TargetCapabilities.Launch);
             if (launches)
             {

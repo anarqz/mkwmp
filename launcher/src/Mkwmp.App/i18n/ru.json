@@ -1376,6 +1376,7 @@
   "settings.game.overlay": "Оверлей в игре",
   "settings.game.shortcut": "Сочетание для оверлея",
   "settings.game.shortcut_warning": "Некоторые сочетания могут также открывать собственные меню Steam или Xbox (например, Guide открывает меню Steam или Xbox Game Bar). Если так случится, выберите другое.",
+  "settings.game.shortcut_recomp_menu": "Собственное меню mkw-recomp по-прежнему открывается по F1 / Esc и через «Меню mkw-recomp» в оверлее. MKWMP настраивает сочетание кнопок контроллера mkw-recomp так, чтобы оно не пересекалось с этим.",
   "overlay.shortcut.guide_or_select_start": "Guide или Select + Start",
   "overlay.shortcut.guide_or_select_start.note": "Как раньше: удержание Select на секунду тоже работает. Steam или Xbox Game Bar могут перехватить Guide, а некоторые раскладки Steam — Select + Start.",
   "overlay.shortcut.guide": "Guide (кнопка Home / Xbox)",

@@ -194,6 +194,14 @@ public interface IGameTarget
     IReadOnlyList<(string Id, string Value, string Why)> OnlineOwnedSettings => [];
 
     /// <summary>
+    /// The game's own settings that would fight the overlay for the player's
+    /// <paramref name="shortcut"/> (mkw-recomp: its menu's pad shortcut), with the value that does
+    /// not. Online or not: the launcher writes them before every start and whenever the shortcut
+    /// changes (not while the game runs), and never shows their rows. (Id, value.)
+    /// </summary>
+    IReadOnlyList<(string Id, string Value)> OverlayOwnedSettings(Overlay.OverlayShortcut shortcut) => [];
+
+    /// <summary>
     /// The game's own cover picture for the launcher's Play card: the path of an image file (PNG or JPEG) under
     /// <paramref name="cacheFolder"/> (the launcher's <c>cache\</c>, beside its exe), made once from the player's own
     /// copy of the game and found again on later calls; null when this target has none or the copy cannot be read

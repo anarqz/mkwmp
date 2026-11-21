@@ -584,6 +584,10 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         {
             RefreshGame();
         }
+        if (error is null && settings.Ui.OverlayShortcut != before.Ui.OverlayShortcut)
+        {
+            OverlayShortcutChanged();
+        }
     }
 
 

@@ -1376,6 +1376,7 @@
   "settings.game.overlay": "ゲーム内オーバーレイ",
   "settings.game.shortcut": "オーバーレイのショートカット",
   "settings.game.shortcut_warning": "組み合わせによっては Steam や Xbox 自身のメニューも開くことがあります（たとえば Guide は Steam のメニューや Xbox Game Bar を開きます）。その場合は別の組み合わせを選んでください。",
+  "settings.game.shortcut_recomp_menu": "mkw-recomp 自身のメニューは F1 / Esc と、オーバーレイの「mkw-recompのメニュー」から開けます。MKWMP は mkw-recomp のコントローラーのショートカットがこれと重ならないようにします。",
   "overlay.shortcut.guide_or_select_start": "Guide または Select + Start",
   "overlay.shortcut.guide_or_select_start.note": "これまでどおり、Select の 1 秒長押しも使えます。Guide は Steam や Xbox Game Bar に、Select + Start は一部の Steam レイアウトに取られることがあります。",
   "overlay.shortcut.guide": "Guide（Home / Xbox ボタン）",

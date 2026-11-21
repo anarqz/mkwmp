@@ -1376,6 +1376,7 @@
   "settings.game.overlay": "Overlay in het spel",
   "settings.game.shortcut": "Overlay-sneltoets",
   "settings.game.shortcut_warning": "Sommige combinaties openen ook de eigen menu's van Steam of Xbox (Guide opent bijvoorbeeld het Steam-menu of de Xbox Game Bar). Gebeurt dat, kies dan een andere.",
+  "settings.game.shortcut_recomp_menu": "Het eigen menu van mkw-recomp blijft op F1 / Esc, en op “Menu van mkw-recomp” in de overlay. MKWMP houdt de controllersnelkoppeling van mkw-recomp uit de buurt van deze.",
   "overlay.shortcut.guide_or_select_start": "Guide of Select + Start",
   "overlay.shortcut.guide_or_select_start.note": "Zoals eerder: Select een seconde ingedrukt houden werkt ook. Steam of de Xbox Game Bar kunnen Guide afvangen, en sommige Steam-indelingen Select + Start.",
   "overlay.shortcut.guide": "Guide (Home-/Xbox-knop)",

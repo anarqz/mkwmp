@@ -1376,6 +1376,7 @@
   "settings.game.overlay": "Overlay en jeu",
   "settings.game.shortcut": "Raccourci de l'overlay",
   "settings.game.shortcut_warning": "Certaines combinaisons peuvent aussi ouvrir les menus de Steam ou de Xbox (par exemple Guide ouvre le menu Steam ou la Xbox Game Bar). Si cela arrive, choisis-en une autre.",
+  "settings.game.shortcut_recomp_menu": "Le menu de mkw-recomp reste sur F1 / Échap, et sur « Menu de mkw-recomp » dans l'overlay. MKWMP écarte le raccourci manette de mkw-recomp de celui-ci.",
   "overlay.shortcut.guide_or_select_start": "Guide ou Select + Start",
   "overlay.shortcut.guide_or_select_start.note": "Comme avant : maintenir Select une seconde marche aussi. Steam ou la Xbox Game Bar peuvent prendre Guide, et certaines configurations Steam prennent Select + Start.",
   "overlay.shortcut.guide": "Guide (bouton Home / Xbox)",

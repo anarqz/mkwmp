@@ -564,6 +564,83 @@ public class GameSettingsTests
     }
 
     [Fact]
+    public void Mkw_recomps_menu_shortcut_never_takes_the_overlays_buttons()
+    {
+        // mkw-recomp takes minus_plus (Select+Start) or guide, and has no "off": the one the overlay leaves free
+        var want = new Dictionary<Overlay.OverlayShortcut, string>
+        {
+            [Overlay.OverlayShortcut.GuideOrSelectStart] = "guide", // both overlap; the mod's filter always clears Guide
+            [Overlay.OverlayShortcut.Guide] = "minus_plus",
+            [Overlay.OverlayShortcut.SelectStart] = "guide",
+            [Overlay.OverlayShortcut.SelectHold] = "guide",
+            [Overlay.OverlayShortcut.StartHold] = "guide",
+            [Overlay.OverlayShortcut.SticksPressed] = "guide",
+            [Overlay.OverlayShortcut.BumpersStart] = "guide",
+            [Overlay.OverlayShortcut.SelectLb] = "guide",
+            [Overlay.OverlayShortcut.SelectRb] = "guide",
+        };
+        Assert.Equal(Overlay.OverlayShortcuts.All.Order(), want.Keys.Order());
+        var (target, install, _, _) = Game();
+        IGameTarget t = target;
+        var row = t.GameSettings(install)!.Find(RecompSettings.MenuShortcut)!;
+        foreach (var (shortcut, value) in want)
+        {
+            Assert.Equal(value, RecompSettings.MenuShortcutFor(shortcut));
+            Assert.Equal([(RecompSettings.MenuShortcut, value)], t.OverlayOwnedSettings(shortcut));
+            Assert.Equal(value, row.Normalize(value));
+            if (shortcut == Overlay.OverlayShortcut.Guide)
+            {
+                Assert.NotEqual("guide", value);
+            }
+            if (shortcut == Overlay.OverlayShortcut.SelectStart)
+            {
+                Assert.NotEqual("minus_plus", value);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Mkw_recomps_menu_shortcut_is_hidden_and_follows_the_overlay_shortcut()
+    {
+        await using var rig = new Rig(new FakeSeatServer());
+        File.WriteAllBytes(Path.Combine(rig.Game, "mkw.exe"), Rig.TestModExe);
+        var ini = Path.Combine(rig.Game, "mkw.ini");
+        File.WriteAllText(ini, RealIni);
+        IGameTarget game = rig.Target;
+        var install = rig.Target.Detect(rig.Game)!;
+        await rig.Launcher.ResetGameSettingAsync("volume"); // reads the game
+        var view = rig.Launcher.GameSettings;
+        // not a row of Settings › Controls, and not the player's to change or reset
+        Assert.Null(view.Schema!.Find(RecompSettings.MenuShortcut));
+        Assert.NotNull(view.Schema.Find("pad_layout"));
+        Assert.NotNull(game.GameSettings(install)!.Find(RecompSettings.MenuShortcut)); // still the game's
+        await rig.Launcher.SetGameSettingAsync(RecompSettings.MenuShortcut, "minus_plus");
+        Assert.True(rig.Launcher.GameSettings.NoteIsError);
+        Assert.DoesNotContain("menu_shortcut", File.ReadAllText(ini), StringComparison.Ordinal);
+
+        // a change of the overlay shortcut is written at once while the game is closed...
+        await rig.Launcher.SaveSettingsAsync(rig.Launcher.Settings with { Ui = rig.Launcher.Settings.Ui with { OverlayShortcut = Overlay.OverlayShortcut.Guide } });
+        Assert.Equal("minus_plus", game.ReadGameSettings(install).GetValueOrDefault(RecompSettings.MenuShortcut, "minus_plus"));
+        await rig.Launcher.SaveSettingsAsync(rig.Launcher.Settings with { Ui = rig.Launcher.Settings.Ui with { OverlayShortcut = Overlay.OverlayShortcut.SelectHold } });
+        Assert.Equal("guide", game.ReadGameSettings(install)[RecompSettings.MenuShortcut]);
+        Assert.DoesNotContain(RecompSettings.MenuShortcut, rig.Launcher.GameSettings.Changed); // nothing for "reset all"
+
+        // ...and not while it runs (mkw-recomp reads mkw.ini only at start): the next start writes it
+        var running = true;
+        rig.Target.RunningOverride = () => running;
+        await rig.Launcher.SaveSettingsAsync(rig.Launcher.Settings with { Ui = rig.Launcher.Settings.Ui with { OverlayShortcut = Overlay.OverlayShortcut.Guide } });
+        Assert.Equal("guide", game.ReadGameSettings(install)[RecompSettings.MenuShortcut]);
+        running = false;
+
+        // the player (or mkw-recomp's own menu) set it back: the start puts the launcher's value in again
+        File.WriteAllText(ini, RealIni.Replace("[display]", "[input]\r\nmenu_shortcut = guide\r\n\r\n[display]", StringComparison.Ordinal));
+        await rig.Launcher.PlayAsync();
+        await Rig.Until("the game", () => rig.Started);
+        Assert.Equal("minus_plus", game.ReadGameSettings(install).GetValueOrDefault(RecompSettings.MenuShortcut, "minus_plus"));
+        Assert.Contains("romfs = ", File.ReadAllText(ini), StringComparison.Ordinal); // the rest of the file stays
+    }
+
+    [Fact]
     public async Task The_launcher_shows_and_changes_the_targets_settings()
     {
         await using var rig = new Rig(new FakeSeatServer());

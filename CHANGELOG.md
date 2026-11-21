@@ -2,6 +2,10 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
+## 1.4.3 — unreleased
+
+- **One controller menu in the game.** The overlay shortcut and mkw-recomp's own menu shortcut no longer fight over the same press. The launcher now sets mkw-recomp's menu shortcut itself, to the button your overlay shortcut doesn't use (Select + Start when the overlay is on Guide, Guide otherwise), and the Menu Shortcut row is gone from Settings › Controls. mkw-recomp's menu still opens with F1 / Esc and from the overlay's mkw-recomp menu entry.
+
 ## 1.4.2 — 2026-11-21
 
 - **Ready to Play checklist.** A new page (Home's dock, Settings › Game, and Play when something is missing) lists what the game needs: mkw-recomp in the version MKWMP needs, your copy of the game, game version 1.8.0, the game set up on this device, MKWMP's files in the game, launcher updates and, online, server and sign-in. Each row has a button that fixes it. Play stays off until every row is ready.

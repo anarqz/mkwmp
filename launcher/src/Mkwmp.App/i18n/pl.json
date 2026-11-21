@@ -1376,6 +1376,7 @@
   "settings.game.overlay": "Nakładka w grze",
   "settings.game.shortcut": "Skrót nakładki",
   "settings.game.shortcut_warning": "Niektóre kombinacje mogą też otwierać menu Steam lub Xbox (na przykład Guide otwiera menu Steam albo Xbox Game Bar). Jeśli tak się stanie, wybierz inną.",
+  "settings.game.shortcut_recomp_menu": "Własne menu mkw-recomp zostaje pod F1 / Esc oraz pod „Menu: mkw-recomp” w nakładce. MKWMP ustawia skrót kontrolera mkw-recomp tak, by nie kolidował z tym.",
   "overlay.shortcut.guide_or_select_start": "Guide lub Select + Start",
   "overlay.shortcut.guide_or_select_start.note": "Jak dotąd: przytrzymanie Select przez sekundę też działa. Steam lub Xbox Game Bar mogą przejąć Guide, a niektóre układy Steam Select + Start.",
   "overlay.shortcut.guide": "Guide (przycisk Home / Xbox)",

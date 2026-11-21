@@ -1376,6 +1376,7 @@
   "settings.game.overlay": "게임 내 오버레이",
   "settings.game.shortcut": "오버레이 단축키",
   "settings.game.shortcut_warning": "일부 조합은 Steam이나 Xbox 자체 메뉴도 열 수 있습니다(예: Guide는 Steam 메뉴나 Xbox Game Bar를 엽니다). 그런 경우 다른 조합을 고르세요.",
+  "settings.game.shortcut_recomp_menu": "mkw-recomp 자체 메뉴는 F1 / Esc와 오버레이의 \"mkw-recomp 메뉴\"에서 열 수 있습니다. MKWMP는 mkw-recomp의 컨트롤러 단축키가 이것과 겹치지 않게 합니다.",
   "overlay.shortcut.guide_or_select_start": "Guide 또는 Select + Start",
   "overlay.shortcut.guide_or_select_start.note": "이전과 같이 Select를 1초 누르고 있어도 됩니다. Steam이나 Xbox Game Bar가 Guide를, 일부 Steam 레이아웃이 Select + Start를 가져갈 수 있습니다.",
   "overlay.shortcut.guide": "Guide(Home / Xbox 버튼)",

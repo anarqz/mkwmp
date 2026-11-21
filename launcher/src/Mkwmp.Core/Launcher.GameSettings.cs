@@ -29,6 +29,12 @@ public sealed partial class Launcher
         var target = _targets.Get(s.Target);
         var view = BuildGameSettings(target, GameFinder.Detect(target, s.Game));
         view = view with { Schema = WithOnlineLocks(target, view.Schema) };
+        var hidden = OverlayOwned(target);
+        if (hidden.Count > 0 && view.Changed.Any(id => hidden.Any(o => string.Equals(o.Id, id, StringComparison.OrdinalIgnoreCase))))
+        {
+            // the launcher's own value is not the player's change: no reset for it
+            view = view with { Changed = new HashSet<string>(view.Changed.Where(id => !hidden.Any(o => string.Equals(o.Id, id, StringComparison.OrdinalIgnoreCase))), StringComparer.OrdinalIgnoreCase) };
+        }
         lock (_gate)
         {
             if (_gameSettingsError is { } error)
@@ -77,13 +83,18 @@ public sealed partial class Launcher
 
     private GameSettingsSchema? _lockSource;
     private bool _lockOnline;
+    private string _lockHidden = "";
     private GameSettingsSchema? _lockResult;
 
     private bool OnlineOn => ((ILauncher)this).OnlineEnabled;
 
+    /// <summary>The target's settings the overlay's shortcut decides (<see cref="IGameTarget.OverlayOwnedSettings"/>), for the shortcut in use.</summary>
+    private IReadOnlyList<(string Id, string Value)> OverlayOwned(IGameTarget target) => target.OverlayOwnedSettings(Settings.Ui.OverlayShortcut);
+
     /// <summary>
     /// The target's settings that every player of an online race must share (mkw-recomp: the logic
-    /// rate, 60 Hz) show as locked while a server is chosen. The same object is returned while
+    /// rate, 60 Hz) show as locked while a server is chosen; the ones the overlay's shortcut decides
+    /// (mkw-recomp: its menu's pad shortcut) are not shown at all. The same object is returned while
     /// nothing changed, so the two-second refresh stays quiet.
     /// </summary>
     private GameSettingsSchema? WithOnlineLocks(IGameTarget target, GameSettingsSchema? schema)
@@ -93,28 +104,76 @@ public sealed partial class Launcher
             return null;
         }
         var online = OnlineOn;
+        var hidden = OverlayOwned(target).Select(o => o.Id).ToList();
+        var hiddenKey = string.Join(',', hidden);
         lock (_gate)
         {
-            if (ReferenceEquals(schema, _lockSource) && online == _lockOnline && _lockResult is not null)
+            if (ReferenceEquals(schema, _lockSource) && online == _lockOnline && hiddenKey == _lockHidden && _lockResult is not null)
             {
                 return _lockResult;
             }
         }
         var owned = target.OnlineOwnedSettings;
-        var result = !online || owned.Count == 0 ? schema : schema with
+        var result = (!online || owned.Count == 0) && hidden.Count == 0 ? schema : schema with
         {
             Categories = [.. schema.Categories.Select(c => c with
             {
-                Settings = [.. c.Settings.Select(x => x.Locked is null && owned.FirstOrDefault(o => string.Equals(o.Id, x.Id, StringComparison.OrdinalIgnoreCase)) is { Id: not null } o
-                    ? x with { Locked = o.Why }
-                    : x)],
+                Settings = [.. c.Settings
+                    .Where(x => !hidden.Contains(x.Id, StringComparer.OrdinalIgnoreCase))
+                    .Select(x => online && x.Locked is null && owned.FirstOrDefault(o => string.Equals(o.Id, x.Id, StringComparison.OrdinalIgnoreCase)) is { Id: not null } o
+                        ? x with { Locked = o.Why }
+                        : x)],
             })],
         };
         lock (_gate)
         {
-            (_lockSource, _lockOnline, _lockResult) = (schema, online, result);
+            (_lockSource, _lockOnline, _lockHidden, _lockResult) = (schema, online, hiddenKey, result);
         }
         return result;
+    }
+
+    /// <summary>
+    /// Before every start, and when the overlay's shortcut changes: the settings that shortcut decides
+    /// (<see cref="IGameTarget.OverlayOwnedSettings"/>) get their value in the game's file. Not while the
+    /// game runs: mkw-recomp reads mkw.ini only when it starts (and may write its own values back), so
+    /// the next start takes it. True when it wrote something.
+    /// </summary>
+    private bool EnforceOverlayOwned(IGameTarget target, GameInstall install)
+    {
+        var owned = OverlayOwned(target);
+        if (owned.Count == 0 || target.GameSettings(install) is not { } schema || target.IsRunning(install))
+        {
+            return false;
+        }
+        try
+        {
+            var current = target.ReadGameSettings(install);
+            var edits = owned.Where(o => schema.Find(o.Id) is { } setting && (current.TryGetValue(o.Id, out var v) ? v : setting.Default) != o.Value)
+                .ToDictionary(o => o.Id, o => (string?)o.Value, StringComparer.OrdinalIgnoreCase);
+            if (edits.Count == 0)
+            {
+                return false;
+            }
+            target.WriteGameSettings(install, edits);
+            var written = edits.Select(e => $"{e.Key} = {e.Value}").ToList();
+            Note($"game settings: {string.Join(", ", written)} (kept by MKWMP for the overlay's shortcut)");
+            return true;
+        }
+        catch (Exception e) when (e is LauncherException or IOException or UnauthorizedAccessException)
+        {
+            Note($"game settings: the overlay's values not written: {e.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>The overlay's shortcut changed in Settings: the game's settings follow it now, when the game is closed.</summary>
+    private void OverlayShortcutChanged()
+    {
+        var target = _targets.Get(Settings.Target);
+        if (GameFinder.Detect(target, Settings.Game) is { } install && EnforceOverlayOwned(target, install))
+        {
+            FollowGameSettings();
+        }
     }
 
     /// <summary>A change to an online-owned setting is refused while online (a reset to the default is fine when that is the owned value).</summary>

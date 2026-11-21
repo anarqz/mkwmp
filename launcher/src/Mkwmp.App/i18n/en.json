@@ -1395,6 +1395,7 @@
   "settings.game.overlay": "In-Game Overlay",
   "settings.game.shortcut": "Overlay Shortcut",
   "settings.game.shortcut_warning": "Some combinations may also open Steam's or Xbox's own menus (for example Guide opens the Steam menu or Xbox Game Bar). If that happens, pick another one.",
+  "settings.game.shortcut_recomp_menu": "mkw-recomp's own menu stays on F1 / Esc, and on “mkw-recomp menu” in the overlay. MKWMP moves that menu's own controller shortcut off this one.",
   "overlay.shortcut.guide_or_select_start": "Guide or Select + Start",
   "overlay.shortcut.guide_or_select_start.note": "As before: holding Select for a second works too. Steam or Xbox Game Bar may take Guide, and some Steam layouts take Select + Start.",
   "overlay.shortcut.guide": "Guide (Home / Xbox button)",

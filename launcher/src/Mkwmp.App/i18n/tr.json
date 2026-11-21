@@ -1376,6 +1376,7 @@
   "settings.game.overlay": "Oyun içi katman",
   "settings.game.shortcut": "Katman kısayolu",
   "settings.game.shortcut_warning": "Bazı kombinasyonlar Steam'in veya Xbox'ın kendi menülerini de açabilir (örneğin Guide, Steam menüsünü veya Xbox Game Bar'ı açar). Böyle olursa başka birini seç.",
+  "settings.game.shortcut_recomp_menu": "mkw-recomp'in kendi menüsü F1 / Esc'te ve katmandaki “mkw-recomp menüsü”nde kalır. MKWMP, mkw-recomp'in kumanda kısayolunu bununla çakışmayacak şekilde ayarlar.",
   "overlay.shortcut.guide_or_select_start": "Guide veya Select + Start",
   "overlay.shortcut.guide_or_select_start.note": "Eskisi gibi: Select'i bir saniye basılı tutmak da çalışır. Steam veya Xbox Game Bar Guide'ı alabilir, bazı Steam düzenleri de Select + Start'ı.",
   "overlay.shortcut.guide": "Guide (Home / Xbox düğmesi)",
