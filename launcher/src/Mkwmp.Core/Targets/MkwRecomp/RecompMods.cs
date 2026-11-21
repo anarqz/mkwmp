@@ -520,15 +520,18 @@ internal static class RecompMods
 
     /// <summary>
     /// What the game's own start screen does at Play (mods_before_play): with another set of mods than
-    /// the last start played, the first player's save is copied to <c>profile/save-before-mods/&lt;time&gt;/</c>
-    /// (the newest ten stay) and <c>mods_played</c> takes the set. The launcher starts the game past that
-    /// screen, so it does this itself. Never throws; says what it did.
+    /// the last start played, the save is copied to <c>&lt;player&gt;/save-before-mods/&lt;time&gt;/</c>
+    /// (the newest ten stay) and <c>mods_played</c> takes the set. The start screen copies the save of the
+    /// player it starts; the launcher does not pick the player, and <c>mods_played</c> is one for the
+    /// install, so it copies every player's: the first one's (<c>profile/</c>) and each
+    /// <c>profile/players/&lt;n&gt;/</c> (players.h). The launcher starts the game past that screen, so it does
+    /// this itself. Never throws; says what it did.
     /// </summary>
     public static void BeforePlay(GameInstall install, DateTime now, Action<string> note)
     {
         try
         {
-            if (!Capable(install) || Environment.GetEnvironmentVariable("MKW_PROFILE_DIR") is { Length: > 0 } || Environment.GetEnvironmentVariable("MKW_PLAYER") is { Length: > 0 })
+            if (!Capable(install) || Environment.GetEnvironmentVariable("MKW_PROFILE_DIR") is { Length: > 0 })
             {
                 return;
             }
@@ -540,27 +543,19 @@ internal static class RecompMods
             {
                 return;
             }
-            var profile = Path.Combine(Recomp.DataDir(install.Root), "profile");
-            var save = Path.Combine(profile, "save");
-            if (on.Length > 0 && Directory.Exists(save))
+            if (on.Length > 0)
             {
-                var root = Path.Combine(profile, "save-before-mods");
-                var copy = Path.Combine(root, now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture));
-                var files = 0;
-                foreach (var file in Directory.EnumerateFiles(save, "*", new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint }))
+                var stamp = now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+                foreach (var player in PlayerDirs(Path.Combine(Recomp.DataDir(install.Root), "profile")))
                 {
-                    var to = Path.Combine(copy, Path.GetRelativePath(save, file));
-                    Directory.CreateDirectory(Path.GetDirectoryName(to)!);
-                    File.Copy(file, to, overwrite: true);
-                    files++;
-                }
-                note($"mods: the save before these mods ({on}): {files} files in {copy}");
-                // only its own copies, named by their time: the oldest go
-                var copies = Directory.EnumerateDirectories(root).Select(Path.GetFileName).OfType<string>()
-                    .Where(n => n.Length == 15 && n[8] == '-' && n.Where((c, i) => i != 8).All(char.IsAsciiDigit)).OrderBy(n => n, StringComparer.Ordinal).ToList();
-                foreach (var old in copies.Take(Math.Max(0, copies.Count - KeepSaveCopies)))
-                {
-                    Directory.Delete(Path.Combine(root, old), recursive: true);
+                    try
+                    {
+                        CopySave(player, stamp, on, note);
+                    }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                    {
+                        note($"mods: the save in {player} was not copied before these mods: {e.Message}"); // the other players' still are
+                    }
                 }
             }
             Mod.EditIni(install.Root, text => RecompIni.Apply(text, [new("mods_played", on.Length == 0 ? null : on)], _ => "launcher"));
@@ -568,6 +563,65 @@ internal static class RecompMods
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or LauncherException)
         {
             note($"mods: the save was not copied before these mods: {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The folders of the players of a profile folder, as players_list (players.c) finds them: the folder
+    /// itself (the first player), then <c>players/&lt;n&gt;</c> for each folder named by a number (six digits
+    /// at most, above zero; <c>deleted/</c> and stray files are not players), by number, fifteen at most.
+    /// </summary>
+    internal static IEnumerable<string> PlayerDirs(string profile)
+    {
+        yield return profile;
+        var players = Path.Combine(profile, "players");
+        if (!Directory.Exists(players))
+        {
+            yield break;
+        }
+        var ids = Directory.EnumerateDirectories(players).Select(Path.GetFileName).OfType<string>()
+            .Where(n => n.Length is > 0 and <= 6 && n.All(char.IsAsciiDigit))
+            .Select(n => int.Parse(n, CultureInfo.InvariantCulture)).Where(n => n > 0)
+            .Distinct().Order().Take(MaxPlayers - 1).ToList();
+        foreach (var id in ids)
+        {
+            // the game names the folder by the number it read ("%d"): "02" is player 2's players/2
+            var dir = Path.Combine(players, id.ToString(CultureInfo.InvariantCulture));
+            if (Directory.Exists(dir))
+            {
+                yield return dir;
+            }
+        }
+    }
+
+    /// <summary>The players an install keeps at most (PLAYERS_MAX, players.h), the first one included.</summary>
+    private const int MaxPlayers = 16;
+
+    /// <summary>One player's <c>save/</c> to <c>save-before-mods/&lt;stamp&gt;/</c> beside it; the newest ten copies stay.</summary>
+    private static void CopySave(string player, string stamp, string on, Action<string> note)
+    {
+        var save = Path.Combine(player, "save");
+        if (!Directory.Exists(save))
+        {
+            return;
+        }
+        var root = Path.Combine(player, "save-before-mods");
+        var copy = Path.Combine(root, stamp);
+        var files = 0;
+        foreach (var file in Directory.EnumerateFiles(save, "*", new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint }))
+        {
+            var to = Path.Combine(copy, Path.GetRelativePath(save, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Copy(file, to, overwrite: true);
+            files++;
+        }
+        note($"mods: the save before these mods ({on}): {files} files in {copy}");
+        // only its own copies, named by their time: the oldest go
+        var copies = Directory.EnumerateDirectories(root).Select(Path.GetFileName).OfType<string>()
+            .Where(n => n.Length == 15 && n[8] == '-' && n.Where((c, i) => i != 8).All(char.IsAsciiDigit)).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        foreach (var old in copies.Take(Math.Max(0, copies.Count - KeepSaveCopies)))
+        {
+            Directory.Delete(Path.Combine(root, old), recursive: true);
         }
     }
 }

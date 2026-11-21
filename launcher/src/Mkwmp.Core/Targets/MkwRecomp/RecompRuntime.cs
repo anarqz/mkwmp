@@ -1,4 +1,6 @@
 // Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
+using System.Runtime.Intrinsics.X86;
+
 namespace Mkwmp.Core.Targets.MkwRecomp;
 
 /// <summary>
@@ -48,12 +50,21 @@ public static class RecompRuntime
         + "copy, on your device; MKWMP is not affiliated with mkw-recomp or with Nintendo.";
 
     /// <summary>
+    /// The pinned build for this machine's processor: <see cref="Main"/> when it has what x86-64-v3 asks
+    /// (AVX2, FMA and BMI2: the checks <c>require_x86_64_v3</c> in mkw.exe makes; .NET answers them under
+    /// Wine / Proton too), else <see cref="NoAvx2"/>.
+    /// </summary>
+    public static RuntimeManifest Pinned => For(Avx2.IsSupported && Fma.IsSupported && Bmi2.IsSupported);
+
+    /// <summary>The pinned build for a processor with (<paramref name="v3"/>) or without AVX2: the tests' switch.</summary>
+    public static RuntimeManifest For(bool v3) => v3 ? Main : NoAvx2;
+
+    /// <summary>
     /// The pinned build: mkw-recomp 0.1.16-mkwmp.1, the Windows zip (also what runs under Proton: .1 is the
     /// setup under Wine, where zig cannot use its cache, and the game window under Proton on a Linux desktop).
     /// Same game id as 0.1.16-mkwmp, so an installed game keeps its compiled code and shaders.
-    /// The release's no-AVX2 zip is not installed by the launcher; its mkw.exe is in <see cref="Recomp.Known"/>.
     /// </summary>
-    public static RuntimeManifest Pinned { get; } = new()
+    public static RuntimeManifest Main { get; } = new()
     {
         Name = "mkw-recomp",
         Version = "0.1.16-mkwmp.1",
@@ -95,5 +106,25 @@ public static class RecompRuntime
             "MIT",
             Notice,
             "licenses") { SummaryKey = "core.recomp.credit" },
+    };
+
+    /// <summary>
+    /// The same release's zip for processors without AVX2 (an AMD FX, an Intel Core before Haswell): mkw.exe
+    /// built for x86-64-v2 (SSE4.2), and <c>setup/cpu-level</c> ("v2"), so its setup builds the game code for
+    /// v2 too. Everything else is the main zip's. Its version is the same: on a processor with AVX2 an install
+    /// of it is up to date (it runs there); on one without, an install of <see cref="Main"/> is not.
+    /// </summary>
+    public static RuntimeManifest NoAvx2 { get; } = Main with
+    {
+        Asset = "mkw-recomp-0.1.16-mkwmp.1-windows-x64-noavx2.zip",
+        Size = 221_040_229,
+        Sha256 = "c1d163f4a787c0bfcae6f28722e5684f13fe7e818bbc8620bb45f88dedd0b3ac",
+        ExecutableSha256 = "59af1fcc9c3a233e2d86c8437224f90a958e9ecb473118d71d92090379fbe3c0",
+        // 23,345 files: the main zip's, its own mkw.exe, and setup/cpu-level.
+        InstalledSize = 738_395_479,
+        Variant = "no AVX2",
+        VariantKey = "core.runtime.variant_noavx2",
+        // The main zip's mkw.exe needs AVX2: it would not start here.
+        Unsuitable = [Main.ExecutableSha256],
     };
 }

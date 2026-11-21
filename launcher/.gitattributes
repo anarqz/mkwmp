@@ -12,6 +12,8 @@ native/hook/src/** text eol=crlf
 *.ico binary
 *.ttf binary
 *.wav binary
+*.rar binary
+*.7z binary
 
 # Preserve upstream notices and sources, including their original whitespace.
 native/overlay/third_party/** -whitespace

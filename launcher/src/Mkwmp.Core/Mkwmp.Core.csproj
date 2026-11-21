@@ -14,6 +14,12 @@
     <PackageReference Include="NSec.Cryptography" />
     <PackageReference Include="ZstdSharp.Port" />
     <PackageReference Include="AssetRipper.TextureDecoder" />
+    <PackageReference Include="SharpCompress" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SharpCompress (MIT) is linked into the launcher: its licence ships beside it, with the launcher's others. -->
+    <Content Include="SharpCompress-LICENSE.txt" Link="licenses\SharpCompress-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- The window's catalogs, built in (Catalogs.cs): en.json is the core's own English (Strings.cs), and with the

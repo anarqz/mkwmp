@@ -506,6 +506,47 @@ public class SetupGateTests
     }
 
     [Fact]
+    public void Game_code_built_for_the_other_processor_level_is_built_again()
+    {
+        using var rig = new SetupRig();
+        rig.SetUp();
+        var state = Path.Combine(rig.Game, "setup-state.json");
+        var level = Path.Combine(rig.Game, "setup", "cpu-level");
+        // Compiled by the main package: v3, no level at the end of the compile step's key (prepare.py).
+        File.WriteAllText(state, File.ReadAllText(state).Replace("\"generate\"", "\"compile\":\"c9bbcb75a9ac9a49 1.8.0 windows 41829b71d97ad65a\",\"generate\"", StringComparison.Ordinal));
+        Assert.Equal("v3", RecompSetup.ReadState(rig.Game)!.CompileLevel);
+        Assert.Null(rig.Target.SetupStatus(rig.Install)!.Needed);
+
+        // The install is now the no-AVX2 package (a folder brought to a processor without AVX2): mkwgame.id cannot tell.
+        Directory.CreateDirectory(Path.GetDirectoryName(level)!);
+        File.WriteAllText(level, "v2\n");
+        Assert.Equal("v2", RecompSetup.CpuLevel(rig.Install));
+        var plan = rig.Target.SetupStatus(rig.Install)!.Needed!;
+        Assert.Equal((GameSetupReason.RuntimeChanged, false, rig.Dump), (plan.Reason, plan.NeedsDump, plan.DumpPath));
+        Assert.Equal(Strings.SetupRuntimeChanged("mkw-recomp", "0.1.16-mkwmp.1 (no AVX2)"), plan.Message);
+
+        // Compiled for v2 by it: nothing to do.
+        File.WriteAllText(state, File.ReadAllText(state).Replace("41829b71d97ad65a\"", "41829b71d97ad65a v2\"", StringComparison.Ordinal));
+        Assert.Equal("v2", RecompSetup.ReadState(rig.Game)!.CompileLevel);
+        Assert.Null(rig.Target.SetupStatus(rig.Install)!.Needed);
+
+        // Back to the main package: compiled again for v3 (prepare.py's own key says so too).
+        File.Delete(level);
+        Assert.Equal(GameSetupReason.RuntimeChanged, rig.Target.SetupStatus(rig.Install)!.Needed!.Reason);
+    }
+
+    [Fact]
+    public void The_processor_check_follows_the_package_s_level()
+    {
+        Assert.Null(RecompSetup.CpuProblem("v3", v3: true, v2: true));
+        Assert.Equal(Strings.SetupCpu, RecompSetup.CpuProblem("v3", v3: false, v2: true));
+        // The no-AVX2 package asks only SSE4.2 (x86-64-v2).
+        Assert.Null(RecompSetup.CpuProblem("v2", v3: false, v2: true));
+        Assert.Equal(Strings.SetupCpuV2, RecompSetup.CpuProblem("v2", v3: false, v2: false));
+        Assert.DoesNotContain("AVX2", Strings.SetupCpuV2, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_setup_that_stopped_half_way_is_continued()
     {
         using var rig = new SetupRig();

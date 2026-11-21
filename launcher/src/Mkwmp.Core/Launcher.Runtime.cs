@@ -21,7 +21,8 @@ public sealed partial class Launcher
     private string? _runtimeBusyFolder;
     private (string Text, bool IsError)? _runtimeNote;
     /// <summary>Whether the game folder carries the installer's marker, looked up once per folder.</summary>
-    private (string Root, bool Managed)? _runtimeManaged;
+    /// <remarks>And whether its executable runs on this processor (<see cref="RuntimeManifest.Suits"/>: hashed once, and only on one without AVX2).</remarks>
+    private (string Root, bool Managed, bool Suits)? _runtimeManaged;
 
     private volatile RuntimeView _runtimeView = RuntimeView.None;
 
@@ -61,18 +62,21 @@ public sealed partial class Launcher
             return RuntimeView.None;
         }
         var install = _install is { } found && found.TargetId == target.Id ? found : null;
-        var ours = false;
+        var (ours, suits) = (false, true);
         if (install is not null)
         {
             if (_runtimeManaged is not { } known || known.Root != install.Root)
             {
-                _runtimeManaged = known = (install.Root, RuntimeInstaller.ManagedVersion(install.Root) is not null);
+                _runtimeManaged = known = (install.Root, RuntimeInstaller.ManagedVersion(install.Root) is not null, install.Version != manifest.Version || manifest.Suits(install.Root));
             }
             ours = known.Managed || manifest.SameLineage(install.Version);
+            suits = known.Suits;
         }
         var folder = _runtimeBusyFolder ?? (ours ? install!.Root : DefaultRuntimeFolder(manifest));
+        // The pinned version in the other build, when that one does not run here (a folder brought from a
+        // processor with AVX2 to one without): updated in place to this processor's build.
         var idle = install is null ? RuntimeState.NotInstalled
-            : ours && install.Version != manifest.Version ? RuntimeState.UpdateAvailable
+            : ours && (install.Version != manifest.Version || !suits) ? RuntimeState.UpdateAvailable
             : RuntimeState.Installed;
         var state = _runtimeProgress?.Phase switch
         {
@@ -97,7 +101,10 @@ public sealed partial class Launcher
             manifest.Size,
             manifest.Size + manifest.InstalledSize + manifest.SetupSpace,
             _runtimeNote?.Text,
-            manifest.Credit.Localized());
+            manifest.Credit.Localized())
+        {
+            PinnedVariant = manifest.VariantText,
+        };
     }
 
     public async Task InstallRuntimeAsync(string? folder, CancellationToken cancel)
@@ -171,7 +178,8 @@ public sealed partial class Launcher
                 },
                 CancellationToken.None).ConfigureAwait(false);
             await Task.Run(RefreshGame, CancellationToken.None).ConfigureAwait(false);
-            var said = result.Updated ? Strings.RuntimeUpdated(manifest.Name, result.Version) : Strings.RuntimeInstalled(manifest.Name, result.Version);
+            var label = result.Version == manifest.Version ? manifest.Label : result.Version;
+            var said = result.Updated ? Strings.RuntimeUpdated(manifest.Name, label) : Strings.RuntimeInstalled(manifest.Name, label);
             Mutate(() => (_runtimeProgress, _runtimeBusyFolder, _runtimeNote) = (null, null, (said, false)));
         }
         catch (OperationCanceledException)

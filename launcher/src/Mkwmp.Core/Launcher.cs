@@ -456,7 +456,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         Put(ref runtime, RuntimeNow());
         _runtimeView = runtime;
         var runtimeProblem = _install is null || runtime.PinnedVersion is null ? null
-            : runtime.State == RuntimeState.UpdateAvailable ? Strings.RuntimeUpdateNeeded(target.DisplayName, runtime.PinnedVersion)
+            : runtime.State == RuntimeState.UpdateAvailable ? Strings.RuntimeUpdateNeeded(target.DisplayName, runtime.PinnedLabel ?? runtime.PinnedVersion)
             : runtime.Busy ? Strings.RuntimeBusy(target.DisplayName)
             : null;
         var gate = runtimeProblem ?? setupProblem;

@@ -117,7 +117,7 @@ public sealed partial class SetupViewModel
     /// <summary>"ready", "needruntime"…: which block of the page shows.</summary>
     public string StageName => Stage.ToString().ToLowerInvariant();
 
-    public string RuntimeName => Launcher.Runtime.PinnedVersion is { } version ? $"{Game.TargetName} {version}" : Game.TargetName;
+    public string RuntimeName => Launcher.Runtime.PinnedLabel is { } version ? $"{Game.TargetName} {version}" : Game.TargetName;
 
     /// <summary>Whose work the runtime is, wherever it is named.</summary>
     public string RuntimeCredit => Launcher.Runtime.Credit?.Summary ?? S["setup.welcome.credit"];

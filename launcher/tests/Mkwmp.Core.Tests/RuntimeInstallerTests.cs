@@ -111,9 +111,13 @@ internal sealed class RuntimeRig : IDisposable
     public static readonly byte[] PreviousPinExe = "mkw.exe of the previous pin, 0.1.15-mkwmp"u8.ToArray();
     public static readonly byte[] UpstreamExe = "mkw.exe of upstream 0.1.15"u8.ToArray();
 
+    /// <summary>The pinned version's mkw.exe from the release's no-AVX2 zip (<see cref="NewExe"/> is the main zip's).</summary>
+    public static readonly byte[] NoAvx2Exe = "mkw.exe of the pinned fork build, for CPUs without AVX2"u8.ToArray();
+
     static RuntimeRig()
     {
         Recomp.TestExes[Updater.Sha256Hex(NewExe)] = Pinned;
+        Recomp.TestExes[Updater.Sha256Hex(NoAvx2Exe)] = Pinned;
         Recomp.TestExes[Updater.Sha256Hex(OldForkExe)] = "0.1.14-mkwmp";
         Recomp.TestExes[Updater.Sha256Hex(PreviousPinExe)] = PreviousPin;
         Recomp.TestExes[Updater.Sha256Hex(UpstreamExe)] = "0.1.15";
@@ -138,7 +142,8 @@ internal sealed class RuntimeRig : IDisposable
         Cache = Path.Combine(Root, "downloads");
         Zip = MakeZip(entries ?? Release);
         Host = new FakeReleaseHost { File = Zip };
-        var manifest = RecompRuntime.Pinned with
+        // The main build, whatever this machine's processor: a test of the other one says so (NoAvx2Rig).
+        var manifest = RecompRuntime.Main with
         {
             Asset = "runtime.zip",
             Size = Zip.Length,
@@ -166,6 +171,21 @@ internal sealed class RuntimeRig : IDisposable
 
     /// <summary>What the target says of a folder; a test may stop recognising the new build.</summary>
     public Func<string, string?> Identify { get; set; } = folder => new MkwRecompTarget("1.4.0").Detect(folder)?.Version;
+
+    /// <summary>As the launcher has it on a processor without AVX2: the release's no-AVX2 zip, and the main build's mkw.exe unsuitable.</summary>
+    public static RuntimeRig NoAvx2Rig() => new(
+        Release.Select(e => e.Name == "mkw-recomp/mkw.exe" ? (e.Name, Encoding.UTF8.GetString(NoAvx2Exe)) : e).Append(("mkw-recomp/setup/cpu-level", "v2\n")),
+        m => RecompRuntime.For(v3: false) with
+        {
+            Asset = m.Asset,
+            Size = m.Size,
+            Sha256 = m.Sha256,
+            ExecutableSha256 = Updater.Sha256Hex(NoAvx2Exe),
+            InstalledSize = m.InstalledSize,
+            SetupSpace = m.SetupSpace,
+            UrlOverride = m.UrlOverride,
+            Unsuitable = [Updater.Sha256Hex(NewExe)],
+        });
 
     public RuntimeInstaller New() => Installer = new RuntimeInstaller(Manifest, Http, "mkwmp-test", Cache, new RuntimeHost
     {
@@ -252,7 +272,11 @@ public class RuntimeManifestTests
     [Fact]
     public void The_pinned_runtime_is_one_release_of_the_fork_and_never_the_latest()
     {
-        var m = RecompRuntime.Pinned;
+        var m = RecompRuntime.For(v3: true);
+        Assert.Same(RecompRuntime.Main, m);
+        Assert.Null(m.Variant);
+        Assert.Equal("0.1.16-mkwmp.1", m.Label);
+        Assert.Empty(m.Unsuitable);
         Assert.Equal("0.1.16-mkwmp.1", m.Version);
         Assert.Equal("anarqz/mkw-recomp", m.Repository);
         Assert.Equal("v0.1.16-mkwmp.1", m.Tag);
@@ -267,6 +291,27 @@ public class RuntimeManifestTests
         Assert.Equal("https://github.com/anarqz/mkw-recomp/releases/download/v0.1.16-mkwmp.1/mkw-recomp-0.1.16-mkwmp.1-windows-x64.zip", m.Url.ToString());
         Assert.DoesNotContain("latest", m.Url.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("api.github.com", m.Url.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void A_processor_without_AVX2_gets_the_same_release_s_noavx2_zip()
+    {
+        var m = RecompRuntime.For(v3: false);
+        var main = RecompRuntime.Main;
+        Assert.Same(RecompRuntime.NoAvx2, m);
+        Assert.Equal((main.Version, main.Repository, main.Tag), (m.Version, m.Repository, m.Tag));
+        Assert.Equal("mkw-recomp-0.1.16-mkwmp.1-windows-x64-noavx2.zip", m.Asset);
+        Assert.Equal(221_040_229, m.Size);
+        Assert.Equal("c1d163f4a787c0bfcae6f28722e5684f13fe7e818bbc8620bb45f88dedd0b3ac", m.Sha256);
+        Assert.Equal("59af1fcc9c3a233e2d86c8437224f90a958e9ecb473118d71d92090379fbe3c0", m.ExecutableSha256);
+        Assert.Equal(738_395_479, m.InstalledSize);
+        Assert.Equal("https://github.com/anarqz/mkw-recomp/releases/download/v0.1.16-mkwmp.1/mkw-recomp-0.1.16-mkwmp.1-windows-x64-noavx2.zip", m.Url.ToString());
+        // Both builds' mkw.exe are this version to the launcher; the main one does not run where this one is pinned.
+        Assert.Contains((m.Version, m.ExecutableSha256), Recomp.Known);
+        Assert.Equal([main.ExecutableSha256], m.Unsuitable);
+        Assert.Equal("0.1.16-mkwmp.1 (no AVX2)", m.Label);
+        Assert.Equal((main.Preserved, main.Credit, main.FolderName, main.SetupSpace), (m.Preserved, m.Credit, m.FolderName, m.SetupSpace));
+        Assert.True(m.SameLineage("0.1.16-mkwmp"));
     }
 
     [Fact]
@@ -802,6 +847,47 @@ public class RuntimeInstallerTests
         Assert.Equal(RuntimeRig.Pinned, Recomp.Identify(rig.Folder).Version);
     }
 
+    [Fact]
+    public async Task With_AVX2_an_install_of_the_releases_noavx2_build_is_up_to_date()
+    {
+        using var rig = new RuntimeRig();
+        await rig.Install();
+        // The release's other build, put here by a launcher on a processor without AVX2: it runs here too.
+        File.WriteAllBytes(rig.At("mkw.exe"), RuntimeRig.NoAvx2Exe);
+        Assert.True(rig.Manifest.Suits(rig.Folder));
+
+        var again = await rig.Install();
+        Assert.Single(rig.Host.Requests);
+        Assert.Equal((0, 0), (again.Added, again.Replaced));
+        Assert.Equal(RuntimeRig.NoAvx2Exe, File.ReadAllBytes(rig.At("mkw.exe")));
+    }
+
+    [Fact]
+    public async Task Without_AVX2_the_main_build_is_replaced_by_the_noavx2_one_and_the_players_files_stay()
+    {
+        using var main = new RuntimeRig();
+        using var rig = RuntimeRig.NoAvx2Rig();
+        Assert.Equal("0.1.16-mkwmp.1 (no AVX2)", rig.Manifest.Label);
+        // Installed on a processor with AVX2, then brought here.
+        await main.Installer.InstallAsync(rig.Folder, null, null, default);
+        rig.Put("profile/save.bin", "save");
+        rig.Put("mkwgame.dll", "built from the player's game");
+        Assert.False(rig.Manifest.Suits(rig.Folder));
+
+        var result = await rig.Install();
+        Assert.True(result.Updated);
+        Assert.Single(rig.Host.Requests);
+        Assert.Equal(RuntimeRig.NoAvx2Exe, File.ReadAllBytes(rig.At("mkw.exe")));
+        Assert.Equal("v2\n", rig.Read("setup/cpu-level"));
+        Assert.Equal(("save", "built from the player's game"), (rig.Read("profile/save.bin"), rig.Read("mkwgame.dll")));
+        Assert.Equal(RuntimeRig.Pinned, Recomp.Identify(rig.Folder).Version);
+        Assert.True(rig.Manifest.Suits(rig.Folder));
+
+        // And now it is up to date.
+        await rig.Install();
+        Assert.Single(rig.Host.Requests);
+    }
+
     private sealed class Collect(Action<RuntimeProgress> report) : IProgress<RuntimeProgress>
     {
         public void Report(RuntimeProgress value) => report(value);
@@ -813,9 +899,9 @@ public class LauncherRuntimeTests
 {
     private sealed class Home : IAsyncDisposable
     {
-        public Home(Action<RuntimeRig>? arrange = null, string game = "")
+        public Home(Action<RuntimeRig>? arrange = null, string game = "", Func<RuntimeRig>? files = null)
         {
-            Files = new RuntimeRig();
+            Files = files?.Invoke() ?? new RuntimeRig();
             arrange?.Invoke(Files);
             var home = Path.Combine(Files.Root, "launcher");
             Directory.CreateDirectory(home);
@@ -928,6 +1014,30 @@ public class LauncherRuntimeTests
         Assert.Equal("new python",File.ReadAllText(Path.Combine(mine, "setup", "python", "python.exe")));
         Assert.Equal("save", File.ReadAllText(Path.Combine(mine, "profile", "save.bin")));
         Assert.False(Directory.Exists(home.Files.Folder)); // nothing went to the default folder
+    }
+
+    [Fact]
+    public async Task With_AVX2_the_noavx2_build_in_the_game_folder_is_the_pinned_one()
+    {
+        await using var home = new Home(f => f.ExistingInstall(RuntimeRig.NoAvx2Exe, Path.Combine(f.Root, "mine")), game: "mine");
+        var view = home.Launcher.Runtime;
+        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, "0.1.16-mkwmp.1", (string?)null), (view.State, view.InstalledVersion, view.PinnedLabel, view.PinnedVariant));
+    }
+
+    [Fact]
+    public async Task Without_AVX2_the_main_build_in_the_game_folder_is_updated_to_the_noavx2_one()
+    {
+        await using var home = new Home(f => f.ExistingInstall(RuntimeRig.NewExe, Path.Combine(f.Root, "mine")), game: "mine", files: RuntimeRig.NoAvx2Rig);
+        var mine = Path.Combine(home.Files.Root, "mine");
+        var view = home.Launcher.Runtime;
+        Assert.Equal((RuntimeState.UpdateAvailable, RuntimeRig.Pinned, "0.1.16-mkwmp.1 (no AVX2)", mine), (view.State, view.InstalledVersion, view.PinnedLabel, view.Folder));
+
+        await home.Launcher.InstallRuntimeAsync(null, default);
+
+        view = home.Launcher.Runtime;
+        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, "mkw-recomp updated to 0.1.16-mkwmp.1 (no AVX2)"), (view.State, view.InstalledVersion, view.Note));
+        Assert.Equal(RuntimeRig.NoAvx2Exe, File.ReadAllBytes(Path.Combine(mine, "mkw.exe")));
+        Assert.Equal("save", File.ReadAllText(Path.Combine(mine, "profile", "save.bin")));
     }
 
     [Fact]

@@ -73,6 +73,47 @@ public sealed record RuntimeManifest
     public required RuntimeCredit Credit { get; init; }
 
     /// <summary>
+    /// Which of the release's builds this is, in English, when the release has more than one for the
+    /// platform ("no AVX2"); null for its main build.
+    /// </summary>
+    public string? Variant { get; init; }
+
+    /// <summary>The catalog key of <see cref="Variant"/>.</summary>
+    public string? VariantKey { get; init; }
+
+    /// <summary>
+    /// The SHA-256 of executables of this same <see cref="Version"/> that do not run on this machine (the
+    /// release's AVX2 build, for its no-AVX2 one): an install holding one is not up to date. Another build of
+    /// the version that does run here is (no download only to change builds).
+    /// </summary>
+    public IReadOnlyList<string> Unsuitable { get; init; } = [];
+
+    /// <summary><see cref="Variant"/> in the language in use; null for the main build.</summary>
+    public string? VariantText => Variant is null ? null : VariantKey is { } key ? Strings.T(key, Variant) : Variant;
+
+    /// <summary>The version as the window names it: "0.1.16-mkwmp.1", "0.1.16-mkwmp.1 (no AVX2)".</summary>
+    public string Label => VariantText is { } variant ? $"{Version} ({variant})" : Version;
+
+    /// <summary>Whether the executable in <paramref name="folder"/> is not one of <see cref="Unsuitable"/> (true when it cannot be read: the target's own look says the rest).</summary>
+    public bool Suits(string folder)
+    {
+        if (Unsuitable.Count == 0)
+        {
+            return true;
+        }
+        try
+        {
+            using var file = File.OpenRead(Path.Combine(folder, Executable));
+            var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(file));
+            return !Unsuitable.Contains(hash, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Where the asset is downloaded from: the release's own download address for exactly
     /// <see cref="Tag"/> and <see cref="Asset"/>.
     /// </summary>

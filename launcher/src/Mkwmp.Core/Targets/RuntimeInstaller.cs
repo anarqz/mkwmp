@@ -241,9 +241,10 @@ public sealed class RuntimeInstaller
                 break;
         }
         var fresh = kind == RuntimeFolderKind.Empty;
-        if (kind == RuntimeFolderKind.Managed && ManagedVersion(folder) == _manifest.Version && _host.Identify(folder) == _manifest.Version)
+        if (kind == RuntimeFolderKind.Managed && ManagedVersion(folder) == _manifest.Version && _host.Identify(folder) == _manifest.Version && _manifest.Suits(folder))
         {
-            // Already the pinned build, put there by this installer: nothing to download.
+            // Already the pinned version, put there by this installer, in a build that runs here (either of the
+            // release's builds on a processor with AVX2): nothing to download.
             return new RuntimeInstallResult(folder, _manifest.Version, true, 0, 0, 0, null);
         }
         RefuseWhileRunning(folder, fresh);

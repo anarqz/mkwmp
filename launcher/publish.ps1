@@ -1,5 +1,8 @@
 # Publishes the launcher as it ships (launcher/docs/UPDATES.md, "The release"):
-#   <Out>\mkwmp-launcher.exe     single file, self-contained (also the loose asset mkwmp-launcher-x86_64-windows.exe)
+#   <Out>\mkwmp-launcher.exe     single file, self-contained, compressed: every managed assembly inside it
+#   <Out>\*.dll                  the native libraries beside it (WPF's *_cor3.dll, D3DCompiler, libsodium): a portable
+#                                launcher writes nothing outside its folder, so nothing is unpacked into %TEMP%\.net
+#                                at start. The release zip carries them; the update helper swaps them with the exe.
 #   <Out>\mkwmp-updater.exe      the update helper, Native AOT (needs Visual Studio's C++ x64 tools to link)
 #   <Out>\i18n\, licenses\, mkwmp-launcher.png, CHANGELOG.md
 #   <Out>\game\mkwmp-mod.zip     the MKWMP mod built from this tree (native/probe/build_plugin.py --package, with the
@@ -14,12 +17,16 @@
 #             Never ship a -Dev folder.
 #   -NoGame   the launcher only (no native build; needs neither zig nor Python).
 #   -Zig      zig.exe (Zig 0.15) for the native build; default: zig on PATH. -ZigCache: where zig keeps its caches.
+#   -Loose    also writes this file: the launcher as ONE self-extracting executable (its native libraries unpack into
+#             %TEMP%\.net), for the release's loose asset mkwmp-launcher-x86_64-windows.exe. Launchers from before the
+#             zip update by swapping that one file, so it must start with nothing beside it; their next update
+#             installs the zip, and the portable layout above.
 #
 #   .\publish.ps1 -Out C:\tmp\mkwmp            .\publish.ps1 -Out C:\tmp\mkwmp -Version 1.5.0 -ArtifactsPath C:\tmp\obj
 #   .\publish.ps1 -Out C:\tmp\mkwmp -Dev -Zig C:\tools\zig\zig.exe
 param(
     [Parameter(Mandatory)][string]$Out, [string]$Version, [string]$ArtifactsPath,
-    [switch]$Dev, [switch]$NoGame, [string]$Zig, [string]$ZigCache, [string]$Python = 'python')
+    [switch]$Dev, [switch]$NoGame, [string]$Zig, [string]$ZigCache, [string]$Loose, [string]$Python = 'python')
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $repo = Split-Path $root -Parent
@@ -28,8 +35,21 @@ $common = @('-c', 'Release', '-r', 'win-x64', '-p:DebugType=None', '-p:DebugSymb
 if ($Version) { $common += "-p:Version=$Version" }
 if ($ArtifactsPath) { $common += @('--artifacts-path', $ArtifactsPath) }
 
-dotnet publish "$root/src/Mkwmp.App" --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true @common
+# The native libraries stay beside the exe (IncludeNativeLibrariesForSelfExtract=false): nothing is written outside
+# the launcher's folder. A native library of an earlier publish that this one no longer has would be left there.
+dotnet publish "$root/src/Mkwmp.App" --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=false -p:EnableCompressionInSingleFile=true @common
 if ($LASTEXITCODE -ne 0) { throw 'launcher publish failed' }
+if ($Loose) {
+    $looseDir = Join-Path ([IO.Path]::GetTempPath()) "mkwmp-loose-$PID"
+    $looseCommon = $common.Clone()
+    $looseCommon[[Array]::IndexOf($looseCommon, '-o') + 1] = $looseDir
+    if ($ArtifactsPath) { $looseCommon[[Array]::IndexOf($looseCommon, '--artifacts-path') + 1] = Join-Path $ArtifactsPath 'loose' }
+    try {
+        dotnet publish "$root/src/Mkwmp.App" --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true @looseCommon
+        if ($LASTEXITCODE -ne 0) { throw 'loose launcher publish failed' }
+        Copy-Item -LiteralPath (Join-Path $looseDir 'mkwmp-launcher.exe') -Destination $Loose -Force
+    } finally { if (Test-Path -LiteralPath $looseDir) { Remove-Item -LiteralPath $looseDir -Recurse -Force -Confirm:$false } }
+}
 # The changelog is built into the exe (the What's New page); this loose copy beside it wins when it is there.
 Copy-Item -LiteralPath "$repo/CHANGELOG.md" -Destination (Join-Path $Out 'CHANGELOG.md') -Force
 

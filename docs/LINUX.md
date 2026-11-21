@@ -320,6 +320,16 @@ started from a shell with Proton 11.0 inside Steam Linux Runtime 4 with the shor
   three seconds after its start, to check what a machine records (`stack`, a stack overflow, hung
   under Proton 11 instead of ending). `MKWMP_WINE_AUTOMATION=1` makes the window answer UI
   Automation under Wine again, to compare.
+- Before blaming the launcher, look for the kill in the system journal (`journalctl -b`, not
+  `--user`): SteamOS sets `KillUserProcesses=True` in logind, so a Steam started from an SSH
+  shell lives in that login's `session-<n>.scope` and is ended with it (`session-<n>.scope:
+  Killing process ... (steam) with signal SIGTERM`); Steam then ends its game, whose
+  `app-steam-app<id>-<pid>.scope` stops two seconds later, and `launcher-crash.log` has a start
+  without an exit. `setsid`, `nohup` or `&` do not leave the scope. Start Steam for a test with
+  `systemd-run --user --collect -E DISPLAY=:0 -E WAYLAND_DISPLAY=wayland-0 -E XAUTHORITY=...
+  steam steam://rungameid/<id>` instead. Seen 20/11/2026 22:11: an SSH command that timed out
+  after 120 s took Steam and a setup 90 s into its shaders step with it; the same setup, the
+  same launcher, with Steam started that way, ran to `done` (708 s).
 - At a Proton bump: the launcher's `--shot`, the first-run pages, and one whole setup.
 
 ## 7. Not done

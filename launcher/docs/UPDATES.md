@@ -205,7 +205,8 @@ writes one frame as a PNG and opens no window. The card's states are in the laun
 Build: `launcher/publish.ps1 -Out <folder> [-Version 1.5.0] [-Zig <zig.exe>]` gives
 
 ```
-mkwmp-launcher.exe     single file, self-contained, compressed
+mkwmp-launcher.exe     single file, self-contained, compressed (every managed assembly)
+*.dll                  its native libraries, beside it: WPF's (*_cor3.dll, D3DCompiler_47_cor3.dll), libsodium
 mkwmp-updater.exe      the helper, Native AOT              2.4 MB
 mkwmp-launcher.png
 i18n/*.json
@@ -229,10 +230,19 @@ launcher takes an unsigned `game/` only with that key or with `MKWMP_DEV_PACKAGE
 "development package (unsigned)" in Settings › Game and in its log. A release build never accepts an
 unsigned package silently, and a `-Dev` folder is never to be shipped.
 
-The single file is published like Infinity Launcher's: `PublishSingleFile`,
-`IncludeNativeLibrariesForSelfExtract`, `EnableCompressionInSingleFile`, no symbols,
+The single file is published with `PublishSingleFile`, `EnableCompressionInSingleFile`, no symbols,
 `SatelliteResourceLanguages` limited to the launcher's own languages, `UseSystemResourceKeys=false`
-(exception messages stay). WPF is not trimmed (unsupported).
+(exception messages stay). WPF is not trimmed (unsupported). **Portable**: the launcher writes nothing
+outside its folder, so its native libraries are not in the single file
+(`IncludeNativeLibrariesForSelfExtract=false`): bundled, .NET would unpack them into `%TEMP%\.net` at
+every first start of a build. They are files of the release like any other: in the zip, swapped by the
+helper with the exe (the exe last, all of them rolled back together), installed by
+`tools/linux/install-mkwmp.sh`.
+
+`publish.ps1 -Loose <file>` also makes the one-file build, native libraries inside (they unpack into
+`%TEMP%\.net`), for the loose asset `mkwmp-launcher-x86_64-windows.exe` alone: a launcher from before
+the zip replaces only its executable, so what it downloads must start with nothing beside it. Its
+next update installs the zip.
 
 ### Proposal for `tools/release` (not applied)
 
@@ -242,8 +252,8 @@ adds **no asset**:
 
 | Asset | Today | Proposed |
 |---|---|---|
-| `mkwmp-launcher-x86_64-windows.exe` | the Rust launcher | the WPF launcher's single file (`publish.ps1`'s `mkwmp-launcher.exe`), byte for byte the one in the zip. What the 1.3.0 Rust launcher's self-update and every launcher before this one download. |
-| `mkwmp-<version>-windows-x64.zip` | `mkwmp/mkwmp-launcher.exe`, `game/`, `LICENSE`, `NOTICE.md`, `licenses/`, `README.txt` | the same, plus the rest of the publish folder under `mkwmp/`: `mkwmp-updater.exe`, `i18n/`, `mkwmp-launcher.png`, and the launcher's `licenses/`. It is at once the download for a new player and the package the helper installs. |
+| `mkwmp-launcher-x86_64-windows.exe` | the Rust launcher | the WPF launcher as one self-extracting file (`publish.ps1 -Loose`): **not** the zip's `mkwmp-launcher.exe`, which needs its native DLLs beside it. What the 1.3.0 Rust launcher's self-update and every launcher before this one download. |
+| `mkwmp-<version>-windows-x64.zip` | `mkwmp/mkwmp-launcher.exe`, `game/`, `LICENSE`, `NOTICE.md`, `licenses/`, `README.txt` | the same, plus the rest of the publish folder under `mkwmp/`: the native `*.dll` beside the exe, `mkwmp-updater.exe`, `i18n/`, `mkwmp-launcher.png`, `CHANGELOG.md`, and the launcher's `licenses/`. It is at once the download for a new player and the package the helper installs. |
 | `SHA256SUMS`, `SHA256SUMS.sig` | list and sign every asset | unchanged (`sign_sums.py` as it is). The zip's hash in the signed list is what authenticates every file of an update. |
 
 Why the existing zip and not a new `mkwmp-launcher-windows-x64.zip`: it would be the same 70 MB a
@@ -254,14 +264,15 @@ What would change in the scripts, and nothing else:
 
 1. `release.sh draft`: the Windows launcher is no longer `cargo zigbuild`'s. It is built on Windows
    with the rest of the Windows files (the helper's native link needs MSVC), next to the existing
-   Windows step (`native/probe/build.py`…): `launcher/publish.ps1 -Out out -Version <version>`, then
-   upload `out/mkwmp-launcher.exe` as `mkwmp-launcher-x86_64-windows.exe` and the rest as one
-   working file, `mkwmp-launcher-files-windows.zip` (`mkwmp-updater.exe`, `i18n/`, `licenses/`,
-   `mkwmp-launcher.png`).
+   Windows step (`native/probe/build.py`…): `launcher/publish.ps1 -Out out -Version <version> -Loose loose.exe`,
+   then upload `loose.exe` as `mkwmp-launcher-x86_64-windows.exe` and the rest as one working file,
+   `mkwmp-launcher-files-windows.zip` (everything in `out/` but `game/`: `mkwmp-launcher.exe`, the native
+   `*.dll`, `mkwmp-updater.exe`, `i18n/`, `licenses/`, `mkwmp-launcher.png`, `CHANGELOG.md`).
 2. `release.sh publish`: also downloads that working file (it is in the draft only: deleted from the
    release before it is published, so it is not an asset and not in `SHA256SUMS`).
-3. `make_zips.py`: for `windows`, after the launcher's exe, add every entry of the working file
-   under `mkwmp/`, with the fixed date and modes it already uses. The Linux zip is not touched.
+3. `make_zips.py`: for `windows`, take `mkwmp/mkwmp-launcher.exe` from the working file (not the loose
+   asset, which is the self-extracting build) and add every other entry of it under `mkwmp/`, with the
+   fixed date and modes it already uses. The Linux zip is not touched.
 
 Compatibility, both ways:
 

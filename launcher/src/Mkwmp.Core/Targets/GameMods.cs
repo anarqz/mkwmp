@@ -117,7 +117,7 @@ public sealed record ModInstallResult(ModInstallCode Code, string Message, strin
     public bool Ok => Code == ModInstallCode.Done;
 }
 
-/// <param name="Path">An archive (.zip; .7z and .rar where the system's tar reads them) or an unpacked folder.</param>
+/// <param name="Path">An archive (.zip, .7z or .rar) or an unpacked folder.</param>
 public sealed record ModInstallRequest(string Path)
 {
     /// <summary>The name to install it under; null: the mod's own.</summary>

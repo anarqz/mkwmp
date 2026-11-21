@@ -1,5 +1,4 @@
 // Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
-using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -45,9 +44,6 @@ internal static class ModImport
     {
         public ModInstallCode Code { get; } = code;
     }
-
-    /// <summary>A test's stand-in for the system's tar (7z and rar); null: <c>%SystemRoot%\System32\tar.exe</c>.</summary>
-    internal static string? TarOverride { get; set; }
 
     public static ModInstallResult Install(IGameTarget target, GameInstall install, ModInstallRequest request, IProgress<ModProgress>? progress, CancellationToken cancel, Action<string>? note = null)
     {
@@ -302,7 +298,7 @@ internal static class ModImport
         }
         else if (magic.StartsWith((ReadOnlySpan<byte>)[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]) || magic.StartsWith("Rar!"u8))
         {
-            Untar(archive, into, progress, cancel);
+            Unarchive(archive, rar: magic[0] == (byte)'R', into, progress, cancel);
         }
         else
         {
@@ -384,86 +380,117 @@ internal static class ModImport
     }
 
     /// <summary>
-    /// .7z and .rar, the way the game's importer reads them: the system's tar (bsdtar: tar.exe of Windows
-    /// 10 and later). The list is checked first; what was unpacked is checked again (no link, the limits).
+    /// .7z and .rar, with SharpCompress (managed code: the same under Windows and Wine/Proton, where there
+    /// is no tar.exe). Only the reading is the library's: the names, the links, the limits are checked as for
+    /// a zip (first in the archive's list, then again for each entry as it comes out), and every file is
+    /// written here, under its checked name, never by the library's own extraction.
     /// </summary>
-    private static void Untar(string archive, string into, IProgress<ModProgress>? progress, CancellationToken cancel)
+    private static void Unarchive(string archive, bool rar, string into, IProgress<ModProgress>? progress, CancellationToken cancel)
     {
-        var tar = TarOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "tar.exe");
-        if (!File.Exists(tar))
+        try
         {
-            throw new Refused(ModInstallCode.Unpack, Strings.ModsUnpack(Strings.ModsNoTar));
-        }
-        var (code, listing) = Tar(tar, ["-tf", archive], cancel);
-        if (code != 0)
-        {
-            throw new Refused(ModInstallCode.Unpack, Strings.ModsUnpack(Strings.ModsNotAnArchive));
-        }
-        var names = listing.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Length > 0 && !l.EndsWith('/')).ToList();
-        if (names.Count > LimitFiles)
-        {
-            throw new Refused(ModInstallCode.TooBig, Strings.ModsTooBig(names.Count, 0));
-        }
-        if (names.FirstOrDefault(n => SafePath(n) is null) is { } bad)
-        {
-            throw new Refused(ModInstallCode.Unsafe, Strings.ModsUnsafe(Strings.ModsUnsafeName(Printable(bad))));
-        }
-        progress?.Report(new ModProgress("unpack", 0, 0));
-        if (Tar(tar, ["-xf", archive, "-C", into], cancel).Code != 0)
-        {
-            throw new Refused(ModInstallCode.Unpack, Strings.ModsUnpack(Strings.ModsNotAnArchive));
-        }
-        long total = 0;
-        var count = 0;
-        foreach (var entry in new DirectoryInfo(into).EnumerateFileSystemInfos("*", SearchOption.AllDirectories))
-        {
-            if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint))
+            using var stream = new FileStream(archive, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+            var options = new SharpCompress.Readers.ReaderOptions { LeaveStreamOpen = true, LookForHeader = false };
+            using var opened = rar ? SharpCompress.Archives.Rar.RarArchive.OpenArchive(stream, options) : SharpCompress.Archives.SevenZip.SevenZipArchive.OpenArchive(stream, options);
+            var entries = new Dictionary<string, (string Path, long Size)>(StringComparer.Ordinal);
+            var left = new HashSet<string>(StringComparer.Ordinal); // folders and macOS' leftovers: not written
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            long total = 0;
+            foreach (var entry in opened.Entries)
             {
-                throw new Refused(ModInstallCode.Unsafe, Strings.ModsUnsafe(Strings.ModsUnsafeLink(entry.Name)));
+                if (Check(entry, rar) is not { } path)
+                {
+                    left.Add(entry.Key ?? "");
+                    continue;
+                }
+                if (!names.Add(path) || entries.ContainsKey(entry.Key!))
+                {
+                    throw new Refused(ModInstallCode.Unsafe, Strings.ModsUnsafe(Strings.ModsUnsafeTwice(path)));
+                }
+                total += Math.Max(0, entry.Size);
+                entries.Add(entry.Key!, (path, entry.Size));
+                if (entries.Count > LimitFiles || total > LimitBytes)
+                {
+                    throw new Refused(ModInstallCode.TooBig, Strings.ModsTooBig(entries.Count, total));
+                }
             }
-            if (entry is FileInfo file && ((total += file.Length) > LimitBytes || ++count > LimitFiles))
+            progress?.Report(new ModProgress("unpack", 0, total));
+            long done = 0;
+            var buffer = new byte[1 << 16];
+            var written = new HashSet<string>(StringComparer.Ordinal);
+            using var reader = opened.ExtractAllEntries(); // in order: a solid archive is read once
+            while (reader.MoveToNextEntry())
             {
-                throw new Refused(ModInstallCode.TooBig, Strings.ModsTooBig(count, total));
+                cancel.ThrowIfCancellationRequested();
+                var entry = reader.Entry;
+                var path = Check(entry, rar);
+                if (path is null && left.Contains(entry.Key ?? ""))
+                {
+                    continue;
+                }
+                // what comes out must be what the list said: the same names, each once
+                if (path is null || !entries.TryGetValue(entry.Key!, out var listed) || listed.Path != path || !written.Add(entry.Key!))
+                {
+                    throw new Refused(ModInstallCode.Unsafe, Strings.ModsUnsafe(Strings.ModsUnsafeName(Printable(entry.Key ?? ""))));
+                }
+                var to = Path.Combine(into, path.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                using var from = reader.OpenEntryStream();
+                using var file = new FileStream(to, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                long size = 0;
+                int n;
+                while ((n = from.Read(buffer)) > 0)
+                {
+                    // the size an entry declares is only its word: what comes out is counted
+                    if (((size += n) > listed.Size && listed.Size >= 0) || (done += n) > LimitBytes)
+                    {
+                        throw new Refused(ModInstallCode.TooBig, Strings.ModsTooBig(entries.Count, done));
+                    }
+                    file.Write(buffer, 0, n);
+                    cancel.ThrowIfCancellationRequested();
+                }
+                progress?.Report(new ModProgress("unpack", done, total));
             }
+        }
+        catch (SharpCompress.Common.CryptographicException)
+        {
+            throw new Refused(ModInstallCode.Unpack, Strings.ModsUnpack(Strings.ModsPassword));
+        }
+        catch (Exception e) when (e is SharpCompress.Common.SharpCompressException or InvalidDataException or InvalidOperationException or NotSupportedException or EndOfStreamException or IndexOutOfRangeException or ArgumentException or OverflowException)
+        {
+            // a damaged or unusual archive: the library's word for it (a zip's is .NET's, as above)
+            throw new Refused(ModInstallCode.Unpack, Strings.ModsUnpack(e.Message));
         }
     }
 
-    private static (int Code, string Output) Tar(string tar, string[] arguments, CancellationToken cancel)
+    /// <summary>
+    /// An entry of a 7z or rar, checked as a zip's is: its name on this PC, or null when it is a folder or
+    /// one of macOS' or Windows' leftovers. Refused: a link, a password, a name that may not be written.
+    /// </summary>
+    private static string? Check(SharpCompress.Common.IEntry entry, bool rar)
     {
-        var start = new ProcessStartInfo(tar) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8 };
-        foreach (var argument in arguments)
+        var name = (entry.Key ?? "").Replace('\\', '/');
+        if (entry.IsDirectory || name.EndsWith('/'))
         {
-            start.ArgumentList.Add(argument);
+            return null;
         }
-        try
+        // a link: rar's redirection record, a Unix mode (rar keeps it as is, 7-Zip in the high word behind
+        // its 0x8000 flag) or a Windows reparse point. Written out it would be a file holding its target.
+        var a = entry.Attrib ?? 0;
+        var unix = rar ? a : (a & 0x8000) != 0 ? (a >> 16) & 0xFFFF : 0;
+        if (entry.LinkTarget is { Length: > 0 } || (unix & 0xF000) == 0xA000 || (!rar && (a & (int)FileAttributes.ReparsePoint) != 0))
         {
-            using var process = Process.Start(start) ?? throw new Refused(ModInstallCode.Unpack, Strings.ModsUnpack(Strings.ModsNoTar));
-            process.ErrorDataReceived += (_, _) => { };
-            process.BeginErrorReadLine();
-            var output = process.StandardOutput.ReadToEndAsync(cancel);
-            using var stop = cancel.Register(() =>
-            {
-                try
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-                catch (InvalidOperationException)
-                {
-                    // already gone
-                }
-            });
-            if (!process.WaitForExit(TimeSpan.FromMinutes(15)))
-            {
-                process.Kill(entireProcessTree: true);
-                throw new Refused(ModInstallCode.Unpack, Strings.ModsUnpack(Strings.ModsNotAnArchive));
-            }
-            cancel.ThrowIfCancellationRequested();
-            return (process.ExitCode, output.GetAwaiter().GetResult());
+            throw new Refused(ModInstallCode.Unsafe, Strings.ModsUnsafe(Strings.ModsUnsafeLink(Printable(name))));
         }
-        catch (System.ComponentModel.Win32Exception e)
+        if (entry.IsEncrypted)
         {
-            throw new Refused(ModInstallCode.Unpack, Strings.ModsUnpack(e.Message));
+            throw new Refused(ModInstallCode.Unpack, Strings.ModsUnpack(Strings.ModsPassword));
         }
+        if (SafePath(name) is not { } path)
+        {
+            throw new Refused(ModInstallCode.Unsafe, Strings.ModsUnsafe(Strings.ModsUnsafeName(Printable(name))));
+        }
+        return Skipped(path) ? null : path;
     }
 
     private static string Printable(string name) => new([.. name.Take(80).Select(c => char.IsControl(c) ? '?' : c)]);

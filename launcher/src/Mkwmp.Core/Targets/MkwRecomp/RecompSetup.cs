@@ -14,7 +14,11 @@ namespace Mkwmp.Core.Targets.MkwRecomp;
 /// <param name="Port">The runtime version the last finished build was for; null until a setup got past its shaders step.</param>
 /// <param name="Source">The player's copy of the game that setup read.</param>
 /// <param name="Copy">Its data was copied into the install (<c>romfs_mode</c> "copy") rather than read in place.</param>
-internal sealed record RecompSetupState(string? Port, string? Source, bool Copy);
+internal sealed record RecompSetupState(string? Port, string? Source, bool Copy)
+{
+    /// <summary>The x86-64 level the game code was last compiled for ("v3", "v2"); null before a compile.</summary>
+    public string? CompileLevel { get; init; }
+}
 
 /// <summary>What the driver needs from its target and the machine (the tests replace each).</summary>
 internal sealed record RecompSetupHost
@@ -138,8 +142,33 @@ internal static partial class RecompSetup
         }
         // Before 0.1.5 the mode was only the first word of the romfs step's key.
         var mode = root.At("romfs_mode").Str() ?? root.At("done").At("romfs").Str()?.Split(' ')[0];
-        return new RecompSetupState(root.At("port").Str(), root.At("source").Str() is { Length: > 0 } source ? source : null, mode == "copy");
+        // prepare.py ends the compile step's key with the level when it is not the default v3 (" v2").
+        var compile = root.At("done").At("compile").Str();
+        return new RecompSetupState(root.At("port").Str(), root.At("source").Str() is { Length: > 0 } source ? source : null, mode == "copy")
+        {
+            CompileLevel = compile is null ? null : compile.EndsWith(" v2", StringComparison.Ordinal) ? "v2" : "v3",
+        };
     }
+
+    /// <summary>
+    /// The x86-64 level the install's setup builds the game code for (<c>gamecode.py cpu_level</c>): "v2" in
+    /// the release's no-AVX2 package, which carries <c>setup/cpu-level</c>, else "v3".
+    /// </summary>
+    public static string CpuLevel(GameInstall install)
+    {
+        try
+        {
+            var marker = Path.Combine(install.Root, "setup", "cpu-level");
+            return File.Exists(marker) && File.ReadAllText(marker).Trim() == "v2" ? "v2" : "v3";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return "v3";
+        }
+    }
+
+    /// <summary>Why a processor cannot run a package of this level; null when it can. <paramref name="v3"/>: AVX2, FMA and BMI2; <paramref name="v2"/>: SSE4.2 and POPCNT.</summary>
+    internal static string? CpuProblem(string level, bool v3, bool v2) => level == "v2" ? (v2 ? null : Strings.SetupCpuV2) : (v3 ? null : Strings.SetupCpu);
 
     private static bool Exists(string path)
     {
@@ -192,6 +221,13 @@ internal static partial class RecompSetup
         else if (state.Port != version)
         {
             plan = new GameSetupPlan(GameSetupReason.RuntimeChanged, Strings.SetupRuntimeChanged(RecompRuntime.Pinned.Name, version), false, source);
+        }
+        else if (state.CompileLevel is { } built && built != CpuLevel(install))
+        {
+            // The install changed between the release's two packages (a folder brought to a processor without AVX2):
+            // the game code is built for the other level, and mkwgame.id cannot tell (both levels have the same id).
+            var label = CpuLevel(install) == "v2" ? $"{version} ({RecompRuntime.NoAvx2.VariantText})" : version;
+            plan = new GameSetupPlan(GameSetupReason.RuntimeChanged, Strings.SetupRuntimeChanged(RecompRuntime.Main.Name, label), false, source);
         }
         else if (Recomp.RebuildProblemFor(new RecompId(RecompKind.Supported, version), Recomp.GameId(install.Root)) is not null)
         {
@@ -351,9 +387,11 @@ internal static partial class RecompSetup
         {
             return GameSetupResult.Refused("path", Strings.SetupPathTooLong(data, GameDirMax), data);
         }
-        if (host.Command is null && !(Avx2.IsSupported && Fma.IsSupported && Bmi2.IsSupported))
+        // What the package's mkw.exe and the game code its setup builds need: x86-64-v3 (AVX2, FMA, BMI2), or
+        // x86-64-v2 (SSE4.2) for the release's no-AVX2 package. The launcher installs the one this processor runs.
+        if (host.Command is null && CpuProblem(CpuLevel(install), Avx2.IsSupported && Fma.IsSupported && Bmi2.IsSupported, Sse42.IsSupported && Popcnt.IsSupported) is { } cpu)
         {
-            return GameSetupResult.Refused("cpu", Strings.SetupCpu);
+            return GameSetupResult.Refused("cpu", cpu);
         }
         // prepare.py checks the room for a copy and 3 GiB for the build; the first build's real peak is higher.
         var first = !File.Exists(Path.Combine(data, "mkwgame.dll"));

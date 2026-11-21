@@ -411,7 +411,11 @@ No fork change. Works with the pinned 0.1.15-mkwmp.
 **The driver** (`Targets/MkwRecomp/`, beside `RuntimeInstaller`):
 
 1. Preconditions: the runtime is installed and verified; the game is not running; 5 GB free (27 GB for copy); the
-   path of the game folder is at most 131 UTF-16 units; the CPU has AVX2, FMA and BMI2.
+   path of the game folder is at most 131 UTF-16 units; the CPU has AVX2, FMA and BMI2, or SSE4.2 for the
+   release's `-noavx2` package (it carries `setup/cpu-level` = `v2`). The launcher installs that package on a
+   processor without AVX2, FMA or BMI2 (`RecompRuntime.Pinned` → `NoAvx2`); either package counts as the pinned
+   version where it runs, and a game compiled for the other level (the compile step's key ends in ` v2` or not)
+   is set up again.
 2. Start the command of section 0 with stdout redirected, no window, working directory the runtime folder, and the
    launcher's environment minus any `PYTHON*`. First setup: `--source <dump> --romfs link`. Otherwise neither.
    `--port` is the manifest's version, spelled as mkw.exe spells it: `0.1.15-mkwmp` (found in the zip's mkw.exe; it

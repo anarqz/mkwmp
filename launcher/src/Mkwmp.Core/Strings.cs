@@ -119,7 +119,7 @@ public static class Strings
     public static string ModsUnsafeTwice(string name) => F("core.mods.unsafe_twice", ("name", name));
     public static string ModsUnpack(string detail) => F("core.mods.unpack", ("detail", detail));
     public static string ModsNotAnArchive => T("core.mods.not_an_archive");
-    public static string ModsNoTar => T("core.mods.no_tar");
+    public static string ModsPassword => T("core.mods.password");
     public static string ModsGameFiles(string detail) => F("core.mods.game_files", ("detail", detail));
     public static string ModsGameFilesNone => T("core.mods.game_files_none");
     public static string ModsInstalled(string name) => F("core.mods.installed", ("name", name));
@@ -433,6 +433,9 @@ public static class Strings
     public static string SetupPickDump => T("core.setup.pick_dump");
     public static string SetupToolsMissing => T("core.setup.tools_missing");
     public static string SetupCpu => T("core.setup.cpu");
+
+    /// <summary>The release's no-AVX2 package, on a processor without SSE4.2.</summary>
+    public static string SetupCpuV2 => T("core.setup.cpu_v2");
     public static string SetupShadersOnline => T("core.setup.shaders_online");
     public static string SetupShadersProton => T("core.setup.shaders_proton");
 

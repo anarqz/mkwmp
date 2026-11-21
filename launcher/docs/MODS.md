@@ -137,7 +137,7 @@ For mkw-recomp (`Targets/MkwRecomp/RecompMods.cs`, `ModImport.cs`):
 | Code mods | exefs, `image`, `patches`, `switches`: listed and **locked** ("manage it on mkw-recomp's own Mods page"), never installed: the launcher does not build the game's code |
 | MKWMP's own mod | a locked reference row ("Required for online play · managed by the launcher"): no switch, no options, no uninstall; A leads to Settings › Game, where the integration installs and repairs it |
 | Shared archives | after the enabled set changes, the install's own `merge.py` is run when its tools are there; else (or when it fails) the stale `mods/.merged` is removed and the mod turned on last wins. Mods that ship the same game file say so in their page |
-| Before PLAY | what the start screen does at Play: the first player's save copied to `profile/save-before-mods/<time>/` when the set of mods changed, `mods_played` updated (`RecompMods.BeforePlay`, from `MkwRecompTarget.Launch`) |
+| Before PLAY | what the start screen does at Play, for every player (the start screen copies the one it starts; the launcher does not pick one, and `mods_played` is one for the install): each player's `save/` copied to `<player>/save-before-mods/<time>/` when the set of mods changed (the first player is `profile/`, the others `profile/players/<n>/`, as `players.c` lists them; the newest ten stay per player), `mods_played` updated (`RecompMods.BeforePlay`, from `MkwRecompTarget.Launch`) |
 | `MKW_MODS` set | the game follows the environment: the list shows it, locked, and says so |
 
 Not written by the launcher: `mods_ack` (the start screen's own box) and `mods/choices.json`.
@@ -147,12 +147,13 @@ Not written by the launcher: `mods_ack` (the start screen's own box) and `mods/c
 `ModImport.Install` does what `import.py` does, in the launcher's own code:
 
 1. The archive is unpacked into `mods/.mkwmp-staging/` (a dot folder: the game never reads it), never over anything.
-   `.zip` with .NET's reader; **`.7z` and `.rar` through the system's `tar.exe`**, as mkw-recomp does (no library
-   added; under Wine, where there is none, the message says a .zip always works).
+   `.zip` with .NET's reader; **`.7z` and `.rar` with SharpCompress** (managed, MIT: the same under Wine/Proton,
+   where there is no `tar.exe`). Only its reading is used: the launcher writes each file itself under its checked
+   name; a password is refused.
 2. Checks: 4 GiB and 50 000 files (declared *and* counted while unpacking); every name must stay inside
    (nothing absolute, no `..`, no drive or stream `:`), must not be one Windows bends (`NUL`, a trailing dot or
    space), must not come twice in another letter case; a link is refused (in a zip, in what tar unpacked, in a
-   picked folder). `__MACOSX`, `.DS_Store`, `Thumbs.db` are left out.
+   picked folder; in a 7z or rar: a redirection record, a Unix link mode or a reparse point). `__MACOSX`, `.DS_Store`, `Thumbs.db` are left out.
 3. The mod inside is found by the fork's rule (1.4); several are a question (`Variants`).
 4. `RomFS/`, `Plugin/` become `romfs/`, `plugin/`. The id is the fork's clean name, narrowed to ASCII (mkw.ini
    is not Unicode all the way) and 63 bytes; the title keeps the real name.
@@ -247,5 +248,3 @@ recorded answers (list, cache, page, download, checksum, scan, host, pictures), 
 
 - No code mods (the game would have to be built again) and no winner picker for shared archive files: both
   stay with mkw-recomp's own Mods page, which reads the same folders and list.
-- The save copy before new mods covers the first player (`profile/`).
-- `.7z` / `.rar` need Windows' `tar.exe`.

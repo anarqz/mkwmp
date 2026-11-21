@@ -28,8 +28,8 @@ public sealed partial class ShellViewModel
         }
     }
 
-    /// <summary>"mkw-recomp 0.1.16-mkwmp": the runtime the launcher installs.</summary>
-    public string RuntimeName => Launcher.Runtime.PinnedVersion is { } version ? $"{TargetName} {version}" : TargetName;
+    /// <summary>"mkw-recomp 0.1.16-mkwmp.1", "mkw-recomp 0.1.16-mkwmp.1 (no AVX2)": the runtime the launcher installs.</summary>
+    public string RuntimeName => Launcher.Runtime.PinnedLabel is { } version ? $"{TargetName} {version}" : TargetName;
 
     /// <summary>Where the game is on its way to playable, from the launcher's state.</summary>
     public GameWorkPhase GameWorkPhase
@@ -149,7 +149,7 @@ public sealed partial class ShellViewModel
         var setup = Launcher.GameSetup;
         return problem == CoreStrings.SetupRunning || problem == setup.Message
             || problem == CoreStrings.RuntimeBusy(TargetName)
-            || (Launcher.Runtime.PinnedVersion is { } pinned && problem == CoreStrings.RuntimeUpdateNeeded(TargetName, pinned))
+            || (Launcher.Runtime.PinnedLabel is { } pinned && problem == CoreStrings.RuntimeUpdateNeeded(TargetName, pinned))
             || (setup.State is GameSetupState.NeedsSetup or GameSetupState.Failed && Launcher.Game.Check is { Status: TargetStatus.NeedsRebuild });
     }
 

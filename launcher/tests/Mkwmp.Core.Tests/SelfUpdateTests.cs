@@ -224,6 +224,42 @@ public class SelfUpdateTests
         Assert.Equal(("new in 1.5.0", "launcher 1.5.0", "unchanged"), (Read(plan, "0-new.txt"), Read(plan, "mkwmp-launcher.exe"), Read(plan, "licenses/A.txt")));
     }
 
+    /// <summary>The portable layout (publish.ps1): the exe and its native libraries beside it, which must move together.</summary>
+    [Fact]
+    public void The_native_libraries_beside_the_exe_are_swapped_with_it_and_rolled_back_with_it()
+    {
+        static byte[] Portable(string version, params string[] dlls) => Zip([
+            .. dlls.Select(d => ($"mkwmp/{d}", $"{d} {version}")),
+            ("mkwmp/mkwmp-launcher.exe", $"launcher {version}"),
+            ("mkwmp/mkwmp-updater.exe", "helper")]);
+        string[] wpf = ["wpfgfx_cor3.dll", "PresentationNative_cor3.dll", "D3DCompiler_47_cor3.dll", "libsodium.dll"];
+
+        // From a launcher that was one self-extracting file (nothing beside it): the libraries are added, the exe last.
+        var plan = Staged(Portable("1.5.0", wpf));
+        var installed = Installer().Apply(plan);
+        Assert.Equal([.. wpf, "mkwmp-updater.exe", "mkwmp-launcher.exe"], installed.Changed);
+        Assert.All(wpf, d => Assert.Equal($"{d} 1.5.0", Read(plan, d)));
+        installed.Commit();
+
+        // The next one: something holds one library, so none of it is installed, the exe included.
+        var next = Staged(Portable("1.6.0", wpf), version: "1.6.0", root: plan.Root);
+        using (new FileStream(Path.Combine(plan.Root, "libsodium.dll"), FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            Assert.Throws<UpdateException>(() => Installer().Apply(next));
+        }
+        Assert.All(wpf, d => Assert.Equal($"{d} 1.5.0", Read(plan, d)));
+        Assert.Equal("launcher 1.5.0", Read(plan, "mkwmp-launcher.exe"));
+
+        // Free again: all of them, then the exe; a library this release no longer has goes, and comes back on a rollback.
+        var later = Staged(Portable("1.7.0", wpf[..3]), version: "1.7.0", root: plan.Root);
+        var swapped = Installer().Apply(later);
+        Assert.Equal(("launcher 1.7.0", "wpfgfx_cor3.dll 1.7.0", false), (Read(plan, "mkwmp-launcher.exe"), Read(plan, "wpfgfx_cor3.dll"), File.Exists(Path.Combine(plan.Root, "libsodium.dll"))));
+        Assert.Equal("mkwmp-launcher.exe", swapped.Changed[^1]);
+        swapped.Rollback();
+        Assert.All(wpf, d => Assert.Equal($"{d} 1.5.0", Read(plan, d)));
+        Assert.Equal("launcher 1.5.0", Read(plan, "mkwmp-launcher.exe"));
+    }
+
     [Fact]
     public void The_launcher_keeps_the_name_it_has_and_a_release_of_one_executable_installs_too()
     {

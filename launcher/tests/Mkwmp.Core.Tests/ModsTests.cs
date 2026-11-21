@@ -291,6 +291,107 @@ public sealed class ModsTests : IDisposable
         Assert.Equal(ModInstallCode.Unsafe, Install(Zip("twice.zip", ("romfs/A.bin", "1"), ("romfs/a.bin", "2"))).Code);
     }
 
+    // ---- .7z and .rar (SharpCompress: no tar.exe, so the same under Wine/Proton) ----------
+
+    private string SevenZip(string name, params (string Path, string Text)[] files)
+    {
+        var path = Path.Combine(_root, name);
+        using var stream = File.Create(path);
+        using var writer = new SharpCompress.Writers.SevenZip.SevenZipWriter(stream, new SharpCompress.Writers.SevenZip.SevenZipWriterOptions(SharpCompress.Common.CompressionType.LZMA));
+        foreach (var (entry, text) in files)
+        {
+            using var data = new MemoryStream(Encoding.UTF8.GetBytes(text));
+            writer.Write(entry, data, new DateTime(2026, 11, 20, 0, 0, 0, DateTimeKind.Utc));
+        }
+        return path;
+    }
+
+    /// <summary>A committed archive (tests/…/Fixtures/mods: rar is only made by WinRAR), copied so the install's cleanup cannot touch the original.</summary>
+    private string Fixture(string name)
+    {
+        var path = Path.Combine(_root, name);
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "mods", name), path);
+        return path;
+    }
+
+    [Fact]
+    public void A_7z_installs_like_a_zip()
+    {
+        var result = Install(SevenZip("Cool Skin.7z",
+            ("Cool Skin/RomFS/Layout/Title.bin", "a new title"),
+            ("Cool Skin/RomFS/Layout/Extra.bin", "new file"),
+            ("__MACOSX/Cool Skin/._x", "junk")));
+
+        Assert.True(result.Ok, result.Message);
+        Assert.Equal(("Cool Skin", true), (result.ModId, result.Enabled));
+        Assert.Equal(
+            $"Layout/Extra.bin\t8\t{Sha("new file")}\t-\nLayout/Title.bin\t11\t{Sha("a new title")}\t{Sha("the game's own title")}\n",
+            File.ReadAllText(Path.Combine(Mods, "Cool Skin", "romfs", "manifest.tsv")));
+        Assert.Equal(["romfs"], Directory.GetDirectories(Path.Combine(Mods, "Cool Skin")).Select(Path.GetFileName));
+        Assert.False(Directory.Exists(Path.Combine(Mods, RecompMods.Staging)));
+    }
+
+    [Fact]
+    public void A_rar_installs_like_a_zip()
+    {
+        // neon.rar: RAR5, solid, best compression (WinRAR 7): Neon Karts/{readme.txt, romfs/Layout/Title.bin, romfs/Layout/Extra.bin}
+        var result = Install(Fixture("neon.rar"));
+
+        Assert.True(result.Ok, result.Message);
+        Assert.Equal(("Neon Karts", true), (result.ModId, result.Enabled));
+        var romfs = Path.Combine(Mods, "Neon Karts", "romfs");
+        Assert.Equal("a title from a rar", File.ReadAllText(Path.Combine(romfs, "Layout", "Title.bin")));
+        Assert.Equal(string.Concat(Enumerable.Repeat("new file ", 20)), File.ReadAllText(Path.Combine(romfs, "Layout", "Extra.bin")));
+        Assert.EndsWith($"Layout/Title.bin\t18\t{Sha("a title from a rar")}\t{Sha("the game's own title")}\n", File.ReadAllText(Path.Combine(romfs, "manifest.tsv")), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("../evil.txt")]
+    [InlineData("romfs/../../evil.txt")]
+    [InlineData("romfs/NUL.txt")]
+    [InlineData("romfs/a.txt:stream")]
+    public void A_7z_name_that_leaves_the_folder_or_bends_on_Windows_refuses_the_whole_archive(string name)
+    {
+        var result = Install(SevenZip("bad.7z", ("romfs/ok.bin", "ok"), (name, "evil")));
+        Assert.Equal(ModInstallCode.Unsafe, result.Code);
+        Assert.False(File.Exists(Path.Combine(_root, "evil.txt")));
+        Assert.False(File.Exists(Path.Combine(_game, "evil.txt")));
+        Assert.False(File.Exists(Path.Combine(Mods, "evil.txt")));
+        Assert.Empty(Directory.Exists(Mods) ? Directory.GetDirectories(Mods) : []);
+    }
+
+    [Fact]
+    public void A_rar_that_leaves_the_folder_is_refused()
+    {
+        // slip.rar: romfs/ok.bin and ../evil.txt (a WinRAR archive with that name put back, its header's CRC made again)
+        var result = Install(Fixture("slip.rar"));
+        Assert.Equal(ModInstallCode.Unsafe, result.Code);
+        Assert.False(File.Exists(Path.Combine(_root, "evil.txt")));
+        Assert.False(File.Exists(Path.Combine(Mods, "evil.txt")));
+        Assert.False(File.Exists(Path.Combine(Mods, RecompMods.Staging, "evil.txt")));
+        Assert.Empty(Directory.Exists(Mods) ? Directory.GetDirectories(Mods) : []);
+    }
+
+    [Fact]
+    public void A_7z_holds_the_same_limits_and_refuses_a_name_twice_and_a_broken_archive()
+    {
+        Assert.Equal(ModInstallCode.Unsafe, Install(SevenZip("twice.7z", ("romfs/A.bin", "1"), ("romfs/a.bin", "2"))).Code);
+        ModImport.LimitFiles = 3;
+        Assert.Equal(ModInstallCode.TooBig, Install(SevenZip("many.7z", ("romfs/1", "1"), ("romfs/2", "2"), ("romfs/3", "3"), ("romfs/4", "4"))).Code);
+        ModImport.LimitFiles = ModImport.MaxFiles;
+        ModImport.LimitBytes = 100;
+        Assert.Equal(ModInstallCode.TooBig, Install(SevenZip("big.7z", ("romfs/1", new string('x', 4000)))).Code);
+        ModImport.LimitBytes = ModImport.MaxBytes;
+
+        var good = File.ReadAllBytes(SevenZip("cut.7z", ("romfs/1", new string('x', 4000))));
+        File.WriteAllBytes(Path.Combine(_root, "cut.7z"), good[..(good.Length / 2)]); // a download cut short
+        Assert.Equal(ModInstallCode.Unpack, Install(Path.Combine(_root, "cut.7z")).Code);
+        var rar = File.ReadAllBytes(Fixture("neon.rar"));
+        File.WriteAllBytes(Path.Combine(_root, "neon.rar"), rar[..60]);
+        Assert.Equal(ModInstallCode.Unpack, Install(Path.Combine(_root, "neon.rar")).Code);
+        Assert.DoesNotContain(Directory.GetDirectories(Mods), d => !Path.GetFileName(d).StartsWith('.'));
+    }
+
     [Fact]
     public void The_unpacking_limits_hold()
     {
@@ -440,6 +541,62 @@ public sealed class ModsTests : IDisposable
 
         RecompMods.BeforePlay(_install, new DateTime(2026, 11, 20, 9, 6, 0), notes.Add); // the same set: nothing
         Assert.Single(Directory.GetDirectories(Path.Combine(_game, "profile", "save-before-mods")));
+    }
+
+    [Fact]
+    public void Before_a_start_with_another_set_of_mods_every_players_save_is_copied_beside_it()
+    {
+        var profile = Path.Combine(_game, "profile");
+        void Save(string dir, string text)
+        {
+            Directory.CreateDirectory(Path.Combine(dir, "save"));
+            File.WriteAllText(Path.Combine(dir, "save", "a.sav"), text);
+        }
+        Save(profile, "first");
+        Save(Path.Combine(profile, "players", "2"), "second");
+        Save(Path.Combine(profile, "players", "10"), "tenth");
+        Directory.CreateDirectory(Path.Combine(profile, "players", "3")); // a player who never played: no save, no copy
+        Save(Path.Combine(profile, "players", "deleted"), "gone");          // taken off the list: not a player
+        Save(Path.Combine(profile, "players", "0"), "zero");                // not a player number
+        File.WriteAllText(Path.Combine(_game, "mkw.ini"), "[launcher]\nmods = Skin\n");
+        var notes = new List<string>();
+
+        RecompMods.BeforePlay(_install, new DateTime(2026, 11, 20, 9, 5, 7), notes.Add);
+
+        string Copy(string dir) => File.ReadAllText(Path.Combine(dir, "save-before-mods", "20261120-090507", "a.sav"));
+        Assert.Equal("first", Copy(profile));
+        Assert.Equal("second", Copy(Path.Combine(profile, "players", "2")));
+        Assert.Equal("tenth", Copy(Path.Combine(profile, "players", "10")));
+        Assert.False(Directory.Exists(Path.Combine(profile, "players", "3", "save-before-mods")));
+        Assert.False(Directory.Exists(Path.Combine(profile, "players", "deleted", "save-before-mods")));
+        Assert.False(Directory.Exists(Path.Combine(profile, "players", "0", "save-before-mods")));
+        Assert.False(Directory.Exists(Path.Combine(profile, "save-before-mods", "20261120-090507", "players"))); // only save/ is copied
+        Assert.Equal(3, notes.Count);
+        Assert.Contains("mods_played = Skin", Ini, StringComparison.Ordinal);
+        Assert.Equal([profile, Path.Combine(profile, "players", "2"), Path.Combine(profile, "players", "10")],
+            RecompMods.PlayerDirs(profile).Where(d => Directory.Exists(Path.Combine(d, "save"))));
+    }
+
+    [Fact]
+    public void Each_player_keeps_its_newest_ten_save_copies()
+    {
+        var player = Path.Combine(_game, "profile", "players", "2");
+        Directory.CreateDirectory(Path.Combine(player, "save"));
+        File.WriteAllText(Path.Combine(player, "save", "a.sav"), "save");
+        for (var i = 0; i < 10; i++)
+        {
+            Directory.CreateDirectory(Path.Combine(player, "save-before-mods", $"2026010{i % 9 + 1}-00000{i % 2}"));
+        }
+        Directory.CreateDirectory(Path.Combine(player, "save-before-mods", "mine")); // not a copy: never removed
+        File.WriteAllText(Path.Combine(_game, "mkw.ini"), "[launcher]\nmods = Skin\n");
+
+        RecompMods.BeforePlay(_install, new DateTime(2026, 11, 20, 9, 5, 7), _ => { });
+
+        var left = Directory.GetDirectories(Path.Combine(player, "save-before-mods")).Select(Path.GetFileName).ToList();
+        Assert.Equal(12 - 1, left.Count); // ten copies, the oldest gone, and "mine"
+        Assert.Contains("20261120-090507", left);
+        Assert.Contains("mine", left);
+        Assert.DoesNotContain("20260101-000000", left);
     }
 
     // ---- GameBanana, from recorded answers --------------------------------------------------

@@ -63,6 +63,12 @@ public sealed record RuntimeView(
 {
     public static RuntimeView None { get; } = new(RuntimeState.Unavailable, null, null, null, false, 0, 0, 0, 0, null, 0, 0, null, null);
 
+    /// <summary>Which of the release's builds is pinned for this processor, in the language in use ("no AVX2"); null for its main build.</summary>
+    public string? PinnedVariant { get; init; }
+
+    /// <summary>The pinned version as the window names it: "0.1.16-mkwmp.1", or "0.1.16-mkwmp.1 (no AVX2)".</summary>
+    public string? PinnedLabel => PinnedVersion is { } version && PinnedVariant is { } variant ? $"{version} ({variant})" : PinnedVersion;
+
     /// <summary>An install is in progress.</summary>
     public bool Busy => State is RuntimeState.Downloading or RuntimeState.Verifying or RuntimeState.Extracting or RuntimeState.Installing;
 }
