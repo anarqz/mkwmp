@@ -73,7 +73,7 @@ Log in and run it as root:
 
 It asks for the server name and region, then:
 
-1. downloads `mkwmp-server-x86_64-linux` from the latest release and checks it against the release's `SHA256SUMS`, whose Ed25519 signature must verify with the MKWMP release key pinned in the script (it stops otherwise);
+1. downloads the server (`mkwmp-server-<version>.zip`, which holds `server` for Linux and `server.exe` for Windows) from the latest release and checks it against the release's `SHA256SUMS`, whose Ed25519 signature must verify with the MKWMP release key pinned in the script (it stops otherwise);
 2. creates the `mkwmp` user and `/var/lib/mkwmp` (keys, `registry.db`, `server.toml`, `privacy.md`);
 3. installs two services, `mkwmp-seat` (launchers) and `mkwmp-lobby` (the game), and keeps their logs 7 days;
 4. opens the ports above in ufw (SSH stays open);
