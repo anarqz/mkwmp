@@ -1011,9 +1011,9 @@ public class LauncherGameSetupTests
         public Launcher Launcher => Rig.Launcher;
         public List<GameSetupView> States { get; } = [];
 
-        public static async Task<Home> New(Func<LauncherSettings, LauncherSettings>? edit = null, bool installPatch = true, Action<string, SetupRig>? arrange = null)
+        public static async Task<Home> New(Func<LauncherSettings, LauncherSettings>? edit = null, bool installPatch = true, Action<string, SetupRig>? arrange = null, FakeSeatServer? server = null)
         {
-            var rig = new Rig(new FakeSeatServer(), edit, installPatch);
+            var rig = new Rig(server ?? new FakeSeatServer(), edit, installPatch);
             var files = new SetupRig();
             // The game folder becomes the pinned mkw-recomp, and its setup the stand-in.
             File.WriteAllBytes(Path.Combine(rig.Game, "mkw.exe"), RuntimeRig.NewExe);
@@ -1237,6 +1237,142 @@ public class LauncherGameSetupTests
         await rig.Launcher.RunGameSetupAsync(null, default);
         Assert.Equal(Strings.PressStopFirst, rig.Launcher.GameSetup.Message);
         await rig.Launcher.StopAsync();
+    }
+
+    /// <summary>A second copy of the game: a loose dump (exefs/main and romfs) beside the rig's .nup.</summary>
+    private static string LooseDump(Home home)
+    {
+        var dump = Path.Combine(home.Files.Root, "loose dump");
+        Directory.CreateDirectory(Path.Combine(dump, "exefs"));
+        Directory.CreateDirectory(Path.Combine(dump, "romfs"));
+        File.WriteAllText(Path.Combine(dump, "exefs", "main"), "NSO0");
+        return dump;
+    }
+
+    /// <summary>The stand-in's lines of a change of copy: prepare.py redoes exefs, romfs and cleanup, and records the new source and mode.</summary>
+    private static string[] Switches(Home home, string dump, string mode)
+    {
+        File.WriteAllText(Path.Combine(home.Files.Scripts, "switched.json"), SetupRig.StateJson(SetupRig.Pinned, dump, mode));
+        return
+        [
+            "echo step check", "echo version 1.8.0", "echo step exefs", "echo step romfs", "echo skip generate", "echo skip compile",
+            "echo skip shaders", "echo skip warm",
+            $"copy /y \"{Path.Combine(home.Files.Scripts, "switched.json")}\" \"{Path.Combine(home.Rig.Game, "setup-state.json")}\" >nul",
+            "echo step cleanup", "echo done", "exit /b 0",
+        ];
+    }
+
+    [Fact]
+    public async Task Another_copy_of_the_game_runs_the_setup_again_with_it_taken_as_the_last_one_was()
+    {
+        // Set up from the .nup, its data copied into the install.
+        await using var home = await Home.New(arrange: (game, files) =>
+        {
+            Home.SetUp(game, files);
+            File.WriteAllText(Path.Combine(game, "setup-state.json"), SetupRig.StateJson(SetupRig.Pinned, files.Dump, "copy"));
+        });
+        var view = home.Launcher.GameSetup;
+        Assert.Equal((GameSetupState.Idle, home.Files.Dump, GameDataMode.Copy), (view.State, view.DumpPath, view.Mode));
+        Assert.Null(home.Launcher.PlayProblem);
+        Assert.Null(home.Launcher.GameCopyChangeProblem(null));
+
+        // The loose dump, no mode said: copied again, as before.
+        var loose = LooseDump(home);
+        home.Files.Script(Switches(home, loose, "copy"));
+        Assert.Null(await home.Launcher.ChangeGameCopyAsync(loose, null, default));
+
+        Assert.Contains($"\"--source\" \"{loose}\" \"--romfs\" \"copy\"", home.Files.Arguments, StringComparison.Ordinal);
+        view = home.Launcher.GameSetup;
+        Assert.Equal((GameSetupState.Done, loose, GameDataMode.Copy, (GameSetupReason?)null), (view.State, view.DumpPath, view.Mode, view.Reason));
+        Assert.Null(home.Launcher.PlayProblem);
+
+        // Back to the .nup, now read in place: the player's choice wins over the last mode.
+        home.Files.Script(Switches(home, home.Files.Dump, "link"));
+        Assert.Null(await home.Launcher.ChangeGameCopyAsync(home.Files.Dump, GameDataMode.Link, default));
+        Assert.Contains($"\"--source\" \"{home.Files.Dump}\" \"--romfs\" \"link\"", home.Files.Arguments, StringComparison.Ordinal);
+        view = home.Launcher.GameSetup;
+        Assert.Equal((GameSetupState.Done, home.Files.Dump, GameDataMode.Link), (view.State, view.DumpPath, view.Mode));
+        Assert.Equal(TargetStatus.Ready, home.Launcher.Game.Check!.Status);
+    }
+
+    [Fact]
+    public async Task A_new_copy_without_a_mode_is_taken_as_the_last_setup_took_its_own()
+    {
+        await using var home = await Home.New(arrange: (game, files) =>
+        {
+            Home.SetUp(game, files);
+            File.WriteAllText(Path.Combine(game, "setup-state.json"), SetupRig.StateJson(SetupRig.Pinned, files.Dump, "copy"));
+        });
+        // The Game Setup card's "Choose Another File…" (RunGameSetupAsync with a path) no longer drops a copied install back to linking.
+        var loose = LooseDump(home);
+        home.Files.Script(Switches(home, loose, "copy"));
+        await home.Launcher.RunGameSetupAsync(loose, default);
+        Assert.EndsWith("\"--romfs\" \"copy\"", home.Files.Arguments, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_change_of_copy_stopped_halfway_is_not_a_ready_game()
+    {
+        // As prepare.py leaves it when stopped in "generate" after another copy was picked: the old copy's game code
+        // (mkwgame.dll, the compile key) beside the new copy's exefs and romfs, and no generate key.
+        await using var home = await Home.New(arrange: (game, files) =>
+        {
+            Home.SetUp(game, files);
+            var state = System.Text.Json.Nodes.JsonNode.Parse(SetupRig.StateJson(SetupRig.Pinned, files.Dump))!;
+            state["done"]!.AsObject().Remove("generate");
+            state["done"]!["compile"] = $"{SetupRig.PinnedId} 1.8.0 windows 0123456789abcdef";
+            File.WriteAllText(Path.Combine(game, "setup-state.json"), state.ToJsonString());
+        });
+        var view = home.Launcher.GameSetup;
+        Assert.Equal((GameSetupState.NeedsSetup, GameSetupReason.Unfinished, false), (view.State, view.Reason, view.NeedsDump));
+        Assert.Equal(Strings.SetupUnfinished, home.Launcher.PlayProblem);
+    }
+
+    [Fact]
+    public async Task Changing_the_copy_is_refused_while_the_game_or_a_setup_runs_and_for_a_wrong_pick()
+    {
+        await using var home = await Home.New(arrange: (game, files) => Home.SetUp(game, files));
+        var loose = LooseDump(home);
+        home.Files.Script(Switches(home, loose, "link"));
+
+        // The game runs (started from anywhere): close it first. Nothing starts, and the setup's state stays as it was.
+        home.Files.Running = true;
+        Assert.Equal(Strings.SetupCloseGame, home.Launcher.GameCopyChangeProblem(null));
+        Assert.Equal(Strings.SetupCloseGame, await home.Launcher.ChangeGameCopyAsync(loose, GameDataMode.Link, default));
+        Assert.Null(home.Files.Arguments);
+        Assert.Equal((GameSetupState.Idle, home.Files.Dump), (home.Launcher.GameSetup.State, home.Launcher.GameSetup.DumpPath));
+        home.Files.Running = false;
+
+        // Not a copy of the game: the first setup's own check, and again nothing starts.
+        var notGame = Path.Combine(home.Rig.Root, "client.toml");
+        Assert.Equal(RecompSetup.DumpProblem(notGame), await home.Launcher.ChangeGameCopyAsync(notGame, null, default));
+        Assert.Null(home.Files.Arguments);
+        Assert.Equal(GameSetupState.Idle, home.Launcher.GameSetup.State);
+
+        // A setup under way: one at a time.
+        home.Files.Script("echo step check", "echo step exefs", home.Files.Hangs, "exit /b 1");
+        var run = home.Launcher.RunGameSetupAsync(null, default);
+        await home.Files.WaitForChild();
+        await Rig.Until("the setup to run", () => home.Launcher.GameSetup.Busy);
+        Assert.Equal(Strings.SetupAlreadyRunning, await home.Launcher.ChangeGameCopyAsync(loose, null, default));
+        await home.Launcher.CancelGameSetup();
+        await run;
+    }
+
+    [Fact]
+    public async Task Changing_the_copy_is_refused_while_play_holds_the_game_and_for_a_game_without_a_setup()
+    {
+        await using var rig = new Rig(new FakeSeatServer { Mood = SeatMood.QueuedFor, Count = 100_000 });
+        Assert.Equal(Strings.SetupNone, await rig.Launcher.ChangeGameCopyAsync(Path.Combine(rig.Root, "x.nup"), null, default));
+        Assert.Equal(GameSetupState.Idle, rig.Launcher.GameSetup.State);
+
+        // PLAY holds the game while its session holds a seat (here: its place in the queue, which does not end by
+        // itself the way a stand-in game can before the check runs)
+        await using var home = await Home.New(arrange: (game, files) => Home.SetUp(game, files), server: new FakeSeatServer { Mood = SeatMood.QueuedFor, Count = 100_000 });
+        await home.Launcher.PlayAsync();
+        await Rig.Until("the session to queue", () => home.Launcher.Session.Phase == SeatPhase.Queued);
+        Assert.Equal(Strings.PressStopFirst, await home.Launcher.ChangeGameCopyAsync(home.Files.Dump, null, default));
+        await home.Launcher.StopAsync();
     }
 
     [Fact]

@@ -29,7 +29,8 @@ public sealed record GameSetupPlan(GameSetupReason Reason, string Message, bool 
 /// <summary>A target's setup for one install: what <see cref="IGameTarget.SetupStatus"/> answers.</summary>
 /// <param name="Needed">Null: the game is set up for this runtime.</param>
 /// <param name="DumpPath">The player's copy of the game that the last setup used; null when none is recorded.</param>
-public sealed record GameSetupStatus(GameSetupPlan? Needed, string? DumpPath);
+/// <param name="Mode">How the last setup took that copy's data: read in place, or copied into the install.</param>
+public sealed record GameSetupStatus(GameSetupPlan? Needed, string? DumpPath, GameDataMode Mode = GameDataMode.Link);
 
 /// <summary>What happens to the game's data (about 22 GiB): read where the player keeps it, or copied into the install.</summary>
 public enum GameDataMode
@@ -45,7 +46,7 @@ public enum GameDataMode
 /// <c>exefs/</c> and <c>romfs/</c>). Null: the one the last setup used, with its mode.
 /// The launcher only ever reads it; it never copies, moves or uploads it.
 /// </param>
-/// <param name="Mode">Only with a <paramref name="DumpPath"/>.</param>
+/// <param name="Mode">Only with a <paramref name="DumpPath"/>. Changing it (or the copy) redoes only the steps that depend on it (mkw-recomp: exefs, romfs, cleanup).</param>
 /// <param name="LogFolder">Where the whole log of this run is kept (<c>setup-*.log</c>); null: nowhere.</param>
 public sealed record GameSetupRequest(string? DumpPath, GameDataMode Mode = GameDataMode.Link, string? LogFolder = null);
 

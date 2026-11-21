@@ -104,7 +104,7 @@ public sealed class GameWorkModal : ModalViewModel
         }
 
         // the buttons and the title change only with the phase
-        var key = $"{phase}|{runtime.State}|{setup.NeedsDump}|{Driving}|{_shell.GameRuns}";
+        var key = $"{phase}|{runtime.State}|{setup.NeedsDump}|{Driving}|{_shell.GameRuns}|{Launcher.Session.Busy}|{setup.DumpPath}|{setup.Mode}";
         if (key == _shown)
         {
             return;
@@ -226,6 +226,15 @@ public sealed class GameWorkModal : ModalViewModel
                     Body = game.Install is { } install
                         ? S.Format("setup.game.ready_text", ("name", _shell.TargetName), ("version", install.Version ?? S["settings.game.unknown"]), ("game", install.GameVersion ?? "?"))
                         : Launcher.PlayProblem ?? "";
+                    if (GameCopy.Applies(_shell))
+                    {
+                        // the one thing left to do here: build the game from another copy
+                        Body += "\n\n" + GameCopy.InUse(_shell);
+                        if (GameCopy.CanChange(_shell))
+                        {
+                            Actions.Add(new ModalAction(S["gamecopy.action"], () => RelayCommand.Async(() => GameCopy.ChangeAsync(_shell)).Execute(null)));
+                        }
+                    }
                 }
                 Detail = "";
                 break;

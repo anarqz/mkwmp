@@ -1209,6 +1209,64 @@ public sealed partial class DesignLauncher : ILauncher
         });
     }
 
+    public string? GameCopyChangeProblem(string? dumpPath) =>
+        Runtime.Busy ? CoreStrings.SetupWaitForInstall
+        : GameSetup.Busy ? CoreStrings.SetupAlreadyRunning
+        : Session.Busy ? CoreStrings.PressStopFirst
+        : Session.GameRunning ? CoreStrings.SetupCloseGame
+        : dumpPath is null ? null
+        : GameCopyProblem(dumpPath);
+
+    /// <summary>The real one redoes only what depends on the copy (about 5 s from a folder to a .nup): here the same few steps, in four seconds.</summary>
+    public async Task<string?> ChangeGameCopyAsync(string dumpPath, GameDataMode? mode, CancellationToken cancel)
+    {
+        if (await Task.Run(() => GameCopyChangeProblem(dumpPath), cancel).ConfigureAwait(false) is { } why)
+        {
+            return why;
+        }
+        var before = GameSetup;
+        var data = mode ?? before.Mode;
+        using var both = CancellationTokenSource.CreateLinkedTokenSource(cancel, _lifetime.Token);
+        _gameSetup = both;
+        try
+        {
+            string[] steps = ["check", "exefs", "romfs", "cleanup"];
+            for (var i = 0; i < 40; i++)
+            {
+                var (index, at) = (i / 10, i);
+                Change(() =>
+                {
+                    GameSetup = DemoSetupIdle with
+                    {
+                        State = GameSetupState.Running, Step = steps[index], StepLabel = CoreStrings.SetupStep(steps[index], data == GameDataMode.Copy),
+                        StepIndex = index, StepCount = steps.Length, StepProgress = (at % 10) / 10.0, Progress = at / 40.0,
+                        Remaining = TimeSpan.FromSeconds((40 - at) / 10.0), DumpPath = dumpPath, Mode = data,
+                    };
+                    PlayProblem = CoreStrings.SetupRunning;
+                });
+                await Task.Delay(100, both.Token).ConfigureAwait(false);
+            }
+            Change(() =>
+            {
+                GameSetup = DemoSetupIdle with { State = GameSetupState.Done, Message = CoreStrings.SetupDone, DumpPath = dumpPath, Mode = data };
+                Sync();
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            Change(() =>
+            {
+                GameSetup = before with { Message = CoreStrings.SetupCancelled };
+                PlayProblem = null;
+            });
+        }
+        finally
+        {
+            _gameSetup = null;
+        }
+        return null;
+    }
+
     public async Task RunGameSetupAsync(string? dumpPath, CancellationToken cancel)
     {
         if (GameSetup.Busy)

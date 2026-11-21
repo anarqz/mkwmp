@@ -102,6 +102,10 @@
             <c:SettingsRow Label="{Binding S[settings.game.setup_row]}" Kind="Chevron" Icon="{StaticResource Icon.Refresh}" Margin="0,14,0,0"
                            Value="{Binding Game.SetupState}" Command="{Binding Game.SetupCommand}" Caption="{Binding Game.SetupCaption}"
                            Visibility="{Binding Game.HasSetupRow, Converter={StaticResource Conv.Visible}}" />
+            <!-- another copy of the game, once it is set up: the picker, how to take it, the setup again (ViewModels/Parts/GameCopy.cs) -->
+            <c:SettingsRow Label="{Binding S[settings.game.copy_row]}" Kind="Chevron" Icon="{StaticResource Icon.Package}"
+                           Command="{Binding Game.ChangeCopyCommand}" Caption="{Binding Game.CopyCaption}"
+                           Visibility="{Binding Game.HasCopyRow, Converter={StaticResource Conv.Visible}}" />
 
             <c:SectionHeader Text="{Binding Game.FilesTitle}" />
             <TextBlock Text="{Binding Game.FilesCaption}" Style="{StaticResource Note}" />

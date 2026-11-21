@@ -255,6 +255,21 @@ public interface ILauncher : IAsyncDisposable
     /// </summary>
     Task RunGameSetupAsync(string? dumpPath, CancellationToken cancel);
 
+    /// <summary>
+    /// Why the player's copy of the game cannot be changed now, or null (<see cref="ChangeGameCopyAsync"/>): a game with
+    /// no setup of the launcher's, a setup or the runtime's install under way, PLAY holding the game, the game running;
+    /// with <paramref name="dumpPath"/>, the first setup's own check of that copy. Off the window's thread.
+    /// </summary>
+    string? GameCopyChangeProblem(string? dumpPath);
+
+    /// <summary>
+    /// "Use another copy of the game" (Settings › Game), once the game is set up: the setup again from
+    /// <paramref name="dumpPath"/>, read in place or copied (<paramref name="mode"/>; null: as the last setup did), redoing
+    /// only what depends on the copy. Null when it ran (the outcome is in <see cref="GameSetup"/>); else why it did not
+    /// start (<see cref="GameCopyChangeProblem"/>), and nothing changed.
+    /// </summary>
+    Task<string?> ChangeGameCopyAsync(string dumpPath, GameDataMode? mode, CancellationToken cancel);
+
     /// <summary>Stops a setup in progress, or clears the note of the last one.</summary>
     Task CancelGameSetup();
 
@@ -482,7 +497,13 @@ public sealed record LauncherSettings
     /// <summary>The game target id (<c>mkw-recomp</c>).</summary>
     public string Target { get; init; } = "mkw-recomp";
     public string Game { get; init; } = "";
+    /// <summary>PLAY starts the game (also under Proton, where the launcher is the Steam shortcut and the game its child); false: the player starts it some other way.</summary>
     public bool Launch { get; init; } = true;
+    /// <summary>
+    /// <c>launch_chosen = true</c>: <see cref="Launch"/> was set by the player (Settings › Game), not left at a default.
+    /// Only then is a <c>launch = false</c> kept on SteamOS, where the launcher once wrote it as its default.
+    /// </summary>
+    public bool LaunchChosen { get; init; }
     public SeatMode Seat { get; init; } = SeatMode.Start;
     public int LocalPort { get; init; } = 47820;
     public bool AutoUpdate { get; init; } = true;

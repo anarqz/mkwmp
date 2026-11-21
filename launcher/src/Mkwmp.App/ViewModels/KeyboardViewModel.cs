@@ -191,6 +191,11 @@ public sealed class KeyboardViewModel : LayerViewModel
     {
         get
         {
+            if (_shell.InputKind == InputKind.Keyboard)
+            {
+                // a physical keyboard types here (MainWindow.OnKeyboardKey): its own keys, not the pad's shortcuts
+                return [new Hint(PadButton.B, S["common.cancel"]), new Hint(PadButton.A, S["common.ok"])];
+            }
             var hints = new List<Hint>();
             if (Charset != KeyboardCharset.Digits)
             {
@@ -242,6 +247,23 @@ public sealed class KeyboardViewModel : LayerViewModel
 
     /// <summary>The box keeps what it had.</summary>
     public void Cancel() => _shell.CloseKeyboard(this);
+
+    /// <summary>
+    /// Text typed on a physical keyboard while this one is open (a click on a box opens it under Wine with a pad
+    /// connected, as on the Steam Deck with a keyboard plugged in): each character as if its key were pressed, so
+    /// the box's rules and limit hold, and any character the keyboard can type (a backslash too).
+    /// </summary>
+    public void TypeText(string text)
+    {
+        var elements = StringInfo.GetTextElementEnumerator(text ?? "");
+        while (elements.MoveNext())
+        {
+            Type(elements.GetTextElement());
+        }
+    }
+
+    /// <summary>Backspace on a physical keyboard.</summary>
+    public void Erase() => Backspace();
 
     private void Press(KeyboardKey key)
     {

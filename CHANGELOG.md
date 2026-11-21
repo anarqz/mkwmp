@@ -18,6 +18,7 @@ What changed in each MKWMP release, newest first. The launcher shows this file o
 - **15 languages.** English, Deutsch, Español, Français, Italiano, Nederlands, Polski, Português (Brasil), Português (Portugal), Русский, Türkçe, 日本語, 한국어, 简体中文 and 繁體中文.
 - **Automatic updates.** The launcher downloads its new versions in the background, checks their signature, and installs them when you say so.
 - **Crash reports.** If the game crashes, the launcher says so and helps you report it: Report saves the details and the logs as a zip on your Desktop and opens a GitHub issue. Nothing is sent by itself.
+- **Use another copy of the game.** Settings › Game can switch the game to another copy of yours (a .nup or .nx file, or a folder), read where it is or copied in: only what depends on it is set up again, usually in seconds.
 - **Game settings.** Change mkw-recomp's screen, graphics, sound and controls settings from the launcher, in Settings › Game.
 - **Your game's real cover.** Home shows the cover art of your own copy of the game.
 - **Steam Deck and Proton.** The launcher runs on the Steam Deck and other Linux PCs through Proton, in Game Mode and Desktop Mode.

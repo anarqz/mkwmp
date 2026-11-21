@@ -258,6 +258,14 @@ public partial class MainWindow
             case "gameupdate":
                 _vm.ShowGameWork(driving: true);
                 break;
+            case "gamecopy-mode":
+                // "Use another copy of the game", after the pick: how the game takes it (ViewModels/Parts/GameCopy.cs)
+                _ = Choice.AskAsync(_vm, _vm.S["gamecopy.mode_title"], _vm.S.Format("gamecopy.mode_body", ("path", @"D:\Games\Mario Kart World\dump")),
+                [
+                    new ChoiceOption("link", _vm.S["gamecopy.link"], _vm.S["gamecopy.link_caption"]),
+                    new ChoiceOption("copy", _vm.S["gamecopy.copy"], _vm.S["gamecopy.copy_caption"]),
+                ], "link");
+                break;
             case "install":
                 if (_vm.Page is SettingsViewModel inGame)
                 {

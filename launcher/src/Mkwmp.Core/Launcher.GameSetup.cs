@@ -104,10 +104,73 @@ public sealed partial class Launcher
             p?.Remaining,
             p?.GameVersion ?? _setupGameVersion,
             state == GameSetupState.Failed ? _setupNote?.Code : null,
-            _setupLog);
+            _setupLog,
+            status?.Mode ?? GameDataMode.Link);
     }
 
-    public async Task RunGameSetupAsync(string? dumpPath, CancellationToken cancel)
+    public Task RunGameSetupAsync(string? dumpPath, CancellationToken cancel) => RunGameSetupAsync(dumpPath, null, cancel);
+
+    /// <summary>
+    /// Why the player's copy of the game cannot be changed now (<see cref="ChangeGameCopyAsync"/>), or null: the game
+    /// in use must have a setup the launcher runs, and nothing may hold the game folder (a setup, the runtime's install,
+    /// PLAY, the game itself). With <paramref name="dumpPath"/>, also the first setup's own check of that copy. Reads a
+    /// few files and lists processes: not for the window's thread.
+    /// </summary>
+    public string? GameCopyChangeProblem(string? dumpPath)
+    {
+        var s = Settings;
+        var target = _targets.Get(s.Target);
+        if (GameFinder.Detect(target, s.Game) is not { } install)
+        {
+            return Strings.SetGameFolder(target.FolderHint);
+        }
+        if (InspectSetup(install) is null)
+        {
+            return Strings.SetupNone;
+        }
+        if (SetupRunning)
+        {
+            return Strings.SetupAlreadyRunning;
+        }
+        lock (_runtimeStart)
+        {
+            if (_runtimeCancel is not null)
+            {
+                return Strings.SetupWaitForInstall;
+            }
+        }
+        if (SessionHoldsGame)
+        {
+            return Strings.PressStopFirst;
+        }
+        if (target.IsRunning(install))
+        {
+            return Strings.SetupCloseGame;
+        }
+        return dumpPath is null ? null : target.GameCopyProblem(dumpPath.Trim().Trim('"'));
+    }
+
+    /// <summary>
+    /// "Use another copy of the game", once the game is set up: the setup again from <paramref name="dumpPath"/>, its
+    /// data read in place or copied (<paramref name="mode"/>; null: as the last setup did). The setup itself redoes
+    /// only what depends on the copy (mkw-recomp's prepare.py: exefs, romfs, cleanup). Null when the setup ran (its
+    /// outcome is in <see cref="GameSetup"/>); else why it was not started, and nothing was changed.
+    /// </summary>
+    public async Task<string?> ChangeGameCopyAsync(string dumpPath, GameDataMode? mode, CancellationToken cancel)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(dumpPath);
+        if (await Task.Run(() => GameCopyChangeProblem(dumpPath), cancel).ConfigureAwait(false) is { } why)
+        {
+            Note($"game copy: not changed to {dumpPath}: {why}");
+            return why;
+        }
+        Note($"game copy: changing to {dumpPath} ({(mode is { } m ? m.ToString().ToLowerInvariant() : "as before")})");
+        await RunGameSetupAsync(dumpPath, mode, cancel).ConfigureAwait(false);
+        return null;
+    }
+
+    /// <param name="mode">Only with a <paramref name="dumpPath"/>; null: as the last setup took its copy (read in place for a first one).</param>
+    private async Task RunGameSetupAsync(string? dumpPath, GameDataMode? mode, CancellationToken cancel)
     {
         CancellationTokenSource both;
         lock (_setupStart)
@@ -138,11 +201,12 @@ public sealed partial class Launcher
                     throw new LauncherException(Strings.SetupWaitForInstall);
                 }
             }
-            if (target.SetupStatus(install) is null)
+            if (target.SetupStatus(install) is not { } before)
             {
                 throw new LauncherException(Strings.SetupNone);
             }
-            Note($"game setup: {target.DisplayName} {install.Version} in {install.Root}, game copy: {dump ?? "the last setup's"}");
+            var data = mode ?? before.Mode; // a new copy is taken as the last one was, unless the player said otherwise
+            Note($"game setup: {target.DisplayName} {install.Version} in {install.Root}, game copy: {(dump is null ? "the last setup's" : $"{dump} ({data.ToString().ToLowerInvariant()})")}");
             Mutate(() =>
             {
                 (_setupNote, _setupDone) = (null, false);
@@ -168,7 +232,7 @@ public sealed partial class Launcher
                 shown = now;
                 Mutate(() => _setupProgress = _setupProgress is null ? null : p);
             });
-            var request = new GameSetupRequest(dump, GameDataMode.Link, Path.Combine(LauncherFolder, "logs"));
+            var request = new GameSetupRequest(dump, data, Path.Combine(LauncherFolder, "logs"));
             var result = await Task.Run(() => target.RunSetupAsync(install, request, progress, both.Token), both.Token).ConfigureAwait(false);
             Note(result.Ok
                 ? $"game setup: done, game {result.GameVersion ?? "?"} (log: {result.Log ?? "none"})"

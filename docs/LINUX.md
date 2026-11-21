@@ -9,7 +9,9 @@ Status, 2026-11-20. Tested on SteamOS (kernel 7.2.7-valve2, an ASUS ROG Xbox All
 with Proton 11.0: the installer against copies of that machine's Steam files, the launcher's start,
 its first-run pages, its download and install of mkw-recomp, and the game's setup as far as it
 gets. **Not working yet: the game's setup under Proton** (section 5, the first item). **Not run: the live edit of Steam's files, a start from
-Steam, anything in Game Mode, the game itself.** Section 7 lists what is left.
+Steam, anything in Game Mode, the game itself.** Section 7 lists what is left. Later the same day, on
+that machine with the shortcut installed: PLAY started the game from the launcher (section 2, "PLAY
+starts the game").
 
 ## 1. For players
 
@@ -130,6 +132,27 @@ None. Checked on the machine:
   does not answer it under Wine (section 5, "Does not work", 2), so Xalia has nothing to steer
   there. If Game Mode still shows a second focus frame or doubled input:
   `--launch-options 'PROTON_USE_XALIA=0 %command%'`. To check in Game Mode.
+- `MKWMP_RENDER=software|hardware` and `MKWMP_WINE_HEARTBEAT=0`: for comparing only (section 5,
+  "Repaint"). None is needed.
+
+### PLAY starts the game
+
+PLAY starts `mkw.exe --play` as the launcher's child in the shortcut's prefix, as on Windows
+(`launch = true` in `client.toml`). Checked 2026-11-20 on the machine above: PLAY, the game at its
+title screen, the launcher's status "Playing offline", the mod loaded; Alt+F4 on the game ended the
+session ("game exited (exit code: 0)") and the launcher came back with PLAY.
+
+Before, the launcher wrote `launch = false` on SteamOS as its first default, from the Rust launcher's
+time, when the game had a Steam shortcut of its own and the launcher only held the seat. With the
+installer's one shortcut there is nothing else to start the game from, so PLAY said "Start the game
+from Steam" and started nothing. Now:
+
+- The default is `launch = true` everywhere.
+- Under Wine, a `launch = false` without `launch_chosen = true` is that old default and is read as
+  `true` (and written back as `true` at the next save). `launch_chosen = true` is written when the player sets
+  Settings > Game > "I start the game from Steam" themselves; only then is `false` kept. A player who
+  had switched it on before this change could not be told apart: they switch it on once more.
+- On Windows `launch = false` is kept as it is.
 
 ## 3. Artwork
 
@@ -281,10 +304,28 @@ started from a shell with Proton 11.0 inside Steam Linux Runtime 4 with the shor
 - The file and folder pickers are Wine's own dialog: small, in a corner, opening on "Desktop"
   although the launcher asks for the Linux home, and not usable with a pad. A path typed into its
   "File name" box works. In Game Mode the page's own path box is the only way.
-- That path box opens the launcher's on-screen keyboard, which has no backslash; with a physical
-  keyboard its letters are the keyboard's shortcuts (Q, F, X), so a path cannot be typed there.
-  `Z:/home/deck/...` with forward slashes was not tried.
+- That path box opens the launcher's own on-screen keyboard (not Steam's: under Wine a click on a
+  text box opens it whenever a pad is connected, and the handheld's own pad always is). Its keys
+  were the window's shortcuts for the pad's buttons (Q shift, F space, X backspace, Backspace and Esc
+  cancel), so a physical keyboard could not type a path. Fixed 2026-11-20 (`MainWindow.OnKeyboardKey`):
+  while the on-screen keyboard is open, a physical keyboard types into it (any character, `\` and
+  `[ ]` too), Backspace erases, Enter is OK, Esc cancels; the hint bar then shows Esc and Enter.
+  Checked on the machine: the picker's path box, `/run/media/deck/SN01T/MarioKartWorld/MKW [ROM]`
+  typed and opened. The pad still uses the keys on screen.
 - `close_to_tray = true` is the default; under gamescope there is no tray to come back from.
+- **Repaint.** Seen once in a device test: after a click the window kept the frame before it (PLAY
+  instead of STOP, the clock a minute old) until the pointer moved. It did not happen again
+  (2026-11-20, Desktop Mode, the compositor's own picture taken with `spectacle -b -n -f` from a
+  `systemd-run --user` unit): pointer clicks (xdotool), touch taps (a uinput touchscreen), PLAY with
+  the game started and closed, the launcher in front of the running game, each watched for 60 to 75 s
+  without other input. The likeliest reading is a frame drawn and not yet shown, which an idle window
+  never pushes out, so under Wine the window now always has a next frame
+  (`Platform/WineRendering.cs`: one invisible pixel changes four times a second while the window is
+  shown; measured: 10% of a core idle against 9% without). `MKWMP_WINE_HEARTBEAT=0` turns it off,
+  `MKWMP_RENDER=software` draws without Direct3D (DXVK) instead (33% of a core idle, 62% while the
+  focus moves, against 9% and 25%: not the default). `logs/launcher-ui.log` says which (`render:`).
+  To check: tap or click a button that changes the page or PLAY/STOP, keep hands off, and look at the
+  screen within a second; then the same with `MKWMP_WINE_HEARTBEAT=0` in the launch options.
 
 **Bigger, for the launcher**
 

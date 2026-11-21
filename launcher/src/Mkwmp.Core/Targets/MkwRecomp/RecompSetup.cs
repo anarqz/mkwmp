@@ -18,6 +18,13 @@ internal sealed record RecompSetupState(string? Port, string? Source, bool Copy)
 {
     /// <summary>The x86-64 level the game code was last compiled for ("v3", "v2"); null before a compile.</summary>
     public string? CompileLevel { get; init; }
+
+    /// <summary>
+    /// The steps that read the player's copy are all recorded as done (<c>exefs</c>, <c>romfs</c>, <c>generate</c>).
+    /// prepare.py takes a step's key out when its input changed: a setup stopped after another copy was picked leaves
+    /// the game code of the old copy beside the data of the new one, which no other check sees.
+    /// </summary>
+    public bool CopyStepsDone { get; init; } = true;
 }
 
 /// <summary>What the driver needs from its target and the machine (the tests replace each).</summary>
@@ -88,6 +95,9 @@ internal static partial class RecompSetup
     public const string LogPrefix = "setup-";
 
     private const string State = "setup-state.json";
+
+    /// <summary>The steps that read the player's copy (<see cref="RecompSetupState.CopyStepsDone"/>).</summary>
+    private static readonly string[] CopySteps = ["exefs", "romfs", "generate"];
     private static readonly byte[] NupMagic = "NUP\u0001"u8.ToArray();
     private static readonly byte[] NxMagic = "NXAR"u8.ToArray();
     private static readonly TimeSpan Beat = TimeSpan.FromMilliseconds(500);
@@ -147,6 +157,7 @@ internal static partial class RecompSetup
         return new RecompSetupState(root.At("port").Str(), root.At("source").Str() is { Length: > 0 } source ? source : null, mode == "copy")
         {
             CompileLevel = compile is null ? null : compile.EndsWith(" v2", StringComparison.Ordinal) ? "v2" : "v3",
+            CopyStepsDone = CopySteps.All(step => root.At("done").At(step).Str() is not null),
         };
     }
 
@@ -214,7 +225,7 @@ internal static partial class RecompSetup
         {
             plan = new GameSetupPlan(GameSetupReason.DumpMissing, Strings.SetupDumpGone(source), true, source);
         }
-        else if (!File.Exists(Path.Combine(data, "mkwgame.dll")) || state.Port is null)
+        else if (!File.Exists(Path.Combine(data, "mkwgame.dll")) || state.Port is null || !state.CopyStepsDone)
         {
             plan = new GameSetupPlan(GameSetupReason.Unfinished, Strings.SetupUnfinished, false, source);
         }
@@ -237,7 +248,7 @@ internal static partial class RecompSetup
         {
             plan = null;
         }
-        return new GameSetupStatus(plan, source);
+        return new GameSetupStatus(plan, source, state.Copy ? GameDataMode.Copy : GameDataMode.Link);
     }
 
     // ---- the player's copy of the game --------------------------------------------------------

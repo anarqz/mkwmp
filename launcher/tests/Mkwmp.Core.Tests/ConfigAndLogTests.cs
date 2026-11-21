@@ -64,6 +64,32 @@ public class ConfigTests
     }
 
     [Fact]
+    public void Play_starts_the_game_by_default_also_under_proton_and_the_old_steamos_default_goes()
+    {
+        // A first start: PLAY starts the game everywhere (on SteamOS the Steam shortcut is the launcher itself).
+        Assert.True(ClientConfig.Default().Settings.Launch);
+        Assert.DoesNotContain("launch_chosen", ClientConfig.Default().ToToml(), StringComparison.Ordinal);
+
+        // `launch = false` as the launcher used to write it on SteamOS (under Proton): the default again under Wine, kept on Windows.
+        Assert.True(ClientConfig.Parse("launch = false\n", wine: true).Settings.Launch);
+        Assert.False(ClientConfig.Parse("launch = false\n").Settings.Launch);
+
+        // The player's own choice (Settings › Game) is kept under Wine too, and written back.
+        var chosen = ClientConfig.Parse("launch = false\nlaunch_chosen = true\n", wine: true);
+        Assert.Equal((false, true), (chosen.Settings.Launch, chosen.Settings.LaunchChosen));
+        Assert.Contains("launch_chosen = true", chosen.ToToml(), StringComparison.Ordinal);
+        Assert.False(ClientConfig.Parse(chosen.ToToml(), wine: true).Settings.Launch);
+
+        // Through the file: the migrated value is what the next save writes.
+        var path = Path.Combine(Rig.NewFolder("config"), "client.toml");
+        File.WriteAllText(path, "name = \"Ana\"\nlaunch = false\n");
+        var migrated = ClientConfig.Load(path, wine: true);
+        Assert.True(migrated.Settings.Launch);
+        migrated.Save(path);
+        Assert.Contains("launch = true", File.ReadAllText(path), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Names_and_pins()
     {
         Assert.True(ClientConfig.ValidName("Ana_1-x"));

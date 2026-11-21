@@ -33,6 +33,7 @@ public sealed class GameForm : ObservableObject
         FixCommand = new RelayCommand(() => Links.Open(_shell, Game.Check?.FixUrl?.AbsoluteUri), () => HasFix);
         InstallCommand = RelayCommand.Async(InstallAsync, () => CanInstall);
         SetupCommand = new RelayCommand(() => _shell.ShowGameWork());
+        ChangeCopyCommand = RelayCommand.Async(() => GameCopy.ChangeAsync(_shell), () => GameCopy.CanChange(_shell));
         UninstallCommand = RelayCommand.Async(UninstallAsync, () => CanUninstall);
     }
 
@@ -127,6 +128,15 @@ public sealed class GameForm : ObservableObject
 
     public ICommand SetupCommand { get; }
 
+    // ── the player's copy of the game: another one, once the game is set up ──
+
+    public bool HasCopyRow => GameCopy.Applies(_shell);
+
+    /// <summary>"In use: …, read where it is. Pick another file or folder…"</summary>
+    public string CopyCaption => GameCopy.InUse(_shell) + " " + S["settings.game.copy_caption"];
+
+    public ICommand ChangeCopyCommand { get; }
+
     /// <summary>INSTALL when the files are missing or wrong, REPAIR when they are fine.</summary>
     public string InstallLabel => Game.Integration is { Ok: true } ? S["settings.game.repair"] : S["settings.game.install"];
 
@@ -140,11 +150,11 @@ public sealed class GameForm : ObservableObject
 
     public bool NoteIsError => !Game.Working && Game.NoteIsError;
 
-    /// <summary>"I start the game from Steam (Steam Deck)": the launcher then only holds the seat.</summary>
+    /// <summary>"I start the game from Steam myself": the launcher then only holds the seat. Marked as the player's choice (<c>launch_chosen</c>).</summary>
     public bool FromSteam
     {
         get => !Launcher.Settings.Launch;
-        set => RelayCommand.Async(() => _shell.UpdateSettingsAsync(s => s with { Launch = !value })).Execute(null);
+        set => RelayCommand.Async(() => _shell.UpdateSettingsAsync(s => s with { Launch = !value, LaunchChosen = true })).Execute(null);
     }
 
     public ICommand BrowseCommand { get; }

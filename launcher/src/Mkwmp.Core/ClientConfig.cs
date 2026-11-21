@@ -103,39 +103,21 @@ internal sealed record ClientConfig
         return s.TrimEnd('/');
     }
 
-    /// <summary>The defaults for a first start: offline (no server), and on SteamOS the game starts from Steam, so no launch there.</summary>
-    public static ClientConfig Default() => new() { Settings = new LauncherSettings { Launch = !IsSteamOs() } };
-
     /// <summary>
-    /// SteamOS (the launcher then runs under Proton): Steam says so in the environment, and Wine
-    /// shows the host's /etc/os-release as Z:\etc\os-release.
+    /// The defaults for a first start: offline (no server), and PLAY starts the game everywhere. On SteamOS too: the
+    /// Steam shortcut is the launcher itself (tools/linux/install-mkwmp.sh), and the game runs as its child in the same
+    /// Proton prefix. (The Rust launcher ran natively and the game had its own Steam shortcut, hence the old SteamOS
+    /// default <c>launch = false</c>; see <see cref="Parse"/> for files that still have it.)
     /// </summary>
-    public static bool IsSteamOs()
-    {
-        if (Environment.GetEnvironmentVariable("SteamDeck") == "1")
-        {
-            return true;
-        }
-        try
-        {
-            // Only under Wine: on Windows, Z: may be a network drive that takes seconds to say it is not there.
-            return IsWine() && File.Exists(@"Z:\etc\os-release") && File.ReadAllText(@"Z:\etc\os-release").Contains("ID=steamos", StringComparison.Ordinal);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>Wine's ntdll says so itself (<c>wine_get_version</c>).</summary>
-    public static bool IsWine() =>
-        System.Runtime.InteropServices.NativeLibrary.TryLoad("ntdll.dll", out var ntdll)
-        && System.Runtime.InteropServices.NativeLibrary.TryGetExport(ntdll, "wine_get_version", out _);
+    public static ClientConfig Default() => new();
 
     public static ClientConfig LoadOrDefault(string path) => File.Exists(path) ? Load(path) : Default();
 
     /// <summary>Reads the file. Keys it does not know are skipped: an older or newer launcher's file still loads.</summary>
-    public static ClientConfig Load(string path)
+    public static ClientConfig Load(string path) => Load(path, Platform.WineHost.Detected);
+
+    /// <param name="wine">The file is read under Wine / Proton: a <c>launch = false</c> the player did not choose is the old SteamOS default.</param>
+    internal static ClientConfig Load(string path, bool wine)
     {
         string text;
         try
@@ -146,10 +128,19 @@ internal sealed record ClientConfig
         {
             throw new LauncherException($"read {path}: {e.Message}", e);
         }
-        return Parse(text, path);
+        return Parse(text, path, wine);
     }
 
-    public static ClientConfig Parse(string text, string path = "client.toml")
+    /// <summary>
+    /// <paramref name="wine"/>: the launcher used to write <c>launch = false</c> as its SteamOS default (it only ever
+    /// thought it was on SteamOS under Proton), from when the game had a Steam shortcut of its own. Under Proton the
+    /// shortcut is the launcher, so that left PLAY with nothing to start: such a value becomes the default again
+    /// (<c>true</c>) unless <c>launch_chosen = true</c> says the player set it. Under Wine a <c>false</c> without it is
+    /// taken for that old default (the SteamOS check could not even see the host's os-release from inside Steam's
+    /// runtime container): a player who had switched "I start the game from Steam" on there before
+    /// <c>launch_chosen</c> existed switches it on once more (docs/LINUX.md says so). On Windows it is kept.
+    /// </summary>
+    public static ClientConfig Parse(string text, string path = "client.toml", bool wine = false)
     {
         TomlTable t;
         try
@@ -164,6 +155,8 @@ internal sealed record ClientConfig
         var bg = Table(t, "background");
         var voice = Table(t, "voice");
         var ui = Table(t, "ui");
+        var chosen = Bool(t, "launch_chosen", false);
+        var launch = Bool(t, "launch", true) || (wine && !chosen);
         var settings = new LauncherSettings
         {
             Server = ServerBase(Str(t, "server", "")),
@@ -171,7 +164,8 @@ internal sealed record ClientConfig
             Pin = Str(t, "pin", ""),
             Target = Str(t, "target", d.Target),
             Game = Str(t, "game", ""),
-            Launch = Bool(t, "launch", true),
+            Launch = launch,
+            LaunchChosen = chosen,
             Seat = string.Equals(Str(t, "seat", "start"), "online", StringComparison.OrdinalIgnoreCase) ? SeatMode.Online : SeatMode.Start,
             LocalPort = Int(t, "local_port", d.LocalPort, 1, 65535),
             AutoUpdate = Bool(t, "update", true),
@@ -269,6 +263,10 @@ internal sealed record ClientConfig
         Line(b, "target", s.Target);
         Line(b, "game", s.Game);
         Line(b, "launch", s.Launch);
+        if (s.LaunchChosen)
+        {
+            Line(b, "launch_chosen", true); // only once the player set it (Settings › Game): see Parse
+        }
         Line(b, "seat", s.Seat == SeatMode.Online ? "online" : "start");
         Line(b, "local_port", s.LocalPort);
         Line(b, "update", s.AutoUpdate);

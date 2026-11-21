@@ -43,6 +43,7 @@ public partial class MainWindow : Window
         Stage.SizeChanged += (_, _) => ApplyFx(); // the overlay's picture follows the stage (its first frame is drawn at the first layout)
         AddHandler(GotFocusEvent, new RoutedEventHandler(OnAnyGotFocus), true);
         PreviewKeyDown += OnPreviewKeyDown;
+        PreviewTextInput += OnPreviewTextInput;
         PreviewMouseDown += (_, _) => _vm.InputKind = InputKind.Mouse;
         PreviewTouchDown += (_, _) => _vm.InputKind = InputKind.Mouse;
         PreviewMouseMove += OnPreviewMouseMove;
@@ -165,6 +166,10 @@ public partial class MainWindow : Window
                 break;
             case nameof(ShellViewModel.InputKind):
                 Mouse.OverrideCursor = _vm.InputKind == InputKind.Gamepad ? Cursors.None : null;
+                if (_vm.IsKeyboardOpen)
+                {
+                    _vm.RefreshHints(); // the on-screen keyboard's hints follow what types into it
+                }
                 break;
         }
     }
@@ -298,8 +303,56 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// A physical keyboard while the on-screen one is open: it types there. Under Wine a click on a text box opens the
+    /// on-screen keyboard whenever a pad is connected (the Steam Deck's own always is), and its keys used to be the
+    /// window's shortcuts (Q shift, F space, X backspace, Backspace and Esc cancel): a path could not be typed.
+    /// Characters come as text (<see cref="OnPreviewTextInput"/>); here only the keys that are not text. Esc still
+    /// cancels, the arrows still move over the keys.
+    /// </summary>
+    private bool OnKeyboardKey(KeyEventArgs e)
+    {
+        if (_vm.Keyboard is not { } keyboard || (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0)
+        {
+            return false;
+        }
+        switch (e.Key)
+        {
+            case Key.Back:
+                keyboard.Erase();
+                break;
+            case Key.Enter:
+                keyboard.Accept();
+                break;
+            case Key.Space:
+                keyboard.TypeText(" "); // handled here, or the focused key's button would take it as a press
+                break;
+            case Key.F or Key.X or Key.Q or Key.E:
+                return true; // letters: not the shortcuts; their text comes as TextInput
+            default:
+                return false;
+        }
+        e.Handled = true;
+        return true;
+    }
+
+    private void OnPreviewTextInput(object sender, TextCompositionEventArgs e)
+    {
+        if (_vm.Keyboard is { } keyboard && e.Text is { Length: > 0 } text && !text.Any(char.IsControl))
+        {
+            _vm.InputKind = InputKind.Keyboard;
+            keyboard.TypeText(text);
+            e.Handled = true;
+        }
+    }
+
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (OnKeyboardKey(e))
+        {
+            _vm.InputKind = InputKind.Keyboard;
+            return;
+        }
         var typing = Keyboard.FocusedElement is TextBoxBase or PasswordBox;
         PadButton? button = e.Key switch
         {

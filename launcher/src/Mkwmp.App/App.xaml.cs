@@ -104,6 +104,7 @@ public partial class App : Application
             return;
         }
         var harness = Option(args, "--shot") is not null || Option(args, "--icon") is not null;
+        Platform.WineRendering.Apply();
         // One launcher per user, and the overlay host (launcher/docs/OVERLAY.md §7). On this thread: the
         // instance's mutex belongs to it. The demo and the harness are no launcher: they run beside one.
         if (!demo && !harness)
@@ -154,6 +155,7 @@ public partial class App : Application
         var window = new MainWindow(shell, args);
         MainWindow = window;
         Platform.WineAutomation.Attach(window); // Proton: Xalia's questions are not answered from inside this process
+        Platform.WineRendering.Attach(window); // Wine: a change is never left a frame behind on the screen
         // tray, close-to-tray, system notifications (nothing of it in the screenshot harness, nor for a host)
         Desktop.DesktopIntegration? desktop = null;
         if (hosted)

@@ -39,6 +39,7 @@ public enum GameSetupState
 /// <param name="GameVersion">The version of the player's game the setup read ("1.8.0"); null until it has.</param>
 /// <param name="ErrorCode">Failed: the cause as one stable word ("nogame", "space", "failed", "running"...).</param>
 /// <param name="LastLog">The file with the whole log of the last setup of this session; null when none ran.</param>
+/// <param name="Mode">How the last setup took <paramref name="DumpPath"/>'s data (read in place or copied): what a change of copy starts from.</param>
 public sealed record GameSetupView(
     GameSetupState State,
     bool Available,
@@ -56,7 +57,8 @@ public sealed record GameSetupView(
     TimeSpan? Remaining,
     string? GameVersion,
     string? ErrorCode,
-    string? LastLog)
+    string? LastLog,
+    GameDataMode Mode = GameDataMode.Link)
 {
     public static GameSetupView None { get; } = new(GameSetupState.Idle, false, null, null, false, null, null, null, 0, 0, 0, false, 0, null, null, null, null);
 
