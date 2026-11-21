@@ -37,7 +37,8 @@ usage() {
 usage: deploy-mkwmp-server.sh [options]          install or upgrade
        deploy-mkwmp-server.sh --uninstall [--purge]
 
-  --name NAME         server name in the launcher and the server list (1-48 characters)
+  --name NAME         server name in the launcher and the server list (up to 32 letters,
+                      digits, spaces and _ . -)
   --region REGION     short region tag for the server list, e.g. sa-east, eu-west (A-Z a-z 0-9 -)
   --public-ip IPV4    the address players reach this VM at (default: this VM's public address)
   --domain NAME       serve the seat API over HTTPS at https://NAME with Caddy (point NAME's
@@ -156,9 +157,9 @@ BEHOLDER="${BEHOLDER:-${LAST_BEHOLDER:-$DEFAULT_BEHOLDER}}"
 BEHOLDER="${BEHOLDER%/}"
 
 # The same rules the directory applies (docs/contracts/BEHOLDER_API.md §2), checked up front.
-[ -n "$NAME" ] && [ "${#NAME}" -le 48 ] || die "--name must be 1-48 characters"
-[[ "$NAME" != *'"'* && "$NAME" != *'\'* && "$NAME" == "${NAME#[[:space:]]}" && "$NAME" == "${NAME%[[:space:]]}" ]] ||
-  die "--name can't contain quotes or backslashes, or start or end with a space"
+# (The server itself allows up to 32 letters, digits, spaces and _ . - in a name.)
+[[ "$NAME" =~ ^[A-Za-z0-9_.-]([A-Za-z0-9\ _.-]{0,30}[A-Za-z0-9_.-])?$ ]] ||
+  die "--name: up to 32 letters, digits, spaces and _ . - (not starting or ending with a space)"
 [[ "$REGION" =~ ^[A-Za-z0-9-]{0,16}$ ]] || die "--region: up to 16 of A-Z a-z 0-9 -"
 [[ "$CAPACITY" =~ ^[0-9]+$ ]] && [ "$CAPACITY" -ge 1 ] && [ "$CAPACITY" -le 100000 ] || die "--capacity: 1-100000"
 [[ "$PUBLIC_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--public-ip: an IPv4 address"
@@ -396,8 +397,13 @@ done
 [ "$ok" = yes ] || { journalctl -u mkwmp-seat -n 30 --no-pager >&2; die "the seat server didn't answer /ping (log above)"; }
 systemctl is-active -q mkwmp-lobby || { journalctl -u mkwmp-lobby -n 30 --no-pager >&2; die "the lobby didn't start (log above)"; }
 
+# Through the public address (with --domain, Caddy first fetches its certificate: give it time).
 public_ok=no
-if [ "$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$ENDPOINT/ping")" = 204 ]; then public_ok=yes; fi
+for _ in $(seq 1 18); do
+  if [ "$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$ENDPOINT/ping")" = 204 ]; then public_ok=yes; break; fi
+  [ -n "$DOMAIN" ] || break
+  sleep 5
+done
 
 listed=skipped
 if [ "$ANNOUNCE" = yes ]; then
@@ -409,6 +415,7 @@ if [ "$ANNOUNCE" = yes ]; then
   done
 fi
 
+if [ -n "$DOMAIN" ]; then SEAT_PORTS="80, 443"; else SEAT_PORTS="7000"; fi
 echo
 say "MKWMP $VERSION is running"
 echo "   players: set the launcher's server to   $ENDPOINT"
@@ -421,7 +428,7 @@ esac
 cat <<EOF
 
    Open these in your cloud provider's firewall as well (inbound):
-     TCP ${DOMAIN:+80, 443}${DOMAIN:-7000}, 8905, 8906
+     TCP $SEAT_PORTS, 8905, 8906
      UDP 3478, 8907, 10025, 49152-49407
    Logs:      journalctl -u mkwmp-seat -u mkwmp-lobby -f
    Back up:   $DATA (registry.db = gamertags and friends; keys/ = this server's identity)
