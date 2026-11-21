@@ -540,6 +540,8 @@
   "settings.online.announcer_reset_caption": "Go back to the list MKWMP ships with.",
   "overlay.setup_pending": "MKWMP is not set up yet",
   "overlay.setup_pending_body": "Open MKWMP once to finish its welcome: online play, friends and the game's settings live there.",
+  "overlay.kept_behind": "The overlay opened behind the game",
+  "overlay.kept_behind_body": "Your desktop kept the game in front of MKWMP. On KDE Plasma, add a window rule for mkwmp.exe: System Settings › Window Management › Window Rules, \"Focus stealing prevention\" set to Force, None.",
 
   "core.unreachable": "Server unreachable: retry",
   "core.wrong_pin": "Wrong PIN for this gamertag",

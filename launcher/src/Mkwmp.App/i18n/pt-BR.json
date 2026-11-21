@@ -540,6 +540,8 @@
   "settings.online.announcer_reset_caption": "Volta para a lista que vem com o MKWMP.",
   "overlay.setup_pending": "O MKWMP ainda não foi configurado",
   "overlay.setup_pending_body": "Abra o MKWMP uma vez para terminar as boas-vindas: jogo online, amigos e as opções do jogo ficam lá.",
+  "overlay.kept_behind": "O overlay abriu atrás do jogo",
+  "overlay.kept_behind_body": "Sua área de trabalho manteve o jogo na frente do MKWMP. No KDE Plasma, adicione uma regra de janela para mkwmp.exe: Configurações do sistema › Gerenciamento de janelas › Regras de janelas, \"Prevenção de roubo de foco\" em Forçar, Nenhuma.",
   "update.download": "Baixar",
   "update.ready": "A versão {version} está pronta para instalar",
   "update.ready_body": "O download foi verificado e está pronto. O MKWMP fecha por um instante, instala a atualização e abre de novo.",

@@ -525,6 +525,8 @@
   "settings.online.announcer_reset_caption": "恢复为 MKWMP 自带的列表。",
   "overlay.setup_pending": "MKWMP 还没有配置好",
   "overlay.setup_pending_body": "请打开一次 MKWMP 完成欢迎流程：联机游玩、好友和游戏设置都在那里。",
+  "overlay.kept_behind": "叠加界面在游戏后面打开了",
+  "overlay.kept_behind_body": "桌面让游戏保持在 MKWMP 前面。在 KDE Plasma 中为 mkwmp.exe 添加窗口规则：系统设置 › 窗口管理 › 窗口规则，将“焦点抢夺防护”设为强制、无。",
   "core.unreachable": "无法连接服务器：请重试",
   "core.wrong_pin": "此玩家代号的 PIN 不正确",
   "core.not_registered": "请先注册此玩家代号",

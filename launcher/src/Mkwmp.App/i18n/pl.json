@@ -525,6 +525,8 @@
   "settings.online.announcer_reset_caption": "Wróć do listy, z którą jest dostarczany MKWMP.",
   "overlay.setup_pending": "MKWMP nie jest jeszcze skonfigurowany",
   "overlay.setup_pending_body": "Otwórz MKWMP raz, aby dokończyć powitanie: tam są gra online, znajomi i ustawienia gry.",
+  "overlay.kept_behind": "Nakładka otworzyła się za grą",
+  "overlay.kept_behind_body": "Pulpit zostawił grę przed MKWMP. W KDE Plasma dodaj regułę okna dla mkwmp.exe: Ustawienia systemowe › Zarządzanie oknami › Reguły okien, „Zapobieganie przechwytywaniu uaktywnienia” na Wymuś, Brak.",
   "core.unreachable": "Serwer nieosiągalny: spróbuj ponownie",
   "core.wrong_pin": "Błędny PIN do tego gamertagu",
   "core.not_registered": "Najpierw zarejestruj ten gamertag",

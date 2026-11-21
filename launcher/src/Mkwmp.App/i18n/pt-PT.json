@@ -525,6 +525,8 @@
   "settings.online.announcer_reset_caption": "Volta à lista que vem com o MKWMP.",
   "overlay.setup_pending": "O MKWMP ainda não está configurado",
   "overlay.setup_pending_body": "Abre o MKWMP uma vez para terminares as boas-vindas: o jogo online, os amigos e as definições do jogo ficam lá.",
+  "overlay.kept_behind": "O overlay abriu atrás do jogo",
+  "overlay.kept_behind_body": "O teu ambiente de trabalho manteve o jogo à frente do MKWMP. No KDE Plasma, adiciona uma regra de janela para mkwmp.exe: Definições do sistema › Gestão de janelas › Regras de janelas, \"Prevenção de roubo de foco\" em Forçar, Nenhuma.",
   "core.unreachable": "Servidor inacessível: tenta de novo",
   "core.wrong_pin": "PIN errado para esta gamertag",
   "core.not_registered": "Regista primeiro esta gamertag",

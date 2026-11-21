@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Mkwmp.App.Desktop;
 using Mkwmp.App.ViewModels;
 using Mkwmp.Core;
 using Mkwmp.Core.Overlay;
@@ -49,6 +50,11 @@ internal sealed class OverlayController : IDisposable
     private bool _wasRunning;
     private bool _quitting;
     private bool _disposed;
+    private IntPtr _asideGame; // the game's window, minimised while the overlay is up (OverlayFocus)
+    private int _openSeq;      // the opening a delayed step of ToTheFront belongs to
+    private bool _keptBehind;  // the window manager kept the game in front of this opening
+    private bool _hinted;      // the hint about it was shown (once per run)
+    private bool _settling;    // under Wine, until the check of this opening: a deactivation is the window manager's, not the player's
 
     /// <summary>How long the game has to end itself after it was asked, and again after its window was asked.</summary>
     private static readonly TimeSpan QuitWait = TimeSpan.FromSeconds(8);
@@ -75,6 +81,7 @@ internal sealed class OverlayController : IDisposable
         _guide.Pressed += (_, _) => OnGuide();
         _guide.ShortcutPressed += (_, _) => OnShortcut();
         window.Deactivated += (_, _) => _ui.BeginInvoke(OnDeactivated);
+        window.Activated += (_, _) => _ui.BeginInvoke(OnActivated);
         window.IsVisibleChanged += (_, e) =>
         {
             if (e.NewValue is false)
@@ -233,6 +240,8 @@ internal sealed class OverlayController : IDisposable
     {
         _bridge.GameExited(); // Closed, when it was open: OnClosed ends overlay mode
         (_gamePid, _foundPid, _hidFor, _foreign) = (0, 0, 0, false);
+        (_asideGame, _keptBehind, _settling) = (IntPtr.Zero, false, false);
+        _openSeq++;
         var show = _hiddenByUs && _startup?.Hosted != true && !_window.IsVisible;
         _hiddenByUs = false;
         if (show)
@@ -314,6 +323,7 @@ internal sealed class OverlayController : IDisposable
             _opening = false;
         }
         _hiddenByUs = false;
+        ToTheFront(game, pid);
         _window.BeginOverlayOpen(() =>
         {
             if (_guide.Available)
@@ -321,6 +331,95 @@ internal sealed class OverlayController : IDisposable
                 _guide.Start();
             }
         });
+    }
+
+    /// <summary>
+    /// Under Wine on a Linux desktop the window manager may keep the game in front of a window we showed (KWin's
+    /// focus-stealing prevention; <see cref="OverlayFocus"/>): once ours is mapped, the game's window is minimised and
+    /// the focus goes to ours. Later the launcher looks whether it is in front, for the log and, if not, a hint the
+    /// player sees when they reach the window by hand (Alt+Tab). Nothing on Windows.
+    /// </summary>
+    private void ToTheFront(IntPtr game, int pid)
+    {
+        if (!WineHost.Detected)
+        {
+            return;
+        }
+        var open = ++_openSeq;
+        _settling = true;
+        var env = Environment.GetEnvironmentVariable(OverlayFocus.EnvName);
+        if (game != IntPtr.Zero && OverlayFocus.StepGameAside(WineHost.Detected, DesktopEnvironment.IsGameMode, env))
+        {
+            After(OverlayFocus.StepAsideDelay, () =>
+            {
+                if (open != _openSeq || !_shell.IsOverlay || _returning)
+                {
+                    return;
+                }
+                if (GameWindow.StepAside(game))
+                {
+                    _asideGame = game;
+                    App.Log("overlay: the game's window is minimised while the overlay is up (a Linux desktop under Wine)");
+                }
+                _ = _window.Activate();
+            });
+        }
+        After(OverlayFocus.CheckAfter, () =>
+        {
+            if (open != _openSeq || !_shell.IsOverlay || _returning)
+            {
+                return;
+            }
+            _settling = false;
+            if (OverlayFocus.KeptBehind(_window.IsActive, GameWindow.IsForeground(pid)))
+            {
+                _keptBehind = true;
+                App.Log($"overlay: not in front after {OverlayFocus.CheckAfter.TotalSeconds:0.#} s (active {_window.IsActive}, game in front {GameWindow.IsForeground(pid)}, minimised {(_asideGame != IntPtr.Zero ? "yes" : "no")}): the window manager kept the game in front");
+                _ = _window.Activate();
+            }
+        });
+    }
+
+    /// <summary>The window became active with the overlay up after it had been kept behind the game: the hint, once per run.</summary>
+    private void OnActivated()
+    {
+        if (_disposed || !_keptBehind || !_shell.IsOverlay)
+        {
+            return;
+        }
+        _keptBehind = false;
+        if (!_hinted)
+        {
+            _hinted = true;
+            var s = _shell.S;
+            _shell.ShowToast(s["overlay.kept_behind"], s["overlay.kept_behind_body"]);
+        }
+    }
+
+    private void After(TimeSpan delay, Action then)
+    {
+        var timer = new DispatcherTimer(DispatcherPriority.Normal, _ui) { Interval = delay };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (!_disposed)
+            {
+                then();
+            }
+        };
+        timer.Start();
+    }
+
+    /// <summary>The game's window minimised for the overlay (<see cref="ToTheFront"/>) is restored, before ours goes.</summary>
+    private void BringGameBack()
+    {
+        _openSeq++; // a pending step aside or check of this opening does nothing now
+        _settling = false;
+        if (_asideGame != IntPtr.Zero)
+        {
+            GameWindow.BringBack(_asideGame);
+            _asideGame = IntPtr.Zero;
+        }
     }
 
     private System.Windows.Media.Imaging.BitmapSource Placeholder()
@@ -394,8 +493,9 @@ internal sealed class OverlayController : IDisposable
     private void GiveBack(OverlayReturn how, bool focusGame)
     {
         var pid = _bridge.GamePid != 0 ? _bridge.GamePid : _gamePid;
-        var game = GameWindow.Find(pid);
+        var game = _asideGame != IntPtr.Zero ? _asideGame : GameWindow.Find(pid);
         var demo = _launcher is null; // no game behind the demo: its window stays
+        BringGameBack(); // minimised for the overlay (a Linux desktop): restored while ours still has the focus
         if (focusGame)
         {
             GameWindow.GiveBack(_window, game, hideLauncher: !demo);
@@ -415,7 +515,7 @@ internal sealed class OverlayController : IDisposable
     private void OnDeactivated()
     {
         // the game took the front by itself (Alt+Tab, a click on it): with the overlay "open" the mod would keep its pad idle
-        if (!_disposed && _shell.IsOverlay && !_window.IsOverlayAnimating && _bridge.IsOpen && _gamePid != 0 && GameWindow.IsForeground(_gamePid))
+        if (!_disposed && !_settling && _shell.IsOverlay && !_window.IsOverlayAnimating && _bridge.IsOpen && _gamePid != 0 && GameWindow.IsForeground(_gamePid))
         {
             QuickReturn();
         }
@@ -532,6 +632,8 @@ internal sealed class OverlayController : IDisposable
     private void Finish(bool thenQuit)
     {
         var wasOverlay = _shell.IsOverlay;
+        (_asideGame, _keptBehind, _settling) = (IntPtr.Zero, false, false);
+        _openSeq++;
         _bridge.GameExited();
         (_gamePid, _foundPid, _hidFor, _foreign, _hiddenByUs) = (0, 0, 0, false, false);
         if (wasOverlay)
@@ -568,8 +670,9 @@ internal sealed class OverlayController : IDisposable
             return;
         }
         // quitting from the overlay: the game is not left waiting for a launcher that is gone
-        var game = GameWindow.Find(_bridge.GamePid != 0 ? _bridge.GamePid : _gamePid);
+        var game = _asideGame != IntPtr.Zero ? _asideGame : GameWindow.Find(_bridge.GamePid != 0 ? _bridge.GamePid : _gamePid);
         _returning = true;
+        BringGameBack();
         _ = _bridge.ReturnToGame();
         GameWindow.GiveBack(_window, game, hideLauncher: false);
     }

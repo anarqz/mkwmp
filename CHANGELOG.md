@@ -5,6 +5,7 @@ What changed in each MKWMP release, newest first. The launcher shows this file o
 ## 1.4.3 — unreleased
 
 - **One controller menu in the game.** The overlay shortcut and mkw-recomp's own menu shortcut no longer fight over the same press. The launcher now sets mkw-recomp's menu shortcut itself, to the button your overlay shortcut doesn't use (Select + Start when the overlay is on Guide, Guide otherwise), and the Menu Shortcut row is gone from Settings › Controls. mkw-recomp's menu still opens with F1 / Esc and from the overlay's mkw-recomp menu entry.
+- **The overlay comes to the front on a Linux desktop.** On KDE Plasma (and other Linux desktops) under Proton, the overlay could open behind the full-screen game, which then looked frozen until you Alt+Tabbed. The game's window now steps aside (minimised) while the overlay is up and comes back when you return. If your desktop still keeps the game in front, the launcher tells you how to allow it.
 
 ## 1.4.2 — 2026-11-21
 
