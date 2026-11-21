@@ -5,7 +5,56 @@
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              xmlns:mods="clr-namespace:Mkwmp.App.Views.Mods"
              x:Name="Self" Focusable="False">
-  <!-- DataContext: ModsViewModel. The mods in the game (A opens one, X switches it), then the three ways to get one. -->
+  <!-- DataContext: ModsViewModel. The mods in the game, one compact line each (A opens one, X or its switch turns it
+       on and off, Y turns them all off and back on), then the three ways to get one. -->
+  <UserControl.Resources>
+    <!-- A mod's line: icon, name with version and author small beside it, chips, size. The switch is its own focus stop beside it. -->
+    <Style x:Key="ModLine" TargetType="Button">
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="OverridesDefaultStyle" Value="True" />
+      <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Grid Background="Transparent" Height="84">
+              <Border x:Name="Rule" BorderBrush="{DynamicResource Brush.Rule}" BorderThickness="0,0,0,1.5" />
+              <Border x:Name="Hover" CornerRadius="12" Margin="-10,2" Background="{DynamicResource Brush.Hover}" Visibility="Collapsed" />
+              <c:FocusRing IsActive="{TemplateBinding IsFocused}" CornerRadius="12" Margin="-10,-3" Fill="{DynamicResource Brush.Focus.Fill}" />
+              <ContentPresenter Margin="20,0,16,0" VerticalAlignment="Center" RecognizesAccessKey="False" />
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Hover" Property="Visibility" Value="Visible" />
+              </Trigger>
+              <Trigger Property="IsFocused" Value="True">
+                <Setter Property="Panel.ZIndex" Value="1" />
+                <Setter TargetName="Hover" Property="Visibility" Value="Collapsed" />
+                <Setter TargetName="Rule" Property="Margin" Value="0,0,0,-11" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <!-- A small mark on a line: "Update" in the accent, the others quiet. -->
+    <Style x:Key="ModChip" TargetType="Border">
+      <Setter Property="Height" Value="34" />
+      <Setter Property="CornerRadius" Value="17" />
+      <Setter Property="Padding" Value="14,0" />
+      <Setter Property="Margin" Value="10,0,0,0" />
+      <Setter Property="BorderThickness" Value="1.5" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.Outline}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style x:Key="ModChipText" TargetType="TextBlock" BasedOn="{StaticResource Text.Base}">
+      <Setter Property="FontSize" Value="20" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+    </Style>
+  </UserControl.Resources>
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -27,12 +76,55 @@
           </Grid>
         </Border>
         <StackPanel Visibility="{Binding Supported, Converter={StaticResource Conv.Visible}}">
-          <c:SectionHeader Text="{Binding S[mods.installed]}" />
+          <Grid>
+            <c:SectionHeader Text="{Binding S[mods.installed]}" />
+            <!-- "Turn all off" / "Turn all back on" (Y too): never MKWMP's own or a locked mod -->
+            <c:ConsoleButton Kind="Secondary" Icon="{StaticResource Icon.Power}" Content="{Binding AllLabel}" Command="{Binding AllCommand}"
+                             HorizontalAlignment="Right" VerticalAlignment="Top" Height="58" MinWidth="0" Padding="22,0" FontSize="24" Margin="0,30,0,0"
+                             Visibility="{Binding HasAll, Converter={StaticResource Conv.Visible}}" />
+          </Grid>
           <ItemsControl x:Name="RowsHost" ItemsSource="{Binding Rows}" Focusable="False">
             <ItemsControl.ItemTemplate>
               <DataTemplate>
-                <c:SettingsRow Label="{Binding Name}" Caption="{Binding Caption}" Icon="{Binding Icon, Converter={StaticResource Conv.Icon}}"
-                               Value="{Binding State}" Kind="Chevron" Command="{Binding OpenCommand}" />
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <!-- the page opens on the first mod, not on "Turn all off" above it -->
+                  <Button Style="{StaticResource ModLine}" Command="{Binding OpenCommand}" AutomationProperties.Name="{Binding Name}" input:FocusNav.IsDefault="True">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <c:Icon Data="{Binding Icon, Converter={StaticResource Conv.Icon}}" Width="38" Height="38" Margin="0,0,22,0" VerticalAlignment="Center" />
+                      <!-- the name first; version and author after it, small, while they fit (the line ends in "…" when not) -->
+                      <TextBlock Grid.Column="1" Style="{StaticResource Text.Base}" FontSize="29" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap">
+                        <Run Text="{Binding Name, Mode=OneWay}" /><Run Text="   " FontSize="21" /><Run Text="{Binding Detail, Mode=OneWay}" FontSize="21" Foreground="{DynamicResource Brush.TextMuted}" />
+                      </TextBlock>
+                      <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="6,0,0,0">
+                        <Border Style="{StaticResource ModChip}" Background="{DynamicResource Brush.AccentSoft}" BorderThickness="0"
+                                Visibility="{Binding HasUpdate, Converter={StaticResource Conv.Visible}}">
+                          <TextBlock Text="{Binding S[mods.chip.update]}" Style="{StaticResource ModChipText}" Foreground="{DynamicResource Brush.Accent}" />
+                        </Border>
+                        <Border Style="{StaticResource ModChip}" Visibility="{Binding ShowsCode, Converter={StaticResource Conv.Visible}}">
+                          <TextBlock Text="{Binding S[mods.chip.code]}" Style="{StaticResource ModChipText}" />
+                        </Border>
+                        <Border Style="{StaticResource ModChip}" Visibility="{Binding ShowsOptions, Converter={StaticResource Conv.Visible}}">
+                          <TextBlock Text="{Binding S[mods.chip.options]}" Style="{StaticResource ModChipText}" />
+                        </Border>
+                      </StackPanel>
+                      <TextBlock Grid.Column="3" Text="{Binding Size}" Style="{StaticResource Text.Base}" FontSize="23" Foreground="{DynamicResource Brush.TextMuted}"
+                                 MinWidth="112" TextAlignment="Right" Margin="18,0,0,0" />
+                    </Grid>
+                  </Button>
+                  <!-- its own stop: Right from the line, A flips it; locked where the mod is (MKWMP's own, a code mod, the game running) -->
+                  <c:ToggleSwitch Grid.Column="1" Margin="30,0,14,0" VerticalAlignment="Center" IsChecked="{Binding IsOn}" IsEnabled="{Binding CanToggle}"
+                                  AutomationProperties.Name="{Binding SwitchName}" ToolTip="{Binding SwitchName}" />
+                </Grid>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>

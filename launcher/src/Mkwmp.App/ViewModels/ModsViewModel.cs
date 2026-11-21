@@ -137,6 +137,7 @@ public static class ModInstaller
 public sealed class ModRow : ObservableObject
 {
     private readonly ShellViewModel _shell;
+    private bool _busy;
 
     internal ModRow(ShellViewModel shell, GameMod mod, bool update)
     {
@@ -152,53 +153,43 @@ public sealed class ModRow : ObservableObject
 
     public string Id => Mod.Id;
 
+    public Strings S => _shell.S;
+
     public string Name => Mod.Managed ? "MKWMP" : Mod.Name;
 
-    /// <summary>"1.2 · Ana · 12 MB"; for MKWMP's own mod, that the launcher manages it.</summary>
+    /// <summary>"1.2 · Ana", small beside the name when it fits; for MKWMP's own mod, that the launcher manages it.</summary>
     public string Detail => Mod.Managed
         ? _shell.S["mods.own.detail"]
-        : string.Join(" · ", new[] { Mod.Version, Mod.Author, CoreStrings.Size(Mod.Size) }.Where(t => t.Length > 0));
+        : string.Join(" · ", new[] { Mod.Version, Mod.Author }.Where(t => t.Length > 0));
+
+    /// <summary>"86 MB", at the right of the row.</summary>
+    public string Size => Mod.Size > 0 ? CoreStrings.Size(Mod.Size) : "";
 
     public string Icon => Mod.Managed ? "Icon.Lock" : Mod.HasPlugin ? "Icon.Program" : "Icon.Package";
 
-    /// <summary>"On", "Off"; "Required" for MKWMP's own.</summary>
-    public string State => Mod.Managed ? _shell.S["mods.badge.required"] : Mod.Enabled ? _shell.S["mods.on"] : _shell.S["mods.off"];
+    /// <summary>The chips of the row: GameBanana has a newer file; it runs or patches code; it declares options.</summary>
+    public bool ShowsCode => !Mod.Managed && (Mod.HasPlugin || Mod.ChangesCode);
 
-    /// <summary>What marks the mod, in the row's caption: an update, native code, options, a problem.</summary>
-    public string Badges
+    public bool ShowsOptions => !Mod.Managed && Mod.HasOptions;
+
+    /// <summary>The row's switch (Settings' own): on, off, or locked where it is (MKWMP's own, a code mod, the game running).</summary>
+    public bool IsOn
     {
-        get
+        get => Mod.Enabled;
+        set
         {
-            var s = _shell.S;
-            var marks = new List<string>();
-            if (HasUpdate)
+            if (value != Mod.Enabled)
             {
-                marks.Add(s["mods.badge.update"]);
+                RelayCommand.Async(ToggleAsync).Execute(null);
             }
-            if (Mod.Managed)
-            {
-                return "";
-            }
-            if (Mod.HasPlugin)
-            {
-                marks.Add(s["mods.badge.plugin"]);
-            }
-            if (Mod.ChangesCode)
-            {
-                marks.Add(s["mods.badge.code"]);
-            }
-            if (Mod.HasOptions)
-            {
-                marks.Add(s["mods.badge.options"]);
-            }
-            return string.Join("  ·  ", marks);
         }
     }
 
-    public string Caption => string.Join("\n", new[] { Detail, Badges }.Where(t => t.Length > 0));
+    /// <summary>For a screen reader: the switch of this mod.</summary>
+    public string SwitchName => _shell.S.Format("mods.switch", ("name", Name));
 
-    /// <summary>X on the row: on or off, when the mod can be switched here.</summary>
-    public bool CanToggle => Mod.Locked is null && _shell.Launcher.Mods.Editable;
+    /// <summary>X on the row, or its switch: on or off, when the mod can be switched here.</summary>
+    public bool CanToggle => ModsView.Switchable(Mod) && _shell.Launcher.Mods.Editable;
 
     public ICommand OpenCommand { get; }
 
@@ -223,17 +214,28 @@ public sealed class ModRow : ObservableObject
 
     internal async Task ToggleAsync()
     {
-        if (!CanToggle)
+        if (!CanToggle || _busy)
         {
+            await Task.Yield(); // after the binding that called: then it reads the value again
+            Raise(nameof(IsOn)); // the switch goes back to where the game has it
             return;
         }
-        if (!Mod.Enabled)
+        _busy = true;
+        try
         {
-            await ModInstaller.EnableAsync(_shell, Mod.Id, Mod.Name).ConfigureAwait(true);
+            if (!Mod.Enabled)
+            {
+                await ModInstaller.EnableAsync(_shell, Mod.Id, Mod.Name).ConfigureAwait(true); // a mod with native code asks first
+            }
+            else if (await _shell.Launcher.SetModEnabledAsync(Mod.Id, on: false, acceptCode: false).ConfigureAwait(true) is { } why)
+            {
+                await _shell.MessageAsync(Mod.Name, why).ConfigureAwait(true);
+            }
         }
-        else if (await _shell.Launcher.SetModEnabledAsync(Mod.Id, on: false, acceptCode: false).ConfigureAwait(true) is { } why)
+        finally
         {
-            await _shell.MessageAsync(Mod.Name, why).ConfigureAwait(true);
+            _busy = false;
+            Raise(nameof(IsOn)); // a "Leave Off" or a refusal leaves the switch where the game has it
         }
     }
 }
@@ -253,6 +255,7 @@ public sealed class ModsViewModel : PageViewModel
         BrowseCommand = new RelayCommand(() => Shell.Navigate(new ModBrowserViewModel(Shell)), () => View.Supported);
         LinkCommand = new RelayCommand(() => Shell.Navigate(new ModLinkViewModel(Shell)), () => View.Supported);
         FileCommand = RelayCommand.Async(FromFileAsync, () => View.Supported);
+        AllCommand = RelayCommand.Async(AllAsync, () => HasAll);
         Sync();
     }
 
@@ -288,9 +291,33 @@ public sealed class ModsViewModel : PageViewModel
         }
     }
 
-    public override IReadOnlyList<Hint> Hints => _focused is { CanToggle: true }
-        ? [new Hint(PadButton.X, S["mods.hint.toggle"]), new Hint(PadButton.B, S["hint.back"]), new Hint(PadButton.A, S["hint.ok"])]
-        : Shell.DefaultHints();
+    /// <summary>"Turn all off" and "Turn all back on" ask first from this many mods on.</summary>
+    internal const int ManyMods = 5;
+
+    /// <summary>The list kept by "Turn all off" has mods to bring back: the action brings them back.</summary>
+    private bool BringsBack => View.ToBringBack > 0;
+
+    /// <summary>There is something for "Turn all off" or "Turn all back on" to do (the Y button, the button over the list).</summary>
+    public bool HasAll => Supported && (BringsBack || View.OnNow > 0);
+
+    public string AllLabel => BringsBack ? S["mods.all.on"] : S["mods.all.off"];
+
+    public ICommand AllCommand { get; }
+
+    public override IReadOnlyList<Hint> Hints
+    {
+        get
+        {
+            var hints = new List<Hint>();
+            hints.Add(HasAll ? new Hint(PadButton.Y, AllLabel) : new Hint(PadButton.Y, S["hint.friends"]));
+            if (_focused is { CanToggle: true })
+            {
+                hints.Add(new Hint(PadButton.X, S["mods.hint.toggle"]));
+            }
+            hints.AddRange(Shell.DefaultHints().Where(h => h.Button != PadButton.Y));
+            return hints;
+        }
+    }
 
     public override bool OnButton(PadButton button)
     {
@@ -299,7 +326,49 @@ public sealed class ModsViewModel : PageViewModel
             RelayCommand.Async(row.ToggleAsync).Execute(null);
             return true;
         }
+        if (button == PadButton.Y && HasAll)
+        {
+            AllCommand.Execute(null); // RB still opens Friends
+            return true;
+        }
         return false;
+    }
+
+    /// <summary>
+    /// "Turn all off": every mod the player can switch, never MKWMP's own or a locked one, the list kept to bring
+    /// back. "Turn all back on": that list, in its order. The game reads its list when it starts: nothing while it runs.
+    /// </summary>
+    private async Task AllAsync()
+    {
+        var view = View;
+        var on = view.ToBringBack > 0;
+        var count = on ? view.ToBringBack : view.OnNow;
+        var label = AllLabel;
+        if (count == 0)
+        {
+            return;
+        }
+        if (!view.Editable)
+        {
+            await Shell.MessageAsync(label, S["mods.all.running"]).ConfigureAwait(true);
+            return;
+        }
+        var n = ("n", count.ToString(CoreStrings.Culture));
+        if (count >= ManyMods && !await Shell.ConfirmAsync(S.Format(on ? "mods.all.on.title" : "mods.all.off.title", n),
+                S[on ? "mods.all.on.body" : "mods.all.off.body"], S[on ? "mods.all.on.yes" : "mods.all.off.yes"]).ConfigureAwait(true))
+        {
+            return;
+        }
+        var (changed, why) = await Launcher.SetAllModsEnabledAsync(on).ConfigureAwait(true);
+        if (why is not null)
+        {
+            await Shell.MessageAsync(label, why).ConfigureAwait(true);
+            return;
+        }
+        if (changed > 0)
+        {
+            Shell.ShowToast(S.Format(on ? "mods.all.on.done" : "mods.all.off.done", ("n", changed.ToString(CoreStrings.Culture))), S["mods.restart"]);
+        }
     }
 
     public override PageViewModel? Recreate() => new ModsViewModel(Shell);

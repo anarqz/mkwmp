@@ -64,7 +64,7 @@ public sealed partial class Launcher
         {
             updates = _modUpdates = _modUpdates.Where(u => mods.Any(m => m.Id == u.Key && m.Source is { } s && s.GameBananaFile != u.Value.Id)).ToDictionary(u => u.Key, u => u.Value);
         }
-        return new ModsView(true, true, mods, !running, running ? Strings.ModsCloseGame : null, mature, updates);
+        return new ModsView(true, true, mods, !running, running ? Strings.ModsCloseGame : null, mature, updates) { TurnedOff = target.ModsTurnedOff(install) };
     }
 
     public Task RefreshModsAsync() => Task.Run(() =>
@@ -130,6 +130,17 @@ public sealed partial class Launcher
             target.SetModEnabled(install, id, on, acceptCode);
             Note($"mods: {id} {(on ? "on" : "off")}");
         });
+    }
+
+    public async Task<(int Changed, string? Error)> SetAllModsEnabledAsync(bool on)
+    {
+        var changed = 0;
+        var error = await ChangeModsAsync((target, install) =>
+        {
+            changed = target.SetAllModsEnabled(install, on);
+            Note($"mods: all {(on ? "back on" : "off")}: {changed} changed");
+        }).ConfigureAwait(false);
+        return (changed, error);
     }
 
     public Task<string?> UninstallModAsync(string id)

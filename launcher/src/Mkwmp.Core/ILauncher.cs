@@ -310,6 +310,12 @@ public interface ILauncher : IAsyncDisposable
     /// </summary>
     Task<string?> SetModEnabledAsync(string id, bool on, bool acceptCode) => Task.FromResult<string?>(null);
 
+    /// <summary>
+    /// "Turn all off" (<paramref name="on"/> false: the list is kept, <see cref="ModsView.TurnedOff"/>) and "Turn all back on"
+    /// (that list again, in its order). Never MKWMP's own mod or a locked one. How many changed, and why not, for the player.
+    /// </summary>
+    Task<(int Changed, string? Error)> SetAllModsEnabledAsync(bool on) => Task.FromResult<(int, string?)>((0, null));
+
     /// <summary>Removes a mod. Null when done; else why not.</summary>
     Task<string?> UninstallModAsync(string id) => Task.FromResult<string?>(null);
 
@@ -368,6 +374,18 @@ public sealed record ModsView(bool Supported, bool Loaded, IReadOnlyList<GameMod
     public static ModsView None { get; } = new(false, false, [], false, null, false, new Dictionary<string, Modding.GbFile>());
 
     public GameMod? Find(string id) => Mods.FirstOrDefault(m => string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The list the last "Turn all off" kept, in the game's order (empty: nothing to bring back).</summary>
+    public IReadOnlyList<string> TurnedOff { get; init; } = [];
+
+    /// <summary>A mod "Turn all off" changes: not MKWMP's own, not locked.</summary>
+    public static bool Switchable(GameMod mod) => mod is { Managed: false, Locked: null };
+
+    /// <summary>The switchable mods that are on now: what "Turn all off" turns off.</summary>
+    public int OnNow => Mods.Count(m => Switchable(m) && m.Enabled);
+
+    /// <summary>The mods "Turn all back on" turns on: kept by "Turn all off", still installed, switchable and off now.</summary>
+    public int ToBringBack => TurnedOff.Count(id => Find(id) is { Enabled: false } mod && Switchable(mod));
 }
 
 /// <summary>The game's own settings, for the window (see <see cref="IGameTarget.GameSettings"/>).</summary>

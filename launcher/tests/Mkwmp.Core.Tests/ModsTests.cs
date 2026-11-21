@@ -197,6 +197,127 @@ public sealed class ModsTests : IDisposable
         Assert.True(Directory.Exists(Path.Combine(Mods, "mkwmp")));
     }
 
+    // ---- all off, all back on ---------------------------------------------------------------
+
+    private string AllOff => Path.Combine(_game, RecompMods.AllOffFile);
+
+    private List<string> Listed => Mod.Listed(Ini);
+
+    /// <summary>MKWMP's own, a code mod (locked), a plugin mod, two skins: mkw.ini lists them in an order of its own.</summary>
+    private void FiveMods(string order)
+    {
+        Folder("mkwmp", null, plugin: true);
+        Folder("Classic", """{"switches": {"CLASSICGP": "1"}}""");
+        Folder("native", null, plugin: true);
+        Folder("Skin", """{"title": "Skin", "has_romfs": true}""");
+        Folder("Horns", """{"title": "Horns", "has_romfs": true}""");
+        File.WriteAllText(Path.Combine(_game, "mkw.ini"), $"# mine\n[video]\nfps = 60\n[launcher]\nmods = {order}\nmods_ack = 1\n");
+    }
+
+    [Fact]
+    public void All_off_leaves_mkwmp_and_locked_mods_and_all_back_on_restores_the_same_set_in_its_order()
+    {
+        FiveMods("Skin,mkwmp,Classic,native,Horns");
+
+        Assert.Equal(3, _target.SetAllModsEnabled(_install, on: false));
+        Assert.Equal(["mkwmp", "Classic"], Listed); // MKWMP is required, the code mod is the game's own page's
+        Assert.Equal(["Skin", "mkwmp", "Classic", "native", "Horns"], _target.ModsTurnedOff(_install));
+        Assert.Contains("fps = 60", Ini, StringComparison.Ordinal);
+        Assert.Contains("mods_ack = 1", Ini, StringComparison.Ordinal);
+        var view = new ModsView(true, true, _target.Mods(_install, null), true, null, false, new Dictionary<string, GbFile>()) { TurnedOff = _target.ModsTurnedOff(_install) };
+        Assert.Equal((0, 3), (view.OnNow, view.ToBringBack));
+        Assert.Equal(0, _target.SetAllModsEnabled(_install, on: false)); // nothing on: the kept list stays as it is
+        Assert.Equal(["Skin", "mkwmp", "Classic", "native", "Horns"], _target.ModsTurnedOff(_install));
+
+        Assert.Equal(3, _target.SetAllModsEnabled(_install, on: true));
+        Assert.Equal(["Skin", "mkwmp", "Classic", "native", "Horns"], Listed); // the order is the precedence: exactly as it was
+        Assert.False(File.Exists(AllOff));
+        Assert.Empty(_target.ModsTurnedOff(_install));
+        Assert.Equal(0, _target.SetAllModsEnabled(_install, on: true));
+    }
+
+    [Fact]
+    public void All_back_on_keeps_a_mod_turned_on_since_last_and_leaves_out_one_that_is_gone()
+    {
+        FiveMods("mkwmp,Skin,Horns");
+        _target.SetAllModsEnabled(_install, on: false);
+        Assert.Equal(["mkwmp"], Listed);
+
+        _target.SetModEnabled(_install, "native", on: true, acceptCode: true); // turned on since: it keeps winning
+        _target.UninstallMod(_install, "Skin");
+        Assert.Equal(1, _target.SetAllModsEnabled(_install, on: true));
+        Assert.Equal(["mkwmp", "Horns", "native"], Listed);
+    }
+
+    [Fact]
+    public void All_off_twice_without_back_on_keeps_both_sets()
+    {
+        FiveMods("mkwmp,Skin,Horns");
+        _target.SetAllModsEnabled(_install, on: false);
+        _target.SetModEnabled(_install, "native", on: true, acceptCode: true);
+        Assert.Equal(1, _target.SetAllModsEnabled(_install, on: false));
+        Assert.Equal(["mkwmp"], Listed);
+
+        _target.SetAllModsEnabled(_install, on: true);
+        Assert.Equal(["mkwmp", "Skin", "Horns", "native"], Listed);
+    }
+
+    [Fact]
+    public void A_plugin_mod_of_the_kept_set_comes_back_without_a_new_yes_but_turned_on_alone_it_needs_one()
+    {
+        FiveMods("mkwmp,native");
+        _target.SetAllModsEnabled(_install, on: false);
+        Assert.Equal(["mkwmp"], Listed);
+
+        // the switch of its row: the window asks first, the core refuses without the yes
+        Assert.Equal(Strings.ModsRunsCode, Assert.Throws<LauncherException>(() => _target.SetModEnabled(_install, "native", true, acceptCode: false)).Message);
+        Assert.Equal(["mkwmp"], Listed);
+
+        // it was on before "all off": the player said yes then
+        Assert.Equal(1, _target.SetAllModsEnabled(_install, on: true));
+        Assert.Equal(["mkwmp", "native"], Listed);
+    }
+
+    [Fact]
+    public void All_off_and_back_on_are_refused_while_the_game_runs_and_nothing_is_written()
+    {
+        FiveMods("mkwmp,Skin");
+        var before = Ini;
+        _running = true;
+        Assert.Equal(Strings.ModsCloseGame, Assert.Throws<LauncherException>(() => _target.SetAllModsEnabled(_install, on: false)).Message);
+        Assert.Equal(before, Ini);
+        Assert.False(File.Exists(AllOff));
+        _running = false;
+        _target.SetAllModsEnabled(_install, on: false);
+        _running = true;
+        Assert.Equal(Strings.ModsCloseGame, Assert.Throws<LauncherException>(() => _target.SetAllModsEnabled(_install, on: true)).Message);
+        Assert.True(File.Exists(AllOff));
+        _running = false;
+    }
+
+    [Fact]
+    public void The_switch_of_a_row_respects_locked_and_required_mods()
+    {
+        FiveMods("mkwmp,Classic");
+        var mods = _target.Mods(_install, null);
+        Assert.False(ModsView.Switchable(mods.Single(m => m.Id == "mkwmp")));
+        Assert.False(ModsView.Switchable(mods.Single(m => m.Id == "Classic")));
+        Assert.True(ModsView.Switchable(mods.Single(m => m.Id == "native")));
+        Assert.True(ModsView.Switchable(mods.Single(m => m.Id == "Skin")));
+        Assert.Equal(Strings.ModsManaged, Assert.Throws<LauncherException>(() => _target.SetModEnabled(_install, "mkwmp", false, true)).Message);
+        Assert.Equal(Strings.ModsChangesCode, Assert.Throws<LauncherException>(() => _target.SetModEnabled(_install, "Classic", false, true)).Message);
+        Assert.Equal(0, _target.SetAllModsEnabled(_install, on: false)); // nothing the player can switch is on
+        Assert.Equal(["mkwmp", "Classic"], Listed);
+    }
+
+    [Fact]
+    public void The_list_moves_into_launcher_when_its_line_sat_elsewhere()
+    {
+        Assert.Equal(["a", "b"], Mod.Listed(RecompMods.WithList("mods = x\n[launcher]\nk = 1\n", ["a", "b"])));
+        Assert.DoesNotContain("mods", RecompMods.WithList("[launcher]\nmods = a\n", []), StringComparison.Ordinal);
+        Assert.Equal(["B", "a", "c"], RecompMods.Merge(["b", "x", "a"], ["a", "B", "c"], _ => false));
+    }
+
     // ---- installing -------------------------------------------------------------------------
 
     [Fact]
