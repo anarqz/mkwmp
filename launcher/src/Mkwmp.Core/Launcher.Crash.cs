@@ -148,7 +148,7 @@ public sealed partial class Launcher
         string? zip = null, problem = null, system = null;
         var onDesktop = false;
         // a first text for the zip's own copy; the final one names the zip that was written
-        var draft = crash is not null ? BugReportBuilder.CrashBody(crash, Version, null, zipName) : BugReportBuilder.BugBody(Version, null, null);
+        var draft = crash is not null ? BugReportBuilder.CrashBody(crash, Version, null, zipName, install?.DevSha256) : BugReportBuilder.BugBody(Version, null, null);
         try
         {
             // the session the report is about: the one that just ended when the crash is its own, else unknown (SaveZip takes the half day before)
@@ -165,7 +165,7 @@ public sealed partial class Launcher
         if (crash is not null)
         {
             var title = BugReportBuilder.CrashTitle(crash);
-            var text = BugReportBuilder.CrashBody(crash, Version, system, zipName);
+            var text = BugReportBuilder.CrashBody(crash, Version, system, zipName, install?.DevSha256);
             return new BugReport(true, title, BugReportBuilder.Url("crash.yml", "crash", title, "report", text), text, zip, onDesktop, problem);
         }
         var body = BugReportBuilder.BugBody(Version, system, zipName);

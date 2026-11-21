@@ -49,6 +49,7 @@ public sealed partial class Launcher
         {
             Identify = folder => target.Detect(folder)?.Version,
             IsRunning = folder => target.Detect(folder) is { } install && target.IsRunning(install),
+            KeepsExecutable = folder => target.Detect(folder)?.DevSha256 is not null,
             FreeSpace = _options.RuntimeFreeSpace ?? RuntimeInstaller.DriveFreeSpace,
             Clock = _clock,
         });
@@ -75,7 +76,9 @@ public sealed partial class Launcher
         var folder = _runtimeBusyFolder ?? (ours ? install!.Root : DefaultRuntimeFolder(manifest));
         // The pinned version in the other build, when that one does not run here (a folder brought from a
         // processor with AVX2 to one without): updated in place to this processor's build.
+        // A developer's build accepted as the pinned one (GameInstall.DevSha256) is never offered an update: it would replace it.
         var idle = install is null ? RuntimeState.NotInstalled
+            : install.DevSha256 is not null ? RuntimeState.Installed
             : ours && (install.Version != manifest.Version || !suits) ? RuntimeState.UpdateAvailable
             : RuntimeState.Installed;
         var state = _runtimeProgress?.Phase switch
@@ -104,6 +107,7 @@ public sealed partial class Launcher
             manifest.Credit.Localized())
         {
             PinnedVariant = manifest.VariantText,
+            DevSha256 = install?.DevSha256,
         };
     }
 

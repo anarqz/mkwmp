@@ -24,6 +24,21 @@ public sealed partial class Launcher
     /// <summary>The player (a developer) turned the development package on, for this run or in client.toml.</summary>
     internal static bool DevPackageOn(LauncherSettings s) => s.DevPackage || Environment.GetEnvironmentVariable(DevPackageEnv) == "1";
 
+    /// <summary>The last developer's mkw.exe the log named (once per build, not every refresh).</summary>
+    private string? _devExeLogged;
+
+    /// <summary>The <c>[dev] recomp_exe_sha256</c> this launcher last handed to <see cref="global::Mkwmp.Core.Targets.MkwRecomp.Recomp"/>.</summary>
+    private string? _devExesApplied;
+
+    /// <summary>A developer's test builds of mkw.exe (client.toml <c>[dev] recomp_exe_sha256</c>), taken as the pinned release from now on.</summary>
+    private void FollowDevExes(LauncherSettings s)
+    {
+        if (Interlocked.Exchange(ref _devExesApplied, s.DevRecompExes) != s.DevRecompExes)
+        {
+            global::Mkwmp.Core.Targets.MkwRecomp.Recomp.SetDevExes(this, s.DevRecompExes);
+        }
+    }
+
     private readonly SemaphoreSlim _integrationWork = new(1, 1);
     private IntegrationPackage? _package;
 
@@ -44,11 +59,17 @@ public sealed partial class Launcher
     {
         var s = Config.Settings;
         var target = _targets.Get(s.Target);
+        FollowDevExes(s);
         install = GameFinder.Detect(target, s.Game);
         (check, integration) = (null, null);
         if (install is null)
         {
             return;
+        }
+        if (install.DevSha256 is { } dev && Interlocked.Exchange(ref _devExeLogged, dev) != dev)
+        {
+            // Its first 16 digits: the log masks any 64-hex word as a token.
+            Note($"mkw.exe {dev[..16]}: accepted as a DEVELOPMENT build ({(global::Mkwmp.Core.Targets.MkwRecomp.Recomp.DevExeSetting)}), as {install.Version}: never updated or replaced by the launcher");
         }
         try
         {

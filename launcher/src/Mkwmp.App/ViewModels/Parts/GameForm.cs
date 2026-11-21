@@ -215,6 +215,11 @@ public sealed class GameForm : ObservableObject
         lines.Add(new StatusLine(
             install.Version is null ? "warn" : blocked ? "warn" : "good",
             S.Format("settings.game.runtime", ("name", TargetName), ("version", install.Version ?? S["settings.game.unknown"]))));
+        if (install.DevSha256 is { } dev)
+        {
+            // A developer's test build of the runtime, taken as the pinned one: said, with its hash, so it is never taken for the release.
+            lines.Add(new StatusLine("warn", S.Format("settings.game.dev_runtime", ("version", install.Version ?? "")), "mkw.exe sha256 " + dev));
+        }
         lines.Add(install.GameVersion is { } version
             ? new StatusLine(blocked ? "warn" : "good", S.Format("settings.game.version", ("version", version)))
             : new StatusLine("muted", S["settings.game.version_unknown"]));

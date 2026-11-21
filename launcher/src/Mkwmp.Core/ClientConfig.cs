@@ -155,6 +155,7 @@ internal sealed record ClientConfig
         var bg = Table(t, "background");
         var voice = Table(t, "voice");
         var ui = Table(t, "ui");
+        var dev = Table(t, "dev");
         var chosen = Bool(t, "launch_chosen", false);
         var launch = Bool(t, "launch", true) || (wine && !chosen);
         var settings = new LauncherSettings
@@ -175,6 +176,7 @@ internal sealed record ClientConfig
             ClosestServers = Bool(t, "closest_servers", true),
             Patch = Bool(t, "patch", true),
             DevPackage = Bool(t, "dev_package", false),
+            DevRecompExes = Targets.MkwRecomp.Recomp.DevHashList(DevList(dev, "recomp_exe_sha256")),
             AdultConsent = Bool(t, "adult_consent", false),
             Background = new BackgroundSettings
             {
@@ -343,6 +345,12 @@ internal sealed record ClientConfig
                 Line(b, purpose, folder);
             }
         }
+        // A developer's switches (written by hand): only ever written back, never added.
+        if (s.DevRecompExes.Length > 0)
+        {
+            b.Append("\n[dev]\n");
+            Line(b, "recomp_exe_sha256", s.DevRecompExes);
+        }
         // The servers hidden from the server list (nothing is written while there are none).
         foreach (var h in HiddenServers)
         {
@@ -416,6 +424,16 @@ internal sealed record ClientConfig
         }
         return folders;
     }
+
+    /// <summary>A string (<c>"a, b"</c>) or an array of strings, as one comma-separated string; "" when neither.</summary>
+    private static string DevList(TomlTable? t, string key) => t is not null && t.TryGetValue(key, out var v)
+        ? v switch
+        {
+            string s => s,
+            TomlArray a => string.Join(',', a.OfType<string>()),
+            _ => "",
+        }
+        : "";
 
     private static TomlTable? Table(TomlTable? t, string key) => t is not null && t.TryGetValue(key, out var v) ? v as TomlTable : null;
 

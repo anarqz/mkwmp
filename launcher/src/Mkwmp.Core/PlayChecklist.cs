@@ -210,7 +210,9 @@ public sealed class PlayChecklist : IEquatable<PlayChecklist>
             return Row(CheckId.Runtime, title, note, outdated ? CheckState.Needed : CheckState.Warning, Act(CheckActionKind.InstallRuntime, "core.check.do.retry"));
         }
         var version = runtime.InstalledVersion ?? install.Version ?? "";
-        return Row(CheckId.Runtime, title, Strings.F(runtime.Foreign ? "core.check.runtime.own" : "core.check.runtime.ok", ("name", name), ("version", version)), CheckState.Ok);
+        // A developer's test build accepted as the pinned one ([dev] recomp_exe_sha256): said, so it is never taken for the release.
+        var key = runtime.DevSha256 is not null || install.DevSha256 is not null ? "core.check.runtime.dev" : runtime.Foreign ? "core.check.runtime.own" : "core.check.runtime.ok";
+        return Row(CheckId.Runtime, title, Strings.F(key, ("name", name), ("version", version)), CheckState.Ok);
     }
 
     // ---- 2. the player's copy of the game ------------------------------------------------

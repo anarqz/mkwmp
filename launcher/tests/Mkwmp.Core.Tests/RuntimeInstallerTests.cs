@@ -902,14 +902,20 @@ public class LauncherRuntimeTests
 {
     private sealed class Home : IAsyncDisposable
     {
-        public Home(Action<RuntimeRig>? arrange = null, string game = "", Func<RuntimeRig>? files = null)
+        public Home(Action<RuntimeRig>? arrange = null, string game = "", Func<RuntimeRig>? files = null, string devExes = "")
         {
             Files = files?.Invoke() ?? new RuntimeRig();
             arrange?.Invoke(Files);
             var home = Path.Combine(Files.Root, "launcher");
             Directory.CreateDirectory(home);
             ConfigPath = Path.Combine(Files.Root, "client.toml");
-            new ClientConfig { Settings = new LauncherSettings { Name = "Ana", Pin = "123456", AutoUpdate = false, AdultConsent = true, Game = game.Length > 0 ? Path.Combine(Files.Root, game) : "" } }.Save(ConfigPath);
+            new ClientConfig
+            {
+                Settings = new LauncherSettings
+                {
+                    Name = "Ana", Pin = "123456", AutoUpdate = false, AdultConsent = true, Game = game.Length > 0 ? Path.Combine(Files.Root, game) : "", DevRecompExes = devExes,
+                },
+            }.Save(ConfigPath);
             Launcher = new Launcher(ConfigPath, home, new LauncherOptions
             {
                 Version = "1.4.0",
@@ -1078,5 +1084,193 @@ public class LauncherRuntimeTests
         Assert.Contains("checksum", view.Note, StringComparison.Ordinal);
         Assert.Equal("", home.Launcher.Settings.Game);
         Assert.False(Directory.Exists(home.Files.Folder));
+    }
+
+    // ---- a developer's test build of mkw.exe ([dev] recomp_exe_sha256) ----------------------------
+
+    /// <summary>The launcher's session log, read while it is open.</summary>
+    private static string[] LogText(Launcher l)
+    {
+        using var file = new FileStream(l.Log.Path!, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(file);
+        return reader.ReadToEnd().Split('\n');
+    }
+
+    /// <summary>An install of ours, from the pin before (its marker says so), with a developer's mkw.exe copied over the release's.</summary>
+    private static void DevInstall(RuntimeRig f, byte[] exe)
+    {
+        var mine = Path.Combine(f.Root, "mine");
+        f.ExistingInstall(exe, mine);
+        f.Put(RuntimeInstaller.Marker, """{"name":"mkw-recomp","version":"0.1.16-mkwmp","files":["mkw.exe","SDL3.dll","libopus-0.dll"]}""", mine);
+    }
+
+    [Fact]
+    public async Task A_dev_listed_test_exe_is_the_pinned_version_is_offered_no_update_and_says_so()
+    {
+        var exe = "mkw.exe of a fork test build, offered no update"u8.ToArray();
+        await using var home = new Home(f => DevInstall(f, exe), game: "mine", devExes: Updater.Sha256Hex(exe).ToUpperInvariant());
+        var l = home.Launcher;
+
+        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, Updater.Sha256Hex(exe)), (l.Runtime.State, l.Runtime.InstalledVersion, l.Runtime.DevSha256));
+        Assert.Equal((RuntimeRig.Pinned, Updater.Sha256Hex(exe)), (l.Game.Install?.Version, l.Game.Install?.DevSha256));
+        Assert.NotEqual(TargetStatus.Unsupported, l.Game.Check?.Status);
+        var row = l.Checklist.Find(CheckId.Runtime)!;
+        Assert.Equal(CheckState.Ok, row.State);
+        Assert.Contains("Development mkw-recomp", row.Status, StringComparison.Ordinal);
+        Assert.Contains(LogText(l), line => line.Contains($"mkw.exe {Updater.Sha256Hex(exe)[..16]}: accepted as a DEVELOPMENT build (dev recomp_exe_sha256)", StringComparison.Ordinal));
+        Assert.Empty(home.Files.Host.Requests);
+    }
+
+    [Fact]
+    public async Task An_update_or_repair_of_the_install_never_replaces_a_dev_listed_exe()
+    {
+        var exe = "mkw.exe of a fork test build, kept by an update"u8.ToArray();
+        await using var home = new Home(f => DevInstall(f, exe), game: "mine", devExes: Updater.Sha256Hex(exe));
+        var mine = Path.Combine(home.Files.Root, "mine");
+
+        // Asked for in as many words (the window never does: no update is offered): every other file is the pinned one, mkw.exe stays.
+        await home.Launcher.InstallRuntimeAsync(null, default);
+
+        var view = home.Launcher.Runtime;
+        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, Updater.Sha256Hex(exe)), (view.State, view.InstalledVersion, view.DevSha256));
+        Assert.Equal(exe, File.ReadAllBytes(Path.Combine(mine, "mkw.exe")));
+        Assert.Equal("new sdl", File.ReadAllText(Path.Combine(mine, "SDL3.dll")));
+        Assert.Equal(RuntimeRig.Pinned, RuntimeInstaller.ManagedVersion(mine));
+        Assert.Equal("save", File.ReadAllText(Path.Combine(mine, "profile", "save.bin")));
+        Assert.False(File.Exists(Path.Combine(mine, RuntimeInstaller.BackupFolder, "mkw.exe")));
+
+        // Again: the marker is the pinned one now, so nothing is even downloaded.
+        var requests = home.Files.Host.Requests.Count;
+        await home.Launcher.InstallRuntimeAsync(null, default);
+        Assert.Equal(requests, home.Files.Host.Requests.Count);
+        Assert.Equal(exe, File.ReadAllBytes(Path.Combine(mine, "mkw.exe")));
+    }
+
+    [Fact]
+    public async Task Without_AVX2_a_dev_listed_exe_is_not_taken_for_the_other_build()
+    {
+        var exe = "mkw.exe of a fork test build, on a processor without AVX2"u8.ToArray();
+        await using var home = new Home(f => DevInstall(f, exe), game: "mine", files: RuntimeRig.NoAvx2Rig, devExes: Updater.Sha256Hex(exe));
+        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned), (home.Launcher.Runtime.State, home.Launcher.Runtime.InstalledVersion));
+    }
+
+    [Fact]
+    public async Task Without_the_dev_setting_the_same_exe_is_unknown_and_blocks_play()
+    {
+        var exe = "mkw.exe of a fork test build, not listed"u8.ToArray();
+        await using var home = new Home(f => DevInstall(f, exe), game: "mine");
+        var l = home.Launcher;
+        Assert.Null(l.Game.Install?.Version);
+        Assert.Null(l.Game.Install?.DevSha256);
+        Assert.Equal(TargetStatus.Unsupported, l.Game.Check?.Status);
+        Assert.Equal(CheckState.Needed, l.Checklist.Find(CheckId.Runtime)!.State);
+        Assert.DoesNotContain(LogText(l), line => line.Contains("DEVELOPMENT build", StringComparison.Ordinal));
+    }
+}
+
+/// <summary>The dev setting itself: client.toml, the environment, and what a listed mkw.exe is taken for.</summary>
+public class DevRecompExeTests
+{
+    [Fact]
+    public void Client_toml_keeps_the_list_under_dev_and_writes_nothing_without_one()
+    {
+        var (a, b) = (new string('a', 64), new string('B', 64));
+        var parsed = ClientConfig.Parse($"[dev]\nrecomp_exe_sha256 = \"{a}, {b} ,not-a-hash\"\n").Settings;
+        Assert.Equal($"{a},{b.ToLowerInvariant()}", parsed.DevRecompExes);
+        Assert.Equal($"{a},{b.ToLowerInvariant()}", ClientConfig.Parse($"[dev]\nrecomp_exe_sha256 = [\"{a}\", \"{b}\"]\n").Settings.DevRecompExes);
+        var toml = new ClientConfig { Settings = parsed }.ToToml();
+        Assert.Contains($"[dev]\nrecomp_exe_sha256 = \"{a},{b.ToLowerInvariant()}\"\n", toml, StringComparison.Ordinal);
+        Assert.Equal(parsed.DevRecompExes, ClientConfig.Parse(toml).Settings.DevRecompExes);
+        Assert.Equal("", ClientConfig.Parse("").Settings.DevRecompExes);
+        Assert.DoesNotContain("[dev]", ClientConfig.Parse("").ToToml(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_listed_exe_is_the_pinned_release_with_its_mod_and_game_id_and_without_the_list_unknown()
+    {
+        var exe = "mkw.exe of a fork test build, by identify"u8.ToArray();
+        var hash = Updater.Sha256Hex(exe);
+        Assert.Equal(RecompKind.Unknown, Recomp.IdentifyBytes(exe).Kind);
+
+        var owner = new object();
+        Recomp.SetDevExes(owner, hash);
+        try
+        {
+            var id = Recomp.IdentifyBytes(exe);
+            Assert.Equal((RecompKind.Supported, RecompRuntime.Pinned.Version, hash), (id.Kind, id.Version, id.DevSha256));
+            Assert.Contains(id.Version, Recomp.ModRuntimes);
+            Assert.Null(Recomp.RebuildProblemFor(id, "c9bbcb75a9ac9a49")); // the pinned release's game id
+            Assert.Contains("DEVELOPMENT build", id.ToString(), StringComparison.Ordinal);
+
+            // A release listed by mistake stays the release it is.
+            var release = Recomp.Known.First(k => k.Version == "0.1.16-mkwmp");
+            Recomp.SetDevExes(owner, release.Sha256);
+            Assert.Null(Recomp.IdentifyHash(release.Sha256).DevSha256);
+            Assert.Equal("0.1.16-mkwmp", Recomp.IdentifyHash(release.Sha256).Version);
+        }
+        finally
+        {
+            Recomp.SetDevExes(owner, "");
+        }
+        Assert.Equal(RecompKind.Unknown, Recomp.IdentifyBytes(exe).Kind);
+    }
+
+    [Fact]
+    public void The_environment_lists_builds_too()
+    {
+        var exe = "mkw.exe of a fork test build, by environment"u8.ToArray();
+        var hash = Updater.Sha256Hex(exe);
+        var before = Environment.GetEnvironmentVariable(Recomp.DevExeEnv);
+        Environment.SetEnvironmentVariable(Recomp.DevExeEnv, $"{new string('c', 64)},{hash.ToUpperInvariant()}");
+        try
+        {
+            Assert.Equal((RecompKind.Supported, RecompRuntime.Pinned.Version, hash), (Recomp.IdentifyBytes(exe).Kind, Recomp.IdentifyBytes(exe).Version, Recomp.IdentifyBytes(exe).DevSha256));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(Recomp.DevExeEnv, before);
+        }
+    }
+
+    [Fact]
+    public async Task The_installer_leaves_a_kept_exe_alone_and_replaces_it_otherwise()
+    {
+        var exe = "mkw.exe of a fork test build, by the installer"u8.ToArray();
+        var owner = new object();
+        Recomp.SetDevExes(owner, Updater.Sha256Hex(exe));
+        try
+        {
+            using var rig = new RuntimeRig();
+            rig.ExistingInstall(exe);
+            var target = new MkwRecompTarget("1.4.0");
+            var installer = new RuntimeInstaller(rig.Manifest, rig.Http, "mkwmp-test", rig.Cache, new RuntimeHost
+            {
+                Identify = f => target.Detect(f)?.Version,
+                KeepsExecutable = f => target.Detect(f)?.DevSha256 is not null,
+                FreeSpace = _ => null,
+            });
+            var result = await installer.InstallAsync(rig.Folder, null, null, default);
+            Assert.Equal(exe, File.ReadAllBytes(rig.At("mkw.exe")));
+            Assert.Equal("new sdl", rig.Read("SDL3.dll"));
+            Assert.Equal(RuntimeRig.Pinned, result.Version);
+
+            // Taken off the list: an exe no release has, in an install of ours, so a repair puts the release's back.
+            Recomp.SetDevExes(owner, "");
+            await rig.Install();
+            Assert.Equal(RuntimeRig.NewExe, File.ReadAllBytes(rig.At("mkw.exe")));
+        }
+        finally
+        {
+            Recomp.SetDevExes(owner, "");
+        }
+    }
+
+    [Fact]
+    public void A_crash_report_says_the_runtime_is_a_development_build()
+    {
+        var crash = new Diagnostics.CrashIncident("c1", DateTimeOffset.UnixEpoch, null, 0xC0000005, null);
+        var text = Diagnostics.BugReportBuilder.CrashBody(crash, "1.4.2", null, null, new string('d', 64));
+        Assert.Contains($"DEVELOPMENT build, mkw.exe {new string('d', 64)} (dev recomp_exe_sha256)", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("DEVELOPMENT", Diagnostics.BugReportBuilder.CrashBody(crash, "1.4.2", null, null), StringComparison.Ordinal);
     }
 }

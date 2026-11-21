@@ -706,3 +706,38 @@ update's `--next` mode, which the launcher does not use.
 To test live on the Deck, in this order, before anything else of stage 1 is polished: the driver's command from a
 terminal inside the launcher's prefix up to `done`; the `shaders` step alone (delete `<game>\sm86\`); `warm` with the
 launcher's window in front; a second run that prints only `skip`.
+
+## 6. Testing a fork build
+
+The launcher runs only the mkw.exe builds it knows by SHA-256 (`Recomp.Known`). Any other one is "unknown mkw-recomp",
+PLAY stays off, and an install of ours is offered the pinned release again. To try a build of the fork (its CI zip, or
+a local build) on a device without changing the launcher:
+
+1. Install the pinned release with the launcher as usual, and let its setup finish once.
+2. Copy **only `mkw.exe`** from the test build over the one in that folder. Keep everything else, `setup\` above all:
+   its sources are hashed into the game id (1.5), so a test build runs on the game the release set up.
+3. Take its SHA-256: `(Get-FileHash mkw.exe -Algorithm SHA256).Hash.ToLower()` on Windows, `sha256sum mkw.exe` on Linux.
+4. Add it to `client.toml` beside the launcher (more than one: comma-separated; a TOML array works too):
+
+   ```toml
+   [dev]
+   recomp_exe_sha256 = "<64 hex digits>"
+   ```
+
+   or, for one run, set `MKWMP_DEV_RECOMP_SHA256=<hex>[,<hex>]` in the launcher's environment.
+5. Start the game from the launcher (PLAY), never from mkw.exe directly: the mod, the session file and the setup gate
+   are the launcher's.
+
+A listed build is taken for the pinned version (`RecompRuntime.Pinned`, e.g. 0.1.16-mkwmp.1), on either processor
+build: its game id, the mod, the game settings and the setup gate are the release's. A release's own hash stays that
+release even when listed. It is said everywhere, so it is never taken for the release:
+
+- the log: `mkw.exe <first 16 hex>: accepted as a DEVELOPMENT build (dev recomp_exe_sha256)` (the log masks a whole
+  64-hex word as a token);
+- "Development mkw-recomp" on the checklist's mkw-recomp row and in Settings › Game, with the full hash;
+- `system.txt` of a report (`Supported("…") DEVELOPMENT build, mkw.exe <hash>`) and the crash issue's `mkw-recomp` row.
+
+The launcher never replaces it: no update is offered for it, and an update or repair of the install (`RuntimeInstaller`)
+puts every other file of the pinned release in place and leaves `mkw.exe` as it is. To go back, remove the hash: the
+build is unknown again, and the checklist's INSTALL puts the release's mkw.exe back (or copy it back by hand).
+The launcher writes the list back when it saves `client.toml`, and never adds one.
