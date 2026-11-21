@@ -20,7 +20,8 @@
   const setTheme = (t, save) => {
     root.dataset.theme = t;
     if (save) try { localStorage.setItem("mkwmp-theme", t); } catch {}
-    $$("img[data-shot]").forEach((img) => { img.src = `${base}assets/launcher/${img.dataset.shot}-${t}.webp`; });
+    const shots = root.dataset.shots || `${base}assets/launcher/`;
+    $$("img[data-shot]").forEach((img) => { img.src = `${shots}${img.dataset.shot}-${t}.webp`; });
     const b = $("#theme"); if (b) b.setAttribute("aria-label", t === "dark" ? T.themeLight : T.themeDark);
   };
   setTheme(stored || (media.matches ? "dark" : "light"), false);

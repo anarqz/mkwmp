@@ -91,7 +91,9 @@
     "lead": "Qualquer pessoa pode hospedar um servidor. Os públicos aparecem na lista de servidores, e o launcher mostra o mais próximo primeiro. Esta lista é ao vivo.",
     "section": "Agora",
     "note": "O navegador só consegue medir servidores com HTTPS; o launcher mede todos. Quanto menor, melhor: verde abaixo de 80 ms, amarelo abaixo de 160 ms.",
-    "noscript": "A lista ao vivo precisa de JavaScript. O launcher mostra a mesma lista."
+    "noscript": "A lista ao vivo precisa de JavaScript. O launcher mostra a mesma lista.",
+    "shot_alt": "A tela Escolha um Servidor do launcher: servidores com barras de latência, vagas e fila.",
+    "shot_cap": "A mesma lista no launcher, onde todo servidor é medido."
   },
   "friends": {
     "title": "Amigos, voz e câmera",

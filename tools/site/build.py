@@ -10,6 +10,7 @@ Templates (tools/site/templates/*.html) use:
     {{=lang}}        the page's language (en, pt-BR)
     {{=alt_href}}    the same page in the other language
     {{=alt_label}}   that language's short name
+    {{=shots}}       the folder of the launcher screenshots in this language
     {{=i18n_js}}     the strings site.js needs, as JSON
 
 The output is static HTML: GitHub Pages serves site/ as it is (no build step there). Run this
@@ -51,6 +52,8 @@ def build(page: str, lang: str, strings: dict, other: str) -> str:
         "lang": lang,
         "alt_href": alt_href or "./",
         "alt_label": alt_label,
+        # the launcher screenshots in this language (pt-BR has its own set)
+        "shots": "assets/launcher/" + ("pt-BR/" if lang == "pt-BR" else ""),
         "i18n_js": json.dumps({k: strings["js"][k] for k in JS_KEYS}, ensure_ascii=False),
     }
     text = (HERE / "templates" / page).read_text()

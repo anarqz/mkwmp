@@ -91,7 +91,9 @@
     "lead": "Anyone can host a server. Public ones list themselves in the server directory, and the launcher shows them nearest first. This list is live.",
     "section": "Right now",
     "note": "Your browser can only time servers that use HTTPS; the launcher times every one. Lower is better: green under 80 ms, yellow under 160 ms.",
-    "noscript": "The live list needs JavaScript. The launcher shows the same list."
+    "noscript": "The live list needs JavaScript. The launcher shows the same list.",
+    "shot_alt": "The launcher's Choose a Server screen: servers with latency bars, seats and queue.",
+    "shot_cap": "The same list in the launcher, where every server is timed."
   },
   "friends": {
     "title": "Friends, voice and camera",

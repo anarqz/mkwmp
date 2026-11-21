@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{=lang}}" data-root="{{=root}}" data-theme="dark" data-empty-art="{{=root}}assets/art/empty-servers.webp">
+<html lang="{{=lang}}" data-root="{{=root}}" data-shots="{{=root}}{{=shots}}" data-theme="dark" data-empty-art="{{=root}}assets/art/empty-servers.webp">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -19,7 +19,7 @@
 <link rel="apple-touch-icon" href="{{=root}}assets/art/apple-touch-icon.png">
 <link rel="alternate" hreflang="en" href="https://anarqz.github.io/mkwmp/">
 <link rel="alternate" hreflang="pt-BR" href="https://anarqz.github.io/mkwmp/pt-br/">
-<link rel="preload" href="{{=root}}assets/launcher/fonts/Nunito-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="{{=root}}{{=shots}}fonts/Nunito-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="{{=root}}assets/site.css">
 <script>window.I18N = {{=i18n_js}};
 (function () { var t = (location.search.match(/[?&]theme=(light|dark)/) || [])[1] || null; if (!t) try { t = localStorage.getItem("mkwmp-theme"); } catch (e) {}
@@ -67,7 +67,7 @@
   </section>
 
   <section class="wrap showcase">
-    <figure><img class="shot" data-shot="home" src="{{=root}}assets/launcher/home-dark.webp" alt="{{hero.shot_alt}}" width="1920" height="1080"></figure>
+    <figure><img class="shot" data-shot="home" src="{{=root}}{{=shots}}home-dark.webp" alt="{{hero.shot_alt}}" width="1920" height="1080"></figure>
   </section>
 
   <div class="wrap tiles" role="list">
@@ -98,7 +98,7 @@
         <div class="row">{{i:package}}<span class="row__body"><span class="row__label">{{setup.s4}}</span><span class="row__caption">{{setup.s4c}}</span></span></div>
         <div class="row">{{i:folder}}<span class="row__body"><span class="row__label">{{setup.s5}}</span><span class="row__caption">{{setup.s5c}}</span></span></div>
       </div>
-      <figure><img class="shot" data-shot="game-setup-progress" src="{{=root}}assets/launcher/game-setup-progress-dark.webp" alt="{{setup.shot_alt}}" width="1920" height="1080" loading="lazy"><figcaption>{{setup.shot_cap}}</figcaption></figure>
+      <figure><img class="shot" data-shot="game-setup-progress" src="{{=root}}{{=shots}}game-setup-progress-dark.webp" alt="{{setup.shot_alt}}" width="1920" height="1080" loading="lazy"><figcaption>{{setup.shot_cap}}</figcaption></figure>
     </div>
   </section>
 
@@ -112,7 +112,7 @@
         <div class="row">{{i:lock}}<span class="row__body"><span class="row__label">{{offline.r3}}</span><span class="row__caption">{{offline.r3c}}</span></span></div>
         <div class="row">{{i:refresh}}<span class="row__body"><span class="row__label">{{offline.r4}}</span><span class="row__caption">{{offline.r4c}}</span></span></div>
       </div>
-      <figure><img class="shot" data-shot="welcome-play-online" src="{{=root}}assets/launcher/welcome-play-online-dark.webp" alt="{{offline.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
+      <figure><img class="shot" data-shot="welcome-play-online" src="{{=root}}{{=shots}}welcome-play-online-dark.webp" alt="{{offline.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
     </div>
   </section>
 
@@ -124,6 +124,7 @@
         <div class="section"><span>{{servers.section}}</span></div>
         <p class="rows-note" id="servers-count"></p>
         <p class="rows-note">{{servers.note}}</p>
+        <figure style="margin-top: calc(40 * var(--u))"><img class="shot" data-shot="welcome-server" src="{{=root}}{{=shots}}welcome-server-dark.webp" alt="{{servers.shot_alt}}" width="1920" height="1080" loading="lazy"><figcaption>{{servers.shot_cap}}</figcaption></figure>
       </div>
       <div class="servers" id="server-list" aria-live="polite"><noscript><p class="servers__empty">{{servers.noscript}}</p></noscript></div>
     </div>
@@ -139,7 +140,7 @@
         <div class="row">{{i:camera}}<span class="row__body"><span class="row__label">{{friends.r3}}</span><span class="row__caption">{{friends.r3c}}</span></span></div>
         <div class="row">{{i:shield}}<span class="row__body"><span class="row__label">{{friends.r4}}</span><span class="row__caption">{{friends.r4c}}</span></span></div>
       </div>
-      <figure><img class="shot" data-shot="home-friends" src="{{=root}}assets/launcher/home-friends-dark.webp" alt="{{friends.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
+      <figure><img class="shot" data-shot="home-friends" src="{{=root}}{{=shots}}home-friends-dark.webp" alt="{{friends.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
     </div>
   </section>
 
@@ -152,7 +153,7 @@
         <div class="row">{{i:friends}}<span class="row__body"><span class="row__label">{{overlay.r2}}</span><span class="row__caption">{{overlay.r2c}}</span></span></div>
         <p class="rows-note">{{overlay.note}}</p>
       </div>
-      <figure><img class="shot" data-shot="overlay" src="{{=root}}assets/launcher/overlay-dark.webp" alt="{{overlay.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
+      <figure><img class="shot" data-shot="overlay" src="{{=root}}{{=shots}}overlay-dark.webp" alt="{{overlay.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
     </div>
   </section>
 
@@ -167,7 +168,7 @@
         <div class="row">{{i:settings}}<span class="row__body"><span class="row__label">{{mods.r3}}</span><span class="row__caption">{{mods.r3c}}</span></span></div>
         <div class="row">{{i:shield}}<span class="row__body"><span class="row__label">{{mods.r4}}</span><span class="row__caption">{{mods.r4c}}</span></span></div>
       </div>
-      <figure><img class="shot" data-shot="mods-gamebanana" src="{{=root}}assets/launcher/mods-gamebanana-dark.webp" alt="{{mods.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
+      <figure><img class="shot" data-shot="mods-gamebanana" src="{{=root}}{{=shots}}mods-gamebanana-dark.webp" alt="{{mods.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
     </div>
   </section>
 
@@ -187,7 +188,7 @@
         <div class="row">{{i:moon}}<span class="row__body"><span class="row__label">{{langs.r2}}</span><span class="row__caption">{{langs.r2c}}</span></span></div>
         <div class="row">{{i:refresh}}<span class="row__body"><span class="row__label">{{langs.r3}}</span><span class="row__caption">{{langs.r3c}}</span></span></div>
       </div>
-      <figure><img class="shot" data-shot="settings-appearance" src="{{=root}}assets/launcher/settings-appearance-dark.webp" alt="{{langs.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
+      <figure><img class="shot" data-shot="settings-appearance" src="{{=root}}{{=shots}}settings-appearance-dark.webp" alt="{{langs.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
     </div>
   </section>
 
@@ -203,7 +204,7 @@
         <div class="row">{{i:refresh}}<span class="row__body"><span class="row__label">{{deck.r3}}</span><span class="row__caption">{{deck.r3c}}</span></span></div>
         <div class="row">{{i:settings}}<span class="row__body"><span class="row__label">{{deck.r4}}</span><span class="row__caption">{{deck.r4c}}</span></span></div>
       </div>
-      <figure><img class="shot deck" data-shot="deck-home" src="{{=root}}assets/launcher/deck-home-dark.webp" alt="{{deck.shot_alt}}" width="1280" height="800" loading="lazy"><figcaption>{{deck.shot_cap}}</figcaption></figure>
+      <figure><img class="shot deck" data-shot="deck-home" src="{{=root}}{{=shots}}deck-home-dark.webp" alt="{{deck.shot_alt}}" width="1280" height="800" loading="lazy"><figcaption>{{deck.shot_cap}}</figcaption></figure>
     </div>
   </section>
 
@@ -240,7 +241,7 @@
         <div class="btns"><button class="btn btn--primary focusable" type="button" data-policy>{{i:shield}}{{privacy.read}}</button></div>
         <p class="rows-note">{{privacy.note}}</p>
       </div>
-      <figure><img class="shot" data-shot="welcome-privacy" src="{{=root}}assets/launcher/welcome-privacy-dark.webp" alt="{{privacy.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
+      <figure><img class="shot" data-shot="welcome-privacy" src="{{=root}}{{=shots}}welcome-privacy-dark.webp" alt="{{privacy.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
     </div>
   </section>
 
