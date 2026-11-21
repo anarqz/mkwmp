@@ -197,6 +197,10 @@ static void test_chatroom(void) {
     CHECK(r.n == 2 && r.friends == 2 && r.id == 0 && r.member[0].account == 8 && r.member[0].camera && r.member[1].account == 7);
     CHECK(!chatroom_installed() && !chatroom_get(&r) && r.n == 0 && !chatroom_has(7));   // no room object yet
     CHECK(camera_in_room(0x7701, 0) && camera_in_room(1, 1) && camera_in_room(0, 1) && !camera_in_room(0, 0));
+    // The webcam opens only in a friend room, with the chat on, the camera on and the game streaming it: never for the
+    // menus' prompt (room 0), a matchmade race (room 0) or single player (not chatting).
+    CHECK(camera_capture(1, 1, 0x7701, 1));
+    CHECK(!camera_capture(1, 1, 0, 1) && !camera_capture(0, 1, 0x7701, 1) && !camera_capture(1, 0, 0x7701, 1) && !camera_capture(1, 1, 0x7701, 0));
 }
 // The game's own loop over one camera (1.8.0, 0x2996af0 and 0x2996c50): poll slot[next]'s sync; when done,
 // current = next, next advances, and the next image is asked for.

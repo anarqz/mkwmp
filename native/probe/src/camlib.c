@@ -141,6 +141,14 @@ void camlib_want(int on, const char *device, int mirror, int width, int height, 
     plat_unlock(&g_lock);
 }
 
+void camlib_stop_now(void) {
+    plat_lock(&g_lock);
+    g_want.on = 0;
+    g_shown_at = 0;
+    plat_unlock(&g_lock);
+    if (plat_load(&g_loaded) && g_lib.stop) g_lib.stop();   // the webcam closed now, not at the worker's next pass
+}
+
 void camlib_show_devices(void) {
     plat_lock(&g_lock);
     g_shown_at = plat_ms();

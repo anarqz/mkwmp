@@ -33,6 +33,8 @@ int voice_parse_settings(int http_status, const char *body, VoiceSettings *out);
 void voice_online(const char *lobby_host);
 // The player left online.
 void voice_offline(void);
+// The game is closing: offline, and the relay left now (the engine closes the microphone and the output).
+void voice_shutdown(void);
 
 // For the game's menus (any thread, never blocks): is this account muted by the player; is it talking now.
 int voice_is_muted(uint64_t account);

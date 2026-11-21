@@ -112,9 +112,14 @@ void camera_settings_read(int (*setting_get)(const char *key, char *out, size_t 
 // 1 while the game is told a chat runs.
 int camera_chatting(const CameraSettings *s, int online);
 // 1 while there is a camera at all: in a friend room (room_id != 0; the loopback's made-up room counts), or while the
-// game's "Use the camera?" prompt is held open before the sign-in (prompt: the local camera only, nothing leaves).
+// game's "Use the camera?" prompt is held open before the sign-in (prompt: the player's own camera flag only; the
+// webcam itself stays closed until a friend room, camera_capture).
 // 0 in a matchmade race or battle and in the menus: nobody is listed, the player's own camera is off.
 int camera_in_room(uint64_t room_id, int prompt);
+// 1 when the webcam is opened: the chat runs, the player's camera is on, the player is in a friend room (room_id != 0)
+// and the game streams the local camera. Never for the prompt alone (it gets no picture: the device stays closed in
+// the menus), never in a matchmade race or battle or single player.
+int camera_capture(int chatting, int camera_on, uint64_t room_id, int streaming);
 
 // The chat held on before the player is online: the game's "Use the camera?" prompt comes when Online Play is chosen,
 // before the sign-in, accepts Camera On only with a chat running, and forgets the answer when the chat ends. at:

@@ -608,6 +608,10 @@ MKWMP_VOICE_API void mkwmp_voice_room_mode(int on) {
     g.control_serial++; // self bit 3 from the next control up on, or never again
     g.room_serial++;
     g.relay = 0;
+    // out of any room until the relay's next state says which: without this, a room mode turned on while subscribed
+    // would run the engine (open the microphone) on the old state until the relay's version is known again
+    g.subscribed = false;
+    g.state = {};
     Logf("voice: room mode %s", on ? "on: voice and the camera in a friend room only" : "off");
 }
 

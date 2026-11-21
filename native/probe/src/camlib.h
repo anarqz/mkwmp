@@ -22,6 +22,8 @@ enum {
 void camlib_set_dir(const char *dir);
 // Capture from this device ("" the first one), mirrored or not, or stop (on 0). width x height RGBA comes out.
 void camlib_want(int on, const char *device, int mirror, int width, int height, int fps);
+// The game is closing: no capture wanted, and the webcam closed now (not at the worker's next pass).
+void camlib_stop_now(void);
 // The settings are on screen: load the library and keep the device list fresh for the next seconds.
 void camlib_show_devices(void);
 // {"devices":[{"id","name"}]} as last listed; 0 while there is none yet.

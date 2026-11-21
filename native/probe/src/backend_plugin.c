@@ -26,6 +26,7 @@
 
 #include "breadcrumbs.h"
 #include "camera.h"
+#include "camlib.h"
 #include "cameratab.h"
 #include "config.h"
 #include "crash.h"
@@ -132,6 +133,9 @@ MKW_PLUGIN_EXPORT void mkw_mod_page(const MkwPage *p);   // modpage.c: also the 
 
 static void game_exiting(void *user) {
     (void)user;
+    // the devices closed before the process goes: the webcam, then the microphone and output (the relay is left)
+    camlib_stop_now();
+    voice_shutdown();
     seatd_stop();
 }
 

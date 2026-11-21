@@ -42,6 +42,8 @@ int camera_chatting(const CameraSettings *s, int online) { return online && s->c
 
 int camera_in_room(uint64_t room_id, int prompt) { return room_id != 0 || prompt; }
 
+int camera_capture(int chatting, int camera_on, uint64_t room_id, int streaming) { return chatting && camera_on && room_id != 0 && streaming; }
+
 int camera_hold(CameraHold *h, int online, uint64_t now) {
     if (!h->at) return 0;
     if (online) {
@@ -1030,7 +1032,8 @@ void camera_refresh(void) {
     // player's own camera flag is down, nothing is captured or sent. IsChatting itself goes on while the player is
     // online: the game drops the answer to its "Use the camera?" prompt, given at Online Play before any room, the
     // moment the chat ends (setup_watch), and would then draw and send no face in the friend room either. Before the
-    // sign-in, while that prompt is held open, the local camera is on for it (nothing leaves: there is no relay yet).
+    // sign-in, while that prompt is held open, the chat answers for it, but the webcam stays closed: it is opened only
+    // in a friend room (camera_capture).
     CameraMember m[CAMERA_MEMBERS_MAX + 1];
     int n = 0;
     chatroom_refresh();
@@ -1068,7 +1071,9 @@ void camera_refresh(void) {
         memcpy(g_room, room, sizeof room);
         g_room_dirty = 1;
     }
-    int capture = chatting && s.camera && g_local_streaming && !g_env_pattern && strcmp(s.device, CAMERA_DEVICE_TEST);
+    // The webcam is opened only in a friend room (the relay's room id), while the game streams the local camera: never
+    // for the game's prompt in the menus, a matchmade race or battle, or single player (camera_capture, camera.h).
+    int capture = camera_capture(chatting, s.camera, chat.id, g_local_streaming) && !g_env_pattern && strcmp(s.device, CAMERA_DEVICE_TEST);
     plat_unlock(&g_lock);
     camlib_want(capture, s.device, s.mirror, CAMERA_W, CAMERA_H, CAPTURE_FPS);
 
@@ -1080,7 +1085,7 @@ void camera_refresh(void) {
     int where = chat.id ? 2 : in_room;
     if (chatting && where != where_was) {
         mkwmp_log("camera: %s", where == 2 ? "in a friend room: the camera is shared with the player's mutual friends there, at most four faces" :
-                  where ? "the game's camera prompt: the local camera is on for it (nothing is sent)" :
+                  where ? "the game's camera prompt: answered, the webcam stays closed until a friend room" :
                           "in no friend room (a matchmade race or battle, or the menus): no camera, the player's or anyone's");
         where_was = where;
     }

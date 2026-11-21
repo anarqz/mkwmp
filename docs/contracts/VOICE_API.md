@@ -131,6 +131,29 @@ Voice and camera work only in **friend rooms**, the private rooms players create
 ONLINE → FRIENDS. Joining one is the player's choice to talk to the people in it. Matchmade races
 and battles have no voice and no camera.
 
+**When the devices are open (1.4.1).** The microphone, the audio output and the webcam are opened
+only in a friend room, and closed when the player leaves it:
+
+- **Microphone and output**: the voice engine (`mkwmp-voice.dll`) runs only while voice is on in
+  the launcher's settings, the probe is online, and the relay's state down says the player is in a
+  room with voice (`room` bit 0; with a ver-2 relay in room mode, also a non-zero `room_id`). The
+  relay gives that only in a friend room past Gathering. It stops at once on leaving the room, when
+  the relay is silent for 10 s, when voice is turned off, on leaving online play, and when the game
+  closes. Turning room mode on drops the old state, so no stale "in a room" opens the microphone.
+- **Webcam**: opened only when the player's camera is on, the game streams the local camera, and
+  the player is in a friend room (the relay's `room_id`). The game's "Use the camera?" prompt at
+  Online Play is answered without opening it. Closed within about 0.75 s of leaving the room or
+  going offline, and at once when the game closes.
+- **Never**: at game start, in the menus, in a matchmade lobby or race, or in single player.
+  `mkwmp-voice.dll` is not even loaded before Online Play.
+- **Device lists** (names only, nothing opened): the game sends its audio devices to the launcher
+  only while the engine runs in a voice room (first then, then every 30 s). The cameras are listed
+  only while the mod's Camera settings are on screen.
+- **The launcher** never opens a voice or camera session. Its mic test opens the microphone only
+  while the test switch is on, and its camera test only while the Test Camera page is shown. Both
+  stop when the page is left, the window loses the focus, or the overlay goes back to the game.
+  Devices are listed only on Voice & Camera, and the cameras only when one is picked or tested.
+
 - **Voice: everyone in the room hears everyone** (rule 3.3: mutes and deafen as before). The
   room is the friend room the lobby has the player in (§1), nothing else. A released client
   (lobby-wide, v1) in a friend room hears and is heard like everyone else; in a matchmade lobby

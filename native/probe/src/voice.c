@@ -313,9 +313,11 @@ static void voice_thread(void *unused) {
             last_ticket[0] = 0;
         }
 
-        // the devices this process sees, for the launcher's settings pane: at start and every 30 s when they change
+        // the devices this process sees, for the launcher's settings pane: only while the voice engine already runs in
+        // a friend room's voice room (its devices are open then anyway), first when it starts and every 30 s after;
+        // never in the menus, a matchmade lobby or single player
         uint64_t now = plat_ms();
-        if (now - devices_at > 30000 || !devices_at) {
+        if (online && voice_active() && (now - devices_at > 30000 || !devices_at)) {
             devices_at = now;
             static char devices[8192];
             if (g_dll.devices_json(devices, sizeof devices) > 0 && strcmp(devices, last_devices)) {
@@ -350,6 +352,12 @@ void voice_offline(void) {
     if (g_online) mkwmp_event("voice: offline");
     g_online = 0;
     plat_unlock(&g_lock);
+}
+
+void voice_shutdown(void) {
+    voice_offline();
+    // at once, not at the voice thread's next pass: the relay is left and the engine (microphone, output) stops
+    if (g_dll.dll && g_dll.disconnect) g_dll.disconnect();
 }
 
 int voice_is_muted(uint64_t account) {
