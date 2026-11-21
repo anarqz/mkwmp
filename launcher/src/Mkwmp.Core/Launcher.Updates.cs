@@ -272,7 +272,7 @@ public sealed partial class Launcher
             release = _availableRelease;
         }
         if (_staged is { } ready && (release is null || release.Version?.ToString() == ready.Version)
-            && File.Exists(Path.Combine(UpdatePlan.TransactionFolder(ready.Root, ready.Version), ready.Kind == UpdatePlan.KindZip ? UpdatePlan.ZipName : UpdatePlan.ExeName)))
+            && File.Exists(Path.Combine(UpdatePlan.TransactionFolder(ready.Root, ready.Version), UpdatePlan.ZipName)))
         {
             return ready;
         }

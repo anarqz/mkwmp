@@ -34,7 +34,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The plan, the verified swap and its rollback: shared with mkwmp-updater.exe (docs/UPDATES.md). -->
+    <!-- The plan, the verified swap and its rollback: shared with updater.exe (docs/UPDATES.md). -->
     <ProjectReference Include="..\Mkwmp.Update\Mkwmp.Update.csproj" />
   </ItemGroup>
 

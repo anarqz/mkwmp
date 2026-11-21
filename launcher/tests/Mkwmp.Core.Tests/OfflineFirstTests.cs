@@ -125,9 +125,9 @@ public class OfflineFirstTests
     [Fact]
     public void The_offline_session_file_names_the_launcher_and_nothing_else()
     {
-        var text = Probe.SessionText(SessionFile.Offline("127.0.0.1:47820", "tok", "C:/MKWMP/mkwmp-launcher.exe"));
+        var text = Probe.SessionText(SessionFile.Offline("127.0.0.1:47820", "tok", "C:/MKWMP/mkwmp.exe"));
         var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Where(l => !l.StartsWith('#')).ToList();
-        Assert.Equal(["launcher = \"127.0.0.1:47820\"", "launcher_token = \"tok\"", "launcher_exe = \"C:/MKWMP/mkwmp-launcher.exe\"", "voice_port = 0"], lines);
+        Assert.Equal(["launcher = \"127.0.0.1:47820\"", "launcher_token = \"tok\"", "launcher_exe = \"C:/MKWMP/mkwmp.exe\"", "voice_port = 0"], lines);
         // An online one is as before.
         var online = Probe.SessionText(new SessionFile("lobby:8905", "Ana", "127.0.0.1:47820", "tok", 8907, "mkw1.t", 1, null));
         Assert.Contains("server = \"lobby:8905\"\nname = \"Ana\"\n", online, StringComparison.Ordinal);

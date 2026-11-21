@@ -9,7 +9,7 @@ using Mkwmp.Core.Net;
 namespace Mkwmp.Core.Overlay;
 
 /// <summary>
-/// <c>mkwmp-launcher.exe --overlay-host --parent-pid N --session FILE</c>: the mod inside a game
+/// <c>mkwmp.exe --overlay-host --parent-pid N --session FILE</c>: the mod inside a game
 /// that no launcher started asks for one to stand by as its overlay (no window until the player
 /// asks, no seat, gone with the game). <see cref="SessionPath"/> is where the mod reads how to
 /// reach it.

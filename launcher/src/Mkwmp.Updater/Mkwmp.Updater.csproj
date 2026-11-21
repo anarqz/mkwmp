@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- mkwmp-updater.exe: the small helper that swaps the launcher's files after a download, with a small window
+  <!-- updater.exe: the small helper that swaps the launcher's files after a download, with a small window
        saying what it does (docs/UPDATES.md). Infinity Launcher's design (Infinity.Updater): one native executable,
        Native AOT, that carries only Mkwmp.Update and an Ed25519 check; no .NET runtime to unpack, so it starts at once
        and also under Wine/Proton. Its window is plain Win32 + GDI+ (user32, gdiplus: both in Wine), not WPF: WPF
@@ -8,7 +8,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
-    <AssemblyName>mkwmp-updater</AssemblyName>
+    <AssemblyName>updater</AssemblyName>
     <!-- Not Mkwmp.Updater: that name would hide Core's Updater class from every Mkwmp.* namespace that sees this assembly. -->
     <RootNamespace>Mkwmp.UpdateHelper</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>

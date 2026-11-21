@@ -4,4 +4,4 @@ $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 dotnet build "$root/src/Mkwmp.App" --no-dependencies -v q -nologo
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& "$root/src/Mkwmp.App/bin/Debug/net10.0-windows/mkwmp-launcher.exe" @args
+& "$root/src/Mkwmp.App/bin/Debug/net10.0-windows/mkwmp.exe" @args

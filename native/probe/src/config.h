@@ -1,4 +1,4 @@
-// Client config read by the probe from <game dir>\mkwmp.toml (written by mkwmp-launcher).
+// Client config read by the probe from <game dir>\mkwmp.toml (written by the launcher).
 // Presence of the file opts the game into multiplayer; its absence means a stock offline
 // launch. Even when present the probe stays dormant (stock offline behaviour) until the game
 // asks for the network (Online Play), see seat.h.
@@ -21,7 +21,7 @@ typedef struct {
                              // default "mkwmp-lobby-ca.pem" (see lobby_ca.h)
     int voice_port;          // lobby voice relay UDP port (default 8907, 0 = voice off; VOICE_API.md)
     int direct;              // no launcher: the plugin signs in itself (seatd.c, mkwmp_config_use_direct)
-    char launcher_exe[300];  // the launcher's executable (`launcher_exe = "C:/.../mkwmp-launcher.exe"`, forward
+    char launcher_exe[300];  // the launcher's executable (`launcher_exe = "C:/.../mkwmp.exe"`, forward
                              // slashes), for the mod to start it as its overlay host (overlay.c); may be empty
 } MkwmpConfig;
 

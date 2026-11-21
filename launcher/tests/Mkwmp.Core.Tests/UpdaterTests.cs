@@ -157,25 +157,22 @@ public class UpdaterTests
     }
 
     [Fact]
-    public async Task Downloads_verify_end_to_end_and_a_swapped_asset_is_rejected()
+    public async Task Downloads_verify_end_to_end()
     {
-        var bin = "new launcher"u8.ToArray();
-        var files = new Dictionary<string, byte[]> { ["mkwmp-launcher-x86_64-linux"] = bin };
+        var zip = "the release zip"u8.ToArray();
+        var files = new Dictionary<string, byte[]> { [Updater.ZipAsset("0.0.2")] = zip };
         using var http = new HttpClient(new FakeGitHub().Release("0.0.2", files));
         var u = new Updater(http, "test", FakeGitHub.Api, TestKeys);
         var release = Updater.Newest(await u.ReleasesAsync(default), V("0.0.1-rc.1"))!;
         var sums = await u.SumsAsync(release, default);
+        Assert.Equal(Updater.Sha256Hex(zip), sums.Hashes[Updater.ZipAsset("0.0.2")]);
         var seen = new List<(long, long?)>();
-        Assert.Equal(bin, await u.AssetAsync(release, sums, "mkwmp-launcher-x86_64-linux", new Sink(seen.Add), default));
-        Assert.Equal((bin.Length, bin.Length), seen[^1]);
+        var path = Path.Combine(Rig.NewFolder("download"), "package.zip");
+        await u.DownloadAsync(release.Assets.Single(a => a.Name == Updater.ZipAsset("0.0.2")).Url, path, new Sink(seen.Add), default);
+        Assert.Equal(zip, File.ReadAllBytes(path));
+        Assert.Equal((zip.Length, zip.Length), seen[^1]);
         // The built-in key does not trust the test signature.
         await Assert.ThrowsAsync<LauncherException>(() => new Updater(http, "test", FakeGitHub.Api).SumsAsync(release, default));
-
-        using var evil = new HttpClient(new FakeGitHub().Release("0.0.2", new() { ["x"] = "malware"u8.ToArray() }, listed: new() { ["x"] = "the real one"u8.ToArray() }));
-        u = new Updater(evil, "test", FakeGitHub.Api, TestKeys);
-        release = (await u.ReleasesAsync(default))[0];
-        var error = await Assert.ThrowsAsync<LauncherException>(async () => await u.AssetAsync(release, await u.SumsAsync(release, default), "x", null, default));
-        Assert.Equal("x: checksum mismatch", error.Message);
     }
 
     private sealed class Sink(Action<(long, long?)> report) : IProgress<(long Got, long? Total)>
@@ -202,6 +199,18 @@ public class UpdaterTests
         Assert.Null(Launcher.Bundled(d, "1.0.0", TestKeys, assets)); // files must match the list
     }
 
+    /// <summary>A release zip of one launcher and no helper (installed in place, headless).</summary>
+    private static byte[] LauncherZip(byte[] exe)
+    {
+        using var stream = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            using var entry = zip.CreateEntry("mkwmp/mkwmp.exe").Open();
+            entry.Write(exe);
+        }
+        return stream.ToArray();
+    }
+
     private static (Launcher Launcher, string Root, string Game, string Exe) Rigged(FakeGitHub github, bool autoApply = false, bool updates = true)
     {
         _ = Rig.TestExe;
@@ -211,7 +220,7 @@ public class UpdaterTests
         File.WriteAllBytes(Path.Combine(game, "mkw.exe"), Rig.TestExe);
         var home = Path.Combine(root, "launcher");
         Directory.CreateDirectory(home);
-        var exe = Path.Combine(home, "mkwmp-launcher.exe");
+        var exe = Path.Combine(home, "mkwmp.exe");
         File.WriteAllText(exe, "this launcher");
         var path = Path.Combine(root, "client.toml");
         new ClientConfig { Settings = new LauncherSettings { Server = FakeSeatServer.Url, Game = game, AutoUpdate = updates } }.Save(path);
@@ -230,12 +239,39 @@ public class UpdaterTests
         return (launcher, root, game, exe);
     }
 
+    /// <summary>game/ as the release zip brings it: the files and their signed list.</summary>
+    private static void Bundle(string folder, string version, params (string Name, byte[] Bytes)[] files)
+    {
+        Directory.CreateDirectory(folder);
+        var list = $"# mkwmp {version}\n";
+        foreach (var (name, bytes) in files)
+        {
+            File.WriteAllBytes(Path.Combine(folder, name), bytes);
+            list += $"{Updater.Sha256Hex(bytes)}  {name}\n";
+        }
+        File.WriteAllText(Path.Combine(folder, "SHA256SUMS"), list);
+        File.WriteAllText(Path.Combine(folder, "SHA256SUMS.sig"), FakeGitHub.Sign(list));
+    }
+
     [Fact]
-    public async Task The_game_patch_is_downloaded_from_this_launchers_release_verified_and_kept()
+    public async Task The_game_patch_comes_from_game_beside_the_launcher_and_is_never_downloaded()
     {
         var probe = Encoding.UTF8.GetBytes("MZ mkwmp probe 1.4.0");
+        // Even a release that still had the files loose: the launcher takes only its own game/.
         var github = new FakeGitHub().Release("1.4.0", new() { ["winmm.dll"] = probe, ["mkwmp-voice.dll"] = "voice"u8.ToArray() });
+        var (missing, _, missingGame, _) = Rigged(github);
+        await using (missing)
+        {
+            await missing.StartAsync(default);
+            await missing.StartupUpdates;
+            await missing.InstallIntegrationAsync();
+            Assert.Equal((Strings.PackageMissing("1.4.0"), true), (missing.Game.Note, missing.Game.NoteIsError));
+            Assert.False(File.Exists(Path.Combine(missingGame, "winmm.dll")));
+            Assert.DoesNotContain(github.Requests, r => r.Name is "winmm.dll" or "mkwmp-voice.dll");
+        }
+
         var (launcher, root, game, _) = Rigged(github);
+        Bundle(Path.Combine(root, "launcher", "game"), "1.4.0", ("winmm.dll", probe), ("mkwmp-voice.dll", "voice"u8.ToArray()));
         await using (launcher)
         {
             Assert.Equal(IntegrationState.Missing, launcher.Game.Integration!.State);
@@ -245,8 +281,7 @@ public class UpdaterTests
             Assert.Equal(probe, File.ReadAllBytes(Path.Combine(game, "winmm.dll")));
             Assert.Equal((IntegrationState.Installed, "Patches installed (v1.4.0)"), (launcher.Game.Integration.State, launcher.Game.Integration.Summary));
             Assert.Equal(TargetStatus.Ready, launcher.Game.Check!.Status);
-            // Kept next to the launcher with its signed list: the next sync needs no network.
-            Assert.True(File.Exists(Path.Combine(root, "launcher", "game", "SHA256SUMS.sig")));
+            Assert.DoesNotContain(github.Requests, r => r.Name is "winmm.dll" or "mkwmp-voice.dll");
             var before = github.Downloads;
             await launcher.SyncIntegrationAsync(force: false);
             Assert.Equal(before, github.Downloads);
@@ -265,8 +300,8 @@ public class UpdaterTests
         Random.Shared.NextBytes(fresh);
         var github = new FakeGitHub()
             .Release("1.4.0", new() { ["winmm.dll"] = "MZ mkwmp probe 1.4.0"u8.ToArray() })
-            .Release("1.5.0", new() { [Updater.LauncherAsset] = fresh }, notes: "What's new")
-            .Release("9.9.9", new() { [Updater.LauncherAsset] = fresh }, draft: true);
+            .Release("1.5.0", new() { [Updater.ZipAsset("1.5.0")] = LauncherZip(fresh) }, notes: "What's new")
+            .Release("9.9.9", new() { [Updater.ZipAsset("9.9.9")] = LauncherZip(fresh) }, draft: true);
         var (launcher, _, _, exe) = Rigged(github);
         await using (launcher)
         {
@@ -283,21 +318,20 @@ public class UpdaterTests
                     states.Add(launcher.Update);
                 }
             };
-            // Headless (and a release with only the executable, as before the zip carried the helper): downloaded,
-            // verified, swapped in by this process, the old one kept in the staging folder's backup.
+            // Headless: the zip downloaded, verified, swapped in by this process, the old exe kept in the staging folder's backup.
             await launcher.ApplyUpdateAsync(default);
             Assert.Equal((UpdateState.Restarting, Strings.UpdatedRestarting, 1.0), (launcher.Update.State, launcher.Update.Status, launcher.Update.Progress));
             Assert.Contains(states, s => s.State == UpdateState.Downloading);
             Assert.Contains(states, s => s.State == UpdateState.ReadyToInstall);
             Assert.Equal(fresh, File.ReadAllBytes(exe));
-            Assert.Equal("this launcher", File.ReadAllText(Path.Combine(Path.GetDirectoryName(exe)!, ".mkwmp-selfupdate", "1.5.0", "backup", "mkwmp-launcher.exe")));
+            Assert.Equal("this launcher", File.ReadAllText(Path.Combine(Path.GetDirectoryName(exe)!, ".mkwmp-selfupdate", "1.5.0", "backup", "mkwmp.exe")));
         }
     }
 
     [Fact]
     public async Task A_launcher_whose_download_does_not_verify_is_left_alone_and_updates_can_be_off()
     {
-        var github = new FakeGitHub().Release("1.5.0", new() { [Updater.LauncherAsset] = "malware"u8.ToArray() }, listed: new() { [Updater.LauncherAsset] = "the real one"u8.ToArray() });
+        var github = new FakeGitHub().Release("1.5.0", new() { [Updater.ZipAsset("1.5.0")] = LauncherZip("malware"u8.ToArray()) }, listed: new() { [Updater.ZipAsset("1.5.0")] = LauncherZip("the real one"u8.ToArray()) });
         var (launcher, _, _, exe) = Rigged(github, autoApply: true);
         await using (launcher)
         {
@@ -310,7 +344,7 @@ public class UpdaterTests
             await launcher.CheckForUpdatesAsync();
             Assert.Equal(UpdateState.Available, launcher.Update.State);
             await launcher.ApplyUpdateAsync(default);
-            Assert.Equal((UpdateState.Failed, Strings.UpdateFailed($"{Updater.LauncherAsset}: checksum mismatch")), (launcher.Update.State, launcher.Update.Status));
+            Assert.Equal((UpdateState.Failed, Strings.UpdateFailed($"{Updater.ZipAsset("1.5.0")}: checksum mismatch")), (launcher.Update.State, launcher.Update.Status));
         }
 
         var (off, _, game, _) = Rigged(github, updates: false);

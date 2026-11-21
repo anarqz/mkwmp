@@ -2,7 +2,7 @@
 
   <!-- What installs a downloaded launcher release: the plan the launcher hands over, the check against the signed
        SHA256SUMS, the swap with its backup and rollback, and the helper's arguments and strings. Shared by Mkwmp.Core
-       (which stages the download and, when headless, installs in-process) and by mkwmp-updater.exe (Mkwmp.Updater).
+       (which stages the download and, when headless, installs in-process) and by updater.exe (Mkwmp.Updater).
        No window, no HTTP, no package: the Ed25519 check is passed in, so the launcher keeps NSec and only the helper
        carries BouncyCastle. AOT-clean, because the helper is published with Native AOT.
        The design is Infinity Launcher's (Infinity.Update / Infinity.Updater), reduced to MKWMP's signed SHA256SUMS. -->

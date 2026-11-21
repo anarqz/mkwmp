@@ -108,7 +108,7 @@ public class ConfigTests
         Assert.True(LauncherOptions.Parse(["--tray"]) is { Tray: true, Headless: false, ConfigPath: null, ApplyUpdatesAutomatically: false });
         Assert.True(LauncherOptions.Parse(["-V"]).ShowVersion);
         Assert.True(LauncherOptions.Parse(["--save-logs", "--help"]) is { SaveLogs: true, ShowHelp: true });
-        Assert.StartsWith("mkwmp-launcher ", new LauncherOptions().VersionLine, StringComparison.Ordinal);
+        Assert.StartsWith("mkwmp ", new LauncherOptions().VersionLine, StringComparison.Ordinal);
     }
 }
 

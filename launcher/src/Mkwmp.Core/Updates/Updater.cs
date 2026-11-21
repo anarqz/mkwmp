@@ -21,11 +21,12 @@ public sealed record Release(string Tag, bool Draft, string? Notes, IReadOnlyLis
 }
 
 /// <summary>
-/// Self-update from GitHub Releases, and the files that put MKWMP into the game for this
-/// launcher's release. Every release carries <c>SHA256SUMS</c> and <c>SHA256SUMS.sig</c>:
+/// Self-update from GitHub Releases. Every release carries <c>SHA256SUMS</c> and <c>SHA256SUMS.sig</c>;
+/// from 1.4.0 the list names the release's two zips (tools/release/sign_sums.py):
 /// <code>
-/// # mkwmp 0.0.1-rc.1
-/// &lt;sha256 hex&gt;  mkwmp-launcher-x86_64-windows.exe
+/// # mkwmp 1.4.0
+/// &lt;sha256 hex&gt;  mkwmp-1.4.0-windows-x64.zip
+/// &lt;sha256 hex&gt;  mkwmp-server-1.4.0.zip
 /// </code>
 /// The signature is Ed25519 (base64url, no padding) over the exact bytes of SHA256SUMS, by the
 /// release key whose public half is <see cref="ReleaseKeys"/>. A download is used only if the
@@ -35,10 +36,10 @@ public sealed record Release(string Tag, bool Draft, string? Notes, IReadOnlyLis
 public sealed class Updater
 {
     public const string Repo = "anarqz/mkwmp";
-    /// <summary>The launcher alone: what a launcher from before the zip-with-helper downloads (and the 1.3.0 Rust launcher).</summary>
-    public const string LauncherAsset = "mkwmp-launcher-x86_64-windows.exe";
-
-    /// <summary>The release's zip for Windows (tools/release/make_zips.py): every file of the launcher, the helper included.</summary>
+    /// <summary>
+    /// The release's zip for Windows (tools/release/make_zips.py): every file of the launcher, the helper and
+    /// the game's package (<c>game/</c>) included. The only thing the launcher downloads from a release.
+    /// </summary>
     public static string ZipAsset(string version) => $"mkwmp-{version}-windows-x64.zip";
     public const string DefaultApi = "https://api.github.com";
 
@@ -305,27 +306,6 @@ public sealed class Updater
         var sums = await GetAsync(release.Url("SHA256SUMS"), null, cancel).ConfigureAwait(false);
         var sig = Encoding.UTF8.GetString(await GetAsync(release.Url("SHA256SUMS.sig"), null, cancel).ConfigureAwait(false));
         return new SignedSums(VerifySums(sums, sig, _keys, version), sums, sig);
-    }
-
-    /// <summary>Downloads <paramref name="name"/> from the release and checks it against the verified sums.</summary>
-    public async Task<byte[]> AssetAsync(Release release, SignedSums sums, string name, IProgress<(long Got, long? Total)>? progress, CancellationToken cancel)
-    {
-        ArgumentNullException.ThrowIfNull(release);
-        ArgumentNullException.ThrowIfNull(sums);
-        if (!sums.Hashes.TryGetValue(name, out var want))
-        {
-            throw new LauncherException($"{name} is not in SHA256SUMS");
-        }
-        var bytes = await GetAsync(release.Url(name), progress, cancel).ConfigureAwait(false);
-        return Sha256Hex(bytes) == want ? bytes : throw new LauncherException($"{name}: checksum mismatch");
-    }
-
-    /// <summary>This launcher's own release (tag <c>v&lt;version&gt;</c>), verified.</summary>
-    public async Task<(Release Release, SignedSums Sums)> OwnReleaseAsync(string version, CancellationToken cancel)
-    {
-        var tag = $"v{version}";
-        var release = (await ReleasesAsync(cancel).ConfigureAwait(false)).FirstOrDefault(r => r.Tag == tag && !r.Draft) ?? throw new LauncherException($"no release {tag}");
-        return (release, await SumsAsync(release, cancel).ConfigureAwait(false));
     }
 
     /// <summary>Removes the <c>&lt;exe&gt;.old</c> left by an update of a launcher from before the helper (it renamed the running executable aside).</summary>

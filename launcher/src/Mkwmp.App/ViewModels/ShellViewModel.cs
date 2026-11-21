@@ -644,7 +644,7 @@ public static class ThemeManager
         }
         var colors = new System.Windows.ResourceDictionary
         {
-            Source = new Uri($"/mkwmp-launcher;component/Themes/Colors.{(Current == "dark" ? "Dark" : "Light")}.xaml", UriKind.Relative),
+            Source = new Uri($"/mkwmp;component/Themes/Colors.{(Current == "dark" ? "Dark" : "Light")}.xaml", UriKind.Relative),
         };
         var merged = app.Resources.MergedDictionaries;
         if (merged.Count > 0)

@@ -10,8 +10,7 @@ namespace Mkwmp.Update;
 /// <code>
 /// plan.json            this record
 /// SHA256SUMS(.sig)     as downloaded: the helper verifies them again, trusting nothing in the plan
-/// package.zip          the release's zip (Kind "zip"), or
-/// launcher.exe         the release's single executable (Kind "exe": a release from before the zip carried the helper)
+/// package.zip          the release's zip, the only kind of package (Kind "zip")
 /// worker.exe           the helper that runs: the new release's own, copied out of the verified zip
 /// incoming/  backup/   made by the install; backup/ is what a rollback puts back
 /// </code>
@@ -24,16 +23,15 @@ public sealed record UpdatePlan
     public const string SumsName = "SHA256SUMS";
     public const string SignatureName = "SHA256SUMS.sig";
     public const string ZipName = "package.zip";
-    public const string ExeName = "launcher.exe";
     public const string NotesName = "notes.md";
     /// <summary>The helper as a release ships it, next to the launcher.</summary>
-    public const string HelperName = "mkwmp-updater.exe";
+    public const string HelperName = "updater.exe";
     /// <summary>The copy of the helper that runs (so the installed one can be replaced like any other file).</summary>
     public const string WorkerName = "worker.exe";
     /// <summary>The launcher's name inside a release zip.</summary>
-    public const string LauncherName = "mkwmp-launcher.exe";
+    public const string LauncherName = "mkwmp.exe";
+    /// <summary>The only kind: since 1.4.0 a release ships the launcher only inside its zip (no loose executable).</summary>
     public const string KindZip = "zip";
-    public const string KindExe = "exe";
     /// <summary>The paths the last installed zip brought, one per line: a later release that drops a file removes it.</summary>
     public const string InstalledName = "installed.txt";
 
@@ -46,10 +44,10 @@ public sealed record UpdatePlan
     /// <summary>The version being replaced (for the log and the window).</summary>
     public string FromVersion { get; init; } = "";
 
-    /// <summary><see cref="KindZip"/> or <see cref="KindExe"/>.</summary>
+    /// <summary><see cref="KindZip"/>.</summary>
     public required string Kind { get; init; }
 
-    /// <summary>The package's name in SHA256SUMS (<c>mkwmp-1.5.0-windows-x64.zip</c> or <c>mkwmp-launcher-x86_64-windows.exe</c>).</summary>
+    /// <summary>The package's name in SHA256SUMS (<c>mkwmp-1.5.0-windows-x64.zip</c>).</summary>
     public required string Asset { get; init; }
 
     /// <summary>
@@ -63,7 +61,7 @@ public sealed record UpdatePlan
 
     public string Transaction => TransactionFolder(Root, Version);
 
-    public string PackagePath => Path.Combine(Transaction, Kind == KindExe ? ExeName : ZipName);
+    public string PackagePath => Path.Combine(Transaction, ZipName);
 
     public string SumsPath => Path.Combine(Transaction, SumsName);
 
@@ -104,7 +102,7 @@ public sealed record UpdatePlan
         {
             throw new UpdateException($"\"{Version}\" is not a version");
         }
-        if (Kind is not (KindZip or KindExe))
+        if (Kind != KindZip)
         {
             throw new UpdateException($"unknown update package kind \"{Kind}\"");
         }

@@ -10,8 +10,8 @@ namespace Mkwmp.Update;
 /// </code>
 /// and, to look at its window without installing anything (nothing is shown on the desktop):
 /// <code>
-/// mkwmp-updater.exe --shot out.png [--theme dark] [--locale pt-BR] [--step waiting|verifying|replacing|starting|failed]
-///                   [--progress 0.6] [--version 1.5.0] [--scale 2] [--i18n &lt;folder&gt;]
+/// updater.exe --shot out.png [--theme dark] [--locale pt-BR] [--step waiting|verifying|replacing|starting|failed]
+///             [--progress 0.6] [--version 1.5.0] [--scale 2] [--i18n &lt;folder&gt;]
 /// </code>
 /// </summary>
 public sealed record UpdaterArgs
@@ -42,7 +42,7 @@ public sealed record UpdaterArgs
     /// <summary>The catalogs to read instead of the launcher's (<c>--shot</c>).</summary>
     public string? I18n { get; init; }
 
-    public const string Usage = "usage: mkwmp-updater --plan <plan.json> [--pid <n>] [--theme light|dark] [--locale <xx>] [--quiet]";
+    public const string Usage = "usage: updater --plan <plan.json> [--pid <n>] [--theme light|dark] [--locale <xx>] [--quiet]";
 
     /// <summary>The arguments the launcher passes for <paramref name="plan"/>.</summary>
     public static IReadOnlyList<string> For(UpdatePlan plan, int pid, bool dark, string locale, bool quiet)

@@ -336,11 +336,11 @@ public class LauncherTests
         File.Delete(Path.Combine(rig.Game, "mkwmp.toml"));
         await l.SaveSettingsAsync(l.Settings with { Patch = true });
         await l.FindGameAsync();
-        // Nothing installed and nothing to install from (no bundle, updates off).
+        // Nothing installed and nothing to install from (no game/ beside the launcher).
         Assert.Equal("Not installed: press INSTALL", l.PlayProblem);
         Assert.Equal(TargetStatus.NoIntegration, l.Game.Check!.Status);
         await l.InstallIntegrationAsync();
-        Assert.Equal((Strings.NoBundleAndUpdatesOff, true), (l.Game.Note, l.Game.NoteIsError));
+        Assert.Equal((Strings.PackageMissing(l.Version), true), (l.Game.Note, l.Game.NoteIsError));
         // An unsupported runtime comes before the integration.
         File.WriteAllBytes(Path.Combine(rig.Game, "mkw.exe"), "some other build"u8);
         await l.SaveSettingsAsync(l.Settings with { Slot = 2 });

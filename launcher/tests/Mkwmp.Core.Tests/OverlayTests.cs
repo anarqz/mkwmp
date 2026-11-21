@@ -183,9 +183,9 @@ public class OverlayTests
             Assert.Null(OverlayHostArgs.Parse(["--overlay-host", "--parent-pid", "5", "--session", Path.Combine(folder, "missing", OverlayHostArgs.SessionFile)]));
 
             var path = Path.Combine(folder, "sub", "launcher.json");
-            var record = new LauncherRecord("C:/Games/MKWMP/mkwmp-launcher.exe", 77, 47820, "abc");
+            var record = new LauncherRecord("C:/Games/MKWMP/mkwmp.exe", 77, 47820, "abc");
             Assert.True(record.Write(path));
-            Assert.Equal("""{"exe":"C:/Games/MKWMP/mkwmp-launcher.exe","pid":77,"port":47820,"token":"abc"}""", File.ReadAllText(path));
+            Assert.Equal("""{"exe":"C:/Games/MKWMP/mkwmp.exe","pid":77,"port":47820,"token":"abc"}""", File.ReadAllText(path));
             Assert.Equal(record, LauncherRecord.Read(path));
             File.WriteAllText(path, """{"exe":"x"}""");
             Assert.Null(LauncherRecord.Read(path));
@@ -295,13 +295,13 @@ public class OverlayTests
         var session = new Targets.SessionFile("lobby.test:8905", "Ana", "127.0.0.1:47820", "abc", 8907, null, 1, null);
         Assert.DoesNotContain("launcher_exe", Targets.MkwRecomp.Probe.SessionText(session), StringComparison.Ordinal);
         // forward slashes, as native/probe/src/config.c reads it; a path the format cannot hold is left out
-        Assert.Contains("launcher_token = \"abc\"\nlauncher_exe = \"C:/Games/MKWMP/mkwmp-launcher.exe\"\n",
-            Targets.MkwRecomp.Probe.SessionText(session with { LauncherExe = @"C:\Games\MKWMP\mkwmp-launcher.exe" }), StringComparison.Ordinal);
-        Assert.DoesNotContain("launcher_exe", Targets.MkwRecomp.Probe.SessionText(session with { LauncherExe = "C:/a\"b/mkwmp-launcher.exe" }), StringComparison.Ordinal);
+        Assert.Contains("launcher_token = \"abc\"\nlauncher_exe = \"C:/Games/MKWMP/mkwmp.exe\"\n",
+            Targets.MkwRecomp.Probe.SessionText(session with { LauncherExe = @"C:\Games\MKWMP\mkwmp.exe" }), StringComparison.Ordinal);
+        Assert.DoesNotContain("launcher_exe", Targets.MkwRecomp.Probe.SessionText(session with { LauncherExe = "C:/a\"b/mkwmp.exe" }), StringComparison.Ordinal);
         Assert.DoesNotContain("launcher_exe", Targets.MkwRecomp.Probe.SessionText(session with { LauncherExe = "C:/" + new string('x', 300) }), StringComparison.Ordinal);
 
         // PLAY writes it: the launcher's own executable
-        var exe = Path.Combine(Rig.NewFolder("exe"), "mkwmp-launcher.exe");
+        var exe = Path.Combine(Rig.NewFolder("exe"), "mkwmp.exe");
         await using var rig = new Rig(new FakeSeatServer(), executable: exe);
         await rig.Launcher.PlayAsync();
         await Rig.Until("the game", () => rig.Started);
@@ -362,13 +362,13 @@ public class OverlayTests
         Directory.CreateDirectory(game);
         Directory.CreateDirectory(home);
         File.WriteAllBytes(Path.Combine(game, "mkw.exe"), Rig.TestExe);
-        var exe = Path.Combine(home, "mkwmp-launcher.exe");
+        var exe = Path.Combine(home, "mkwmp.exe");
         File.WriteAllText(exe, "this launcher");
         var config = Path.Combine(root, "client.toml");
         new ClientConfig { Settings = new LauncherSettings { Server = FakeSeatServer.Url, Game = game, Background = new BackgroundSettings { StartWithSystem = true } } }.Save(config);
         var github = new FakeGitHub()
             .Release("1.4.0", new() { ["winmm.dll"] = "MZ mkwmp probe 1.4.0"u8.ToArray(), ["mkwmp-voice.dll"] = "voice"u8.ToArray() })
-            .Release("1.4.1", new() { ["mkwmp-launcher.exe"] = "newer"u8.ToArray() });
+            .Release("1.4.1", new() { ["mkwmp.exe"] = "newer"u8.ToArray() });
         var autostart = new RecordingAutostart();
         await using var launcher = new Launcher(config, home, new LauncherOptions
         {

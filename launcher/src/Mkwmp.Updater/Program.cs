@@ -4,7 +4,7 @@ using Mkwmp.Update;
 namespace Mkwmp.UpdateHelper;
 
 /// <summary>
-/// mkwmp-updater.exe (run as <c>worker.exe</c> from the staging folder): waits for the launcher to
+/// updater.exe (run as <c>worker.exe</c> from the staging folder): waits for the launcher to
 /// close, swaps the files of the downloaded release in, starts the new launcher. See
 /// <see cref="UpdaterArgs"/> for the command line and launcher/docs/UPDATES.md for the whole flow.
 /// Exit codes: 0 installed; 1 not installed, the previous version runs again; 2 a bad command line

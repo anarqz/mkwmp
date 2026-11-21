@@ -208,7 +208,7 @@ public sealed partial class Launcher
             string? packageProblem = null;
             try
             {
-                package = await PackageAsync(target, s, install).ConfigureAwait(false);
+                package = LocalPackage(target, s, install);
                 lock (_gate)
                 {
                     _package = package;
@@ -233,7 +233,7 @@ public sealed partial class Launcher
                     }
                     else
                     {
-                        await target.InstallAsync(install, package ?? throw new LauncherException(packageProblem ?? Strings.NoBundleAndUpdatesOff), _life.Token).ConfigureAwait(false);
+                        await target.InstallAsync(install, package ?? throw new LauncherException(packageProblem ?? Strings.PackageMissing(Version)), _life.Token).ConfigureAwait(false);
                     }
                 }
             }
@@ -267,12 +267,12 @@ public sealed partial class Launcher
     }
 
     /// <summary>
-    /// The integration files for this launcher's version and the hashes they must have: from the
-    /// <c>game/</c> folder next to the launcher when its signed list is for this version, else
-    /// (with updates on) downloaded from this launcher's own release, checked against its signed
-    /// SHA256SUMS and kept in that folder, so the next start needs no network.
+    /// The integration files for this launcher's version and the hashes they must have: the
+    /// <c>game/</c> folder next to the launcher, used when its signed list is for this version. The
+    /// release zip brings that folder with the launcher (and every update installs the whole zip), so
+    /// nothing is downloaded here: a folder that is missing or another version's is reported.
     /// </summary>
-    private async Task<IntegrationPackage> PackageAsync(IGameTarget target, LauncherSettings s, GameInstall install)
+    private IntegrationPackage LocalPackage(IGameTarget target, LauncherSettings s, GameInstall install)
     {
         var assets = target.PackageAssetsFor(install);
         if (assets.Count == 0)
@@ -293,70 +293,15 @@ public sealed partial class Launcher
         }
         // A development package that is not turned on is no package: said, so a developer is not left guessing.
         var unused = !dev && File.Exists(Path.Combine(folder, DevPackageMarker)) && !File.Exists(Path.Combine(folder, "SHA256SUMS.sig"));
-        if (!UpdatesOn(s))
-        {
-            throw new LauncherException(unused ? Strings.DevPackageOff(DevPackageEnv, Strings.NoBundleAndUpdatesOff) : Strings.NoBundleAndUpdatesOff);
-        }
-        Release release;
-        SignedSums sums;
-        try
-        {
-            (release, sums) = await _updater.OwnReleaseAsync(Version, _life.Token).ConfigureAwait(false);
-        }
-        catch (LauncherException e)
-        {
-            // Said whole: "nothing happened" is never an answer to INSTALL.
-            throw new LauncherException(unused ? Strings.DevPackageOff(DevPackageEnv, e.Message) : Strings.PackageUnavailable(Version, e.Message), e);
-        }
-        var files = new List<(string Name, byte[] Bytes)>();
-        foreach (var asset in assets)
-        {
-            if (!sums.Hashes.ContainsKey(asset.Name))
-            {
-                if (asset.Required)
-                {
-                    throw new LauncherException(Strings.ReleaseListsNo(asset.Label));
-                }
-                continue;
-            }
-            try
-            {
-                files.Add((asset.Name, await _updater.AssetAsync(release, sums, asset.Name, null, _life.Token).ConfigureAwait(false)));
-            }
-            catch (LauncherException e)
-            {
-                throw new LauncherException(Strings.AssetDownloadFailed(asset.Label, e.Message), e);
-            }
-        }
-        // Portable: kept beside the launcher and nowhere else (never the user's profile or its temporary folder).
-        try
-        {
-            Directory.CreateDirectory(folder);
-            foreach (var (name, bytes) in files)
-            {
-                File.WriteAllBytes(Path.Combine(folder, name), bytes);
-            }
-            File.WriteAllBytes(Path.Combine(folder, "SHA256SUMS"), sums.Bytes);
-            File.WriteAllText(Path.Combine(folder, "SHA256SUMS.sig"), sums.Signature);
-            File.Delete(Path.Combine(folder, DevPackageMarker)); // the release's signed files took the folder over
-            if (Bundled(folder, Version, keys, assets, allowUnsigned: false) is { } saved)
-            {
-                return saved;
-            }
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            Note($"keeping the game patch in {folder}: {e.Message}");
-        }
-        throw new LauncherException(Strings.PatchNotSaved);
+        throw new LauncherException(unused ? Strings.DevPackageOff(DevPackageEnv, Strings.PackageMissing(Version)) : Strings.PackageMissing(Version));
     }
 
     private bool _devPackageNoted;
 
     /// <summary>
     /// The integration files in <paramref name="folder"/> (<c>SHA256SUMS</c>, its <c>.sig</c> and
-    /// the assets), used only when the list verifies for this launcher's version (after a
-    /// self-update the zip's copy is older) and the files match it. A zip asset may be there
+    /// the assets), used only when the list verifies for this launcher's version (a copy of another
+    /// release's folder is not this launcher's) and the files match it. A zip asset may be there
     /// unpacked instead (<see cref="PackageAsset.Unpacked"/>): every file of that folder in the list.
     /// <para>
     /// <paramref name="allowUnsigned"/> (<see cref="DevPackageOn"/>): a folder with no

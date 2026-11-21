@@ -14,7 +14,7 @@ if (-not $NoBuild) {
     dotnet build "$root/src/Mkwmp.App" --no-dependencies -v q -nologo | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "build failed" }
 }
-$exe = "$root/src/Mkwmp.App/bin/Debug/net10.0-windows/mkwmp-launcher.exe"
+$exe = "$root/src/Mkwmp.App/bin/Debug/net10.0-windows/mkwmp.exe"
 $full = [IO.Path]::GetFullPath($Out, (Get-Location).Path)
 # PowerShell turns  --press right,down  into an array: put the commas back
 $rest = @($Rest | ForEach-Object { if ($_ -is [array]) { $_ -join ',' } else { "$_" } })

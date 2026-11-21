@@ -450,17 +450,17 @@ public sealed partial class DesignLauncher : ILauncher
     private static readonly ListedServer[] DemoServers =
     [
         new("MKWMP", DemoServer, "sa-east", "1.4.0", 32, 12, 0, 23, true) { PublicKey = "demo-key-01" },
-        new("Rainbow Road Club", "https://rainbow.example.org", "sa-east", "1.4.0", 24, 24, 3, 41, true) { PublicKey = "demo-key-02" },
+        new("Sunset Circuit Club", "https://sunset.example.org", "sa-east", "1.4.0", 24, 24, 3, 41, true) { PublicKey = "demo-key-02" },
         new("Kart Night EU", "https://kartnight.example.eu", "eu-west", "1.4.0", 32, 7, 0, 118, true) { PublicKey = "demo-key-03" },
-        new("Blue Shell Lounge", "https://blueshell.example.com", "us-east", "1.3.2", 16, 2, 0, 204, true) { PublicKey = "demo-key-04" },
-        new("Moo Moo Meadows", "https://moomoo.example.net", "us-west", "1.4.0", 24, 9, 0, 212, true) { PublicKey = "demo-key-05" },
-        new("Toad's Turnpike", "https://turnpike.example.ca", "us-east", "1.4.0", 16, 16, 1, 221, true) { PublicKey = "demo-key-06" },
-        new("Shy Guy Bazaar", "https://bazaar.example.de", "eu-central", "1.4.0", 32, 3, 0, 236, true) { PublicKey = "demo-key-07" },
-        new("Dry Bones Burnout", "https://burnout.example.es", "eu-south", "1.4.0", 12, 5, 0, 249, true) { PublicKey = "demo-key-08" },
-        new("Wario Stadium", "https://stadium.example.au", "ap-southeast", "1.4.0", 32, 20, 0, 318, true) { PublicKey = "demo-key-09" },
-        new("Peach Beach", "https://beach.example.kr", "ap-northeast", "1.4.0", 16, 1, 0, null, null) { PublicKey = "demo-key-10" },
-        new("DK Spaceport", "https://spaceport.example.in", "ap-south", "1.3.2", 8, 0, 0, null, null) { PublicKey = "demo-key-11" },
-        new("Coconut Mall", "https://coconut.example.jp", "ap-northeast", "1.4.0", 12, 0, 0, null, false) { PublicKey = "demo-key-12" },
+        new("Slipstream Lounge", "https://slipstream.example.com", "us-east", "1.3.2", 16, 2, 0, 204, true) { PublicKey = "demo-key-04" },
+        new("Meadow Drift", "https://meadow.example.net", "us-west", "1.4.0", 24, 9, 0, 212, true) { PublicKey = "demo-key-05" },
+        new("Turnpike Racers", "https://turnpike.example.ca", "us-east", "1.4.0", 16, 16, 1, 221, true) { PublicKey = "demo-key-06" },
+        new("Bazaar Grand Prix", "https://bazaar.example.de", "eu-central", "1.4.0", 32, 3, 0, 236, true) { PublicKey = "demo-key-07" },
+        new("Burnout Garage", "https://burnout.example.es", "eu-south", "1.4.0", 12, 5, 0, 249, true) { PublicKey = "demo-key-08" },
+        new("Stadium Nights", "https://stadium.example.au", "ap-southeast", "1.4.0", 32, 20, 0, 318, true) { PublicKey = "demo-key-09" },
+        new("Beach Sprint", "https://beach.example.kr", "ap-northeast", "1.4.0", 16, 1, 0, null, null) { PublicKey = "demo-key-10" },
+        new("Spaceport Kart Club", "https://spaceport.example.in", "ap-south", "1.3.2", 8, 0, 0, null, null) { PublicKey = "demo-key-11" },
+        new("Mall Rush", "https://mallrush.example.jp", "ap-northeast", "1.4.0", 12, 0, 0, null, false) { PublicKey = "demo-key-12" },
     ];
 
     private int _measure;
@@ -661,7 +661,7 @@ public sealed partial class DesignLauncher : ILauncher
         Change(() =>
         {
             Game = _installFails
-                ? Game with { Working = false, Note = CoreStrings.PackageUnavailable(Version, "no release v" + Version), NoteIsError = true }
+                ? Game with { Working = false, Note = CoreStrings.PackageMissing(Version), NoteIsError = true }
                 : Game with { Working = false, Integration = DemoMod, Note = CoreStrings.ModInstalled, NoteIsError = false };
             Sync();
         });

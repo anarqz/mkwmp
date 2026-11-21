@@ -169,7 +169,7 @@ public interface ILauncher : IAsyncDisposable
     Task DownloadUpdateAsync(CancellationToken cancel);
 
     /// <summary>
-    /// "Install and restart": hands the downloaded release to the helper (mkwmp-updater.exe), frees
+    /// "Install and restart": hands the downloaded release to the helper (updater.exe), frees
     /// the seat and ends this launcher; the helper swaps the files and starts the new one. Downloads
     /// first when that was not done (<c>--headless</c>). Refused while a game runs
     /// (<see cref="UpdateView.GameBlocks"/>): a game is never interrupted.

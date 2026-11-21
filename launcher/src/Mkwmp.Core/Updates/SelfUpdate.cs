@@ -6,7 +6,7 @@ using NSec.Cryptography;
 namespace Mkwmp.Core.Updates;
 
 /// <summary>A release downloaded into the staging folder and checked against its signed SHA256SUMS: ready to install.</summary>
-/// <param name="Kind"><see cref="UpdatePlan.KindZip"/> or <see cref="UpdatePlan.KindExe"/>.</param>
+/// <param name="Kind"><see cref="UpdatePlan.KindZip"/>.</param>
 /// <param name="Asset">The package's name in SHA256SUMS.</param>
 /// <param name="Helper">The helper to run (<c>worker.exe</c> in the staging folder), or null: this release and this install have none.</param>
 internal sealed record StagedUpdate(string Root, string Version, string Kind, string Asset, string? Notes, string? Helper)
@@ -27,7 +27,7 @@ internal sealed record StagedUpdate(string Root, string Version, string Kind, st
 /// The launcher's side of its own update (launcher/docs/UPDATES.md): the release is downloaded into
 /// <c>&lt;launcher folder&gt;/.mkwmp-selfupdate/&lt;version&gt;/</c> (<see cref="UpdatePlan"/>), verified, and
 /// left there until the player installs it, also across restarts. The swap itself is
-/// <see cref="UpdateInstaller"/>'s, run by the helper (<c>mkwmp-updater.exe</c>).
+/// <see cref="UpdateInstaller"/>'s, run by the helper (<c>updater.exe</c>).
 /// </summary>
 internal static class SelfUpdate
 {
@@ -41,8 +41,8 @@ internal static class SelfUpdate
 
     /// <summary>
     /// Downloads <paramref name="release"/> into its staging folder, continuing a download that was
-    /// cut short, and verifies it. Prefers the zip (every file, with the helper); a release without
-    /// one gives its single executable. Throws <see cref="LauncherException"/>.
+    /// cut short, and verifies it. The package is the release's zip (every file, the helper included):
+    /// a release without it has nothing to install. Throws <see cref="LauncherException"/>.
     /// </summary>
     public static async Task<StagedUpdate> StageAsync(Updater updater, Release release, string root, IProgress<(long Got, long? Total)>? progress, CancellationToken cancel)
     {
@@ -56,10 +56,12 @@ internal static class SelfUpdate
             await File.WriteAllTextAsync(Path.Combine(folder, UpdatePlan.SignatureName), sums.Signature, cancel).ConfigureAwait(false);
             await File.WriteAllTextAsync(Path.Combine(folder, UpdatePlan.NotesName), release.Notes ?? "", cancel).ConfigureAwait(false);
             var zip = Updater.ZipAsset(version);
-            var (kind, asset) = sums.Hashes.ContainsKey(zip) && release.Has(zip) ? (UpdatePlan.KindZip, zip)
-                : sums.Hashes.ContainsKey(Updater.LauncherAsset) && release.Has(Updater.LauncherAsset) ? (UpdatePlan.KindExe, Updater.LauncherAsset)
-                : throw new LauncherException($"release {release.Tag} has no launcher for Windows");
-            var package = Path.Combine(folder, kind == UpdatePlan.KindZip ? UpdatePlan.ZipName : UpdatePlan.ExeName);
+            if (!sums.Hashes.ContainsKey(zip) || !release.Has(zip))
+            {
+                throw new LauncherException($"release {release.Tag} has no {zip}");
+            }
+            var (kind, asset) = (UpdatePlan.KindZip, zip);
+            var package = Path.Combine(folder, UpdatePlan.ZipName);
             var want = sums.Hashes[asset];
             if (!File.Exists(package) || await Task.Run(() => ReleaseSums.Sha256OfFile(package), cancel).ConfigureAwait(false) != want)
             {
@@ -97,12 +99,9 @@ internal static class SelfUpdate
                 .OrderByDescending(d => d.Version))
             {
                 var name = folder.Version!.ToString();
-                foreach (var (kind, file, asset) in new[] { (UpdatePlan.KindZip, UpdatePlan.ZipName, Updater.ZipAsset(name)), (UpdatePlan.KindExe, UpdatePlan.ExeName, Updater.LauncherAsset) })
+                var (kind, asset) = (UpdatePlan.KindZip, Updater.ZipAsset(name));
+                if (File.Exists(Path.Combine(folder.Folder, UpdatePlan.ZipName)))
                 {
-                    if (!File.Exists(Path.Combine(folder.Folder, file)))
-                    {
-                        continue;
-                    }
                     try
                     {
                         var notes = Path.Combine(folder.Folder, UpdatePlan.NotesName);
@@ -133,16 +132,12 @@ internal static class SelfUpdate
     {
         var folder = UpdatePlan.TransactionFolder(root, version);
         var worker = Path.Combine(folder, UpdatePlan.WorkerName);
-        var has = false;
-        if (kind == UpdatePlan.KindZip)
+        var package = Path.Combine(folder, UpdatePlan.ZipName);
+        using (var zip = ZipFile.OpenRead(package))
         {
-            var package = Path.Combine(folder, UpdatePlan.ZipName);
-            using (var zip = ZipFile.OpenRead(package))
-            {
-                _ = UpdatePackage.Files(zip, UpdatePlan.LauncherName);
-            }
-            has = UpdatePackage.ExtractHelper(package, worker);
+            _ = UpdatePackage.Files(zip, UpdatePlan.LauncherName);
         }
+        var has = UpdatePackage.ExtractHelper(package, worker);
         var installed = Path.Combine(root, UpdatePlan.HelperName);
         if (!has && File.Exists(installed))
         {

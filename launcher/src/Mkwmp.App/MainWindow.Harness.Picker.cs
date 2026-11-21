@@ -85,7 +85,7 @@ public partial class MainWindow
         Dir(recomp, "setup");
         Dir(home, "Games", "emulators");
         Dir(home, ".local", "share", "Steam", "steamapps", "common", "Proton 10.0");
-        Dir(downloads, "mkwmp-launcher");
+        Dir(downloads, "mkwmp");
         Dir(downloads, "Screenshots 2026");
         Make(downloads, "Mario Kart World 1.8.0.nup", 7_800_000, nup, daysAgo: 12);
         Make(downloads, "holiday photos.zip", 3_600_000, daysAgo: 40);

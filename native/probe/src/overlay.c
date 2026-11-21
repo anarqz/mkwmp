@@ -300,7 +300,7 @@ static int host_find(const MkwPluginApi *api) {
         }
     }
     // 4. a launcher put into the mod's folder
-    if (plat_home_path(g_host_exe, sizeof g_host_exe, "mkwmp-launcher.exe") && file_there(g_host_exe)) return 1;
+    if (plat_home_path(g_host_exe, sizeof g_host_exe, "mkwmp.exe") && file_there(g_host_exe)) return 1;
     g_host_exe[0] = 0;
     return 0;
 }

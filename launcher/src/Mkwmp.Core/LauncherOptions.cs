@@ -8,16 +8,16 @@ namespace Mkwmp.Core;
 /// How the launcher was started (the Rust launcher's command line, unchanged, so shortcuts,
 /// the start-up entry and Steam launch options keep working) and what the host overrides.
 /// <code>
-/// mkwmp-launcher [client.toml]                 the window
-/// mkwmp-launcher --tray [client.toml]          the window, started in the tray
-/// mkwmp-launcher --headless [--no-launch] [--no-update] [client.toml]
-/// mkwmp-launcher --save-logs [client.toml]
-/// mkwmp-launcher --version
+/// mkwmp [client.toml]                 the window
+/// mkwmp --tray [client.toml]          the window, started in the tray
+/// mkwmp --headless [--no-launch] [--no-update] [client.toml]
+/// mkwmp --save-logs [client.toml]
+/// mkwmp --version
 /// </code>
 /// </summary>
 public sealed record LauncherOptions
 {
-    public const string Usage = "usage: mkwmp-launcher [--headless | --tray] [--no-launch] [--no-update] [--save-logs] [--version] [client.toml]";
+    public const string Usage = "usage: mkwmp [--headless | --tray] [--no-launch] [--no-update] [--save-logs] [--version] [client.toml]";
 
     /// <summary>client.toml (null: next to the launcher).</summary>
     public string? ConfigPath { get; init; }
@@ -140,8 +140,8 @@ public sealed record LauncherOptions
         return o;
     }
 
-    /// <summary><c>mkwmp-launcher 1.4.0</c>, for <c>--version</c>.</summary>
-    public string VersionLine => $"mkwmp-launcher {Version ?? AssemblyVersion}";
+    /// <summary><c>mkwmp 1.4.0</c>, for <c>--version</c>.</summary>
+    public string VersionLine => $"mkwmp {Version ?? AssemblyVersion}";
 
     /// <summary>The folder of the executable: where client.toml and <c>logs/</c> live.</summary>
     public static string LauncherFolder => AppContext.BaseDirectory.TrimEnd('\\', '/') is { Length: > 0 } dir ? dir : ".";

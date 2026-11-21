@@ -74,10 +74,10 @@ public sealed class ServerListTests
         var config = new ClientConfig
         {
             Settings = new LauncherSettings { Name = "Ana", Server = "https://mkw.example.net", Pin = "123456" },
-            HiddenServers = [new HiddenServer("ed25519:AbC+/=", "Rainbow \"Road\" Club", "https://rainbow.example.org"), new HiddenServer("http://192.168.0.7:8080", "", "http://192.168.0.7:8080")],
+            HiddenServers = [new HiddenServer("ed25519:AbC+/=", "Sunset \"Circuit\" Club", "https://sunset.example.org"), new HiddenServer("http://192.168.0.7:8080", "", "http://192.168.0.7:8080")],
         }.Remembering();
         var toml = config.ToToml();
-        Assert.Contains("[[server_list.hidden]]\nid = \"ed25519:AbC+/=\"\nname = \"Rainbow \\\"Road\\\" Club\"\naddress = \"https://rainbow.example.org\"\n", toml, StringComparison.Ordinal);
+        Assert.Contains("[[server_list.hidden]]\nid = \"ed25519:AbC+/=\"\nname = \"Sunset \\\"Circuit\\\" Club\"\naddress = \"https://sunset.example.org\"\n", toml, StringComparison.Ordinal);
         var back = ClientConfig.Parse(toml);
         Assert.Equal(config.HiddenServers, back.HiddenServers);
         Assert.True(config.SameAs(back));

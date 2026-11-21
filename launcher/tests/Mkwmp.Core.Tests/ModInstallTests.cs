@@ -364,15 +364,23 @@ public sealed class ModInstallTests
     }
 
     [Fact]
-    public async Task A_new_player_gets_the_mod_from_this_launchers_release_kept_beside_the_launcher()
+    public async Task A_new_player_gets_the_mod_from_game_beside_the_launcher_and_nothing_is_downloaded()
     {
         if (EnvironmentDecides)
         {
             return;
         }
         var zip = ModZip("1.4.0", "dll");
+        // A release that still had the files loose: they are never fetched, the release zip's game/ is the package.
         var github = new FakeGitHub().Release(V, new() { [Mod.Zip] = zip, ["winmm.dll"] = "MZ mkwmp probe 1.4.0"u8.ToArray() });
         var (launcher, home, game) = Rigged(github, updates: true);
+        var probe = "MZ mkwmp probe 1.4.0"u8.ToArray();
+        Directory.CreateDirectory(Path.Combine(home, "game"));
+        File.WriteAllBytes(Path.Combine(home, "game", Mod.Zip), zip);
+        File.WriteAllBytes(Path.Combine(home, "game", "winmm.dll"), probe);
+        var list = $"# mkwmp {V}\n{Updater.Sha256Hex(probe)}  winmm.dll\n{Updater.Sha256Hex(zip)}  {Mod.Zip}\n";
+        File.WriteAllText(Path.Combine(home, "game", "SHA256SUMS"), list);
+        File.WriteAllText(Path.Combine(home, "game", "SHA256SUMS.sig"), FakeGitHub.Sign(list));
         await using (launcher)
         {
             Assert.Equal(IntegrationState.Missing, launcher.Game.Integration!.State);
@@ -384,10 +392,7 @@ public sealed class ModInstallTests
             Assert.Equal("dll", File.ReadAllText(ModFile(game, "plugin/mkwmp.dll")));
             Assert.Equal("[launcher]\nmods = mkwmp\n", Ini(game));
             Assert.False(File.Exists(Path.Combine(game, "winmm.dll"))); // the mod only: no game patch on this runtime
-            // portable: the download is kept in the launcher's own game/ folder, with the signed list
-            Assert.Equal(zip, File.ReadAllBytes(Path.Combine(home, "game", Mod.Zip)));
-            Assert.True(File.Exists(Path.Combine(home, "game", "SHA256SUMS.sig")));
-            Assert.False(File.Exists(Path.Combine(home, "game", "winmm.dll")));
+            Assert.Equal(0, github.Downloads);
             var before = github.Downloads;
             await launcher.SyncIntegrationAsync(force: false);
             Assert.Equal(before, github.Downloads);

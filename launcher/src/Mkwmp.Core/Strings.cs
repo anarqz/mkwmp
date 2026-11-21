@@ -336,16 +336,13 @@ public static class Strings
     public static string PatchWorking => T("core.patch_working");
     public static string ModInstalled => T("core.mod_installed");
     public static string ModWorking => T("core.mod_working");
-    public static string PackageUnavailable(string version, string why) => F("core.package_unavailable", ("version", version), ("why", why));
-    public static string NoBundleAndUpdatesOff => T("core.no_bundle_and_updates_off");
-    public static string PatchNotSaved => T("core.patch_not_saved");
+    public static string PackageMissing(string version) => F("core.package_missing", ("version", version));
 
     /// <summary>What the game reads from the local API: English, as <see cref="OnlineOffInGame"/>.</summary>
     public const string PressPlayInLauncher = "press PLAY in the mkwmp launcher";
     public const string FriendsStillLoading = "friends are still loading: retry";
 
     public static string ReleaseListsNo(string what) => F("core.release_lists_no", ("what", what));
-    public static string AssetDownloadFailed(string what, string why) => F("core.asset_download_failed", ("what", what), ("why", why));
     public static string AutostartFailed(string why) => F("core.autostart_failed", ("why", why));
 
     // ---- devices --------------------------------------------------------------------------

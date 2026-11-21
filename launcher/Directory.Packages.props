@@ -8,7 +8,7 @@
     <PackageVersion Include="AssetRipper.TextureDecoder" Version="2.6.3" />
     <!-- mods in .7z and .rar (Targets/MkwRecomp/ModImport): managed code, MIT, so they open under Wine/Proton too (no tar.exe there) -->
     <PackageVersion Include="SharpCompress" Version="0.50.10" />
-    <!-- mkwmp-updater.exe only (Ed25519 without a native library) -->
+    <!-- updater.exe only (Ed25519 without a native library) -->
     <PackageVersion Include="BouncyCastle.Cryptography" Version="2.6.2" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />

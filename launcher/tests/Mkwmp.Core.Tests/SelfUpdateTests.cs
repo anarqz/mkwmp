@@ -11,7 +11,7 @@ namespace Mkwmp.Core.Tests;
 
 /// <summary>
 /// The launcher's own update (launcher/docs/UPDATES.md): the helper's swap and rollback
-/// (Mkwmp.Update, the library mkwmp-updater.exe runs), its arguments and strings, and the
+/// (Mkwmp.Update, the library updater.exe runs), its arguments and strings, and the
 /// launcher's side: staging, "ready to install", the hand-over, and never under a running game.
 /// GitHub is <see cref="FakeGitHub"/>; no process is started and no window is opened.
 /// </summary>
@@ -36,7 +36,7 @@ public class SelfUpdateTests
     }
 
     /// <summary>A launcher folder with a few files, and a release staged in it as the launcher leaves it.</summary>
-    private static UpdatePlan Staged(byte[] package, string kind = UpdatePlan.KindZip, string version = "1.5.0", string? root = null, string launcher = "mkwmp-launcher.exe")
+    private static UpdatePlan Staged(byte[] package, string kind = UpdatePlan.KindZip, string version = "1.5.0", string? root = null, string launcher = "mkwmp.exe")
     {
         if (root is null)
         {
@@ -56,7 +56,7 @@ public class SelfUpdateTests
             Version = version,
             FromVersion = "1.4.0",
             Kind = kind,
-            Asset = kind == UpdatePlan.KindZip ? Updater.ZipAsset(version) : Updater.LauncherAsset,
+            Asset = Updater.ZipAsset(version),
             Launcher = launcher,
             Arguments = ["--tray", "my settings.toml"],
         };
@@ -73,8 +73,8 @@ public class SelfUpdateTests
         ("mkwmp/0-new.txt", "new in 1.5.0"),
         ("mkwmp/i18n/en.json", "{ \"new\": \"1.5.0\" }"),
         ("mkwmp/licenses/A.txt", "unchanged"),
-        ("mkwmp/mkwmp-launcher.exe", "launcher 1.5.0"),
-        ("mkwmp/mkwmp-updater.exe", "helper 1.5.0"),
+        ("mkwmp/mkwmp.exe", "launcher 1.5.0"),
+        ("mkwmp/updater.exe", "helper 1.5.0"),
         ("mkwmp/client.toml", "a release must never bring settings"),
         ("mkwmp/logs/x.log", "nor logs"));
 
@@ -90,7 +90,7 @@ public class SelfUpdateTests
     {
         var plan = Staged(Release150());
         var read = UpdatePlan.Read(plan.PlanPath);
-        Assert.Equal((plan.Root, "1.5.0", "1.4.0", UpdatePlan.KindZip, "mkwmp-1.5.0-windows-x64.zip", "mkwmp-launcher.exe"), (read.Root, read.Version, read.FromVersion, read.Kind, read.Asset, read.Launcher));
+        Assert.Equal((plan.Root, "1.5.0", "1.4.0", UpdatePlan.KindZip, "mkwmp-1.5.0-windows-x64.zip", "mkwmp.exe"), (read.Root, read.Version, read.FromVersion, read.Kind, read.Asset, read.Launcher));
         Assert.Equal(["--tray", "my settings.toml"], read.Arguments);
         Assert.Equal(Path.Combine(plan.Root, ".mkwmp-selfupdate", "1.5.0", "package.zip"), read.PackagePath);
         Assert.Equal(Path.Combine(plan.Root, "logs", "updater.log"), read.LogPath);
@@ -200,12 +200,12 @@ public class SelfUpdateTests
         var installer = new UpdateInstaller(ReleaseSignature.Verify, TestKeys, log.Add) { Patience = TimeSpan.Zero, Progress = (step, done) => steps.Add((step, done)) };
         var installed = installer.Apply(plan);
 
-        Assert.Equal(("launcher 1.5.0", "{ \"new\": \"1.5.0\" }", "new in 1.5.0", "helper 1.5.0"), (Read(plan, "mkwmp-launcher.exe"), Read(plan, "i18n/en.json"), Read(plan, "0-new.txt"), Read(plan, "mkwmp-updater.exe")));
+        Assert.Equal(("launcher 1.5.0", "{ \"new\": \"1.5.0\" }", "new in 1.5.0", "helper 1.5.0"), (Read(plan, "mkwmp.exe"), Read(plan, "i18n/en.json"), Read(plan, "0-new.txt"), Read(plan, "updater.exe")));
         // Player data is the player's, whatever a zip holds.
         Assert.Equal(("the player's settings", "a session", false), (Read(plan, "client.toml"), Read(plan, "logs/launcher-1.log"), File.Exists(Path.Combine(plan.Root, "logs", "x.log"))));
         // Only what differs was touched; what was replaced is in the backup.
-        Assert.Equal(["0-new.txt", "i18n/en.json", "mkwmp-updater.exe", "mkwmp-launcher.exe"], installed.Changed);
-        Assert.Equal("launcher 1.4.0", File.ReadAllText(Path.Combine(plan.Transaction, "backup", "mkwmp-launcher.exe")));
+        Assert.Equal(["0-new.txt", "i18n/en.json", "updater.exe", "mkwmp.exe"], installed.Changed);
+        Assert.Equal("launcher 1.4.0", File.ReadAllText(Path.Combine(plan.Transaction, "backup", "mkwmp.exe")));
         Assert.False(File.Exists(Path.Combine(plan.Transaction, "backup", "licenses", "A.txt")));
         Assert.Equal((UpdateStep.Verifying, -1), steps[0]);
         Assert.Equal((UpdateStep.Replacing, 1), steps[^1]);
@@ -213,15 +213,15 @@ public class SelfUpdateTests
 
         installed.Commit();
         Assert.False(Directory.Exists(Path.Combine(plan.Transaction, "incoming")));
-        Assert.Equal(["0-new.txt", "i18n/en.json", "licenses/A.txt", "mkwmp-launcher.exe", "mkwmp-updater.exe"], File.ReadAllLines(Path.Combine(plan.Root, ".mkwmp-selfupdate", "installed.txt")));
+        Assert.Equal(["0-new.txt", "i18n/en.json", "licenses/A.txt", "mkwmp.exe", "updater.exe"], File.ReadAllLines(Path.Combine(plan.Root, ".mkwmp-selfupdate", "installed.txt")));
 
         // The next release drops a file: it goes too (to that update's backup), and only that.
-        var next = Staged(Zip(("mkwmp/mkwmp-launcher.exe", "launcher 1.6.0"), ("mkwmp/i18n/en.json", "{ \"new\": \"1.5.0\" }"), ("mkwmp/mkwmp-updater.exe", "helper 1.5.0")), version: "1.6.0", root: plan.Root);
+        var next = Staged(Zip(("mkwmp/mkwmp.exe", "launcher 1.6.0"), ("mkwmp/i18n/en.json", "{ \"new\": \"1.5.0\" }"), ("mkwmp/updater.exe", "helper 1.5.0")), version: "1.6.0", root: plan.Root);
         var second = Installer().Apply(next);
-        Assert.Equal(["0-new.txt", "licenses/A.txt", "mkwmp-launcher.exe"], second.Changed);
-        Assert.Equal((false, "launcher 1.6.0", "the player's settings"), (File.Exists(Path.Combine(plan.Root, "0-new.txt")), Read(plan, "mkwmp-launcher.exe"), Read(plan, "client.toml")));
+        Assert.Equal(["0-new.txt", "licenses/A.txt", "mkwmp.exe"], second.Changed);
+        Assert.Equal((false, "launcher 1.6.0", "the player's settings"), (File.Exists(Path.Combine(plan.Root, "0-new.txt")), Read(plan, "mkwmp.exe"), Read(plan, "client.toml")));
         second.Rollback();
-        Assert.Equal(("new in 1.5.0", "launcher 1.5.0", "unchanged"), (Read(plan, "0-new.txt"), Read(plan, "mkwmp-launcher.exe"), Read(plan, "licenses/A.txt")));
+        Assert.Equal(("new in 1.5.0", "launcher 1.5.0", "unchanged"), (Read(plan, "0-new.txt"), Read(plan, "mkwmp.exe"), Read(plan, "licenses/A.txt")));
     }
 
     /// <summary>The portable layout (publish.ps1): the exe and its native libraries beside it, which must move together.</summary>
@@ -230,14 +230,14 @@ public class SelfUpdateTests
     {
         static byte[] Portable(string version, params string[] dlls) => Zip([
             .. dlls.Select(d => ($"mkwmp/{d}", $"{d} {version}")),
-            ("mkwmp/mkwmp-launcher.exe", $"launcher {version}"),
-            ("mkwmp/mkwmp-updater.exe", "helper")]);
+            ("mkwmp/mkwmp.exe", $"launcher {version}"),
+            ("mkwmp/updater.exe", "helper")]);
         string[] wpf = ["wpfgfx_cor3.dll", "PresentationNative_cor3.dll", "D3DCompiler_47_cor3.dll", "libsodium.dll"];
 
         // From a launcher that was one self-extracting file (nothing beside it): the libraries are added, the exe last.
         var plan = Staged(Portable("1.5.0", wpf));
         var installed = Installer().Apply(plan);
-        Assert.Equal([.. wpf, "mkwmp-updater.exe", "mkwmp-launcher.exe"], installed.Changed);
+        Assert.Equal([.. wpf, "updater.exe", "mkwmp.exe"], installed.Changed);
         Assert.All(wpf, d => Assert.Equal($"{d} 1.5.0", Read(plan, d)));
         installed.Commit();
 
@@ -248,33 +248,28 @@ public class SelfUpdateTests
             Assert.Throws<UpdateException>(() => Installer().Apply(next));
         }
         Assert.All(wpf, d => Assert.Equal($"{d} 1.5.0", Read(plan, d)));
-        Assert.Equal("launcher 1.5.0", Read(plan, "mkwmp-launcher.exe"));
+        Assert.Equal("launcher 1.5.0", Read(plan, "mkwmp.exe"));
 
         // Free again: all of them, then the exe; a library this release no longer has goes, and comes back on a rollback.
         var later = Staged(Portable("1.7.0", wpf[..3]), version: "1.7.0", root: plan.Root);
         var swapped = Installer().Apply(later);
-        Assert.Equal(("launcher 1.7.0", "wpfgfx_cor3.dll 1.7.0", false), (Read(plan, "mkwmp-launcher.exe"), Read(plan, "wpfgfx_cor3.dll"), File.Exists(Path.Combine(plan.Root, "libsodium.dll"))));
-        Assert.Equal("mkwmp-launcher.exe", swapped.Changed[^1]);
+        Assert.Equal(("launcher 1.7.0", "wpfgfx_cor3.dll 1.7.0", false), (Read(plan, "mkwmp.exe"), Read(plan, "wpfgfx_cor3.dll"), File.Exists(Path.Combine(plan.Root, "libsodium.dll"))));
+        Assert.Equal("mkwmp.exe", swapped.Changed[^1]);
         swapped.Rollback();
         Assert.All(wpf, d => Assert.Equal($"{d} 1.5.0", Read(plan, d)));
-        Assert.Equal("launcher 1.5.0", Read(plan, "mkwmp-launcher.exe"));
+        Assert.Equal("launcher 1.5.0", Read(plan, "mkwmp.exe"));
     }
 
     [Fact]
-    public void The_launcher_keeps_the_name_it_has_and_a_release_of_one_executable_installs_too()
+    public void The_launcher_keeps_the_name_it_has()
     {
-        // The player kept the download's name: the zip's mkwmp-launcher.exe is that file.
-        var plan = Staged(Release150(), launcher: "mkwmp-launcher-x86_64-windows.exe");
+        // A test build of 1.4.0 from before the rename (mkwmp-launcher.exe): the zip's mkwmp.exe is that file, so the
+        // player's shortcut to it keeps working.
+        var plan = Staged(Release150(), launcher: "mkwmp-launcher.exe");
         Installer().Apply(plan);
-        Assert.Equal(("launcher 1.5.0", false), (Read(plan, "mkwmp-launcher-x86_64-windows.exe"), File.Exists(Path.Combine(plan.Root, "mkwmp-launcher.exe"))));
-
-        // A release from before the zip carried the helper: only the executable.
-        var single = Staged("launcher 1.5.0 alone"u8.ToArray(), UpdatePlan.KindExe);
-        var installed = Installer().Apply(single);
-        Assert.Equal((Path.Combine(single.Transaction, "launcher.exe"), "launcher 1.5.0 alone"), (single.PackagePath, Read(single, "mkwmp-launcher.exe")));
-        Assert.Equal(["mkwmp-launcher.exe"], installed.Changed);
-        installed.Commit();
-        Assert.False(File.Exists(Path.Combine(single.Root, ".mkwmp-selfupdate", "installed.txt"))); // no list: nothing is ever dropped after it
+        Assert.Equal(("launcher 1.5.0", false), (Read(plan, "mkwmp-launcher.exe"), File.Exists(Path.Combine(plan.Root, "mkwmp.exe"))));
+        // Only a zip is a package.
+        Assert.Throws<UpdateException>(() => (plan with { Kind = "exe" }).Validated());
     }
 
     [Fact]
@@ -283,18 +278,18 @@ public class SelfUpdateTests
         var plan = Staged(Release150());
         var log = new List<string>();
         // Something still holds the helper's file: it cannot be moved aside. By then two files are already swapped.
-        File.WriteAllText(Path.Combine(plan.Root, "mkwmp-updater.exe"), "helper 1.4.0");
-        using (new FileStream(Path.Combine(plan.Root, "mkwmp-updater.exe"), FileMode.Open, FileAccess.Read, FileShare.Read))
+        File.WriteAllText(Path.Combine(plan.Root, "updater.exe"), "helper 1.4.0");
+        using (new FileStream(Path.Combine(plan.Root, "updater.exe"), FileMode.Open, FileAccess.Read, FileShare.Read))
         {
             var error = Assert.Throws<UpdateException>(() => Installer(log).Apply(plan));
             Assert.False(error.Incomplete);
         }
-        Assert.Equal(("launcher 1.4.0", "{ \"old\": \"1.4.0\" }", "helper 1.4.0", false), (Read(plan, "mkwmp-launcher.exe"), Read(plan, "i18n/en.json"), Read(plan, "mkwmp-updater.exe"), File.Exists(Path.Combine(plan.Root, "0-new.txt"))));
+        Assert.Equal(("launcher 1.4.0", "{ \"old\": \"1.4.0\" }", "helper 1.4.0", false), (Read(plan, "mkwmp.exe"), Read(plan, "i18n/en.json"), Read(plan, "updater.exe"), File.Exists(Path.Combine(plan.Root, "0-new.txt"))));
         Assert.Contains("the previous version was restored", log);
         Assert.Empty(Directory.EnumerateFiles(Path.Combine(plan.Transaction, "backup"), "*", SearchOption.AllDirectories));
         // And it can be tried again.
         Installer().Apply(plan);
-        Assert.Equal(("launcher 1.5.0", "helper 1.5.0"), (Read(plan, "mkwmp-launcher.exe"), Read(plan, "mkwmp-updater.exe")));
+        Assert.Equal(("launcher 1.5.0", "helper 1.5.0"), (Read(plan, "mkwmp.exe"), Read(plan, "updater.exe")));
     }
 
     [Fact]
@@ -306,7 +301,7 @@ public class SelfUpdateTests
         bytes[^10] ^= 1;
         File.WriteAllBytes(plan.PackagePath, bytes);
         Assert.Equal("mkwmp-1.5.0-windows-x64.zip: checksum mismatch", Assert.Throws<UpdateException>(() => Installer().Apply(plan)).Message);
-        Assert.Equal("launcher 1.4.0", Read(plan, "mkwmp-launcher.exe"));
+        Assert.Equal("launcher 1.4.0", Read(plan, "mkwmp.exe"));
 
         // A list signed by somebody else.
         plan = Staged(Release150());
@@ -322,15 +317,15 @@ public class SelfUpdateTests
         // Signed, but its paths leave the launcher's folder; or it is not a launcher at all.
         foreach (var (zip, why) in new[]
         {
-            (Zip(("mkwmp/mkwmp-launcher.exe", "x"), ("mkwmp/../../evil.dll", "x")), "unsafe path"),
-            (Zip(("mkwmp-launcher.exe", "x"), ("C:/Windows/evil.dll", "x")), "unsafe path"),
-            (Zip(("mkwmp/readme.txt", "x")), "no mkwmp-launcher.exe"),
-            (Zip(("mkwmp/mkwmp-launcher.exe", "x"), ("mkwmp/MKWMP-LAUNCHER.EXE", "y")), "twice"),
+            (Zip(("mkwmp/mkwmp.exe", "x"), ("mkwmp/../../evil.dll", "x")), "unsafe path"),
+            (Zip(("mkwmp.exe", "x"), ("C:/Windows/evil.dll", "x")), "unsafe path"),
+            (Zip(("mkwmp/readme.txt", "x")), "no mkwmp.exe"),
+            (Zip(("mkwmp/mkwmp.exe", "x"), ("mkwmp/MKWMP.EXE", "y")), "twice"),
         })
         {
             plan = Staged(zip);
             Assert.Contains(why, Assert.Throws<UpdateException>(() => Installer().Apply(plan)).Message, StringComparison.Ordinal);
-            Assert.Equal("launcher 1.4.0", Read(plan, "mkwmp-launcher.exe"));
+            Assert.Equal("launcher 1.4.0", Read(plan, "mkwmp.exe"));
             Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(plan.Root)!, "evil.dll")));
         }
         Assert.True(UpdatePackage.IsPlayerData("client.toml") && UpdatePackage.IsPlayerData("logs/a.log") && UpdatePackage.IsPlayerData(".mkwmp-selfupdate/1.0.0/plan.json") && !UpdatePackage.IsPlayerData("game/winmm.dll"));
@@ -376,7 +371,7 @@ public class SelfUpdateTests
         Assert.Equal(UpdateOutcome.Kept, runner.Run(plan, 0));
         Assert.Equal(["new", "launcher 1.4.0: the new version did not start"], started);
         Assert.Equal([("the new version did not start", UpdateOutcome.Kept)], shown);
-        Assert.Equal(("launcher 1.4.0", "{ \"old\": \"1.4.0\" }", false), (Read(plan, "mkwmp-launcher.exe"), Read(plan, "i18n/en.json"), File.Exists(Path.Combine(plan.Root, "0-new.txt"))));
+        Assert.Equal(("launcher 1.4.0", "{ \"old\": \"1.4.0\" }", false), (Read(plan, "mkwmp.exe"), Read(plan, "i18n/en.json"), File.Exists(Path.Combine(plan.Root, "0-new.txt"))));
 
         // A package that does not verify: nothing is touched, the old launcher opens again.
         File.WriteAllText(plan.SignaturePath, FakeGitHub.Sign("something else"));
@@ -407,7 +402,7 @@ public class SelfUpdateTests
         var root = home is null ? Rig.NewFolder("selfupdate") : Path.GetDirectoryName(home)!;
         home ??= Path.Combine(root, "launcher");
         var game = Path.Combine(root, "mkw");
-        var exe = Path.Combine(home, "mkwmp-launcher.exe");
+        var exe = Path.Combine(home, "mkwmp.exe");
         if (!Directory.Exists(home))
         {
             Directory.CreateDirectory(game);
@@ -444,7 +439,7 @@ public class SelfUpdateTests
     private static FakeGitHub GitHubWith150(out byte[] zip)
     {
         zip = Release150();
-        return new FakeGitHub().Release("1.5.0", new() { [Updater.ZipAsset("1.5.0")] = zip, [Updater.LauncherAsset] = "launcher 1.5.0"u8.ToArray() }, notes: "What's new in 1.5.0");
+        return new FakeGitHub().Release("1.5.0", new() { [Updater.ZipAsset("1.5.0")] = zip }, notes: "What's new in 1.5.0");
     }
 
     [Fact]
@@ -477,8 +472,7 @@ public class SelfUpdateTests
             Assert.Empty(helpers);
             Assert.Equal(zip, File.ReadAllBytes(Path.Combine(stage, "package.zip")));
             Assert.True(File.Exists(Path.Combine(stage, "SHA256SUMS.sig")));
-            // The zip, not the lone executable; and the helper that will run is the new release's own.
-            Assert.DoesNotContain(github.Requests, r => r.Name == Updater.LauncherAsset);
+            // The helper that will run is the new release's own.
             Assert.Equal("helper 1.5.0", File.ReadAllText(Path.Combine(stage, "worker.exe")));
             // Asking again downloads nothing.
             var before = github.Downloads;
@@ -498,11 +492,11 @@ public class SelfUpdateTests
 
             // What the helper then does with that plan (its own signature check, the test key in place of the release key).
             var plan = UpdatePlan.Read(args.Plan!);
-            Assert.Equal((home, "1.5.0", "1.4.0", "mkwmp-launcher.exe"), (plan.Root, plan.Version, plan.FromVersion, plan.Launcher));
+            Assert.Equal((home, "1.5.0", "1.4.0", "mkwmp.exe"), (plan.Root, plan.Version, plan.FromVersion, plan.Launcher));
             Assert.Equal(["--tray"], plan.Arguments);
             settings = File.ReadAllText(Path.Combine(home, "client.toml"));
             var outcome = new UpdateRunner(Installer(), _ => { }) { StartLauncher = (_, _) => true }.Run(plan, 0);
-            Assert.Equal((UpdateOutcome.Installed, "launcher 1.5.0", "helper 1.5.0"), (outcome, File.ReadAllText(exe), File.ReadAllText(Path.Combine(home, "mkwmp-updater.exe"))));
+            Assert.Equal((UpdateOutcome.Installed, "launcher 1.5.0", "helper 1.5.0"), (outcome, File.ReadAllText(exe), File.ReadAllText(Path.Combine(home, "updater.exe"))));
             Assert.Equal(settings, File.ReadAllText(Path.Combine(home, "client.toml")));
         }
 
@@ -523,7 +517,7 @@ public class SelfUpdateTests
     {
         var big = new byte[400_000];
         new Random(7).NextBytes(big);
-        var zip = ZipBytes(("mkwmp/mkwmp-launcher.exe", big), ("mkwmp/mkwmp-updater.exe", "helper 1.5.0"u8.ToArray()));
+        var zip = ZipBytes(("mkwmp/mkwmp.exe", big), ("mkwmp/updater.exe", "helper 1.5.0"u8.ToArray()));
         var name = Updater.ZipAsset("1.5.0");
         var github = new FakeGitHub().Release("1.5.0", new() { [name] = zip });
         var (launcher, home, _, _, _) = Launch(github);
@@ -631,38 +625,18 @@ public class SelfUpdateTests
             // No window to ask and no helper window to show: verified, swapped by this process, restarted (the test's Exit).
             Assert.Equal((UpdateState.Restarting, Strings.UpdatedRestarting), (launcher.Update.State, launcher.Update.Status));
             Assert.Empty(helpers);
-            Assert.Equal(("launcher 1.5.0", "helper 1.5.0", "{ \"new\": \"1.5.0\" }"), (File.ReadAllText(exe), File.ReadAllText(Path.Combine(home, "mkwmp-updater.exe")), File.ReadAllText(Path.Combine(home, "i18n", "en.json"))));
-            Assert.Equal("launcher 1.4.0", File.ReadAllText(Path.Combine(home, ".mkwmp-selfupdate", "1.5.0", "backup", "mkwmp-launcher.exe")));
-        }
-    }
-
-    [Fact]
-    public async Task A_release_without_the_zip_uses_the_installed_helper_for_its_one_executable()
-    {
-        var github = new FakeGitHub().Release("1.5.0", new() { [Updater.LauncherAsset] = "launcher 1.5.0 alone"u8.ToArray() });
-        var (launcher, home, exe, _, helpers) = Launch(github);
-        File.WriteAllText(Path.Combine(home, "mkwmp-updater.exe"), "helper 1.4.0");
-        await using (launcher)
-        {
-            await launcher.StartAsync(default);
-            await launcher.StartupUpdates;
-            await launcher.ApplyUpdateAsync(default);
-            var started = Assert.Single(helpers);
-            Assert.Equal("helper 1.4.0", File.ReadAllText(started.Helper)); // a copy: the installed one is free to be replaced
-            var plan = UpdatePlan.Read(UpdaterArgs.Parse(started.Arguments, out _)!.Plan!);
-            Assert.Equal((UpdatePlan.KindExe, Updater.LauncherAsset), (plan.Kind, plan.Asset));
-            Assert.Equal(UpdateOutcome.Installed, new UpdateRunner(Installer(), _ => { }) { StartLauncher = (_, _) => true }.Run(plan, 0));
-            Assert.Equal("launcher 1.5.0 alone", File.ReadAllText(exe));
+            Assert.Equal(("launcher 1.5.0", "helper 1.5.0", "{ \"new\": \"1.5.0\" }"), (File.ReadAllText(exe), File.ReadAllText(Path.Combine(home, "updater.exe")), File.ReadAllText(Path.Combine(home, "i18n", "en.json"))));
+            Assert.Equal("launcher 1.4.0", File.ReadAllText(Path.Combine(home, ".mkwmp-selfupdate", "1.5.0", "backup", "mkwmp.exe")));
         }
     }
 
     /// <summary>
-    /// The way from the Rust launcher (1.3.x): it downloaded mkwmp-launcher-x86_64-windows.exe (this launcher as one
-    /// file), renamed itself to <c>mkwmp-launcher.exe.old</c> and started that file in its place, in the folder of the
-    /// 1.3.x zip: no i18n/, no helper, no native libraries, game/ for 1.3.1, and the Rust launcher's client.toml.
+    /// The way from the Rust launcher (1.3.x), by hand: the player unzipped 1.4.0 into the 1.3.x folder, so mkwmp.exe stands
+    /// beside the Rust launcher's mkwmp-launcher.exe (README.txt says to delete it), with game/ of 1.4.0 and the Rust
+    /// launcher's client.toml.
     /// </summary>
     [Fact]
-    public async Task After_the_rust_launcher_swapped_this_one_in_the_player_keeps_everything_and_the_next_update_brings_the_whole_zip()
+    public async Task A_1_3_folder_the_new_zip_was_unzipped_into_keeps_the_player_s_settings_and_updates_from_the_zip()
     {
         _ = Rig.TestExe;
         var root = Rig.NewFolder("from-rust");
@@ -671,11 +645,13 @@ public class SelfUpdateTests
         Directory.CreateDirectory(Path.Combine(home, "game"));
         Directory.CreateDirectory(game);
         File.WriteAllBytes(Path.Combine(game, "mkw.exe"), Rig.TestExe);
-        var exe = Path.Combine(home, "mkwmp-launcher.exe");
-        File.WriteAllText(exe, "launcher 1.4.0, one file");
-        File.WriteAllText(exe + ".old", "the rust launcher 1.3.1");
+        var exe = Path.Combine(home, "mkwmp.exe");
+        File.WriteAllText(exe, "launcher 1.4.0");
+        File.WriteAllText(Path.Combine(home, "updater.exe"), "helper 1.4.0");
+        var rustExe = Path.Combine(home, "mkwmp-launcher.exe");
+        File.WriteAllText(rustExe, "the rust launcher 1.3.1");
         File.WriteAllText(Path.Combine(home, "LICENSE"), "GPL");
-        File.WriteAllText(Path.Combine(home, "game", "SHA256SUMS"), "# mkwmp 1.3.1\n" + new string('a', 64) + "  winmm.dll\n");
+        File.WriteAllText(Path.Combine(home, "game", "SHA256SUMS"), "# mkwmp 1.4.0\n" + new string('a', 64) + "  mkwmp-mod.zip\n");
         // As the Rust launcher's ClientConfig::save writes it (rust/client/src/config.rs).
         var rust = string.Join('\n',
             "# mkwmp launcher settings (edited by the launcher window).", "# Guide: https://anarqz.github.io/mkwmp/", "",
@@ -686,13 +662,13 @@ public class SelfUpdateTests
             "output_gain = 90", "inputs = []", "outputs = []", "", "[[voice.mutes]]", "account = \"123\"", "name = \"Bia\"", "");
         File.WriteAllText(Path.Combine(home, "client.toml"), rust);
         var zip = Zip(
-            ("mkwmp/mkwmp-launcher.exe", "launcher 1.4.1"),
-            ("mkwmp/mkwmp-updater.exe", "helper 1.4.1"),
+            ("mkwmp/mkwmp.exe", "launcher 1.4.1"),
+            ("mkwmp/updater.exe", "helper 1.4.1"),
             ("mkwmp/wpfgfx_cor3.dll", "native 1.4.1"),
             ("mkwmp/i18n/en.json", "{ \"home.play\": \"Play\" }"),
             ("mkwmp/licenses/Nunito-LICENSE.txt", "OFL"),
             ("mkwmp/game/SHA256SUMS", "# mkwmp 1.4.1\n"));
-        var github = new FakeGitHub().Release("1.4.1", new() { [Updater.ZipAsset("1.4.1")] = zip, [Updater.LauncherAsset] = "launcher 1.4.1, one file"u8.ToArray() });
+        var github = new FakeGitHub().Release("1.4.1", new() { [Updater.ZipAsset("1.4.1")] = zip });
 
         var (launcher, _, _, _, helpers) = Launch(github, home);
         await using (launcher)
@@ -704,23 +680,23 @@ public class SelfUpdateTests
             Assert.Equal(("{0.0.1.00000000}.{mic}", 70, 90), (s.Voice.Input, s.Voice.InputGain, s.Voice.OutputGain));
             await launcher.StartAsync(default);
             await launcher.StartupUpdates;
-            Assert.False(File.Exists(exe + ".old")); // what the Rust launcher's swap left
             Assert.Equal((UpdateState.Available, "1.4.1"), (launcher.Update.State, launcher.Update.AvailableVersion));
 
-            // The next update is the zip, installed by the helper that comes out of it (none is installed yet).
+            // The next update is the zip, installed by the helper that comes out of it.
             await launcher.DownloadUpdateAsync(default);
-            Assert.DoesNotContain(github.Requests, r => r.Name == Updater.LauncherAsset);
             await launcher.ApplyUpdateAsync(default);
             var started = Assert.Single(helpers);
             Assert.Equal("helper 1.4.1", File.ReadAllText(started.Helper));
             var plan = UpdatePlan.Read(UpdaterArgs.Parse(started.Arguments, out _)!.Plan!);
-            Assert.Equal((UpdatePlan.KindZip, "1.4.0", "mkwmp-launcher.exe"), (plan.Kind, plan.FromVersion, plan.Launcher));
+            Assert.Equal((UpdatePlan.KindZip, "1.4.0", "mkwmp.exe"), (plan.Kind, plan.FromVersion, plan.Launcher));
             var settings = File.ReadAllText(Path.Combine(home, "client.toml"));
             Assert.Equal(UpdateOutcome.Installed, new UpdateRunner(Installer(), _ => { }) { StartLauncher = (_, _) => true }.Run(plan, 0));
             Assert.Equal(("launcher 1.4.1", "helper 1.4.1", "native 1.4.1", "{ \"home.play\": \"Play\" }", "GPL"),
-                (File.ReadAllText(exe), File.ReadAllText(Path.Combine(home, "mkwmp-updater.exe")), File.ReadAllText(Path.Combine(home, "wpfgfx_cor3.dll")),
+                (File.ReadAllText(exe), File.ReadAllText(Path.Combine(home, "updater.exe")), File.ReadAllText(Path.Combine(home, "wpfgfx_cor3.dll")),
                  File.ReadAllText(Path.Combine(home, "i18n", "en.json")), File.ReadAllText(Path.Combine(home, "LICENSE"))));
             Assert.Equal(settings, File.ReadAllText(Path.Combine(home, "client.toml")));
+            // No release brought the Rust launcher's file: it is left as it is (the player deletes it).
+            Assert.Equal("the rust launcher 1.3.1", File.ReadAllText(rustExe));
         }
 
         // The file the C# launcher writes still holds what the Rust launcher reads (name, PIN, game), should the player go back.

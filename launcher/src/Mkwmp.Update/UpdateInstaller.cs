@@ -111,7 +111,7 @@ public sealed class UpdateInstaller(Ed25519Verifier verifier, IReadOnlyList<stri
             var files = Unpack(plan, incoming);
             installed.Paths = [.. files];
             var changed = files.Where(path => !Same(Within(incoming, path), Within(plan.Root, path))).ToList();
-            var retired = plan.Kind == UpdatePlan.KindZip ? Retired(plan, files) : [];
+            var retired = Retired(plan, files);
             log?.Invoke($"{files.Count} files in the package, {changed.Count} changed, {retired.Count} dropped");
             // The launcher's executable last: until then a start still finds the old launcher.
             changed = [.. changed.OrderBy(path => path.Equals(plan.Launcher, StringComparison.OrdinalIgnoreCase) ? 1 : 0)];
@@ -161,14 +161,6 @@ public sealed class UpdateInstaller(Ed25519Verifier verifier, IReadOnlyList<stri
     private static List<string> Unpack(UpdatePlan plan, string incoming)
     {
         var paths = new List<string>();
-        if (plan.Kind == UpdatePlan.KindExe)
-        {
-            var target = Within(incoming, plan.Launcher);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(plan.PackagePath, target, overwrite: true);
-            paths.Add(plan.Launcher);
-            return paths;
-        }
         using var zip = ZipFile.OpenRead(plan.PackagePath);
         foreach (var (entry, path) in UpdatePackage.Files(zip, plan.Launcher))
         {
@@ -357,10 +349,7 @@ public sealed class InstalledUpdate
     {
         try
         {
-            if (_plan.Kind == UpdatePlan.KindZip)
-            {
-                File.WriteAllLines(Path.Combine(UpdatePlan.Store(_plan.Root), UpdatePlan.InstalledName), Paths);
-            }
+            File.WriteAllLines(Path.Combine(UpdatePlan.Store(_plan.Root), UpdatePlan.InstalledName), Paths);
             if (Directory.Exists(_incoming))
             {
                 Directory.Delete(_incoming, recursive: true);
