@@ -23,7 +23,7 @@ What changed in each MKWMP release, newest first. The launcher shows this file o
 - **Your game's real cover.** Home shows the cover art of your own copy of the game.
 - **Steam Deck and Proton.** The launcher runs on the Steam Deck and other Linux PCs through Proton, in Game Mode and Desktop Mode.
 
-## 1.3.1 — unreleased
+## 1.3.1 — 2026-11-21
 
 - mkw-recomp 0.1.16-mkwmp.1 recommended (its -noavx2 build accepted); official 0.1.16 and 0.1.16-mkwmp supported; the mod runs on 0.1.15+.
 - The Rust launcher passes the server's room (lobby, ussid, ussids, at) to the game for crash records.
