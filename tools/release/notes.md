@@ -1,4 +1,16 @@
-**mkwmp 1.3.0**: camera and voice chat in friend rooms, the MKWMP mod for mkw-recomp, and mkw-recomp 0.1.15.
+**mkwmp 1.3.1**: mkw-recomp 0.1.16, and the server side of what's coming next.
+
+- **mkw-recomp [0.1.16-mkwmp.1](https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp.1)** is the recommended version: MKWMP's build of mkw-recomp 0.1.16, with the camera. Its setup now also runs under Wine/Proton. If your CPU has no AVX2, take the `-noavx2` zip. The official **0.1.16** is supported too, as well as 0.1.15-mkwmp, 0.1.15, 0.1.13, 0.1.12 and 0.1.10. The MKWMP mod works with 0.1.15 and newer. Coming from 0.1.15-mkwmp, open mkw-recomp once and let it finish its setup: the launcher tells you when that's needed.
+- The launcher passes the server's room details (which lobby, who's in it) to the game, so crash reports can say which room a crash happened in.
+
+For people hosting a server:
+- `GET /privacy` serves your privacy policy (`[privacy] file`; a generic default otherwise), and the server records which version each player accepted. The next launcher (1.4.0) asks players to accept it; `[privacy] enforce = true` then refuses seats to players who haven't. Leave it off while your players are on 1.3.x.
+- `[announce]` lists your server in a server directory (a "beholder"), which the next launcher shows as a server browser. `mkwmp beholder` runs a directory yourself. See [HOSTING](https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md).
+- `GET /ping` for the launcher's latency check.
+
+---
+
+**From 1.3.0** (**mkwmp 1.3.0**: camera and voice chat in friend rooms, the MKWMP mod for mkw-recomp, and mkw-recomp 0.1.15.)
 
 - **Voice chat now works only in friend rooms** (ONLINE → FRIENDS), for everyone in the room. Matchmade lobbies have no voice chat any more. This is a server change, so it applies to every launcher version, 1.2.0 included.
 - **Camera in friend rooms.** With the MKWMP mod on game 1.8.0, turn your camera on and the mutual friends in your room (each of you on the other's friend list) see you above your kart, up to 4 faces each. It's off by default: turn it on under Mods → MKWMP → Options (or the in-game settings, Camera tab), then answer yes when the game asks at Online Play. Pictures are relayed live and never recorded. Muting a player hides their camera and stops yours going to them. Report camera abuse from the same Camera settings. On Linux (the mod's native build) the camera can only send a test pattern for now: webcam capture is Windows-only.

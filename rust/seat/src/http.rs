@@ -554,6 +554,10 @@ struct RosterBody {
     /// Live lobbies per mode, e.g. {"Normal24": 3}. Optional.
     #[serde(default)]
     lobbies: Option<std::collections::BTreeMap<String, usize>>,
+    /// Each seat's lobby room by session id; a listed seat absent here is in no room. Optional
+    /// (lobbies before 1.3.1 leave it out and rooms stay unknown).
+    #[serde(default)]
+    rooms: Option<std::collections::HashMap<String, crate::roster::RoomView>>,
 }
 
 /// Accepted friends per roster entry (the friends cap).
@@ -579,6 +583,9 @@ async fn lobby_roster(State(s): State<AppState>, h: HeaderMap, Json(b): Json<Ros
         let mut r = s.roster.lock().unwrap();
         if let Some(l) = &b.lobbies {
             r.report_lobbies(l, now);
+        }
+        if let Some(rooms) = &b.rooms {
+            r.report_rooms(&b.session_ids, rooms, now);
         }
         (r.roster(&b.session_ids, now), r.boot_id().to_string())
     };

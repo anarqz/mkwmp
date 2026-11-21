@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use rand::RngCore;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ticket::{Claims, Issuer};
 
 use crate::names::{self, NameError};
@@ -98,7 +98,28 @@ struct Session {
     name: String,
     seat: Option<Seat>,
     last_seen: u64,
+    /// The lobby room this seat is in, as the lobby last reported it.
+    room: Option<RoomView>,
 }
+
+/// A seat's room as the lobby knows it (sent with the roster call). Shown to that seat's own
+/// launcher only (`room` in [`View`]), for its crash records: which lobby, its ussid, everyone's.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomView {
+    pub lobby: String,
+    pub ussid: u32,
+    /// Every member's ussid, ascending: the first is the game's mesh host.
+    pub ussids: Vec<u32>,
+    /// When the seat server got it (ms since 1970).
+    #[serde(default)]
+    pub at: u64,
+}
+
+/// A room older than this (the lobby stopped reporting) is no longer shown.
+pub const ROOM_STALE_MS: u64 = 60_000;
+/// Members a reported room may list.
+const MAX_ROOM_USSIDS: usize = 64;
 
 struct Seat {
     ticket: String,
@@ -124,6 +145,8 @@ pub struct View {
     pub next_poll_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ticket: Option<TicketView>,
+    /// The seat's lobby room (`null` when in none, or the lobby hasn't said).
+    pub room: Option<RoomView>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -195,6 +218,8 @@ pub struct Roster {
     changes: u64,
     lobbies: BTreeMap<String, usize>,
     lobbies_at: u64,
+    /// The latest `now` seen (rooms go stale against it).
+    now: u64,
 }
 
 pub struct Created {
@@ -225,6 +250,7 @@ impl Roster {
             changes: 0,
             lobbies: BTreeMap::new(),
             lobbies_at: 0,
+            now: 0,
         }
     }
 
@@ -263,7 +289,7 @@ impl Roster {
         let key = random_hex(32);
         self.sessions.insert(
             sid.clone(),
-            Session { key: key.clone(), name: name.to_string(), seat: None, last_seen: now },
+            Session { key: key.clone(), name: name.to_string(), seat: None, last_seen: now, room: None },
         );
         self.by_name.insert(names::key(name), sid.clone());
         self.queue.push_back(sid.clone());
@@ -279,7 +305,7 @@ impl Roster {
         let sid = random_hex(16);
         let key = random_hex(32);
         let seated = prev.seat.is_some();
-        self.sessions.insert(sid.clone(), Session { key: key.clone(), name: name.to_string(), seat: None, last_seen: now });
+        self.sessions.insert(sid.clone(), Session { key: key.clone(), name: name.to_string(), seat: None, last_seen: now, room: None });
         self.by_name.insert(names::key(name), sid.clone());
         if seated {
             let seat = self.sign(&sid, now); // the ticket names the new session
@@ -354,6 +380,7 @@ impl Roster {
 
     /// Drop sessions not heard from in time, then fill free seats.
     pub fn sweep(&mut self, now: u64) {
+        self.now = self.now.max(now);
         let (seat_to, queue_to) = (self.rules.seat_timeout_ms, self.rules.queue_timeout_ms);
         let dead: Vec<String> = self
             .sessions
@@ -441,6 +468,25 @@ impl Roster {
                 expires_at: seat.expires_at,
                 lobby: self.rules.lobby_endpoint.clone(),
             }),
+            room: s.room.clone().filter(|r| self.now.saturating_sub(r.at) < ROOM_STALE_MS),
+        }
+    }
+
+    /// The lobby's rooms for the seats of its roster call: each of `sids` gets its entry in
+    /// `rooms`, or none (not in a room). Malformed entries count as none.
+    pub fn report_rooms(&mut self, sids: &[String], rooms: &HashMap<String, RoomView>, now: u64) {
+        for sid in sids {
+            if let Some(s) = self.sessions.get_mut(sid) {
+                s.room = rooms
+                    .get(sid)
+                    .filter(|r| !r.lobby.is_empty() && r.lobby.len() <= 64 && r.ussids.len() <= MAX_ROOM_USSIDS)
+                    .map(|r| {
+                        let mut ussids = r.ussids.clone();
+                        ussids.sort_unstable();
+                        ussids.dedup();
+                        RoomView { lobby: r.lobby.clone(), ussid: r.ussid, ussids, at: now }
+                    });
+            }
         }
     }
 

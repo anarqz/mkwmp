@@ -55,6 +55,7 @@ fn view(state: &str, position: Option<usize>) -> Value {
         "bootId": "b1", "sessionId": "s1", "name": "Ana", "sessionKey": "k1",
         "state": state, "position": position, "seatsTotal": 2, "seatsFree": 0,
         "nextPollMs": 1000, "ticket": ticket,
+        "room": (state == "seated").then(|| json!({"lobby": "l-1", "ussid": 5, "ussids": [3, 5], "at": 1_795_000_000_000u64})),
     })
 }
 
@@ -414,6 +415,21 @@ async fn online_mode_does_not_cache_a_gamertag_in_use() {
     assert_eq!(f.joins.load(Ordering::SeqCst), 1);
     tokio::time::sleep(crate::seat::BUSY_RETRY).await;
     assert!(matches!(seat.want().await, Answer::Seated { .. }));
+}
+
+#[tokio::test]
+async fn the_seat_servers_room_reaches_the_game_as_is() {
+    let f = fake(Seat::Seated, (204, ""));
+    let (core, _game) = setup(&serve(f.clone()).await);
+    let mut cfg = core.ui().cfg;
+    cfg.seat = SeatMode::Online;
+    let seat = crate::seat::Seat::new(&cfg);
+    match seat.want().await {
+        Answer::Seated { room: Some(r), .. } => {
+            assert_eq!(r, json!({"lobby": "l-1", "ussid": 5, "ussids": [3, 5], "at": 1_795_000_000_000u64}));
+        }
+        other => panic!("{other:?}"),
+    }
 }
 
 fn enable_mod(game: &Path) {

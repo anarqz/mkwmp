@@ -252,7 +252,7 @@ impl Registry {
         if !has_kind {
             conn.execute_batch("ALTER TABLE reports ADD COLUMN kind TEXT NOT NULL DEFAULT 'voice';")?;
         }
-        // Consent to the server's privacy policy (1.4.0): the SHA-256 of the text accepted, and when.
+        // Consent to the server's privacy policy (1.3.1): the SHA-256 of the text accepted, and when.
         let has_privacy: bool = conn
             .query_row("SELECT COUNT(*) FROM pragma_table_info('profiles') WHERE name = 'privacy_version'", [], |r| r.get::<_, i64>(0))?
             > 0;

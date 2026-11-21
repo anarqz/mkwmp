@@ -39,7 +39,8 @@ pub struct Snapshot {
 /// What the local API answers the game.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Answer {
-    Seated { ticket: String, lobby: String, name: String },
+    /// `room`: the lobby room the seat server reported (`None`: none or unknown).
+    Seated { ticket: String, lobby: String, name: String, room: Option<serde_json::Value> },
     Queued { position: usize, seats_total: usize },
     Refused(String),
     Unavailable(String),
@@ -120,7 +121,7 @@ impl Seat {
     fn answer(st: &State) -> Answer {
         match &st.view {
             Some(v) => match &v.ticket {
-                Some(t) => Answer::Seated { ticket: t.token.clone(), lobby: t.lobby.clone(), name: v.name.clone() },
+                Some(t) => Answer::Seated { ticket: t.token.clone(), lobby: t.lobby.clone(), name: v.name.clone(), room: v.room.clone() },
                 None => Answer::Queued { position: v.position.unwrap_or(0), seats_total: v.seats_total },
             },
             None => Answer::Unavailable("not connected to the server yet".into()),

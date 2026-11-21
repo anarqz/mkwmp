@@ -111,6 +111,6 @@ is read-only there.
 
 1. `GET {beholder}/beholder/v1/servers`.
 2. For each item it shows, time `GET {endpoint}/ping` (204, no body) or `GET {endpoint}/seat/v1/status`.
-   Servers before 1.4.0 have no `/ping`: fall back to `status`.
+   Servers before 1.3.1 have no `/ping`: fall back to `status`.
 3. On pick, read `status` from the server itself and use only what the server says. The listing's
    `name`, counts and `version` are claims of whoever holds the key.
