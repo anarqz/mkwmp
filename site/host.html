@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en" data-root="" data-shots="assets/launcher/" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Host an MKWMP server: a cloud VM in one command</title>
+<meta name="description" content="Run your own MKWMP server on a small Vultr VM: SSH keys, the firewall, one command, HTTPS, updates and backups.">
+<meta property="og:title" content="Host an MKWMP server: a cloud VM in one command">
+<meta property="og:description" content="Run your own MKWMP server on a small Vultr VM: SSH keys, the firewall, one command, HTTPS, updates and backups.">
+<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/art/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#2A2A2D">
+<link rel="icon" href="assets/art/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="assets/art/glyph.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/art/apple-touch-icon.png">
+<link rel="alternate" hreflang="en" href="https://anarqz.github.io/mkwmp/host.html">
+<link rel="alternate" hreflang="pt-BR" href="https://anarqz.github.io/mkwmp/pt-br/host.html">
+<link rel="stylesheet" href="assets/site.css">
+<script>window.I18N = {"themeLight": "Switch to light", "themeDark": "Switch to dark", "copied": "Copied", "copyFailed": "Couldn't copy: select the text instead", "loading": "Loading…", "serversError": "The server directory didn't answer. Try again in a moment.", "serversNone": "No servers are listed right now.", "serversCount": "{n} servers listed, {p} players seated right now.", "serversCount1": "1 server listed, {p} players seated right now.", "playing": "playing", "inQueue": "{n} in queue", "policyVersion": "Policy version {v}", "policyError": "The official server didn't answer. Its policy is also at:"};
+(function () { var t = (location.search.match(/[?&]theme=(light|dark)/) || [])[1] || null; if (!t) try { t = localStorage.getItem("mkwmp-theme"); } catch (e) {}
+  document.documentElement.dataset.theme = t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); })();</script>
+<script defer src="assets/site.js"></script>
+</head>
+<body>
+<a class="sr" href="#main">Skip to the content</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand focusable" href="./"><img src="assets/art/icon-192.png" alt="">MKWMP</a>
+    <nav class="nav" aria-label="On this page">
+      <a href="#ssh">SSH</a><a href="#vm">VM</a><a href="#firewall">Firewall</a><a href="#run">The script</a><a href="#https">HTTPS</a><a href="#ops">Updates</a><a href="#trouble">Help</a>
+    </nav>
+    <div class="top__end">
+      <a class="icon-btn focusable" href="pt-br/host.html" hreflang="pt-BR" title="Português (Brasil)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><span>PT</span></a>
+      <button class="icon-btn focusable" id="theme" type="button" aria-label="Light or dark"><span class="when-dark"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5,12 A4.5,4.5 0 1 0 16.5,12 A4.5,4.5 0 1 0 7.5,12 Z M12,2.5 V4.5 M12,19.5 V21.5 M2.5,12 H4.5 M19.5,12 H21.5 M5.3,5.3 L6.7,6.7 M17.3,17.3 L18.7,18.7 M5.3,18.7 L6.7,17.3 M17.3,6.7 L18.7,5.3"/></svg></span><span class="when-light"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,14.5 A8.5,8.5 0 1 1 9.5,4 A7,7 0 0 0 20,14.5 Z"/></svg></span></button>
+      <a class="icon-btn focusable" href="https://github.com/anarqz/mkwmp" title="GitHub"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4,4.5 H20 A1.5,1.5 0 0 1 21.5,6 V18 A1.5,1.5 0 0 1 20,19.5 H4 A1.5,1.5 0 0 1 2.5,18 V6 A1.5,1.5 0 0 1 4,4.5 Z M2.5,8.5 H21.5 M7,12 L10,14.25 L7,16.5 M12.5,16.5 H16.5"/></svg></a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="wrap page" style="padding-top: calc(80 * var(--u))">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg><h2>Host an MKWMP server</h2><a class="btn btn--ghost focusable pill-btn" href="./"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15,5 L8,12 L15,19"/></svg>Back to MKWMP</a></div>
+    <img class="banner" src="assets/art/banner-server-3x1.webp" alt="" width="1536" height="512">
+    <p class="lead">A Vultr VM and one command. About US$5 a month runs a server for dozens of players. You need a Vultr account, an SSH key, and a few minutes.</p>
+    <button class="cmd focusable" type="button"><code>curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash</code><span class="cmd__copy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5,3 H14 L19,8 V19.5 A1.5,1.5 0 0 1 17.5,21 H6.5 A1.5,1.5 0 0 1 5,19.5 V4.5 A1.5,1.5 0 0 1 6.5,3 Z M14,3 V8 H19"/></svg>Copy</span></button>
+  </section>
+
+  <section class="wrap page" id="ssh">
+    <div class="section"><span>1. An SSH key</span></div>
+    <p>You log in to the VM with a key, not a password. If you don't have one, create it on your own computer (PowerShell on Windows, a terminal on macOS or Linux) and press Enter at each question:</p>
+    <button class="cmd focusable" type="button"><code>ssh-keygen -t ed25519 -C "mkwmp server"</code><span class="cmd__copy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5,3 H14 L19,8 V19.5 A1.5,1.5 0 0 1 17.5,21 H6.5 A1.5,1.5 0 0 1 5,19.5 V4.5 A1.5,1.5 0 0 1 6.5,3 Z M14,3 V8 H19"/></svg>Copy</span></button>
+    <p class="rows-note">Your public key is now in <code>~/.ssh/id_ed25519.pub</code> (on Windows, <code>C:\Users\&lt;you&gt;\.ssh\id_ed25519.pub</code>). Add it at Vultr: Account → SSH Keys → Add SSH Key. Never share <code>id_ed25519</code> without <code>.pub</code>: that's the private half.</p>
+  </section>
+
+  <section class="wrap page" id="vm">
+    <div class="section"><span>2. The VM at Vultr</span></div>
+    <p>Pick a region close to most of your players: the relay and the voice and camera relay run on this VM. When it's running, note its public IPv4 address.</p>
+    <table>
+            <tr><th>Where</th><td>Deploy → Cloud Compute, Shared CPU (Regular)</td></tr>
+      <tr><th>Size</th><td>1 vCPU, 1 GB RAM, about US$5 a month</td></tr>
+      <tr><th>Image</th><td>Ubuntu 24.04 LTS x64</td></tr>
+      <tr><th>Login</th><td>your SSH key</td></tr>
+    </table>
+  </section>
+
+  <section class="wrap page" id="firewall">
+    <div class="section"><span>3. The cloud firewall</span></div>
+    <p>Vultr filters traffic before it reaches the VM. Create a firewall group with these inbound rules and attach it to the VM. The script opens the same ports inside the VM (ufw), so the two layers agree. Leave outbound traffic open.</p>
+    <table>
+      <tr><th>Protocol</th><th>Ports</th><th>From</th><th>What it carries</th></tr>
+      <tr><td>TCP</td><td>22</td><td>your IP (or anywhere)</td><td>SSH</td></tr>
+      <tr><td>TCP</td><td>7000</td><td>anywhere</td><td>the seat API: the launcher signs in and takes a seat (80 and 443 instead with a domain)</td></tr>
+      <tr><td>TCP</td><td>8905</td><td>anywhere</td><td>the game's online services (TLS)</td></tr>
+      <tr><td>TCP</td><td>8906</td><td>anywhere</td><td>Gamesync, the game's match data</td></tr>
+      <tr><td>UDP</td><td>3478</td><td>anywhere</td><td>the TURN relay, for players who can't reach each other directly</td></tr>
+      <tr><td>UDP</td><td>49152–49407</td><td>anywhere</td><td>the TURN relay's sockets</td></tr>
+      <tr><td>UDP</td><td>8907</td><td>anywhere</td><td>voice chat and camera relay (friend rooms)</td></tr>
+      <tr><td>UDP</td><td>10025</td><td>anywhere</td><td>the NAT check</td></tr>
+    </table>
+    <p class="rows-note">In Vultr: Network → Firewall → Add Firewall Group, add the rules, then add your VM on the group's Linked Instances tab.</p>
+  </section>
+
+  <section class="wrap page" id="run">
+    <div class="section"><span>4. Run the script</span></div>
+    <p>Log in and run it as root:</p>
+    <pre class="block">ssh root@&lt;IPv4&gt;
+curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash</pre>
+    <p>It asks for the server's name and region, then:</p>
+    <ol class="steps">
+      <li><p>downloads the server from the latest MKWMP release and checks it against the release's signed checksums, with the MKWMP release key built into the script (it stops if anything doesn't match);</p></li><li><p>creates the <code>mkwmp</code> user and <code>/var/lib/mkwmp</code>: keys, the gamertag database, the config and your privacy policy;</p></li><li><p>installs two services, <code>mkwmp-seat</code> for launchers and <code>mkwmp-lobby</code> for the game, and keeps their logs for 7 days;</p></li>
+      <li><p>opens the ports in ufw, keeping SSH open;</p></li><li><p>lists the server in the server directory, so it shows up in everyone's launcher;</p></li><li><p>checks that it answers from outside and that the directory lists it, then prints the address players use.</p></li>
+    </ol>
+    <p style="margin-top: calc(30 * var(--u))">Without questions:</p>
+    <pre class="block">curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash -s -- \
+  --name "Friday kart" --region eu-west --capacity 24 --yes</pre>
+    <div class="section"><span>Options</span></div>
+    <table>
+      <tr><td><code>--name</code></td><td>the name in the launcher and the server list: up to 32 letters, digits, spaces and _ . -</td></tr>
+      <tr><td><code>--region</code></td><td>a short tag for the server list, like sa-east, us-east or eu-west</td></tr>
+      <tr><td><code>--capacity</code></td><td>players seated at once (50 by default); the rest wait in a queue</td></tr>
+      <tr><td><code>--public-ip</code></td><td>the address players reach the VM at, if it isn't the VM's own</td></tr>
+      <tr><td><code>--domain</code></td><td>HTTPS with Caddy (step 5)</td></tr>
+      <tr><td><code>--privacy-file</code></td><td>your own privacy policy (Markdown)</td></tr>
+      <tr><td><code>--no-announce</code></td><td>stay out of the public server list; players type your address</td></tr>
+      <tr><td><code>--version</code></td><td>a given release, like v1.4.0</td></tr>
+      <tr><td><code>--no-firewall</code></td><td>leave ufw alone</td></tr>
+      <tr><td><code>--uninstall</code></td><td>remove the services, the program and the ufw rules; keeps /var/lib/mkwmp (add --purge to delete it too)</td></tr>
+    </table>
+    <div class="card"><h3><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 L20,6 V11.5 C20,16.5 16.5,19.8 12,21.5 C7.5,19.8 4,16.5 4,11.5 V6 Z"/></svg>Your privacy policy</h3><p>Players see <code>/var/lib/mkwmp/privacy.md</code> in the launcher and accept it. The script writes a template the first time: edit it so it's true for your server (who you are, how to reach you, how long you keep logs), then run <code>systemctl restart mkwmp-seat</code>. Every edit is a new version, and players are asked to accept it again.</p></div>
+  </section>
+
+  <section class="wrap page" id="https">
+    <div class="section"><span>5. A domain and HTTPS (optional, recommended)</span></div>
+    <p>Over plain http://, PINs travel unencrypted. With a domain:</p>
+    <ol class="steps"><li><p>Create a DNS A record, like <code>mkw.example.net</code>, pointing at the VM's public IPv4. At Cloudflare, make it DNS only (grey cloud) at first, so the certificate can be issued.</p></li><li><p>In the cloud firewall, open TCP 80 and 443 (you can close 7000).</p></li><li><p>Run the script again with <code>--domain mkw.example.net</code>. It installs Caddy, which gets and renews a Let's Encrypt certificate, keeps the seat API on the VM only, and lists <code>https://mkw.example.net</code> in the directory.</p></li></ol>
+    <p class="rows-note">The game's own ports (8905, 8906 and the UDP ones) still go straight to the VM's IP address.</p>
+  </section>
+
+  <section class="wrap page" id="ops">
+    <div class="section"><span>6. Updates, backups and logs</span></div>
+    <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,12 A8,8 0 1 1 17.6,6.3 M18.5,2.8 V7 H14.3"/></svg><span class="row__body"><span class="row__label">Update</span><span class="row__caption">Run the script again. It remembers its options, installs the latest release and keeps gamertags, friends and keys. Restarting the lobby doesn't end running games.</span></span></div>
+    <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4,13 H20 A1.5,1.5 0 0 1 21.5,14.5 V18.5 A1.5,1.5 0 0 1 20,20 H4 A1.5,1.5 0 0 1 2.5,18.5 V14.5 A1.5,1.5 0 0 1 4,13 Z M2.8,13.8 L5.6,5.1 A1.5,1.5 0 0 1 7,4 H17 A1.5,1.5 0 0 1 18.4,5.1 L21.2,13.8 M17.5,16.5 L17.5,16.6 M6,16.5 H11"/></svg><span class="row__body"><span class="row__label">Backup</span><span class="row__caption"><code>/var/lib/mkwmp</code> is everything: <code>registry.db</code> (gamertags, PIN hashes, friends) and <code>keys/</code> (your server's identity). Stop <code>mkwmp-seat</code>, archive the folder, start it again. Keep backups private and delete old ones: they hold your players' data.</span></span></div>
+    <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5,3 H14 L19,8 V19.5 A1.5,1.5 0 0 1 17.5,21 H6.5 A1.5,1.5 0 0 1 5,19.5 V4.5 A1.5,1.5 0 0 1 6.5,3 Z M14,3 V8 H19"/></svg><span class="row__body"><span class="row__label">Logs</span><span class="row__caption"><code>journalctl -u mkwmp-seat -u mkwmp-lobby -f</code>, kept for 7 days.</span></span></div>
+    <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8,8 A4,4 0 1 0 16,8 A4,4 0 1 0 8,8 Z M4,21 C4,16.5 7.5,14.5 12,14.5 C16.5,14.5 20,16.5 20,21"/></svg><span class="row__body"><span class="row__label">Admin</span><span class="row__caption">Gamertags and reports: <code>sudo -u mkwmp /opt/mkwmp/bin/server admin list --config /var/lib/mkwmp/server.toml</code>, and the other admin commands in the hosting guide.</span></span></div>
+  </section>
+
+  <section class="wrap page" id="trouble">
+    <div class="section"><span>7. Troubleshooting</span></div>
+    <table>
+      <tr><th>Symptom</th><th>Check</th></tr>
+      <tr><td>The script stops at "signature does NOT verify"</td><td>The download was altered or cut short. Run it again; don't install by hand.</td></tr>
+      <tr><td>"/ping did not answer from this VM"</td><td>The cloud firewall isn't attached or lacks TCP 7000 (or 80 and 443 with a domain). With --domain, the A record may not point at the VM yet.</td></tr>
+      <tr><td>Not listed in the directory</td><td><code>journalctl -u mkwmp-seat | grep announce</code>. "HTTP 400 … endpoint" means a private address (use --public-ip); "connect" means outbound HTTPS is blocked.</td></tr>
+      <tr><td>Launchers connect, but the game can't</td><td>TCP 8905 and 8906 closed in the cloud firewall; <code>systemctl status mkwmp-lobby</code>.</td></tr>
+      <tr><td>Players can't race or talk together</td><td>The UDP ports (3478, 49152–49407, 8907, 10025) closed in the cloud firewall.</td></tr>
+    </table>
+  </section>
+
+  <section class="wrap page" id="pc">
+    <div class="section"><span>On your own PC</span></div>
+    <p>For friends or a LAN party, download the server zip from the latest release and run <code>server.exe</code> (Windows) or <code>./server</code> (Linux). The first run asks for the address players reach your PC at, creates <code>mkwmp-data</code> next to it, and runs until you close it. Over the internet, forward the ports above on your router. Players set the launcher's server to <code>http://&lt;that address&gt;:7000</code>.</p>
+    <div class="btns">
+      <a class="btn btn--primary focusable" data-download="server" href="https://github.com/anarqz/mkwmp/releases/latest"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 V15 M7,10.5 L12,15.5 L17,10.5 M4,20 H20"/></svg>Server download</a>
+      <a class="btn btn--secondary focusable" href="https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg>Hosting guide</a>
+    </div>
+    <p class="rows-note">Docker, a by-hand systemd setup and every option: the full hosting guide on GitHub.</p>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <nav>
+      <a href="./">MKWMP</a>
+      <a href="https://github.com/anarqz/mkwmp">GitHub</a>
+      <a href="https://github.com/anarqz/mkwmp/releases">Releases</a>
+      <a href="https://github.com/anarqz/mkwmp/issues/new/choose">Report a bug</a>
+    </nav>
+    <p>MKWMP is an independent, open-source community project. You need your own copy of the game. The art here is MKWMP's own.</p>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5,12.5 L10,18 L19.5,6.5"/></svg><span></span></div>
+<div class="hintbar" aria-hidden="true">
+  <div class="wrap">
+    <span class="hintbar__device"><svg class="i fill" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,5.5 H17 C20,5.5 21.6,8 22.1,11.5 L22.9,16.8 C23.2,19.4 20.4,20.6 18.9,18.7 L16.7,16 H7.3 L5.1,18.7 C3.6,20.6 0.8,19.4 1.1,16.8 L1.9,11.5 C2.4,8 4,5.5 7,5.5 Z M6.6,8.4 H8.4 V9.8 H9.8 V11.6 H8.4 V13 H6.6 V11.6 H5.2 V9.8 H6.6 Z M15.6,9.2 A0.95,0.95 0 1 0 17.5,9.2 A0.95,0.95 0 1 0 15.6,9.2 Z M17.5,10.7 A0.95,0.95 0 1 0 19.4,10.7 A0.95,0.95 0 1 0 17.5,10.7 Z M13.7,10.7 A0.95,0.95 0 1 0 15.6,10.7 A0.95,0.95 0 1 0 13.7,10.7 Z M15.6,12.2 A0.95,0.95 0 1 0 17.5,12.2 A0.95,0.95 0 1 0 15.6,12.2 Z" fill-rule="evenodd"/></svg></span>
+    <button class="hint" type="button" data-hint="move" tabindex="-1"><b class="glyph glyph--key key-only">↑↓</b><b class="glyph pad-only">✚</b><span class="hint__label">Move</span></button>
+    <button class="hint" type="button" data-hint="theme" tabindex="-1"><b class="glyph glyph--key key-only">T</b><b class="glyph pad-only">Y</b><span class="hint__label">Theme</span></button>
+    <button class="hint" type="button" data-hint="back" tabindex="-1"><b class="glyph glyph--key key-only">Esc</b><b class="glyph pad-only">B</b><span class="hint__label">Top</span></button>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="pt-BR" data-root="../" data-shots="../assets/launcher/pt-BR/" data-theme="dark" data-empty-art="../assets/art/empty-servers.webp">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MKWMP: servidores online para um jogo de corrida</title>
+<meta name="description" content="O MKWMP é uma reimplementação dos servidores online de um jogo de corrida, com um launcher que configura o jogo a partir da sua própria cópia, joga offline na hora e leva você para servidores da comunidade, com amigos, chat de voz e mods. Grátis e de código aberto.">
+<meta property="og:title" content="MKWMP: servidores online para um jogo de corrida">
+<meta property="og:description" content="O MKWMP é uma reimplementação dos servidores online de um jogo de corrida, com um launcher que configura o jogo a partir da sua própria cópia, joga offline na hora e leva você para servidores da comunidade, com amigos, chat de voz e mods. Grátis e de código aberto.">
+<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/art/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://anarqz.github.io/mkwmp/assets/art/og.png">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#2A2A2D">
+<link rel="icon" href="../assets/art/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="../assets/art/glyph.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/art/apple-touch-icon.png">
+<link rel="alternate" hreflang="en" href="https://anarqz.github.io/mkwmp/">
+<link rel="alternate" hreflang="pt-BR" href="https://anarqz.github.io/mkwmp/pt-br/">
+<link rel="preload" href="../assets/launcher/pt-BR/fonts/Nunito-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/site.css">
+<script>window.I18N = {"themeLight": "Mudar para claro", "themeDark": "Mudar para escuro", "copied": "Copiado", "copyFailed": "Não deu para copiar: selecione o texto", "loading": "Carregando…", "serversError": "A lista de servidores não respondeu. Tente de novo daqui a pouco.", "serversNone": "Nenhum servidor listado agora.", "serversCount": "{n} servidores listados, {p} jogadores com vaga agora.", "serversCount1": "1 servidor listado, {p} jogadores com vaga agora.", "playing": "jogando", "inQueue": "{n} na fila", "policyVersion": "Versão da política {v}", "policyError": "O servidor oficial não respondeu. A política também está em:"};
+(function () { var t = (location.search.match(/[?&]theme=(light|dark)/) || [])[1] || null; if (!t) try { t = localStorage.getItem("mkwmp-theme"); } catch (e) {}
+  document.documentElement.dataset.theme = t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); })();</script>
+<script defer src="../assets/site.js"></script>
+</head>
+<body>
+<a class="sr" href="#main">Pular para o conteúdo</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand focusable" href="../pt-br/"><img src="../assets/art/icon-192.png" alt="">MKWMP</a>
+    <nav class="nav" aria-label="Seções">
+      <a href="#setup">Instalação</a>
+      <a href="#servers">Servidores</a>
+      <a href="#friends">Amigos</a>
+      <a href="#mods">Mods</a>
+      <a href="#deck">Steam Deck</a>
+      <a href="#host">Hospedar</a>
+      <a href="#privacy">Privacidade</a>
+    </nav>
+    <div class="top__end">
+      <a class="icon-btn focusable" href="../" hreflang="en" title="English"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><span>EN</span></a>
+      <button class="icon-btn focusable" id="theme" type="button" aria-label="Claro ou escuro"><span class="when-dark"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5,12 A4.5,4.5 0 1 0 16.5,12 A4.5,4.5 0 1 0 7.5,12 Z M12,2.5 V4.5 M12,19.5 V21.5 M2.5,12 H4.5 M19.5,12 H21.5 M5.3,5.3 L6.7,6.7 M17.3,17.3 L18.7,18.7 M5.3,18.7 L6.7,17.3 M17.3,6.7 L18.7,5.3"/></svg></span><span class="when-light"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,14.5 A8.5,8.5 0 1 1 9.5,4 A7,7 0 0 0 20,14.5 Z"/></svg></span></button>
+      <a class="icon-btn focusable" href="https://github.com/anarqz/mkwmp" title="GitHub"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4,4.5 H20 A1.5,1.5 0 0 1 21.5,6 V18 A1.5,1.5 0 0 1 20,19.5 H4 A1.5,1.5 0 0 1 2.5,18 V6 A1.5,1.5 0 0 1 4,4.5 Z M2.5,8.5 H21.5 M7,12 L10,14.25 L7,16.5 M12.5,16.5 H16.5"/></svg></a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero-band">
+    <div class="wrap hero">
+      <div class="hero__text">
+        <img class="hero__logo" src="../assets/art/logo.webp" alt="MKWMP" width="1280" height="289">
+        <h1>Corra online. <em>Do seu jeito.</em></h1>
+        <p class="lead">O MKWMP é uma reimplementação dos servidores online de um jogo de corrida, com um launcher feito para ele. O launcher configura o jogo a partir da sua própria cópia, joga offline assim que estiver pronto e leva você para servidores da comunidade, com amigos, chat de voz e mods.</p>
+        <div class="btns">
+          <a class="btn btn--primary focusable" data-download="launcher" href="https://github.com/anarqz/mkwmp/releases/latest"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 V15 M7,10.5 L12,15.5 L17,10.5 M4,20 H20"/></svg>Baixar para Windows</a>
+          <a class="btn btn--secondary focusable" href="#deck"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,7 H17 A5,5 0 0 1 22,12 V15 A3,3 0 0 1 16.6,16.8 L15.4,15 H8.6 L7.4,16.8 A3,3 0 0 1 2,15 V12 A5,5 0 0 1 7,7 Z M7.5,10 V13 M6,11.5 H9 M15.5,10.6 L15.5,10.7 M17.8,12.6 L17.8,12.7"/></svg>Steam Deck</a>
+          <a class="btn btn--ghost focusable" href="#host"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg>Hospedar um servidor</a>
+        </div>
+        <p class="status"><span><span class="dot"></span>Última versão <span data-version>v1.4.0</span></span><span class="sep"></span><span>Windows · Steam Deck</span><span class="sep"></span><span>Grátis e de código aberto</span></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap showcase">
+    <figure><img class="shot" data-shot="home" src="../assets/launcher/pt-BR/home-dark.webp" alt="A tela inicial do launcher MKWMP: os blocos Jogar online, Amigos, Jogo e Novidades, e a barra abaixo." width="1920" height="1080"></figure>
+  </section>
+
+  <div class="wrap tiles" role="list">
+    <a class="tile focusable" role="listitem" href="#offline" style="--art: var(--tile-0)"><span class="tile__art"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,15.5 L5,10.5 H12.5 L15.5,13.5 H19.5 A1.5,1.5 0 0 1 21,15 V16 M9.5,16.5 H14.5 M4.5,17 A2.5,2.5 0 1 0 9.5,17 A2.5,2.5 0 1 0 4.5,17 Z M14.5,17 A2.5,2.5 0 1 0 19.5,17 A2.5,2.5 0 1 0 14.5,17 Z M9,10.5 V7.5 H11.5"/></svg><span class="tile__title">Jogar</span><span class="tile__sub">Offline primeiro</span></span></a>
+    <a class="tile focusable" role="listitem" href="#servers" style="--art: var(--tile-3)"><span class="tile__art"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><span class="tile__badge">Ao vivo</span><span class="tile__title">Servidores</span><span class="tile__sub">O mais próximo primeiro</span></span></a>
+    <a class="tile focusable" role="listitem" href="#friends" style="--art: var(--tile-1)"><span class="tile__art"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,7.5 A3.5,3.5 0 1 0 12.5,7.5 A3.5,3.5 0 1 0 5.5,7.5 Z M2.5,20 C2.5,16 5.5,14 9,14 C12.5,14 15.5,16 15.5,20 M15.5,4.3 A3.5,3.5 0 0 1 15.5,10.7 M17.5,14.3 C19.8,15 21.5,17 21.5,20"/></svg><span class="tile__title">Amigos</span><span class="tile__sub">Voz e câmera</span></span></a>
+    <a class="tile focusable" role="listitem" href="#mods" style="--art: var(--tile-2)"><span class="tile__art"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,2.5 L20.5,7 V17 L12,21.5 L3.5,17 V7 Z M3.5,7 L12,11.5 L20.5,7 M12,11.5 V21.5 M7.7,4.8 L16.3,9.3"/></svg><span class="tile__title">Mods</span><span class="tile__sub">GameBanana embutido</span></span></a>
+    <a class="tile focusable" role="listitem" href="#deck" style="--art: var(--tile-5)"><span class="tile__art"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,7 H17 A5,5 0 0 1 22,12 V15 A3,3 0 0 1 16.6,16.8 L15.4,15 H8.6 L7.4,16.8 A3,3 0 0 1 2,15 V12 A5,5 0 0 1 7,7 Z M7.5,10 V13 M6,11.5 H9 M15.5,10.6 L15.5,10.7 M17.8,12.6 L17.8,12.7"/></svg><span class="tile__title">Steam Deck</span><span class="tile__sub">Um comando</span></span></a>
+    <a class="tile focusable" role="listitem" href="#host" style="--art: var(--tile-4)"><span class="tile__art"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg><span class="tile__title">Hospedar</span><span class="tile__sub">Seu próprio servidor</span></span></a>
+  </div>
+
+  <div class="wrap">
+    <div class="card card--warn" id="upgrade">
+      <h3><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 L22,20.5 H2 Z M12,10 V15 M12,17.7 L12,17.8"/></svg>Vindo da 1.3?</h3>
+      <p>A 1.4 é um launcher novo (<code>mkwmp.exe</code>), e a 1.3 não consegue se atualizar para ele. Baixe a 1.4 uma vez, à mão, e descompacte na mesma pasta da sua 1.3: ela mantém sua gamertag, seu PIN, seu servidor e suas escolhas. Depois, apague o <code>mkwmp-launcher.exe</code> antigo. No Steam Deck, o comando abaixo faz tudo isso.</p>
+    </div>
+  </div>
+
+  <section class="wrap page" id="setup">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5,6.5 A1.5,1.5 0 0 1 4,5 H9 L11.5,7.5 H20 A1.5,1.5 0 0 1 21.5,9 V18 A1.5,1.5 0 0 1 20,19.5 H4 A1.5,1.5 0 0 1 2.5,18 Z"/></svg><h2>Configuração de uma vez</h2></div>
+    <div class="cols">
+      <div>
+        <p class="lead">Aponte o MKWMP para a sua própria cópia do jogo, versão 1.8.0, como .nup, .nx ou pasta. Ele faz o resto.</p>
+        <div class="section"><span>O que o launcher faz</span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 V15 M7,10.5 L12,15.5 L17,10.5 M4,20 H20"/></svg><span class="row__body"><span class="row__label">Baixa o mkw-recomp</span><span class="row__caption">A versão do MKWMP, 0.1.16-mkwmp.1, conferida pelo hash conhecido. Em um processador sem AVX2, ele escolhe a versão feita para isso.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4,13 H20 A1.5,1.5 0 0 1 21.5,14.5 V18.5 A1.5,1.5 0 0 1 20,20 H4 A1.5,1.5 0 0 1 2.5,18.5 V14.5 A1.5,1.5 0 0 1 4,13 Z M2.8,13.8 L5.6,5.1 A1.5,1.5 0 0 1 7,4 H17 A1.5,1.5 0 0 1 18.4,5.1 L21.2,13.8 M17.5,16.5 L17.5,16.6 M6,16.5 H11"/></svg><span class="row__body"><span class="row__label">Usa a sua cópia</span><span class="row__caption">Ele lê a sua cópia onde ela está, ou faz uma cópia, como você preferir. Nada do jogo é baixado.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.66,2.49 L13.34,2.49 L13.86,5.05 L15.6,5.76 L17.78,4.33 L19.67,6.22 L18.24,8.4 L18.95,10.14 L21.51,10.66 L21.51,13.34 L18.95,13.86 L18.24,15.6 L19.67,17.78 L17.78,19.67 L15.6,18.24 L13.86,18.95 L13.34,21.51 L10.66,21.51 L10.14,18.95 L8.4,18.24 L6.22,19.67 L4.33,17.78 L5.76,15.6 L5.05,13.86 L2.49,13.34 L2.49,10.66 L5.05,10.14 L5.76,8.4 L4.33,6.22 L6.22,4.33 L8.4,5.76 L10.14,5.05 Z M8.8,12 A3.2,3.2 0 1 0 15.2,12 A3.2,3.2 0 1 0 8.8,12 Z"/></svg><span class="row__body"><span class="row__label">Gera o jogo</span><span class="row__caption">A configuração do próprio mkw-recomp: gerar, compilar (uns 4 minutos), shaders (10 a 16 minutos em um Steam Deck), aquecimento e limpeza.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,2.5 L20.5,7 V17 L12,21.5 L3.5,17 V7 Z M3.5,7 L12,11.5 L20.5,7 M12,11.5 V21.5 M7.7,4.8 L16.3,9.3"/></svg><span class="row__body"><span class="row__label">Instala o mod MKWMP</span><span class="row__caption">Jogo online, amigos e o overlay dentro do jogo.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5,6.5 A1.5,1.5 0 0 1 4,5 H9 L11.5,7.5 H20 A1.5,1.5 0 0 1 21.5,9 V18 A1.5,1.5 0 0 1 20,19.5 H4 A1.5,1.5 0 0 1 2.5,18 Z"/></svg><span class="row__body"><span class="row__label">Continua portátil</span><span class="row__caption">Tudo fica ao lado do launcher, nada no AppData. Configurações › Jogo troca para outra cópia do jogo depois.</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="game-setup-progress" src="../assets/launcher/pt-BR/game-setup-progress-dark.webp" alt="A configuração do jogo em andamento: uma barra de progresso, a etapa atual e o tempo restante." width="1920" height="1080" loading="lazy"><figcaption>A primeira configuração demora um pouco. Depois, o jogo abre em segundos.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="offline">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,15.5 L5,10.5 H12.5 L15.5,13.5 H19.5 A1.5,1.5 0 0 1 21,15 V16 M9.5,16.5 H14.5 M4.5,17 A2.5,2.5 0 1 0 9.5,17 A2.5,2.5 0 1 0 4.5,17 Z M14.5,17 A2.5,2.5 0 1 0 19.5,17 A2.5,2.5 0 1 0 14.5,17 Z M9,10.5 V7.5 H11.5"/></svg><h2>Offline primeiro, online quando quiser</h2></div>
+    <div class="cols flip">
+      <div>
+        <p class="lead">Assim que o jogo estiver configurado, ele é seu para jogar, sem conta. Ir para o online é uma escolha: escolha um servidor, registre uma gamertag, receba um PIN.</p>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,15.5 L5,10.5 H12.5 L15.5,13.5 H19.5 A1.5,1.5 0 0 1 21,15 V16 M9.5,16.5 H14.5 M4.5,17 A2.5,2.5 0 1 0 9.5,17 A2.5,2.5 0 1 0 4.5,17 Z M14.5,17 A2.5,2.5 0 1 0 19.5,17 A2.5,2.5 0 1 0 14.5,17 Z M9,10.5 V7.5 H11.5"/></svg><span class="row__body"><span class="row__label">Jogar offline</span><span class="row__caption">Sem servidor e sem cadastro.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><span class="row__body"><span class="row__label">Jogar online</span><span class="row__caption">Escolha um servidor da lista, ou digite o endereço que um host passou para você.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6,10.5 H18 A1.5,1.5 0 0 1 19.5,12 V19.5 A1.5,1.5 0 0 1 18,21 H6 A1.5,1.5 0 0 1 4.5,19.5 V12 A1.5,1.5 0 0 1 6,10.5 Z M8,10.5 V7.5 A4,4 0 0 1 16,7.5 V10.5"/></svg><span class="row__body"><span class="row__label">Seu PIN</span><span class="row__caption">Sua gamertag, seus amigos e seu PIN ficam no servidor que você escolher. O PIN faz você entrar em outro PC ou em um Steam Deck.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,12 A8,8 0 1 1 17.6,6.3 M18.5,2.8 V7 H14.3"/></svg><span class="row__body"><span class="row__label">Sempre atualizado</span><span class="row__caption">O launcher atualiza a si mesmo e o mod MKWMP. Novidades mostra o que mudou.</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="welcome-play-online" src="../assets/launcher/pt-BR/welcome-play-online-dark.webp" alt="O launcher perguntando "Quer jogar online?", com Jogar offline e Jogar Online." width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="servers">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><h2>Servidores</h2><button class="btn btn--ghost focusable pill-btn" id="servers-refresh" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,12 A8,8 0 1 1 17.6,6.3 M18.5,2.8 V7 H14.3"/></svg>Atualizar</button></div>
+    <div class="cols">
+      <div>
+        <p class="lead">Qualquer pessoa pode hospedar um servidor. Os públicos aparecem na lista de servidores, e o launcher mostra o mais próximo primeiro. Esta lista é ao vivo.</p>
+        <div class="section"><span>Agora</span></div>
+        <p class="rows-note" id="servers-count"></p>
+        <p class="rows-note">O navegador só consegue medir servidores com HTTPS; o launcher mede todos. Quanto menor, melhor: verde abaixo de 80 ms, amarelo abaixo de 160 ms.</p>
+        <figure style="margin-top: calc(40 * var(--u))"><img class="shot" data-shot="welcome-server" src="../assets/launcher/pt-BR/welcome-server-dark.webp" alt="A tela Escolha um Servidor do launcher: servidores com barras de latência, vagas e fila." width="1920" height="1080" loading="lazy"><figcaption>A mesma lista no launcher, onde todo servidor é medido.</figcaption></figure>
+      </div>
+      <div class="servers" id="server-list" aria-live="polite"><noscript><p class="servers__empty">A lista ao vivo precisa de JavaScript. O launcher mostra a mesma lista.</p></noscript></div>
+    </div>
+  </section>
+
+  <section class="wrap page" id="friends">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,7.5 A3.5,3.5 0 1 0 12.5,7.5 A3.5,3.5 0 1 0 5.5,7.5 Z M2.5,20 C2.5,16 5.5,14 9,14 C12.5,14 15.5,16 15.5,20 M15.5,4.3 A3.5,3.5 0 0 1 15.5,10.7 M17.5,14.3 C19.8,15 21.5,17 21.5,20"/></svg><h2>Amigos, voz e câmera</h2></div>
+    <div class="cols flip">
+      <div>
+        <p class="lead">Adicione amigos pela gamertag e veja quem está jogando. O chat de voz e a câmera funcionam só em salas privadas de amigos, nunca com desconhecidos nas partidas abertas.</p>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,7.5 A3.5,3.5 0 1 0 12.5,7.5 A3.5,3.5 0 1 0 5.5,7.5 Z M2.5,20 C2.5,16 5.5,14 9,14 C12.5,14 15.5,16 15.5,20 M15.5,4.3 A3.5,3.5 0 0 1 15.5,10.7 M17.5,14.3 C19.8,15 21.5,17 21.5,20"/></svg><span class="row__body"><span class="row__label">Amigos</span><span class="row__caption">Pedidos, quem está online e quem está correndo, e as salas deles para entrar.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 A3,3 0 0 1 15,6 V11 A3,3 0 0 1 9,11 V6 A3,3 0 0 1 12,3 Z M5.5,11 A6.5,6.5 0 0 0 18.5,11 M12,17.5 V21 M8.5,21 H15.5"/></svg><span class="row__body"><span class="row__label">Chat de voz</span><span class="row__caption">Nas salas de amigos, para todos na sala. Silencie quem quiser. Transmitido ao vivo e nunca gravado.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5,6.5 H14 A1.5,1.5 0 0 1 15.5,8 V16 A1.5,1.5 0 0 1 14,17.5 H3.5 A1.5,1.5 0 0 1 2,16 V8 A1.5,1.5 0 0 1 3.5,6.5 Z M15.5,10.5 L22,7 V17 L15.5,13.5"/></svg><span class="row__body"><span class="row__label">Câmera</span><span class="row__caption">Desligada até você ligar. Só amigos mútuos na sua sala veem, até 4 rostos cada.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 L20,6 V11.5 C20,16.5 16.5,19.8 12,21.5 C7.5,19.8 4,16.5 4,11.5 V6 Z"/></svg><span class="row__body"><span class="row__label">Denúncias</span><span class="row__caption">Denuncie abuso de voz ou câmera pelo launcher. O host do servidor analisa.</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="home-friends" src="../assets/launcher/pt-BR/home-friends-dark.webp" alt="A tela inicial com o painel de amigos aberto: pedidos e amigos com o status de cada um." width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="overlay">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,4 V9 H4 M20,9 H15 V4 M15,20 V15 H20 M4,15 H9 V20"/></svg><h2>O overlay dentro do jogo</h2></div>
+    <div class="cols">
+      <div>
+        <p class="lead">No jogo, aperte Guide (Home) ou Select + Start. O jogo pausa e encolhe para dentro da tela inicial do launcher, com seus amigos, as configurações e Sair do jogo ali mesmo.</p>
+        <div class="row"><span class="glyph">B</span><span class="row__body"><span class="row__label">De volta à corrida</span><span class="row__caption">B ou Guide volta para o jogo de onde você parou.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,7.5 A3.5,3.5 0 1 0 12.5,7.5 A3.5,3.5 0 1 0 5.5,7.5 Z M2.5,20 C2.5,16 5.5,14 9,14 C12.5,14 15.5,16 15.5,20 M15.5,4.3 A3.5,3.5 0 0 1 15.5,10.7 M17.5,14.3 C19.8,15 21.5,17 21.5,20"/></svg><span class="row__body"><span class="row__label">Amigos sem sair do jogo</span><span class="row__caption">Veja quem está online e responda pedidos pelo overlay.</span></span></div>
+        <p class="rows-note">O overlay precisa do mkw-recomp 0.1.16-mkwmp(.1) com o mod MKWMP: o launcher configura os dois.</p>
+      </div>
+      <figure><img class="shot" data-shot="overlay" src="../assets/launcher/pt-BR/overlay-dark.webp" alt="O overlay: o jogo pausado, encolhido dentro do bloco Jogar da tela inicial." width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="mods">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,2.5 L20.5,7 V17 L12,21.5 L3.5,17 V7 Z M3.5,7 L12,11.5 L20.5,7 M12,11.5 V21.5 M7.7,4.8 L16.3,9.3"/></svg><h2>Mods</h2></div>
+    <img class="banner" src="../assets/art/banner-mods-3x1.webp" alt="" width="1536" height="512" loading="lazy">
+    <div class="cols flip">
+      <div>
+        <p class="lead">Navegue pelo GameBanana dentro do launcher, instale com um botão e ligue ou desligue mods.</p>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4,10.5 A6.5,6.5 0 1 0 17,10.5 A6.5,6.5 0 1 0 4,10.5 Z M15.5,15.5 L21,21"/></svg><span class="row__body"><span class="row__label">Buscar mods</span><span class="row__caption">Pesquise e ordene o GameBanana. As imagens de mods adultos ficam borradas, a não ser que você escolha o contrário.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 V15 M7,10.5 L12,15.5 L17,10.5 M4,20 H20"/></svg><span class="row__body"><span class="row__label">De um link ou arquivo</span><span class="row__caption">Instale um .zip, .7z ou .rar de um link ou do seu disco.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.66,2.49 L13.34,2.49 L13.86,5.05 L15.6,5.76 L17.78,4.33 L19.67,6.22 L18.24,8.4 L18.95,10.14 L21.51,10.66 L21.51,13.34 L18.95,13.86 L18.24,15.6 L19.67,17.78 L17.78,19.67 L15.6,18.24 L13.86,18.95 L13.34,21.51 L10.66,21.51 L10.14,18.95 L8.4,18.24 L6.22,19.67 L4.33,17.78 L5.76,15.6 L5.05,13.86 L2.49,13.34 L2.49,10.66 L5.05,10.14 L5.76,8.4 L4.33,6.22 L6.22,4.33 L8.4,5.76 L10.14,5.05 Z M8.8,12 A3.2,3.2 0 1 0 15.2,12 A3.2,3.2 0 1 0 8.8,12 Z"/></svg><span class="row__body"><span class="row__label">Opções</span><span class="row__caption">Mods que trazem opções ganham uma página própria no launcher.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 L20,6 V11.5 C20,16.5 16.5,19.8 12,21.5 C7.5,19.8 4,16.5 4,11.5 V6 Z"/></svg><span class="row__body"><span class="row__label">Segurança primeiro</span><span class="row__caption">Mods que rodam código próprio pedem permissão antes. Mods que alteram o código do jogo ficam na página Mods do próprio mkw-recomp. O save de cada jogador ganha um backup antes de jogar com um novo conjunto de mods.</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="mods-gamebanana" src="../assets/launcher/pt-BR/mods-gamebanana-dark.webp" alt="Buscar mods: uma grade de mods do GameBanana, com busca e ordenação." width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="languages">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><h2>15 idiomas, claro e escuro</h2></div>
+    <div class="cols">
+      <div>
+        <p class="lead">O launcher segue o idioma e o tema do seu sistema, ou os que você escolher.</p>
+        <div class="pills">
+          <span class="pill">English</span><span class="pill">Português (Brasil)</span><span class="pill">Português (Portugal)</span>
+          <span class="pill">Español</span><span class="pill">Français</span><span class="pill">Deutsch</span><span class="pill">Italiano</span>
+          <span class="pill">Nederlands</span><span class="pill">Polski</span><span class="pill">Русский</span><span class="pill">Türkçe</span>
+          <span class="pill">日本語</span><span class="pill">한국어</span><span class="pill">简体中文</span><span class="pill">繁體中文</span>
+        </div>
+        <div class="section"><span>Feito para o sofá e para a mesa</span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,7 H17 A5,5 0 0 1 22,12 V15 A3,3 0 0 1 16.6,16.8 L15.4,15 H8.6 L7.4,16.8 A3,3 0 0 1 2,15 V12 A5,5 0 0 1 7,7 Z M7.5,10 V13 M6,11.5 H9 M15.5,10.6 L15.5,10.7 M17.8,12.6 L17.8,12.7"/></svg><span class="row__body"><span class="row__label">Controle, teclado ou mouse</span><span class="row__caption">Todas as telas funcionam com controle, como o menu de um console, e com teclado ou mouse.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,14.5 A8.5,8.5 0 1 1 9.5,4 A7,7 0 0 0 20,14.5 Z"/></svg><span class="row__body"><span class="row__label">Claro e escuro</span><span class="row__caption">O mesmo visual nos dois. Este site também troca (o botão no topo, ou Y no controle).</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,12 A8,8 0 1 1 17.6,6.3 M18.5,2.8 V7 H14.3"/></svg><span class="row__body"><span class="row__label">Tela cheia ou janela</span><span class="row__caption">Em uma TV, um monitor ou um Steam Deck.</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="settings-appearance" src="../assets/launcher/pt-BR/settings-appearance-dark.webp" alt="Configurações, Aparência: tema, tela cheia e idioma." width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="deck">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,7 H17 A5,5 0 0 1 22,12 V15 A3,3 0 0 1 16.6,16.8 L15.4,15 H8.6 L7.4,16.8 A3,3 0 0 1 2,15 V12 A5,5 0 0 1 7,7 Z M7.5,10 V13 M6,11.5 H9 M15.5,10.6 L15.5,10.7 M17.8,12.6 L17.8,12.7"/></svg><h2>Steam Deck e SteamOS</h2></div>
+    <img class="banner" src="../assets/art/banner-handheld-3x1.webp" alt="" width="1536" height="512" loading="lazy">
+    <div class="cols flip">
+      <div>
+        <p class="lead">Um comando no Modo Desktop (Konsole) instala o MKWMP, adiciona ele à Steam com arte e o layout do controle, e roda tudo pelo Proton.</p>
+        <button class="cmd focusable" type="button"><code>curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash</code><span class="cmd__copy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5,3 H14 L19,8 V19.5 A1.5,1.5 0 0 1 17.5,21 H6.5 A1.5,1.5 0 0 1 5,19.5 V4.5 A1.5,1.5 0 0 1 6.5,3 Z M14,3 V8 H19"/></svg>Copiar</span></button>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 L22,20.5 H2 Z M12,10 V15 M12,17.7 L12,17.8"/></svg><span class="row__body"><span class="row__label">Feche a Steam antes</span><span class="row__caption">O instalador mexe nos atalhos da Steam, o que exige a Steam fechada.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5,6.5 A1.5,1.5 0 0 1 4,5 H9 L11.5,7.5 H20 A1.5,1.5 0 0 1 21.5,9 V18 A1.5,1.5 0 0 1 20,19.5 H4 A1.5,1.5 0 0 1 2.5,18 Z"/></svg><span class="row__body"><span class="row__label">Onde ele fica</span><span class="row__caption">~/Games/MKWMP, com um atalho na Steam chamado MKWMP que roda no Proton 11.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,12 A8,8 0 1 1 17.6,6.3 M18.5,2.8 V7 H14.3"/></svg><span class="row__body"><span class="row__label">Vindo da 1.3</span><span class="row__caption">Ele traz as configurações do launcher 1.3 e remove os atalhos antigos do MKWMP.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.66,2.49 L13.34,2.49 L13.86,5.05 L15.6,5.76 L17.78,4.33 L19.67,6.22 L18.24,8.4 L18.95,10.14 L21.51,10.66 L21.51,13.34 L18.95,13.86 L18.24,15.6 L19.67,17.78 L17.78,19.67 L15.6,18.24 L13.86,18.95 L13.34,21.51 L10.66,21.51 L10.14,18.95 L8.4,18.24 L6.22,19.67 L4.33,17.78 L5.76,15.6 L5.05,13.86 L2.49,13.34 L2.49,10.66 L5.05,10.14 L5.76,8.4 L4.33,6.22 L6.22,4.33 L8.4,5.76 L10.14,5.05 Z M8.8,12 A3.2,3.2 0 1 0 15.2,12 A3.2,3.2 0 1 0 8.8,12 Z"/></svg><span class="row__body"><span class="row__label">Opções</span><span class="row__caption">--dir, --proton, --dry-run e --uninstall, entre outras. Coloque depois de <code>bash -s --</code>.</span></span></div>
+      </div>
+      <figure><img class="shot deck" data-shot="deck-home" src="../assets/launcher/pt-BR/deck-home-dark.webp" alt="A tela inicial do launcher em um Steam Deck." width="1280" height="800" loading="lazy"><figcaption>A tela inicial nos 1280 × 800 do Steam Deck.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="host">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg><h2>Hospede seu próprio servidor</h2></div>
+    <img class="banner" src="../assets/art/banner-server-3x1.webp" alt="" width="1536" height="512" loading="lazy">
+    <div class="cols">
+      <div>
+        <p class="lead">Uma VM pequena na nuvem, por uns US$5 por mês, roda um servidor para dezenas de jogadores. Um comando instala, abre o firewall e coloca o servidor na lista, para ele aparecer no launcher de todo mundo.</p>
+        <button class="cmd focusable" type="button"><code>curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash</code><span class="cmd__copy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5,3 H14 L19,8 V19.5 A1.5,1.5 0 0 1 17.5,21 H6.5 A1.5,1.5 0 0 1 5,19.5 V4.5 A1.5,1.5 0 0 1 6.5,3 Z M14,3 V8 H19"/></svg>Copiar</span></button>
+        <div class="btns">
+          <a class="btn btn--primary focusable" href="../pt-br/host.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg>Guia passo a passo</a>
+          <a class="btn btn--secondary focusable" data-download="server" href="https://github.com/anarqz/mkwmp/releases/latest"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 V15 M7,10.5 L12,15.5 L17,10.5 M4,20 H20"/></svg>Baixar o servidor</a>
+        </div>
+      </div>
+      <div>
+        <div class="section"><span>Formas de hospedar</span></div>
+        <a class="row" href="../pt-br/host.html#vm"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><span class="row__body"><span class="row__label">Uma VM na nuvem</span><span class="row__caption">Vultr, Ubuntu 24.04, um comando. HTTPS opcional com o seu domínio.</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></a>
+        <a class="row" href="../pt-br/host.html#pc"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg><span class="row__body"><span class="row__label">Seu próprio PC</span><span class="row__caption">O server.exe do download do servidor, com dois cliques: para amigos ou uma LAN party.</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></a>
+        <a class="row" href="https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,2.5 L20.5,7 V17 L12,21.5 L3.5,17 V7 Z M3.5,7 L12,11.5 L20.5,7 M12,11.5 V21.5 M7.7,4.8 L16.3,9.3"/></svg><span class="row__body"><span class="row__label">Docker, ou à mão</span><span class="row__caption">O guia completo de hospedagem no GitHub.</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap page" id="privacy">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 L20,6 V11.5 C20,16.5 16.5,19.8 12,21.5 C7.5,19.8 4,16.5 4,11.5 V6 Z"/></svg><h2>Privacidade</h2></div>
+    <div class="cols flip">
+      <div>
+        <p class="lead">Cada servidor tem a sua política de privacidade. O launcher mostra a política depois que você entra, e o servidor guarda qual versão você aceitou. Quando a política muda, você é perguntado de novo.</p>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8,8 A4,4 0 1 0 16,8 A4,4 0 1 0 8,8 Z M4,21 C4,16.5 7.5,14.5 12,14.5 C16.5,14.5 20,16.5 20,21"/></svg><span class="row__body"><span class="row__label">Para maiores de 18 anos</span><span class="row__caption">O launcher pergunta antes de entrar e de jogar online.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6,10.5 H18 A1.5,1.5 0 0 1 19.5,12 V19.5 A1.5,1.5 0 0 1 18,21 H6 A1.5,1.5 0 0 1 4.5,19.5 V12 A1.5,1.5 0 0 1 6,10.5 Z M8,10.5 V7.5 A4,4 0 0 1 16,7.5 V10.5"/></svg><span class="row__body"><span class="row__label">O que um servidor guarda</span><span class="row__caption">Sua gamertag, um hash do seu PIN (nunca o PIN), seus amigos, a política que você aceitou e as denúncias que você faz. Sem e-mail e sem nome real.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 A3,3 0 0 1 15,6 V11 A3,3 0 0 1 9,11 V6 A3,3 0 0 1 12,3 Z M5.5,11 A6.5,6.5 0 0 0 18.5,11 M12,17.5 V21 M8.5,21 H15.5 M4,3.5 L20,20.5"/></svg><span class="row__body"><span class="row__label">Voz e câmera não são gravadas</span><span class="row__caption">Elas são transmitidas ao vivo nas salas de amigos, nunca guardadas.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4,6.5 H20 M9,6.5 V4 H15 V6.5 M6,6.5 L7,20.5 H17 L18,6.5 M10,10.5 V16.5 M14,10.5 V16.5"/></svg><span class="row__body"><span class="row__label">Exclua sua conta</span><span class="row__caption">Pelo launcher, a qualquer momento.</span></span></div>
+        <div class="btns"><button class="btn btn--primary focusable" type="button" data-policy><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 L20,6 V11.5 C20,16.5 16.5,19.8 12,21.5 C7.5,19.8 4,16.5 4,11.5 V6 Z"/></svg>Ler a política do servidor oficial</button></div>
+        <p class="rows-note">Mostrada ao vivo de mkw.anarqz.dev/privacy. Outros servidores têm a própria.</p>
+      </div>
+      <figure><img class="shot" data-shot="welcome-privacy" src="../assets/launcher/pt-BR/welcome-privacy-dark.webp" alt="Antes de jogar online: a confirmação de 18 anos e a política de privacidade do servidor." width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="faq">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><h2>Perguntas</h2></div>
+    <details><summary class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><span class="row__body"><span class="row__label">Quem faz o MKWMP?</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></summary><div>Uma comunidade: o MKWMP é um projeto independente e de código aberto. Os servidores são mantidos pelos hosts, e qualquer pessoa pode hospedar um.</div></details>
+    <details><summary class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><span class="row__body"><span class="row__label">Preciso do jogo?</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></summary><div>Sim: a sua própria cópia do jogo, versão 1.8.0. O MKWMP nunca baixa o jogo; ele gera o mkw-recomp a partir da sua cópia.</div></details>
+    <details><summary class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><span class="row__body"><span class="row__label">Roda no Linux?</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></summary><div>No Steam Deck e no SteamOS, pelo Proton: use o comando acima. Outros Linux com Steam e Proton funcionam do mesmo jeito.</div></details>
+    <details><summary class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><span class="row__body"><span class="row__label">É grátis?</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></summary><div>Sim. O MKWMP é de código aberto (GPL-3.0). Os servidores são mantidos pelos hosts; o oficial é grátis para jogar.</div></details>
+    <details><summary class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><span class="row__body"><span class="row__label">Estou na 1.3. Como atualizo?</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></summary><div>Baixe a 1.4 à mão uma vez e descompacte na pasta da sua 1.3: a 1.3 não consegue se atualizar para o launcher novo. Sua gamertag, seu PIN e seu servidor continuam. Depois, apague o mkwmp-launcher.exe antigo. No Steam Deck, rode o comando de instalação: ele traz as configurações da 1.3.</div></details>
+    <details><summary class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><span class="row__body"><span class="row__label">O jogo travou. Onde eu aviso?</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></summary><div>Depois de um travamento, o launcher mostra um relatório: ele salva um zip na sua Área de Trabalho (sem PIN nem chaves) e abre uma nova issue no GitHub com os detalhes preenchidos. "Encontrou um bug?" no launcher faz o mesmo a qualquer hora.</div></details>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <nav>
+      <a href="https://github.com/anarqz/mkwmp">GitHub</a>
+      <a href="https://github.com/anarqz/mkwmp/releases">Versões</a>
+      <a href="https://github.com/anarqz/mkwmp/blob/main/CHANGELOG.md">Mudanças</a>
+      <a href="../pt-br/host.html">Guia de hospedagem</a>
+      <a href="https://github.com/anarqz/mkwmp/issues/new/choose">Relatar um bug</a>
+      <a href="https://github.com/anarqz/mkwmp/blob/main/LICENSE">GPL-3.0</a>
+    </nav>
+    <p>O MKWMP é um projeto comunitário, independente e de código aberto. Você precisa da sua própria cópia do jogo. A arte daqui é do próprio MKWMP.</p>
+  </div>
+</footer>
+
+<div class="modal" id="policy" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Ler a política do servidor oficial">
+  <div class="modal__card"><div class="modal__body"></div><button class="modal__foot focusable" type="button">Fechar</button></div>
+</div>
+<div class="toast" id="toast" role="status"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5,12.5 L10,18 L19.5,6.5"/></svg><span></span></div>
+
+<div class="hintbar" aria-hidden="true">
+  <div class="wrap">
+    <span class="hintbar__device"><svg class="i fill" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,5.5 H17 C20,5.5 21.6,8 22.1,11.5 L22.9,16.8 C23.2,19.4 20.4,20.6 18.9,18.7 L16.7,16 H7.3 L5.1,18.7 C3.6,20.6 0.8,19.4 1.1,16.8 L1.9,11.5 C2.4,8 4,5.5 7,5.5 Z M6.6,8.4 H8.4 V9.8 H9.8 V11.6 H8.4 V13 H6.6 V11.6 H5.2 V9.8 H6.6 Z M15.6,9.2 A0.95,0.95 0 1 0 17.5,9.2 A0.95,0.95 0 1 0 15.6,9.2 Z M17.5,10.7 A0.95,0.95 0 1 0 19.4,10.7 A0.95,0.95 0 1 0 17.5,10.7 Z M13.7,10.7 A0.95,0.95 0 1 0 15.6,10.7 A0.95,0.95 0 1 0 13.7,10.7 Z M15.6,12.2 A0.95,0.95 0 1 0 17.5,12.2 A0.95,0.95 0 1 0 15.6,12.2 Z" fill-rule="evenodd"/></svg></span>
+    <button class="hint" type="button" data-hint="move" tabindex="-1"><b class="glyph glyph--key key-only">↑↓</b><b class="glyph pad-only">✚</b><span class="hint__label">Mover</span></button>
+    <button class="hint" type="button" data-hint="theme" tabindex="-1"><b class="glyph glyph--key key-only">T</b><b class="glyph pad-only">Y</b><span class="hint__label">Tema</span></button>
+    <button class="hint" type="button" data-hint="back" tabindex="-1"><b class="glyph glyph--key key-only">Esc</b><b class="glyph pad-only">B</b><span class="hint__label">Topo</span></button>
+    <span class="hint"><b class="glyph glyph--key key-only">Enter</b><b class="glyph pad-only">A</b><span class="hint__label">OK</span></span>
+  </div>
+</div>
+</body>
+</html>

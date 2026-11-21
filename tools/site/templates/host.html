@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="{{=lang}}" data-root="{{=root}}" data-shots="{{=root}}{{=shots}}" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{meta.host_title}}</title>
+<meta name="description" content="{{meta.host_description}}">
+<meta property="og:title" content="{{meta.host_title}}">
+<meta property="og:description" content="{{meta.host_description}}">
+<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/art/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#2A2A2D">
+<link rel="icon" href="{{=root}}assets/art/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="{{=root}}assets/art/glyph.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{=root}}assets/art/apple-touch-icon.png">
+<link rel="alternate" hreflang="en" href="https://anarqz.github.io/mkwmp/host.html">
+<link rel="alternate" hreflang="pt-BR" href="https://anarqz.github.io/mkwmp/pt-br/host.html">
+<link rel="stylesheet" href="{{=root}}assets/site.css">
+<script>window.I18N = {{=i18n_js}};
+(function () { var t = (location.search.match(/[?&]theme=(light|dark)/) || [])[1] || null; if (!t) try { t = localStorage.getItem("mkwmp-theme"); } catch (e) {}
+  document.documentElement.dataset.theme = t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); })();</script>
+<script defer src="{{=root}}assets/site.js"></script>
+</head>
+<body>
+<a class="sr" href="#main">{{nav.skip}}</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand focusable" href="./"><img src="{{=root}}assets/art/icon-192.png" alt="">MKWMP</a>
+    <nav class="nav" aria-label="{{hostpage.toc}}">
+      <a href="#ssh">SSH</a><a href="#vm">VM</a><a href="#firewall">{{hostpage.nav_firewall}}</a><a href="#run">{{hostpage.nav_script}}</a><a href="#https">HTTPS</a><a href="#ops">{{hostpage.nav_ops}}</a><a href="#trouble">{{hostpage.nav_help}}</a>
+    </nav>
+    <div class="top__end">
+      <a class="icon-btn focusable" href="{{=alt_href}}" hreflang="{{nav.alt_lang}}" title="{{nav.alt_title}}">{{i:globe}}<span>{{=alt_label}}</span></a>
+      <button class="icon-btn focusable" id="theme" type="button" aria-label="{{nav.theme}}"><span class="when-dark">{{i:sun}}</span><span class="when-light">{{i:moon}}</span></button>
+      <a class="icon-btn focusable" href="https://github.com/anarqz/mkwmp" title="GitHub">{{i:program}}</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="wrap page" style="padding-top: calc(80 * var(--u))">
+    <div class="page__head">{{i:computer}}<h2>{{hostpage.title}}</h2><a class="btn btn--ghost focusable pill-btn" href="./">{{i:chevron-left}}{{hostpage.back}}</a></div>
+    <img class="banner" src="{{=root}}assets/art/banner-server-3x1.webp" alt="" width="1536" height="512">
+    <p class="lead">{{hostpage.lead}}</p>
+    <button class="cmd focusable" type="button"><code>curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash</code><span class="cmd__copy">{{i:file}}{{common.copy}}</span></button>
+  </section>
+
+  <section class="wrap page" id="ssh">
+    <div class="section"><span>{{hostpage.ssh_title}}</span></div>
+    <p>{{hostpage.ssh_text}}</p>
+    <button class="cmd focusable" type="button"><code>ssh-keygen -t ed25519 -C "mkwmp server"</code><span class="cmd__copy">{{i:file}}{{common.copy}}</span></button>
+    <p class="rows-note">{{hostpage.ssh_after}}</p>
+  </section>
+
+  <section class="wrap page" id="vm">
+    <div class="section"><span>{{hostpage.vm_title}}</span></div>
+    <p>{{hostpage.vm_text}}</p>
+    <table>
+            <tr><th>{{hostpage.vm_where}}</th><td>{{hostpage.vm_where_v}}</td></tr>
+      <tr><th>{{hostpage.vm_size}}</th><td>{{hostpage.vm_size_v}}</td></tr>
+      <tr><th>{{hostpage.vm_image}}</th><td>{{hostpage.vm_image_v}}</td></tr>
+      <tr><th>{{hostpage.vm_login}}</th><td>{{hostpage.vm_login_v}}</td></tr>
+    </table>
+  </section>
+
+  <section class="wrap page" id="firewall">
+    <div class="section"><span>{{hostpage.fw_title}}</span></div>
+    <p>{{hostpage.fw_text}}</p>
+    <table>
+      <tr><th>{{hostpage.fw_proto}}</th><th>{{hostpage.fw_ports}}</th><th>{{hostpage.fw_from}}</th><th>{{hostpage.fw_what}}</th></tr>
+      <tr><td>TCP</td><td>22</td><td>{{hostpage.fw_yourip}}</td><td>{{hostpage.fw_ssh}}</td></tr>
+      <tr><td>TCP</td><td>7000</td><td>{{hostpage.fw_anywhere}}</td><td>{{hostpage.fw_seat}}</td></tr>
+      <tr><td>TCP</td><td>8905</td><td>{{hostpage.fw_anywhere}}</td><td>{{hostpage.fw_npln}}</td></tr>
+      <tr><td>TCP</td><td>8906</td><td>{{hostpage.fw_anywhere}}</td><td>{{hostpage.fw_gamesync}}</td></tr>
+      <tr><td>UDP</td><td>3478</td><td>{{hostpage.fw_anywhere}}</td><td>{{hostpage.fw_turn}}</td></tr>
+      <tr><td>UDP</td><td>49152–49407</td><td>{{hostpage.fw_anywhere}}</td><td>{{hostpage.fw_relay}}</td></tr>
+      <tr><td>UDP</td><td>8907</td><td>{{hostpage.fw_anywhere}}</td><td>{{hostpage.fw_voice}}</td></tr>
+      <tr><td>UDP</td><td>10025</td><td>{{hostpage.fw_anywhere}}</td><td>{{hostpage.fw_nat}}</td></tr>
+    </table>
+    <p class="rows-note">{{hostpage.fw_how}}</p>
+  </section>
+
+  <section class="wrap page" id="run">
+    <div class="section"><span>{{hostpage.run_title}}</span></div>
+    <p>{{hostpage.run_text}}</p>
+    <pre class="block">ssh root@&lt;IPv4&gt;
+curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash</pre>
+    <p>{{hostpage.run_does}}</p>
+    <ol class="steps">
+      <li><p>{{hostpage.run_1}}</p></li><li><p>{{hostpage.run_2}}</p></li><li><p>{{hostpage.run_3}}</p></li>
+      <li><p>{{hostpage.run_4}}</p></li><li><p>{{hostpage.run_5}}</p></li><li><p>{{hostpage.run_6}}</p></li>
+    </ol>
+    <p style="margin-top: calc(30 * var(--u))">{{hostpage.run_flags}}</p>
+    <pre class="block">curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash -s -- \
+  --name "Friday kart" --region eu-west --capacity 24 --yes</pre>
+    <div class="section"><span>{{hostpage.opt_title}}</span></div>
+    <table>
+      <tr><td><code>--name</code></td><td>{{hostpage.opt_name}}</td></tr>
+      <tr><td><code>--region</code></td><td>{{hostpage.opt_region}}</td></tr>
+      <tr><td><code>--capacity</code></td><td>{{hostpage.opt_capacity}}</td></tr>
+      <tr><td><code>--public-ip</code></td><td>{{hostpage.opt_publicip}}</td></tr>
+      <tr><td><code>--domain</code></td><td>{{hostpage.opt_domain}}</td></tr>
+      <tr><td><code>--privacy-file</code></td><td>{{hostpage.opt_privacy}}</td></tr>
+      <tr><td><code>--no-announce</code></td><td>{{hostpage.opt_noannounce}}</td></tr>
+      <tr><td><code>--version</code></td><td>{{hostpage.opt_version}}</td></tr>
+      <tr><td><code>--no-firewall</code></td><td>{{hostpage.opt_nofw}}</td></tr>
+      <tr><td><code>--uninstall</code></td><td>{{hostpage.opt_uninstall}}</td></tr>
+    </table>
+    <div class="card"><h3>{{i:shield}}{{hostpage.policy_title}}</h3><p>{{hostpage.policy_text}}</p></div>
+  </section>
+
+  <section class="wrap page" id="https">
+    <div class="section"><span>{{hostpage.https_title}}</span></div>
+    <p>{{hostpage.https_text}}</p>
+    <ol class="steps"><li><p>{{hostpage.https_1}}</p></li><li><p>{{hostpage.https_2}}</p></li><li><p>{{hostpage.https_3}}</p></li></ol>
+    <p class="rows-note">{{hostpage.https_after}}</p>
+  </section>
+
+  <section class="wrap page" id="ops">
+    <div class="section"><span>{{hostpage.ops_title}}</span></div>
+    <div class="row">{{i:refresh}}<span class="row__body"><span class="row__label">{{hostpage.ops_update}}</span><span class="row__caption">{{hostpage.ops_update_t}}</span></span></div>
+    <div class="row">{{i:drive}}<span class="row__body"><span class="row__label">{{hostpage.ops_backup}}</span><span class="row__caption">{{hostpage.ops_backup_t}}</span></span></div>
+    <div class="row">{{i:file}}<span class="row__body"><span class="row__label">{{hostpage.ops_logs}}</span><span class="row__caption">{{hostpage.ops_logs_t}}</span></span></div>
+    <div class="row">{{i:user}}<span class="row__body"><span class="row__label">{{hostpage.ops_admin}}</span><span class="row__caption">{{hostpage.ops_admin_t}}</span></span></div>
+  </section>
+
+  <section class="wrap page" id="trouble">
+    <div class="section"><span>{{hostpage.trouble_title}}</span></div>
+    <table>
+      <tr><th>{{hostpage.tr_symptom}}</th><th>{{hostpage.tr_check}}</th></tr>
+      <tr><td>{{hostpage.tr_1}}</td><td>{{hostpage.tr_1c}}</td></tr>
+      <tr><td>{{hostpage.tr_2}}</td><td>{{hostpage.tr_2c}}</td></tr>
+      <tr><td>{{hostpage.tr_3}}</td><td>{{hostpage.tr_3c}}</td></tr>
+      <tr><td>{{hostpage.tr_4}}</td><td>{{hostpage.tr_4c}}</td></tr>
+      <tr><td>{{hostpage.tr_5}}</td><td>{{hostpage.tr_5c}}</td></tr>
+    </table>
+  </section>
+
+  <section class="wrap page" id="pc">
+    <div class="section"><span>{{hostpage.pc_title}}</span></div>
+    <p>{{hostpage.pc_text}}</p>
+    <div class="btns">
+      <a class="btn btn--primary focusable" data-download="server" href="https://github.com/anarqz/mkwmp/releases/latest">{{i:download}}{{host.download}}</a>
+      <a class="btn btn--secondary focusable" href="https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md">{{i:info}}{{foot.hosting}}</a>
+    </div>
+    <p class="rows-note">{{hostpage.more}}</p>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <nav>
+      <a href="./">MKWMP</a>
+      <a href="https://github.com/anarqz/mkwmp">GitHub</a>
+      <a href="https://github.com/anarqz/mkwmp/releases">{{foot.releases}}</a>
+      <a href="https://github.com/anarqz/mkwmp/issues/new/choose">{{foot.bug}}</a>
+    </nav>
+    <p>{{foot.legal}}</p>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status">{{i:check}}<span></span></div>
+<div class="hintbar" aria-hidden="true">
+  <div class="wrap">
+    <span class="hintbar__device">{{i:gamepad-fill}}</span>
+    <button class="hint" type="button" data-hint="move" tabindex="-1"><b class="glyph glyph--key key-only">↑↓</b><b class="glyph pad-only">✚</b><span class="hint__label">{{hints.move}}</span></button>
+    <button class="hint" type="button" data-hint="theme" tabindex="-1"><b class="glyph glyph--key key-only">T</b><b class="glyph pad-only">Y</b><span class="hint__label">{{hints.theme}}</span></button>
+    <button class="hint" type="button" data-hint="back" tabindex="-1"><b class="glyph glyph--key key-only">Esc</b><b class="glyph pad-only">B</b><span class="hint__label">{{hints.top}}</span></button>
+  </div>
+</div>
+</body>
+</html>

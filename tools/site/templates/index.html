@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="{{=lang}}" data-root="{{=root}}" data-shots="{{=root}}{{=shots}}" data-theme="dark" data-empty-art="{{=root}}assets/art/empty-servers.webp">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{meta.title}}</title>
+<meta name="description" content="{{meta.description}}">
+<meta property="og:title" content="{{meta.title}}">
+<meta property="og:description" content="{{meta.description}}">
+<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/art/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://anarqz.github.io/mkwmp/assets/art/og.png">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#2A2A2D">
+<link rel="icon" href="{{=root}}assets/art/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="{{=root}}assets/art/glyph.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{=root}}assets/art/apple-touch-icon.png">
+<link rel="alternate" hreflang="en" href="https://anarqz.github.io/mkwmp/">
+<link rel="alternate" hreflang="pt-BR" href="https://anarqz.github.io/mkwmp/pt-br/">
+<link rel="preload" href="{{=root}}{{=shots}}fonts/Nunito-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{=root}}assets/site.css">
+<script>window.I18N = {{=i18n_js}};
+(function () { var t = (location.search.match(/[?&]theme=(light|dark)/) || [])[1] || null; if (!t) try { t = localStorage.getItem("mkwmp-theme"); } catch (e) {}
+  document.documentElement.dataset.theme = t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); })();</script>
+<script defer src="{{=root}}assets/site.js"></script>
+</head>
+<body>
+<a class="sr" href="#main">{{nav.skip}}</a>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand focusable" href="{{=root}}{{nav.home_href}}"><img src="{{=root}}assets/art/icon-192.png" alt="">MKWMP</a>
+    <nav class="nav" aria-label="{{nav.label}}">
+      <a href="#setup">{{nav.setup}}</a>
+      <a href="#servers">{{nav.servers}}</a>
+      <a href="#friends">{{nav.friends}}</a>
+      <a href="#mods">{{nav.mods}}</a>
+      <a href="#deck">{{nav.deck}}</a>
+      <a href="#host">{{nav.host}}</a>
+      <a href="#privacy">{{nav.privacy}}</a>
+    </nav>
+    <div class="top__end">
+      <a class="icon-btn focusable" href="{{=alt_href}}" hreflang="{{nav.alt_lang}}" title="{{nav.alt_title}}">{{i:globe}}<span>{{=alt_label}}</span></a>
+      <button class="icon-btn focusable" id="theme" type="button" aria-label="{{nav.theme}}"><span class="when-dark">{{i:sun}}</span><span class="when-light">{{i:moon}}</span></button>
+      <a class="icon-btn focusable" href="https://github.com/anarqz/mkwmp" title="GitHub">{{i:program}}</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero-band">
+    <div class="wrap hero">
+      <div class="hero__text">
+        <img class="hero__logo" src="{{=root}}assets/art/logo.webp" alt="MKWMP" width="1280" height="289">
+        <h1>{{hero.title}}</h1>
+        <p class="lead">{{hero.lead}}</p>
+        <div class="btns">
+          <a class="btn btn--primary focusable" data-download="launcher" href="https://github.com/anarqz/mkwmp/releases/latest">{{i:download}}{{hero.download}}</a>
+          <a class="btn btn--secondary focusable" href="#deck">{{i:gamepad}}{{hero.deck}}</a>
+          <a class="btn btn--ghost focusable" href="#host">{{i:computer}}{{hero.host}}</a>
+        </div>
+        <p class="status"><span><span class="dot"></span>{{hero.latest}} <span data-version>{{hero.version}}</span></span><span class="sep"></span><span>{{hero.platforms}}</span><span class="sep"></span><span>{{hero.free}}</span></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap showcase">
+    <figure><img class="shot" data-shot="home" src="{{=root}}{{=shots}}home-dark.webp" alt="{{hero.shot_alt}}" width="1920" height="1080"></figure>
+  </section>
+
+  <div class="wrap tiles" role="list">
+    <a class="tile focusable" role="listitem" href="#offline" style="--art: var(--tile-0)"><span class="tile__art">{{i:kart}}<span class="tile__title">{{tiles.play}}</span><span class="tile__sub">{{tiles.play_sub}}</span></span></a>
+    <a class="tile focusable" role="listitem" href="#servers" style="--art: var(--tile-3)"><span class="tile__art">{{i:globe}}<span class="tile__badge">{{tiles.live}}</span><span class="tile__title">{{tiles.servers}}</span><span class="tile__sub">{{tiles.servers_sub}}</span></span></a>
+    <a class="tile focusable" role="listitem" href="#friends" style="--art: var(--tile-1)"><span class="tile__art">{{i:friends}}<span class="tile__title">{{tiles.friends}}</span><span class="tile__sub">{{tiles.friends_sub}}</span></span></a>
+    <a class="tile focusable" role="listitem" href="#mods" style="--art: var(--tile-2)"><span class="tile__art">{{i:package}}<span class="tile__title">{{tiles.mods}}</span><span class="tile__sub">{{tiles.mods_sub}}</span></span></a>
+    <a class="tile focusable" role="listitem" href="#deck" style="--art: var(--tile-5)"><span class="tile__art">{{i:gamepad}}<span class="tile__title">{{tiles.deck}}</span><span class="tile__sub">{{tiles.deck_sub}}</span></span></a>
+    <a class="tile focusable" role="listitem" href="#host" style="--art: var(--tile-4)"><span class="tile__art">{{i:computer}}<span class="tile__title">{{tiles.host}}</span><span class="tile__sub">{{tiles.host_sub}}</span></span></a>
+  </div>
+
+  <div class="wrap">
+    <div class="card card--warn" id="upgrade">
+      <h3>{{i:warning}}{{upgrade.title}}</h3>
+      <p>{{upgrade.text}}</p>
+    </div>
+  </div>
+
+  <section class="wrap page" id="setup">
+    <div class="page__head">{{i:folder}}<h2>{{setup.title}}</h2></div>
+    <div class="cols">
+      <div>
+        <p class="lead">{{setup.lead}}</p>
+        <div class="section"><span>{{setup.section}}</span></div>
+        <div class="row">{{i:download}}<span class="row__body"><span class="row__label">{{setup.s1}}</span><span class="row__caption">{{setup.s1c}}</span></span></div>
+        <div class="row">{{i:drive}}<span class="row__body"><span class="row__label">{{setup.s2}}</span><span class="row__caption">{{setup.s2c}}</span></span></div>
+        <div class="row">{{i:settings}}<span class="row__body"><span class="row__label">{{setup.s3}}</span><span class="row__caption">{{setup.s3c}}</span></span></div>
+        <div class="row">{{i:package}}<span class="row__body"><span class="row__label">{{setup.s4}}</span><span class="row__caption">{{setup.s4c}}</span></span></div>
+        <div class="row">{{i:folder}}<span class="row__body"><span class="row__label">{{setup.s5}}</span><span class="row__caption">{{setup.s5c}}</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="game-setup-progress" src="{{=root}}{{=shots}}game-setup-progress-dark.webp" alt="{{setup.shot_alt}}" width="1920" height="1080" loading="lazy"><figcaption>{{setup.shot_cap}}</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="offline">
+    <div class="page__head">{{i:kart}}<h2>{{offline.title}}</h2></div>
+    <div class="cols flip">
+      <div>
+        <p class="lead">{{offline.lead}}</p>
+        <div class="row">{{i:kart}}<span class="row__body"><span class="row__label">{{offline.r1}}</span><span class="row__caption">{{offline.r1c}}</span></span></div>
+        <div class="row">{{i:globe}}<span class="row__body"><span class="row__label">{{offline.r2}}</span><span class="row__caption">{{offline.r2c}}</span></span></div>
+        <div class="row">{{i:lock}}<span class="row__body"><span class="row__label">{{offline.r3}}</span><span class="row__caption">{{offline.r3c}}</span></span></div>
+        <div class="row">{{i:refresh}}<span class="row__body"><span class="row__label">{{offline.r4}}</span><span class="row__caption">{{offline.r4c}}</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="welcome-play-online" src="{{=root}}{{=shots}}welcome-play-online-dark.webp" alt="{{offline.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="servers">
+    <div class="page__head">{{i:globe}}<h2>{{servers.title}}</h2><button class="btn btn--ghost focusable pill-btn" id="servers-refresh" type="button">{{i:refresh}}{{servers.refresh}}</button></div>
+    <div class="cols">
+      <div>
+        <p class="lead">{{servers.lead}}</p>
+        <div class="section"><span>{{servers.section}}</span></div>
+        <p class="rows-note" id="servers-count"></p>
+        <p class="rows-note">{{servers.note}}</p>
+        <figure style="margin-top: calc(40 * var(--u))"><img class="shot" data-shot="welcome-server" src="{{=root}}{{=shots}}welcome-server-dark.webp" alt="{{servers.shot_alt}}" width="1920" height="1080" loading="lazy"><figcaption>{{servers.shot_cap}}</figcaption></figure>
+      </div>
+      <div class="servers" id="server-list" aria-live="polite"><noscript><p class="servers__empty">{{servers.noscript}}</p></noscript></div>
+    </div>
+  </section>
+
+  <section class="wrap page" id="friends">
+    <div class="page__head">{{i:friends}}<h2>{{friends.title}}</h2></div>
+    <div class="cols flip">
+      <div>
+        <p class="lead">{{friends.lead}}</p>
+        <div class="row">{{i:friends}}<span class="row__body"><span class="row__label">{{friends.r1}}</span><span class="row__caption">{{friends.r1c}}</span></span></div>
+        <div class="row">{{i:mic}}<span class="row__body"><span class="row__label">{{friends.r2}}</span><span class="row__caption">{{friends.r2c}}</span></span></div>
+        <div class="row">{{i:camera}}<span class="row__body"><span class="row__label">{{friends.r3}}</span><span class="row__caption">{{friends.r3c}}</span></span></div>
+        <div class="row">{{i:shield}}<span class="row__body"><span class="row__label">{{friends.r4}}</span><span class="row__caption">{{friends.r4c}}</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="home-friends" src="{{=root}}{{=shots}}home-friends-dark.webp" alt="{{friends.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="overlay">
+    <div class="page__head">{{i:window}}<h2>{{overlay.title}}</h2></div>
+    <div class="cols">
+      <div>
+        <p class="lead">{{overlay.lead}}</p>
+        <div class="row"><span class="glyph">B</span><span class="row__body"><span class="row__label">{{overlay.r1}}</span><span class="row__caption">{{overlay.r1c}}</span></span></div>
+        <div class="row">{{i:friends}}<span class="row__body"><span class="row__label">{{overlay.r2}}</span><span class="row__caption">{{overlay.r2c}}</span></span></div>
+        <p class="rows-note">{{overlay.note}}</p>
+      </div>
+      <figure><img class="shot" data-shot="overlay" src="{{=root}}{{=shots}}overlay-dark.webp" alt="{{overlay.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="mods">
+    <div class="page__head">{{i:package}}<h2>{{mods.title}}</h2></div>
+    <img class="banner" src="{{=root}}assets/art/banner-mods-3x1.webp" alt="" width="1536" height="512" loading="lazy">
+    <div class="cols flip">
+      <div>
+        <p class="lead">{{mods.lead}}</p>
+        <div class="row">{{i:search}}<span class="row__body"><span class="row__label">{{mods.r1}}</span><span class="row__caption">{{mods.r1c}}</span></span></div>
+        <div class="row">{{i:download}}<span class="row__body"><span class="row__label">{{mods.r2}}</span><span class="row__caption">{{mods.r2c}}</span></span></div>
+        <div class="row">{{i:settings}}<span class="row__body"><span class="row__label">{{mods.r3}}</span><span class="row__caption">{{mods.r3c}}</span></span></div>
+        <div class="row">{{i:shield}}<span class="row__body"><span class="row__label">{{mods.r4}}</span><span class="row__caption">{{mods.r4c}}</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="mods-gamebanana" src="{{=root}}{{=shots}}mods-gamebanana-dark.webp" alt="{{mods.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="languages">
+    <div class="page__head">{{i:globe}}<h2>{{langs.title}}</h2></div>
+    <div class="cols">
+      <div>
+        <p class="lead">{{langs.lead}}</p>
+        <div class="pills">
+          <span class="pill">English</span><span class="pill">Português (Brasil)</span><span class="pill">Português (Portugal)</span>
+          <span class="pill">Español</span><span class="pill">Français</span><span class="pill">Deutsch</span><span class="pill">Italiano</span>
+          <span class="pill">Nederlands</span><span class="pill">Polski</span><span class="pill">Русский</span><span class="pill">Türkçe</span>
+          <span class="pill">日本語</span><span class="pill">한국어</span><span class="pill">简体中文</span><span class="pill">繁體中文</span>
+        </div>
+        <div class="section"><span>{{langs.section}}</span></div>
+        <div class="row">{{i:gamepad}}<span class="row__body"><span class="row__label">{{langs.r1}}</span><span class="row__caption">{{langs.r1c}}</span></span></div>
+        <div class="row">{{i:moon}}<span class="row__body"><span class="row__label">{{langs.r2}}</span><span class="row__caption">{{langs.r2c}}</span></span></div>
+        <div class="row">{{i:refresh}}<span class="row__body"><span class="row__label">{{langs.r3}}</span><span class="row__caption">{{langs.r3c}}</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="settings-appearance" src="{{=root}}{{=shots}}settings-appearance-dark.webp" alt="{{langs.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="deck">
+    <div class="page__head">{{i:gamepad}}<h2>{{deck.title}}</h2></div>
+    <img class="banner" src="{{=root}}assets/art/banner-handheld-3x1.webp" alt="" width="1536" height="512" loading="lazy">
+    <div class="cols flip">
+      <div>
+        <p class="lead">{{deck.lead}}</p>
+        <button class="cmd focusable" type="button"><code>curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash</code><span class="cmd__copy">{{i:file}}{{common.copy}}</span></button>
+        <div class="row">{{i:warning}}<span class="row__body"><span class="row__label">{{deck.r1}}</span><span class="row__caption">{{deck.r1c}}</span></span></div>
+        <div class="row">{{i:folder}}<span class="row__body"><span class="row__label">{{deck.r2}}</span><span class="row__caption">{{deck.r2c}}</span></span></div>
+        <div class="row">{{i:refresh}}<span class="row__body"><span class="row__label">{{deck.r3}}</span><span class="row__caption">{{deck.r3c}}</span></span></div>
+        <div class="row">{{i:settings}}<span class="row__body"><span class="row__label">{{deck.r4}}</span><span class="row__caption">{{deck.r4c}}</span></span></div>
+      </div>
+      <figure><img class="shot deck" data-shot="deck-home" src="{{=root}}{{=shots}}deck-home-dark.webp" alt="{{deck.shot_alt}}" width="1280" height="800" loading="lazy"><figcaption>{{deck.shot_cap}}</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="host">
+    <div class="page__head">{{i:computer}}<h2>{{host.title}}</h2></div>
+    <img class="banner" src="{{=root}}assets/art/banner-server-3x1.webp" alt="" width="1536" height="512" loading="lazy">
+    <div class="cols">
+      <div>
+        <p class="lead">{{host.lead}}</p>
+        <button class="cmd focusable" type="button"><code>curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash</code><span class="cmd__copy">{{i:file}}{{common.copy}}</span></button>
+        <div class="btns">
+          <a class="btn btn--primary focusable" href="{{=root}}{{host.guide_href}}">{{i:info}}{{host.guide}}</a>
+          <a class="btn btn--secondary focusable" data-download="server" href="https://github.com/anarqz/mkwmp/releases/latest">{{i:download}}{{host.download}}</a>
+        </div>
+      </div>
+      <div>
+        <div class="section"><span>{{host.section}}</span></div>
+        <a class="row" href="{{=root}}{{host.guide_href}}#vm">{{i:globe}}<span class="row__body"><span class="row__label">{{host.r1}}</span><span class="row__caption">{{host.r1c}}</span></span>{{i:chevron-right}}</a>
+        <a class="row" href="{{=root}}{{host.guide_href}}#pc">{{i:computer}}<span class="row__body"><span class="row__label">{{host.r2}}</span><span class="row__caption">{{host.r2c}}</span></span>{{i:chevron-right}}</a>
+        <a class="row" href="https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md">{{i:package}}<span class="row__body"><span class="row__label">{{host.r3}}</span><span class="row__caption">{{host.r3c}}</span></span>{{i:chevron-right}}</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap page" id="privacy">
+    <div class="page__head">{{i:shield}}<h2>{{privacy.title}}</h2></div>
+    <div class="cols flip">
+      <div>
+        <p class="lead">{{privacy.lead}}</p>
+        <div class="row">{{i:user}}<span class="row__body"><span class="row__label">{{privacy.r1}}</span><span class="row__caption">{{privacy.r1c}}</span></span></div>
+        <div class="row">{{i:lock}}<span class="row__body"><span class="row__label">{{privacy.r2}}</span><span class="row__caption">{{privacy.r2c}}</span></span></div>
+        <div class="row">{{i:mic-off}}<span class="row__body"><span class="row__label">{{privacy.r3}}</span><span class="row__caption">{{privacy.r3c}}</span></span></div>
+        <div class="row">{{i:trash}}<span class="row__body"><span class="row__label">{{privacy.r4}}</span><span class="row__caption">{{privacy.r4c}}</span></span></div>
+        <div class="btns"><button class="btn btn--primary focusable" type="button" data-policy>{{i:shield}}{{privacy.read}}</button></div>
+        <p class="rows-note">{{privacy.note}}</p>
+      </div>
+      <figure><img class="shot" data-shot="welcome-privacy" src="{{=root}}{{=shots}}welcome-privacy-dark.webp" alt="{{privacy.shot_alt}}" width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="faq">
+    <div class="page__head">{{i:info}}<h2>{{faq.title}}</h2></div>
+    <details><summary class="row">{{i:info}}<span class="row__body"><span class="row__label">{{faq.q1}}</span></span>{{i:chevron-right}}</summary><div>{{faq.a1}}</div></details>
+    <details><summary class="row">{{i:info}}<span class="row__body"><span class="row__label">{{faq.q2}}</span></span>{{i:chevron-right}}</summary><div>{{faq.a2}}</div></details>
+    <details><summary class="row">{{i:info}}<span class="row__body"><span class="row__label">{{faq.q3}}</span></span>{{i:chevron-right}}</summary><div>{{faq.a3}}</div></details>
+    <details><summary class="row">{{i:info}}<span class="row__body"><span class="row__label">{{faq.q4}}</span></span>{{i:chevron-right}}</summary><div>{{faq.a4}}</div></details>
+    <details><summary class="row">{{i:info}}<span class="row__body"><span class="row__label">{{faq.q5}}</span></span>{{i:chevron-right}}</summary><div>{{faq.a5}}</div></details>
+    <details><summary class="row">{{i:info}}<span class="row__body"><span class="row__label">{{faq.q6}}</span></span>{{i:chevron-right}}</summary><div>{{faq.a6}}</div></details>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <nav>
+      <a href="https://github.com/anarqz/mkwmp">GitHub</a>
+      <a href="https://github.com/anarqz/mkwmp/releases">{{foot.releases}}</a>
+      <a href="https://github.com/anarqz/mkwmp/blob/main/CHANGELOG.md">{{foot.changelog}}</a>
+      <a href="{{=root}}{{host.guide_href}}">{{foot.hosting}}</a>
+      <a href="https://github.com/anarqz/mkwmp/issues/new/choose">{{foot.bug}}</a>
+      <a href="https://github.com/anarqz/mkwmp/blob/main/LICENSE">GPL-3.0</a>
+    </nav>
+    <p>{{foot.legal}}</p>
+  </div>
+</footer>
+
+<div class="modal" id="policy" role="dialog" aria-modal="true" aria-hidden="true" aria-label="{{privacy.read}}">
+  <div class="modal__card"><div class="modal__body"></div><button class="modal__foot focusable" type="button">{{common.close}}</button></div>
+</div>
+<div class="toast" id="toast" role="status">{{i:check}}<span></span></div>
+
+<div class="hintbar" aria-hidden="true">
+  <div class="wrap">
+    <span class="hintbar__device">{{i:gamepad-fill}}</span>
+    <button class="hint" type="button" data-hint="move" tabindex="-1"><b class="glyph glyph--key key-only">↑↓</b><b class="glyph pad-only">✚</b><span class="hint__label">{{hints.move}}</span></button>
+    <button class="hint" type="button" data-hint="theme" tabindex="-1"><b class="glyph glyph--key key-only">T</b><b class="glyph pad-only">Y</b><span class="hint__label">{{hints.theme}}</span></button>
+    <button class="hint" type="button" data-hint="back" tabindex="-1"><b class="glyph glyph--key key-only">Esc</b><b class="glyph pad-only">B</b><span class="hint__label">{{hints.top}}</span></button>
+    <span class="hint"><b class="glyph glyph--key key-only">Enter</b><b class="glyph pad-only">A</b><span class="hint__label">{{hints.ok}}</span></span>
+  </div>
+</div>
+</body>
+</html>
