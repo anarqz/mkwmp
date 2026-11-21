@@ -53,7 +53,7 @@
   },
   "upgrade": {
     "title": "Vindo da 1.3?",
-    "text": "A 1.4 é um launcher novo, e a 1.3 não consegue se atualizar para ele. Baixe a 1.4 uma vez, à mão (o botão acima, ou o comando do Steam Deck). Sua gamertag, seus amigos e seu PIN ficam no servidor: entre de novo com o seu PIN."
+    "text": "A 1.4 é um launcher novo (<code>mkwmp.exe</code>), e a 1.3 não consegue se atualizar para ele. Baixe a 1.4 uma vez, à mão, e descompacte na mesma pasta da sua 1.3: ela mantém sua gamertag, seu PIN, seu servidor e suas escolhas. Depois, apague o <code>mkwmp-launcher.exe</code> antigo. No Steam Deck, o comando abaixo faz tudo isso."
   },
   "setup": {
     "title": "Configuração de uma vez",
@@ -195,7 +195,7 @@
     "q4": "É grátis?",
     "a4": "Sim. O MKWMP é de código aberto (GPL-3.0). Os servidores são mantidos pelos hosts; o oficial é grátis para jogar.",
     "q5": "Estou na 1.3. Como atualizo?",
-    "a5": "Baixe a 1.4 à mão uma vez: a 1.3 não consegue se atualizar para o launcher novo. Depois, entre com o seu PIN.",
+    "a5": "Baixe a 1.4 à mão uma vez e descompacte na pasta da sua 1.3: a 1.3 não consegue se atualizar para o launcher novo. Sua gamertag, seu PIN e seu servidor continuam. Depois, apague o mkwmp-launcher.exe antigo. No Steam Deck, rode o comando de instalação: ele traz as configurações da 1.3.",
     "q6": "O jogo travou. Onde eu aviso?",
     "a6": "Depois de um travamento, o launcher mostra um relatório: ele salva um zip na sua Área de Trabalho (sem PIN nem chaves) e abre uma nova issue no GitHub com os detalhes preenchidos. \"Encontrou um bug?\" no launcher faz o mesmo a qualquer hora."
   },
