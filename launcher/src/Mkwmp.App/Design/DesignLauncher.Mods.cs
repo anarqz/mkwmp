@@ -8,8 +8,8 @@ using Mkwmp.Core.Targets;
 namespace Mkwmp.App.Design;
 
 /// <summary>
-/// The demo's mods (launcher/docs/MODS.md): a pretend game with MKWMP's own mod and four others, one
-/// with options (through the real <c>options.json</c> reader), and a pretend GameBanana: made-up mods
+/// The demo's mods (launcher/docs/MODS.md): a pretend game with MKWMP's own mod and a long list of others
+/// (a player with many skins), two with options (through the real <c>options.json</c> reader), and a pretend GameBanana: made-up mods
 /// without pictures, so a screenshot never shows anybody's work. Nothing touches a disk or the network.
 /// </summary>
 public sealed partial class DesignLauncher
@@ -42,8 +42,35 @@ public sealed partial class DesignLauncher
             Problems = ["Shares 3 game files with Neon Karts: the one turned on last wins."] },
         new("Classic GP", "Classic GP") { Author = "mkw-recomp", HasFiles = true, FileCount = 6, ChangesCode = true, Size = 900_000,
             Locked = "This mod changes the game's code, and the game has to be built again for it. Manage it on the Mods page of mkw-recomp's own start screen." },
+        .. DemoSkins(),
     ];
+    private IReadOnlyList<string> _turnedOff = [];
     private bool _showMature;
+
+    /// <summary>A player with many skins (the list's density): made-up names, one too long for its row.</summary>
+    private static IEnumerable<GameMod> DemoSkins()
+    {
+        string[] names =
+        [
+            "Chrome Wheels", "Paper Racers", "Sunset Circuit Billboards", "Rainbow Trails", "Big Minimap",
+            "Midnight Kart Paint Pack with Extra Decals for Every Character and Vehicle Class", "Pastel Bikes", "Jazz Menu Music",
+            "Clean HUD", "Winter Circuit Snow", "Gold Trophy Karts", "Retro Item Boxes",
+        ];
+        string[] authors = ["pixelfox", "origami", "mapleleaf", "prism", "ordinal", "nightowl", "bluenote"];
+        for (var i = 0; i < names.Length; i++)
+        {
+            yield return new GameMod(names[i], names[i])
+            {
+                Version = i % 3 == 0 ? "1.0" : i % 3 == 1 ? "2.3.1" : "",
+                Author = authors[i % authors.Length],
+                Enabled = i % 4 != 3,
+                HasFiles = true,
+                FileCount = 10 + i * 7,
+                Size = (i * 37 % 140 + 2) * 1_000_000L,
+                Options = i == 4 ? Mkwmp.Core.Targets.ModOptions.Parse(Encoding.UTF8.GetBytes(DemoOptions), null, out _) : null,
+            };
+        }
+    }
 
     public ModsView Mods
     {
@@ -53,9 +80,39 @@ public sealed partial class DesignLauncher
             {
                 var running = Session.GameRunning;
                 return new ModsView(true, true, _mods, !running, running ? "Close the game to change its mods" : null, _showMature,
-                    new Dictionary<string, GbFile> { ["Neon Karts"] = new(1700002, "neon_karts_v2_2.zip", 88_000_000, "", true, "clean", "", "2.2", 1_795_000_000) });
+                    new Dictionary<string, GbFile> { ["Neon Karts"] = new(1700002, "neon_karts_v2_2.zip", 88_000_000, "", true, "clean", "", "2.2", 1_795_000_000) })
+                {
+                    TurnedOff = _turnedOff,
+                };
             }
         }
+    }
+
+    public Task<(int Changed, string? Error)> SetAllModsEnabledAsync(bool on)
+    {
+        var changed = 0;
+        string? why = null;
+        Change(() =>
+        {
+            if (Session.GameRunning)
+            {
+                why = "Close the game to change its mods";
+                return;
+            }
+            if (on)
+            {
+                changed = _mods.Count(m => ModsView.Switchable(m) && !m.Enabled && _turnedOff.Contains(m.Id));
+                _mods = [.. _mods.Select(m => ModsView.Switchable(m) && _turnedOff.Contains(m.Id) ? m with { Enabled = true } : m)];
+                _turnedOff = [];
+            }
+            else
+            {
+                _turnedOff = [.. _turnedOff.Union(_mods.Where(m => ModsView.Switchable(m) && m.Enabled).Select(m => m.Id))];
+                changed = _mods.Count(m => ModsView.Switchable(m) && m.Enabled);
+                _mods = [.. _mods.Select(m => ModsView.Switchable(m) ? m with { Enabled = false } : m)];
+            }
+        });
+        return Task.FromResult((changed, why));
     }
 
     public Task RefreshModsAsync() => Task.CompletedTask;

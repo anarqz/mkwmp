@@ -119,10 +119,10 @@ Live answers seen on 2026-11-20 confirm the shapes above, and that `_sSort=Gener
 ### 2.1 The capability
 
 `IGameTarget` has, with defaults that serve mkw-recomp (`Targets/IGameTarget.cs`): `SupportsMods`, `Mods`,
-`SetModEnabled`, `UninstallMod`, `InstallMod`, `ReadModOptions`, `WriteModOptions`. The data is
+`SetModEnabled`, `SetAllModsEnabled` / `ModsTurnedOff`, `UninstallMod`, `InstallMod`, `ReadModOptions`, `WriteModOptions`. The data is
 `Targets/GameMods.cs` (`GameMod`, `ModSource`, `ModInstallRequest`, `ModInstallResult`, `ModProgress`).
 `ILauncher` carries it to the window (`Launcher.Mods.cs`): `Mods` (a `ModsView`), `RefreshModsAsync`,
-`SetModEnabledAsync`, `UninstallModAsync`, `InstallModAsync`, `DownloadModAsync` (a link, a GameBanana file),
+`SetModEnabledAsync`, `SetAllModsEnabledAsync`, `UninstallModAsync`, `InstallModAsync`, `DownloadModAsync` (a link, a GameBanana file),
 `ModOptions` / `SetModOptionAsync`, `BrowseModsAsync` / `ModPageAsync` / `ModImageAsync`,
 `SetShowMatureModsAsync`, `CheckModUpdatesAsync`.
 
@@ -132,6 +132,7 @@ For mkw-recomp (`Targets/MkwRecomp/RecompMods.cs`, `ModImport.cs`):
 |---|---|
 | List | the folders of `mods/` as the start screen lists them, `mod.json` read with a JSON parser, plus `version`, `author`, `description` when the file has them |
 | On / off | the same list edit (`Mod.WithMod`, generalised from the MKWMP mod's): appended when enabling, every other mod and line kept, written atomically |
+| All off, all back on | `mkwmp-mods-off.txt` beside mkw.ini keeps the `mods =` list as it was; "Turn All Back On" writes it back in its order (the precedence), keeping any mod turned on since after it and leaving out one that is gone. Never MKWMP's own mod or a code mod; a plugin mod of the kept list comes back without a new question (it was on). Asks first from five mods |
 | The game runs | nothing is written: every change is refused with "Close the game to change its mods" |
 | A plugin | a mod with `plugin/` is only turned on after the player read that it runs code on this PC and said yes (the core refuses without `acceptCode`); an install leaves it off until then |
 | Code mods | exefs, `image`, `patches`, `switches`: listed and **locked** ("manage it on mkw-recomp's own Mods page"), never installed: the launcher does not build the game's code |
@@ -225,7 +226,7 @@ MKWMP's own mod ships none: its settings are the launcher's pages (Voice & Camer
 
 - **Home dock › Mods** (not a Settings category: it is a place with its own list and store, like Friends; and
   Settings › Game stays about the install). Hidden over a running game.
-- **Mods**: the installed mods (A opens one, X switches it), then Get Mods, Install from a Link, Install from a File.
+- **Mods**: the installed mods, a compact line each (name, version and author, chips, size, a switch: A opens one, X or Right then A switches it; Y or the button over the list turns them all off and back on), then Get Mods, Install from a Link, Install from a File.
 - **A mod**: its switch, problems, an update, its options, what it is, Uninstall.
 - **Get Mods**: search (the on-screen keyboard), the order, Mature Content, a grid of cards, pages.
   **A GameBanana mod**: pictures, files with Install, the description, "Open on GameBanana".
@@ -239,7 +240,7 @@ have no pictures.
 
 ### 2.6 Tests
 
-`tests/Mkwmp.Core.Tests/ModsTests.cs`: the list and `mod.json`, the list edit, on / off and what is refused,
+`tests/Mkwmp.Core.Tests/ModsTests.cs`: the list and `mod.json`, the list edit, on / off and what is refused, all off and back on (the order, the kept set, locked and required mods, the plugin question),
 installs (nested folders, letter case, zip-slip and Windows names, links, limits, variants, replace with a
 backup, a folder, no game files), `options.json` and the round trip to the ini, the save copy, GameBanana from
 recorded answers (list, cache, page, download, checksum, scan, host, pictures), a link with a fake server.
