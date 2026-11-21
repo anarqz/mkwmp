@@ -40,6 +40,9 @@ public sealed class MkwRecompTarget : IGameTarget
 
     public string FolderHint => Strings.RecompFolderHint;
 
+    /// <summary>The game versions the MKWMP mod has its tables for and the player plays on (the user's rule, 2026-11-21: 1.8.0 only).</summary>
+    public IReadOnlyList<string> GameVersions => Recomp.Games;
+
     public TargetCapabilities Capabilities =>
         TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch;
 
@@ -242,20 +245,20 @@ public sealed class MkwRecompTarget : IGameTarget
         var id = Recomp.Identify(game);
         if (id.Kind == RecompKind.Missing)
         {
-            return new TargetCheck(TargetStatus.Missing, id.Problem, id.Explain, null, null);
+            return new TargetCheck(TargetStatus.Missing, id.Problem, id.Explain, null, null) { Gate = TargetGate.Runtime };
         }
         if (!id.Ok)
         {
-            return new TargetCheck(TargetStatus.Unsupported, id.Problem, id.Explain, new Uri(Recomp.Download), $"GET {Recomp.Recommended}");
+            return new TargetCheck(TargetStatus.Unsupported, id.Problem, id.Explain, new Uri(Recomp.Download), $"GET {Recomp.Recommended}") { Gate = TargetGate.Runtime };
         }
         if (Recomp.GameProblemFor(Recomp.GameVersion(game)) is { } version)
         {
-            return new TargetCheck(TargetStatus.Unsupported, version, null, null, null);
+            return new TargetCheck(TargetStatus.Unsupported, version, null, null, null) { Gate = TargetGate.GameVersion };
         }
         // An install the launcher sets up itself has no "open mkw-recomp once": SetupStatus says what to run instead.
         if (!RecompSetup.Drives(install) && Recomp.RebuildProblemFor(id, Recomp.GameId(game)) is { } rebuild)
         {
-            return new TargetCheck(TargetStatus.NeedsRebuild, rebuild, null, null, null);
+            return new TargetCheck(TargetStatus.NeedsRebuild, rebuild, null, null, null) { Gate = TargetGate.Rebuild };
         }
         return new TargetCheck(TargetStatus.Ready, null, id.Explain, null, null);
     }
@@ -275,17 +278,36 @@ public sealed class MkwRecompTarget : IGameTarget
         }
         if (!UsesMod(game))
         {
-            return Probe.Check(game, ExpectedOf(package), _version);
+            return WithOverride(game, Probe.Check(game, ExpectedOf(package), _version));
         }
         var patch = File.Exists(Path.Combine(game, Probe.Marker)) || File.Exists(Path.Combine(game, Probe.Voice));
         if (!Mod.Present(game) && Probe.Check(game, ExpectedOf(package), _version) is { State: not IntegrationState.Missing } old)
         {
             // An install from before the mod: the game patch still works here, until INSTALL (or the next start with the mod's package) moves it to the mod.
-            return old with { Lines = [.. old.Lines, "this mkw-recomp loads MKWMP as a mod: INSTALL replaces the game patch with it"] };
+            return WithOverride(game, old with { Lines = [.. old.Lines, "this mkw-recomp loads MKWMP as a mod: INSTALL replaces the game patch with it"] });
         }
         var report = Mod.Check(game, package, _version);
         return patch && report.State != IntegrationState.Missing
-            ? report with { Lines = [.. report.Lines, "the launcher's game patch is still beside mkw.exe: close the game, it goes on the next PLAY"] }
+            ? report with { Lines = [.. report.Lines, "the launcher's game patch is still beside mkw.exe: close the game, it goes on the next PLAY"], LeftoverPatch = true }
+            : report;
+    }
+
+    /// <summary>Tests: whether Wine's override for the game patch is set (null: not under Wine), instead of the registry.</summary>
+    internal Func<bool?>? OverrideOverride { get; set; }
+
+    /// <summary>
+    /// Under Wine the game patch beside mkw.exe loads only with <c>winmm=native,builtin</c> for mkw.exe: a report that
+    /// says the patch is in, without it, says so (INSTALL sets it; so does PLAY, before it starts the game).
+    /// </summary>
+    private IntegrationReport WithOverride(string game, IntegrationReport report)
+    {
+        if (!report.Ok || !File.Exists(Path.Combine(game, Probe.ProbeDll)))
+        {
+            return report;
+        }
+        var set = OverrideOverride is { } test ? test() : Platform.WineHost.HasDllOverride("mkw.exe", "winmm");
+        return set == false
+            ? report with { Lines = [.. report.Lines, $"wine: no winmm={Platform.WineHost.NativeFirst} override for mkw.exe"], OverrideMissing = true }
             : report;
     }
 

@@ -72,6 +72,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
     private volatile ReportView _reportView;
     private volatile UpdateView _updateView = new(UpdateState.Checking, null, null, 0, null, "");
     private volatile string? _playProblem;
+    private volatile PlayChecklist _checklist = PlayChecklist.Empty;
 
     /// <summary>
     /// Opens the launcher on a settings file. Throws <see cref="LauncherException"/> when
@@ -207,6 +208,8 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
     public IDeviceLab Devices => _devices;
 
     public string? PlayProblem => _playProblem;
+
+    public PlayChecklist Checklist => _checklist;
 
     private static readonly ServerView NotAsked = new(ServerState.NotAsked, null, 0, 0, 0, null);
 
@@ -446,7 +449,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
 
         // What blocks PLAY, in the Rust window's order: the settings, the game's gates, the local API, the integration.
         var check = _check;
-        var integrationProblem = _integration is { Ok: false } bad ? bad.Summary : null;
+        var integrationProblem = _integration?.Problem;
         // A setup the launcher must run first (Launcher.GameSetup.cs) comes after the game folder and its gates, and
         // before everything about the integration: its switch in the settings, the local API, its files.
         var setupProblem = SetupProblem(check);
@@ -476,6 +479,12 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         var game = _gameView;
         Put(ref game, new GameView(_targetInfos, _install, check, _integration, _searching, _gameWorking, _gameNote?.Text, _gameNote?.IsError ?? false));
         _gameView = game;
+
+        // The play checklist, from the same views; what blocks PLAY is never something it does not show, and the other way round.
+        var checklist = _checklist;
+        Put(ref checklist, PlayChecklist.Build(new ChecklistFacts(s, server, game, runtime, setup, _updateView, Version, problem)));
+        _checklist = checklist;
+        problem ??= checklist.Blocking.FirstOrDefault()?.Status;
 
         if (_playProblem != problem)
         {

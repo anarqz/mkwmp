@@ -29,7 +29,11 @@ public sealed partial class Launcher
 
     private void SetUpdate(UpdateView view)
     {
-        _updateView = view;
+        lock (_gate)
+        {
+            _updateView = view;
+            Rebuild(); // the checklist's update row
+        }
         RaiseChanged();
     }
 

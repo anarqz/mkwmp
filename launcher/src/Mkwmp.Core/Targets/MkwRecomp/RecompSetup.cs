@@ -225,6 +225,11 @@ internal static partial class RecompSetup
         {
             plan = new GameSetupPlan(GameSetupReason.DumpMissing, Strings.SetupDumpGone(source), true, source);
         }
+        else if (CopyChanged(data, source) == true)
+        {
+            // The player updated their copy somewhere else: what was built from it is the old game's.
+            plan = new GameSetupPlan(GameSetupReason.CopyChanged, Strings.SetupCopyChanged, false, source);
+        }
         else if (!File.Exists(Path.Combine(data, "mkwgame.dll")) || state.Port is null || !state.CopyStepsDone)
         {
             plan = new GameSetupPlan(GameSetupReason.Unfinished, Strings.SetupUnfinished, false, source);
@@ -247,8 +252,231 @@ internal static partial class RecompSetup
         else
         {
             plan = null;
+            if (ReadCopyRecord(data) is null)
+            {
+                RecordCopy(data, source); // a game set up before the launcher kept this: what it is now is what was built
+            }
         }
         return new GameSetupStatus(plan, source, state.Copy ? GameDataMode.Copy : GameDataMode.Link);
+    }
+
+    // ---- has the player's copy changed since it was set up? -----------------------------------
+
+    /// <summary>The launcher's own record of the copy the last setup built from, beside <c>setup-state.json</c>.</summary>
+    public const string CopyRecordFile = "mkwmp-copy.json";
+
+    /// <summary>What a copy looked like when it was set up: the file that stands for it, its size, its time, a sample hash.</summary>
+    internal sealed record CopyPrint(string Source, string File, long Size, long Modified, string Hash);
+
+    /// <summary>Bytes hashed at each end of the file (a game update rewrites its header and its tables).</summary>
+    private const int SampleBytes = 1 << 20;
+
+    /// <summary>Copies already compared at a size and a time, so the two-second look hashes nothing twice.</summary>
+    private static readonly ConcurrentDictionary<string, (long Size, long Modified, bool Changed)> Compared = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The file that stands for the player's copy: a <c>.nup</c> or <c>.nx</c> package itself, else the <c>exefs/main</c>
+    /// of a folder (what holds the game's build id: an update always replaces it). Null when there is none.
+    /// </summary>
+    internal static string? PrintFile(string source)
+    {
+        try
+        {
+            if (File.Exists(source))
+            {
+                return source;
+            }
+            if (!Directory.Exists(source))
+            {
+                return null;
+            }
+            IEnumerable<string> level = [source];
+            for (var depth = 0; depth < 3; depth++)
+            {
+                var folders = level.ToList();
+                if (folders.Select(d => Path.Combine(d, "exefs", "main")).FirstOrDefault(File.Exists) is { } main)
+                {
+                    return main;
+                }
+                level = folders.SelectMany(Subfolders);
+            }
+            return null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>SHA-256 of the first and the last megabyte and the length: cheap on a 20 GB package, and an update changes both ends.</summary>
+    internal static string SampleHash(string file)
+    {
+        using var f = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var sha = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+        var buffer = new byte[SampleBytes];
+        var read = f.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
+        sha.AppendData(buffer, 0, read);
+        if (f.Length > SampleBytes)
+        {
+            f.Seek(Math.Max(SampleBytes, f.Length - SampleBytes), SeekOrigin.Begin);
+            read = f.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
+            sha.AppendData(buffer, 0, read);
+        }
+        sha.AppendData(BitConverter.GetBytes(f.Length));
+        return Convert.ToHexStringLower(sha.GetHashAndReset());
+    }
+
+    /// <summary>The copy as it is now; null when its file cannot be read.</summary>
+    internal static CopyPrint? Print(string source)
+    {
+        if (PrintFile(source) is not { } file)
+        {
+            return null;
+        }
+        try
+        {
+            var info = new FileInfo(file);
+            return new CopyPrint(source, file, info.Length, info.LastWriteTimeUtc.Ticks, SampleHash(file));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    internal static CopyPrint? ReadCopyRecord(string data)
+    {
+        try
+        {
+            var path = Path.Combine(data, CopyRecordFile);
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+            var v = Json.Parse(File.ReadAllText(path));
+            return v.At("source").Str() is { } source && v.At("file").Str() is { } file && v.At("hash").Str() is { } hash
+                && v.At("size").Long() is { } size && v.At("modified").Long() is { } modified
+                ? new CopyPrint(source, file, size, modified, hash)
+                : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or LauncherException)
+        {
+            return null;
+        }
+    }
+
+    private static void WriteCopyRecord(string data, CopyPrint print)
+    {
+        try
+        {
+            var path = Path.Combine(data, CopyRecordFile);
+            var text = System.Text.Json.JsonSerializer.Serialize(new { source = print.Source, file = print.File, size = print.Size, modified = print.Modified, hash = print.Hash });
+            File.WriteAllText(path + ".tmp", text);
+            File.Move(path + ".tmp", path, overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // not written: the next look records it
+        }
+    }
+
+    /// <summary>Records <paramref name="source"/> as the copy the game in <paramref name="data"/> is built from (after a setup).</summary>
+    public static void RecordCopy(string data, string? source)
+    {
+        if (source is not null && Print(source) is { } print)
+        {
+            WriteCopyRecord(data, print);
+            Compared.TryRemove(print.File, out _);
+        }
+    }
+
+    /// <summary>
+    /// Whether the player's copy changed since the last setup built from it: null when that is not known (no record, the
+    /// record is of another copy, the copy cannot be read). The size and the time first; the sample hash only when they
+    /// differ (a copy only touched counts as the same, and its new time is kept).
+    /// </summary>
+    internal static bool? CopyChanged(string data, string source)
+    {
+        if (ReadCopyRecord(data) is not { } record || !string.Equals(record.Source, source, StringComparison.OrdinalIgnoreCase)
+            || PrintFile(source) is not { } file)
+        {
+            return null;
+        }
+        FileInfo info;
+        try
+        {
+            info = new FileInfo(file);
+            if (!info.Exists)
+            {
+                return null;
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
+        var (size, modified) = (info.Length, info.LastWriteTimeUtc.Ticks);
+        if (string.Equals(file, record.File, StringComparison.OrdinalIgnoreCase) && size == record.Size && modified == record.Modified)
+        {
+            return false;
+        }
+        if (Compared.TryGetValue(file, out var seen) && seen.Size == size && seen.Modified == modified)
+        {
+            return seen.Changed;
+        }
+        bool changed;
+        try
+        {
+            changed = !string.Equals(file, record.File, StringComparison.OrdinalIgnoreCase) || size != record.Size || SampleHash(file) != record.Hash;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+        if (!changed)
+        {
+            WriteCopyRecord(data, record with { Modified = modified }); // only touched: the same game
+        }
+        Compared[file] = (size, modified, changed);
+        return changed;
+    }
+
+    // ---- setting the game up again from the same copy -----------------------------------------
+
+    /// <summary>
+    /// prepare.py has no switch that redoes everything: it skips a step whose key in <c>setup-state.json</c>'s
+    /// <c>done</c> is the one it would make. A rebuild takes those keys out, so every step that builds the game runs
+    /// again (exefs, generate, compile, shaders, warm); the source, its mode and the rest of the state stay, and so do
+    /// the saves, the mods and mkw.ini. A copied RomFS is kept (22 GB of the game's own files, the same copy): its key
+    /// stays unless <paramref name="keepRomfs"/> is false. Nothing of the player's copy is touched. True when written.
+    /// </summary>
+    internal static bool ForgetBuild(string data, bool keepRomfs)
+    {
+        var path = Path.Combine(data, State);
+        try
+        {
+            if (!File.Exists(path) || System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path)) is not System.Text.Json.Nodes.JsonObject root)
+            {
+                return false;
+            }
+            if (root["done"] is System.Text.Json.Nodes.JsonObject done)
+            {
+                foreach (var step in done.Select(p => p.Key).ToList())
+                {
+                    if (!(keepRomfs && step == "romfs"))
+                    {
+                        done.Remove(step);
+                    }
+                }
+            }
+            File.WriteAllText(path + ".mkwmp-tmp", root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            File.Move(path + ".mkwmp-tmp", path, overwrite: true);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            throw new LauncherException(Strings.SetupError("io", e.Message, null, null), e);
+        }
     }
 
     // ---- the player's copy of the game --------------------------------------------------------
@@ -366,7 +594,26 @@ internal static partial class RecompSetup
                 return refused;
             }
             cancel.ThrowIfCancellationRequested();
-            return await DriveAsync(install, request, host, progress, cancel).ConfigureAwait(false);
+            if (request.Rebuild && ReadState(data) is { } before)
+            {
+                // Every step that builds the game runs again, from the copy as it is now: recorded first, so a rebuild
+                // that is stopped is "unfinished" (and continues), not "your game changed" (and starts over).
+                RecordCopy(data, request.DumpPath is { } dump ? Path.GetFullPath(dump) : before.Source);
+                try
+                {
+                    ForgetBuild(data, keepRomfs: before.Copy && request.DumpPath is null);
+                }
+                catch (LauncherException e)
+                {
+                    return GameSetupResult.Refused("io", e.Message);
+                }
+            }
+            var result = await DriveAsync(install, request, host, progress, cancel).ConfigureAwait(false);
+            if (result.Ok)
+            {
+                RecordCopy(data, ReadState(data)?.Source); // what the game is built from now
+            }
+            return result;
         }
         finally
         {

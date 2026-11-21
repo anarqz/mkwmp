@@ -32,8 +32,15 @@ public interface ILauncher : IAsyncDisposable
     /// <summary>Camera/mic tests for the settings screens.</summary>
     Devices.IDeviceLab Devices { get; }
 
-    /// <summary>The first thing that blocks PLAY (verbatim), or null.</summary>
+    /// <summary>The first thing that blocks PLAY (verbatim), or null. Never null while a row of <see cref="Checklist"/> blocks.</summary>
     string? PlayProblem { get; }
+
+    /// <summary>
+    /// The play checklist: everything PLAY needs (the runtime, the player's copy and its version, the setup, MKWMP's
+    /// files, the launcher's update, online play), each with its state and the action that fixes it. Made from the same
+    /// views as <see cref="PlayProblem"/>; replaced with them (<see cref="Changed"/>).
+    /// </summary>
+    PlayChecklist Checklist { get; }
 
     /// <summary>
     /// Online features are on: a server address is set (Settings › Online). Off by default on a
@@ -278,6 +285,14 @@ public interface ILauncher : IAsyncDisposable
     /// start (<see cref="GameCopyChangeProblem"/>), and nothing changed.
     /// </summary>
     Task<string?> ChangeGameCopyAsync(string dumpPath, GameDataMode? mode, CancellationToken cancel);
+
+    /// <summary>
+    /// "Set up the game again": every step that builds the game runs again from the copy the last setup used (as long
+    /// as the first setup: the game code and its shaders), keeping the saves, the mods and the game's settings. Null when
+    /// it ran (the outcome is in <see cref="GameSetup"/>); else why it did not start (the game, PLAY or a setup is
+    /// running, the game was never set up), and nothing changed.
+    /// </summary>
+    Task<string?> RebuildGameAsync(CancellationToken cancel);
 
     /// <summary>Stops a setup in progress, or clears the note of the last one.</summary>
     Task CancelGameSetup();
@@ -628,7 +643,11 @@ public sealed record GameView(
     string? Note,
     bool NoteIsError);
 
-public sealed record TargetInfo(string Id, string DisplayName, string FolderHint, TargetCapabilities Capabilities);
+public sealed record TargetInfo(string Id, string DisplayName, string FolderHint, TargetCapabilities Capabilities)
+{
+    /// <summary>The game versions MKWMP plays on with this target (<see cref="IGameTarget.GameVersions"/>); empty: any.</summary>
+    public IReadOnlyList<string> GameVersions { get; init; } = [];
+}
 
 public sealed record AudioDevice(string Id, string Name);
 

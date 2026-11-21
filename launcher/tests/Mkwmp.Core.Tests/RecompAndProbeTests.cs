@@ -164,10 +164,11 @@ public class RecompTests
         Assert.Null(Recomp.GameVersionIn("not json"));
         Assert.Null(Recomp.GameVersionIn("""{"done": {"generate": "c0dd6cf12c07c23a b05897af8b40fec6"}}""")); // no version word
         Assert.Equal("1.8.0", Recomp.GameVersionIn("""{"done": {"generate": "c0dd6cf12c07c23a 1.8.0"}}"""));
-        Assert.Null(Recomp.GameProblemFor("1.0.0"));
+        // 1.8.0 only (the user's rule, 2026-11-21): the game patch has tables for 1.0.0, but MKWMP is not played on it.
+        Assert.Equal("MKWMP needs Mario Kart World 1.8.0: this copy of the game is 1.0.0", Recomp.GameProblemFor("1.0.0"));
         Assert.Null(Recomp.GameProblemFor("1.8.0"));
         Assert.Null(Recomp.GameProblemFor(null)); // unknown is allowed
-        Assert.Equal("Game 1.9.0: MKWMP supports game 1.0.0 or 1.8.0 (a newer MKWMP may support 1.9.0)", Recomp.GameProblemFor("1.9.0"));
+        Assert.Equal("MKWMP needs Mario Kart World 1.8.0: this copy of the game is 1.9.0", Recomp.GameProblemFor("1.9.0"));
 
         var d = Rig.NewFolder("recomp-game");
         Directory.CreateDirectory(Path.Combine(d, "data"));

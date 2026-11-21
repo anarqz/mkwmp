@@ -100,11 +100,11 @@ internal static class Recomp
     public static readonly string[] ModRuntimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"];
 
     /// <summary>
-    /// Game versions the game patch has guest-address tables for. On any other version its hooks
-    /// would write into unrelated game memory. Players only meet others on the same version (the
-    /// lobby keeps them apart).
+    /// The game versions MKWMP plays on. The game patch also has guest-address tables for 1.0.0, but
+    /// online play is on 1.8.0 only (the user's rule, 2026-11-21): a copy of another version is
+    /// refused before PLAY, with the version it needs. Players only meet others on the same version.
     /// </summary>
-    public static readonly string[] Games = ["1.0.0", "1.8.0"];
+    public static readonly string[] Games = ["1.8.0"];
 
     /// <summary>
     /// The game build id each runtime compiles the game for (<c>&lt;data dir&gt;/mkwgame.id</c>, also

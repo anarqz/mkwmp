@@ -25,7 +25,7 @@ public sealed class TargetRegistry
     /// <summary>The target with that id; the first one for an id this build does not know (a newer launcher's settings).</summary>
     public IGameTarget Get(string? id) => _targets.FirstOrDefault(t => string.Equals(t.Id, id, StringComparison.OrdinalIgnoreCase)) ?? _targets[0];
 
-    public IReadOnlyList<TargetInfo> Infos => [.. _targets.Select(t => new TargetInfo(t.Id, t.DisplayName, t.FolderHint, t.Capabilities))];
+    public IReadOnlyList<TargetInfo> Infos => [.. _targets.Select(t => new TargetInfo(t.Id, t.DisplayName, t.FolderHint, t.Capabilities) { GameVersions = t.GameVersions })];
 
     /// <summary>The first target that recognises the folder, with its install.</summary>
     public (IGameTarget Target, GameInstall Install)? Detect(string? folder, string? preferredId = null)

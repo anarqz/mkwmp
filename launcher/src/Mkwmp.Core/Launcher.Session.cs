@@ -146,6 +146,12 @@ public sealed partial class Launcher
         {
             throw new LauncherException(setup.Message);
         }
+        // The rest of the play checklist (the runtime's update, the game's version): PLAY never starts past a row that
+        // blocks it. MKWMP's files are the exception: PLAY brings them in line itself, below, and refuses if it cannot.
+        if (Checklist.Blocking.FirstOrDefault(i => i.Id is CheckId.Runtime or CheckId.GameCopy or CheckId.GameVersion or CheckId.GameSetup) is { } blocked)
+        {
+            throw new LauncherException(blocked.Status);
+        }
         if (!IsOnline(s))
         {
             await OfflineSessionAsync(s, target, install, life).ConfigureAwait(false);

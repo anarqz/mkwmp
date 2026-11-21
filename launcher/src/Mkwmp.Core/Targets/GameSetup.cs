@@ -18,6 +18,9 @@ public enum GameSetupReason
 
     /// <summary>The player's copy of the game is no longer where the last setup read it from, and the game reads it in place.</summary>
     DumpMissing,
+
+    /// <summary>The player's copy changed since the game was built from it (updated elsewhere): the game is set up again from it.</summary>
+    CopyChanged,
 }
 
 /// <summary>What a setup would be for, before it runs.</summary>
@@ -48,7 +51,8 @@ public enum GameDataMode
 /// </param>
 /// <param name="Mode">Only with a <paramref name="DumpPath"/>. Changing it (or the copy) redoes only the steps that depend on it (mkw-recomp: exefs, romfs, cleanup).</param>
 /// <param name="LogFolder">Where the whole log of this run is kept (<c>setup-*.log</c>); null: nowhere.</param>
-public sealed record GameSetupRequest(string? DumpPath, GameDataMode Mode = GameDataMode.Link, string? LogFolder = null);
+/// <param name="Rebuild">Every step that builds the game runs again (not only those whose inputs changed): "Set up the game again".</param>
+public sealed record GameSetupRequest(string? DumpPath, GameDataMode Mode = GameDataMode.Link, string? LogFolder = null, bool Rebuild = false);
 
 /// <summary>Where a running setup is.</summary>
 /// <param name="Step">The step's own name ("compile"); "" before the first one.</param>

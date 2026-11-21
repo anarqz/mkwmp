@@ -431,6 +431,8 @@ public static class Strings
     public static string SetupPickDump => T("core.setup.pick_dump");
     public static string SetupToolsMissing => T("core.setup.tools_missing");
     public static string SetupCpu => T("core.setup.cpu");
+    public static string SetupCopyChanged => T("core.setup.copy_changed");
+    public static string SetupNotYet => T("core.setup.not_yet");
 
     /// <summary>The release's no-AVX2 package, on a processor without SSE4.2.</summary>
     public static string SetupCpuV2 => T("core.setup.cpu_v2");

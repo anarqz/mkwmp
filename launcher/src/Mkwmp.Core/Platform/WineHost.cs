@@ -65,6 +65,27 @@ public static class WineHost
         }
     }
 
+    /// <summary>
+    /// Whether the per-application override loads <paramref name="dll"/> beside <paramref name="exe"/> native first
+    /// (what <see cref="EnsureDllOverride"/> writes); null on Windows, where nothing needs it. Reads one registry value.
+    /// </summary>
+    public static bool? HasDllOverride(string exe, string dll)
+    {
+        if (!Detected)
+        {
+            return null;
+        }
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(AppDefaultsKey(exe));
+            return key?.GetValue(dll) is string now && now.StartsWith("native", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            return null; // not readable: not said to be missing
+        }
+    }
+
     private static string? Detect()
     {
         var ntdll = GetModuleHandleW("ntdll.dll");

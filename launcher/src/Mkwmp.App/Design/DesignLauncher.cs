@@ -107,8 +107,9 @@ public sealed partial class DesignLauncher : ILauncher
                 GameSetupState.NeedsSetup or GameSetupState.Failed => GameSetup.Message ?? CoreStrings.SetupNotSetUp,
                 _ => null,
             }
-            ?? (Game.Integration is { Ok: false } bad ? bad.Summary : null);
-        PlayProblem = problem;
+            ?? Game.Integration?.Problem;
+        // as the real one: what blocks PLAY is never something the checklist does not show
+        PlayProblem = problem ?? PlayChecklist.Build(Facts(null)).Blocking.FirstOrDefault()?.Status;
         if (!Session.Busy)
         {
             Session = problem is null
@@ -150,7 +151,7 @@ public sealed partial class DesignLauncher : ILauncher
 
     public GameView Game { get; private set; } = new(
         [new TargetInfo("mkw-recomp", "mkw-recomp", "the folder with mkw.exe",
-            TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch)],
+            TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch) { GameVersions = ["1.8.0"] }],
         new GameInstall("mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp\mkw.exe", "0.1.15-mkwmp", "1.8.0", null),
         new TargetCheck(TargetStatus.Ready, null, null, null, null),
         DemoMod,
@@ -186,6 +187,11 @@ public sealed partial class DesignLauncher : ILauncher
     public Mkwmp.Core.Overlay.OverlayBridge OverlayBridge { get; } = new(TimeProvider.System);
 
     public string? PlayProblem { get; private set; }
+
+    /// <summary>The play checklist of the pretend state, made by the real builder from the views as they are now.</summary>
+    public PlayChecklist Checklist => PlayChecklist.Build(Facts(PlayProblem));
+
+    private ChecklistFacts Facts(string? problem) => new(Settings, Server, Game, Runtime, GameSetup, Update, Version, problem);
 
     /// <summary>For screenshots and trying things (<c>--state</c>): another situation than the happy one.</summary>
     public void Pretend(string? state)
@@ -326,6 +332,59 @@ public sealed partial class DesignLauncher : ILauncher
                             new Uri("https://github.com/anarqz/mkw-recomp/releases"), "Get 0.1.15-mkwmp"),
                     };
                     _pretended = PlayProblem;
+                });
+                break;
+            // ── the play checklist's situations (--page checklist) ──
+            case "ready":
+                Change(() => Update = new UpdateView(UpdateState.UpToDate, null, null, 0, null, CoreStrings.UpToDate));
+                break;
+            // the player's own mkw-recomp, one MKWMP does not run on: MKWMP's build goes beside it
+            case "wrong-runtime":
+                Change(() =>
+                {
+                    var problem = CoreStrings.RecompProblemOther("0.1.11", "0.1.15 or 0.1.16 or 0.1.16-mkwmp.1");
+                    Game = Game with
+                    {
+                        Install = Game.Install! with { Version = "0.1.11" },
+                        Check = new TargetCheck(TargetStatus.Unsupported, problem, null, null, null) { Gate = TargetGate.Runtime },
+                    };
+                    Runtime = Runtime with { InstalledVersion = "0.1.11", Foreign = true };
+                    Sync();
+                });
+                break;
+            // a game set up from another version of the player's copy
+            case "wrong-version":
+                Change(() =>
+                {
+                    var problem = CoreStrings.RecompGameProblem("1.0.0", ["1.8.0"]);
+                    Game = Game with
+                    {
+                        Install = Game.Install! with { GameVersion = "1.0.0" },
+                        Check = new TargetCheck(TargetStatus.Unsupported, problem, null, null, null) { Gate = TargetGate.GameVersion },
+                    };
+                    GameSetup = DemoSetupIdle with { GameVersion = "1.0.0" };
+                    Sync();
+                });
+                break;
+            // MKWMP's files changed in the mod folder, and an old winmm.dll beside mkw.exe
+            case "mod-broken":
+                Change(() =>
+                {
+                    Game = Game with
+                    {
+                        Integration = new IntegrationReport(IntegrationState.Damaged, CoreStrings.PatchState("damaged"),
+                            [@"mods/mkwmp: v1.4.1 (C:\Games\Mario Kart World\mkw-recomp\mods\mkwmp)", "mkw.ini [launcher] mods: enabled", "plugin/mkwmp.dll: another version, or changed", "files: 6 of 7 verified against v1.4.1"])
+                        { AsMod = true, LeftoverPatch = true },
+                    };
+                    Sync();
+                });
+                break;
+            // the player updated their copy elsewhere since it was set up
+            case "copy-changed":
+                Change(() =>
+                {
+                    GameSetup = DemoSetupIdle with { State = GameSetupState.NeedsSetup, Reason = GameSetupReason.CopyChanged, Message = CoreStrings.SetupCopyChanged };
+                    Sync();
                 });
                 break;
             case "offline":
@@ -1307,6 +1366,21 @@ public sealed partial class DesignLauncher : ILauncher
         {
             _gameSetup = null;
         }
+        return null;
+    }
+
+    /// <summary>"Set up the game again": the whole pretend setup, from the copy it knows.</summary>
+    public async Task<string?> RebuildGameAsync(CancellationToken cancel)
+    {
+        if (GameCopyChangeProblem(null) is { } why)
+        {
+            return why;
+        }
+        if (GameSetup.DumpPath is null)
+        {
+            return CoreStrings.SetupNotYet;
+        }
+        await RunGameSetupAsync(null, cancel).ConfigureAwait(false);
         return null;
     }
 

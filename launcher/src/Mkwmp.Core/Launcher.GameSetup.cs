@@ -169,8 +169,25 @@ public sealed partial class Launcher
         return null;
     }
 
+    public async Task<string?> RebuildGameAsync(CancellationToken cancel)
+    {
+        if (await Task.Run(() => GameCopyChangeProblem(null), cancel).ConfigureAwait(false) is { } why)
+        {
+            Note($"game setup: not set up again: {why}");
+            return why;
+        }
+        if (GameSetup.DumpPath is null)
+        {
+            return Strings.SetupNotYet; // never set up from a copy the launcher knows: the first setup asks for one
+        }
+        Note("game setup: set up again from the same copy (every step that builds the game)");
+        await RunGameSetupAsync(null, null, cancel, rebuild: true).ConfigureAwait(false);
+        return null;
+    }
+
     /// <param name="mode">Only with a <paramref name="dumpPath"/>; null: as the last setup took its copy (read in place for a first one).</param>
-    private async Task RunGameSetupAsync(string? dumpPath, GameDataMode? mode, CancellationToken cancel)
+    /// <param name="rebuild">Every step that builds the game runs again; also when the copy changed since it was set up.</param>
+    private async Task RunGameSetupAsync(string? dumpPath, GameDataMode? mode, CancellationToken cancel, bool rebuild = false)
     {
         CancellationTokenSource both;
         lock (_setupStart)
@@ -182,6 +199,7 @@ public sealed partial class Launcher
             both = _setupCancel = CancellationTokenSource.CreateLinkedTokenSource(cancel, _life.Token);
         }
         var dump = string.IsNullOrWhiteSpace(dumpPath) ? null : dumpPath.Trim().Trim('"');
+        string? wrongVersion = null;
         try
         {
             var s = Settings;
@@ -206,15 +224,28 @@ public sealed partial class Launcher
                 throw new LauncherException(Strings.SetupNone);
             }
             var data = mode ?? before.Mode; // a new copy is taken as the last one was, unless the player said otherwise
-            Note($"game setup: {target.DisplayName} {install.Version} in {install.Root}, game copy: {(dump is null ? "the last setup's" : $"{dump} ({data.ToString().ToLowerInvariant()})")}");
+            // The same copy, changed since it was set up (updated elsewhere): prepare.py's keys may not see it (the same
+            // version, the same path), so everything that builds the game runs again.
+            rebuild |= dump is null && before.Needed?.Reason == GameSetupReason.CopyChanged;
+            Note($"game setup: {target.DisplayName} {install.Version} in {install.Root}, game copy: {(dump is null ? "the last setup's" : $"{dump} ({data.ToString().ToLowerInvariant()})")}{(rebuild ? ", every step again" : "")}");
             Mutate(() =>
             {
                 (_setupNote, _setupDone) = (null, false);
                 _setupProgress = new GameSetupProgress("", Strings.SetupStarting, 0, 0, 0, true, 0, null, null);
             });
             var shown = _clock.GetTimestamp();
+            var versions = target.GameVersions;
             var progress = new SetupReport(p =>
             {
+                // The copy is a version MKWMP does not play on: stopped as soon as the setup has read it, not after the
+                // half hour of building a game that PLAY would refuse.
+                if (p.GameVersion is { } read && versions.Count > 0 && !versions.Contains(read) && wrongVersion is null)
+                {
+                    wrongVersion = read;
+                    Note($"game setup: the copy is game {read}; MKWMP plays on {string.Join(", ", versions)}: stopped");
+                    both.Cancel();
+                    return;
+                }
                 // A few times a second is plenty for a bar; a new step, a new label and the end always show.
                 var now = _clock.GetTimestamp();
                 lock (_gate)
@@ -232,7 +263,7 @@ public sealed partial class Launcher
                 shown = now;
                 Mutate(() => _setupProgress = _setupProgress is null ? null : p);
             });
-            var request = new GameSetupRequest(dump, data, Path.Combine(LauncherFolder, "logs"));
+            var request = new GameSetupRequest(dump, data, Path.Combine(LauncherFolder, "logs"), rebuild);
             var result = await Task.Run(() => target.RunSetupAsync(install, request, progress, both.Token), both.Token).ConfigureAwait(false);
             Note(result.Ok
                 ? $"game setup: done, game {result.GameVersion ?? "?"} (log: {result.Log ?? "none"})"
@@ -245,6 +276,17 @@ public sealed partial class Launcher
                 _setupGameVersion = result.GameVersion ?? _setupGameVersion;
                 _setupDone = result.Ok;
                 _setupNote = result.Ok ? null : (result.Message ?? Strings.SetupError(result.ErrorCode ?? "", null, null, null), true, result.ErrorCode);
+            }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (wrongVersion is { } read)
+        {
+            var versions = _targets.Get(Settings.Target).GameVersions;
+            await RefreshAfterSetupAsync(() =>
+            {
+                _setupProgress = null;
+                _setupLog = RecentSetupLog() ?? _setupLog;
+                _setupGameVersion = read;
+                _setupNote = (Strings.RecompGameProblem(read, versions), true, "version");
             }).ConfigureAwait(false);
         }
         catch (OperationCanceledException)

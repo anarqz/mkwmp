@@ -30,6 +30,12 @@ public interface IGameTarget
     /// <summary>Version and rebuild gates for an install: what blocks play, and how to fix it.</summary>
     TargetCheck Check(GameInstall install);
 
+    /// <summary>
+    /// The versions of the game MKWMP plays on with this target (mkw-recomp: 1.8.0); empty: any. <see cref="Check"/>
+    /// refuses an install set up from another one (<see cref="TargetGate.GameVersion"/>); the play checklist names them.
+    /// </summary>
+    IReadOnlyList<string> GameVersions => [];
+
     /// <summary>The state of MKWMP's integration in this install (probe/mod files), against the package the launcher carries.</summary>
     IntegrationReport Inspect(GameInstall install, IntegrationPackage? package);
 
@@ -264,7 +270,27 @@ public enum TargetStatus { Missing, Unsupported, NeedsRebuild, NoIntegration, Re
 /// <param name="Explain">Longer text (hover/details).</param>
 /// <param name="FixUrl">Where to get a supported build (opened in the browser), if any.</param>
 /// <param name="FixLabel">Button text for <paramref name="FixUrl"/>, e.g. "Get 0.1.15-mkwmp".</param>
-public sealed record TargetCheck(TargetStatus Status, string? Problem, string? Explain, Uri? FixUrl, string? FixLabel);
+public sealed record TargetCheck(TargetStatus Status, string? Problem, string? Explain, Uri? FixUrl, string? FixLabel)
+{
+    /// <summary>Which gate <see cref="Problem"/> is: the runtime, the game's version, or a game built for another runtime.</summary>
+    public TargetGate Gate { get; init; }
+}
+
+/// <summary>What a <see cref="TargetCheck"/> refuses: the play checklist puts it on the row it belongs to.</summary>
+public enum TargetGate
+{
+    /// <summary>Nothing, or not said (a target that does not tell: the runtime's row).</summary>
+    None,
+
+    /// <summary>The runtime is missing, unknown or not one MKWMP supports.</summary>
+    Runtime,
+
+    /// <summary>The game was set up from a version MKWMP does not play on (<see cref="IGameTarget.GameVersions"/>).</summary>
+    GameVersion,
+
+    /// <summary>The game was built for another runtime and must be set up again.</summary>
+    Rebuild,
+}
 
 /// <summary><c>Disabled</c>: the files are in the game, and the game is not told to load them (mkw-recomp: the mod is not in mkw.ini's <c>mods</c>).</summary>
 public enum IntegrationState { Installed, Unverified, Missing, Outdated, Damaged, HostMissing, Dev, Mod, Disabled }
@@ -276,6 +302,18 @@ public sealed record IntegrationReport(IntegrationState State, string Summary, I
 
     /// <summary>The integration of this install is a mod of the game (mkw-recomp: the MKWMP mod), not files beside its executable: the window words it so.</summary>
     public bool AsMod { get; init; }
+
+    /// <summary>The mod is in use and the launcher's older game patch (winmm.dll beside mkw.exe) is still there: INSTALL takes it out.</summary>
+    public bool LeftoverPatch { get; init; }
+
+    /// <summary>Under Wine / Proton the game patch is there but the DLL override that makes Wine load it is not: INSTALL sets it.</summary>
+    public bool OverrideMissing { get; init; }
+
+    /// <summary>What blocks PLAY about MKWMP's files in the game, for the player; null when nothing does.</summary>
+    public string? Problem => !Ok ? Summary
+        : LeftoverPatch ? Strings.PatchState("leftover")
+        : OverrideMissing ? Strings.PatchState("no_override")
+        : null;
 }
 
 /// <summary>The verified files the launcher carries or downloaded for this version (name → bytes on disk).</summary>
