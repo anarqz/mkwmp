@@ -2,7 +2,7 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
-## 1.4.1 — unreleased
+## 1.4.1 — 2026-11-21
 
 - **No more "location in use".** Windows no longer shows the location icon for the launcher. The Wi-Fi bars no longer read the network's name; they use Windows' signal bars instead.
 - **"Show closest to me".** A new switch over the server list, in Settings › Online and in the first setup. On, the launcher measures the delay to each listed server while the list is on screen and shows the nearest first. Off, no server is measured and the list keeps the directory's order. Your location is never used.
