@@ -43,16 +43,19 @@ public sealed class ChangelogTests
     public void Every_release_has_a_section_newest_first_and_1_4_0_is_on_top()
     {
         var releases = Changelog.Parse(Changelog.BuiltIn(), null);
+        // Newer releases go on top; from 1.4.0 down the list is history and never changes.
         Assert.Equal(
             ["1.4.0", "1.3.1", "1.3.0", "1.2.0", "1.1.1", "1.1.0", "1.0.2", "1.0.1", "1.0.0", "0.0.1-rc.3", "0.0.1-rc.2", "0.0.1-rc.1"],
-            releases.Select(r => r.Version));
-        Assert.Equal("unreleased", releases[0].Date);
-        Assert.Equal("2026-11-21", releases[1].Date); // 1.3.1, the Rust launcher's last release
-        Assert.Equal("2026-11-19", releases[2].Date);
+            releases.Select(r => r.Version).SkipWhile(v => v != "1.4.0"));
+        Assert.Matches(@"^(unreleased|\d{4}-\d{2}-\d{2})$", releases[0].Date);
+        var v140 = releases.Single(r => r.Version == "1.4.0");
+        Assert.Equal("2026-11-21", v140.Date); // the first C# launcher
+        Assert.Equal("2026-11-21", releases.Single(r => r.Version == "1.3.1").Date); // the Rust launcher's last release
+        Assert.Equal("2026-11-19", releases.Single(r => r.Version == "1.3.0").Date);
         Assert.Equal("2026-11-14", releases[^1].Date);
         Assert.All(releases, r => Assert.False(string.IsNullOrWhiteSpace(r.Markdown)));
         Assert.All(releases, r => Assert.DoesNotContain("SHA256SUMS", r.Markdown, StringComparison.Ordinal)); // the download lists are left out
-        Assert.Contains("0.1.16-mkwmp", releases[0].Markdown, StringComparison.Ordinal);
+        Assert.Contains("0.1.16-mkwmp", v140.Markdown, StringComparison.Ordinal);
     }
 
     [Fact]
