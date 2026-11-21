@@ -145,7 +145,24 @@ svg.i.fill { fill: currentColor; stroke: none; }
 .btn:active { transform: scale(.98); }
 .btns { display: flex; flex-wrap: wrap; gap: calc(24 * var(--u)); margin: calc(36 * var(--u)) 0 calc(28 * var(--u)); }
 
-/* ── hero ── */
+/* ── hero: the art band (light art, so light tokens inside it in both themes) ── */
+.hero-band { --text: #2B2B2B; --text-muted: #3F4250; --accent: #1E64E6; --on-accent: #FFFFFF; --outline: #6B6E7A;
+  --rule: #B9BCCB; --focus-fill: #FFFFFF; --hover: #0000000D; --good: #16A34A;
+  color: var(--text); background: #DCE6FF url(art/hero.webp) right center / cover no-repeat; }
+.hero-band .hero { display: block; min-height: calc(980 * var(--u)); padding: calc(110 * var(--u)) 0 calc(90 * var(--u)); }
+.hero__text { max-width: calc(1080 * var(--u)); }
+.hero__logo { display: block; width: min(calc(720 * var(--u)), 100%); height: auto; margin: 0 0 calc(30 * var(--u)) calc(-10 * var(--u)); }
+.hero-band h1 { font-size: calc(80 * var(--u)); }
+.hero-band .status .sep { background: #8C90A3; }
+.showcase { padding-top: calc(70 * var(--u)); }
+.showcase figure { max-width: calc(1700 * var(--u)); margin: 0 auto; }
+.banner { display: block; width: 100%; height: auto; aspect-ratio: 4 / 1; object-fit: cover; object-position: center 60%; border-radius: var(--r-tile); margin: 0 0 calc(50 * var(--u)); }
+@media (max-width: 1100px) {
+  .hero-band { background-position: 70% center; }
+  .hero-band::before { content: none; }
+  .hero__text { max-width: 100%; background: linear-gradient(90deg, #FFFFFFD9, #FFFFFFB3); border-radius: var(--r-card); padding: calc(36 * var(--u)); }
+}
+/* ── hero (layout shared by the pages) ── */
 .hero { padding: calc(90 * var(--u)) 0 calc(40 * var(--u)); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: calc(80 * var(--u)); align-items: center; }
 .hero h1 { font-size: calc(96 * var(--u)); line-height: 1.05; font-weight: 800; margin: 0 0 calc(28 * var(--u)); letter-spacing: -0.01em; }
 .hero h1 em { font-style: normal; background: var(--mark); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -264,7 +281,8 @@ pre.block { background: var(--surface); border: var(--rule-w) solid var(--rule);
 .srv__meta { display: block; font-size: var(--fs-caption); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .srv__seats { text-align: right; color: var(--accent); font-size: var(--fs-row); }
 .srv__seats small { display: block; color: var(--text-muted); font-size: var(--fs-caption); }
-.servers__empty { color: var(--text-muted); font-size: var(--fs-caption); padding: calc(20 * var(--u)); }
+.servers__empty { color: var(--text-muted); font-size: var(--fs-caption); padding: calc(20 * var(--u)); text-align: center; }
+.servers__empty img { display: block; width: calc(240 * var(--u)); height: auto; margin: 0 auto calc(16 * var(--u)); }
 .spinner { width: calc(36 * var(--u)); height: calc(36 * var(--u)); border-radius: 50%; border: calc(4 * var(--u)) solid var(--track); border-top-color: var(--text-muted); animation: spin .9s linear infinite; display: inline-block; vertical-align: middle; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

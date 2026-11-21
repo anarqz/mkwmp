@@ -7,9 +7,12 @@
 <meta name="description" content="{{meta.host_description}}">
 <meta property="og:title" content="{{meta.host_title}}">
 <meta property="og:description" content="{{meta.host_description}}">
-<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/launcher/home-dark.webp">
+<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/art/og.png">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#2A2A2D">
-<link rel="icon" href="{{=root}}assets/launcher/mkwmp-mark.svg" type="image/svg+xml">
+<link rel="icon" href="{{=root}}assets/art/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="{{=root}}assets/art/glyph.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{=root}}assets/art/apple-touch-icon.png">
 <link rel="alternate" hreflang="en" href="https://anarqz.github.io/mkwmp/host.html">
 <link rel="alternate" hreflang="pt-BR" href="https://anarqz.github.io/mkwmp/pt-br/host.html">
 <link rel="stylesheet" href="{{=root}}assets/site.css">
@@ -23,7 +26,7 @@
 
 <header class="top">
   <div class="wrap">
-    <a class="brand focusable" href="./"><img src="{{=root}}assets/launcher/mkwmp-mark.svg" alt="">MKWMP</a>
+    <a class="brand focusable" href="./"><img src="{{=root}}assets/art/icon-192.png" alt="">MKWMP</a>
     <nav class="nav" aria-label="{{hostpage.toc}}">
       <a href="#ssh">SSH</a><a href="#vm">VM</a><a href="#firewall">{{hostpage.nav_firewall}}</a><a href="#run">{{hostpage.nav_script}}</a><a href="#https">HTTPS</a><a href="#ops">{{hostpage.nav_ops}}</a><a href="#trouble">{{hostpage.nav_help}}</a>
     </nav>
@@ -38,6 +41,7 @@
 <main id="main">
   <section class="wrap page" style="padding-top: calc(80 * var(--u))">
     <div class="page__head">{{i:computer}}<h2>{{hostpage.title}}</h2><a class="btn btn--ghost focusable pill-btn" href="./">{{i:chevron-left}}{{hostpage.back}}</a></div>
+    <img class="banner" src="{{=root}}assets/art/banner-server-3x1.webp" alt="" width="1536" height="512">
     <p class="lead">{{hostpage.lead}}</p>
     <button class="cmd focusable" type="button"><code>curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash</code><span class="cmd__copy">{{i:file}}{{common.copy}}</span></button>
   </section>

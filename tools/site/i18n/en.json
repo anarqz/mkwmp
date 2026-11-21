@@ -26,7 +26,7 @@
   },
   "hero": {
     "title": "Race online. <em>On your terms.</em>",
-    "lead": "MKWMP is a launcher for mkw-recomp, the PC version of Mario Kart World built from your own copy of the game. It sets the game up for you, plays offline from the first minute, and takes you online to community servers, with friends, voice chat and mods.",
+    "lead": "MKWMP is a launcher for mkw-recomp, the PC version of Mario Kart World built from your own copy of the game. It sets the game up for you, plays offline as soon as it's ready, and takes you online to community servers, with friends, voice chat and mods.",
     "download": "Download for Windows",
     "deck": "Steam Deck",
     "host": "Host a server",

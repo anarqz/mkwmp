@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-root="" data-theme="dark">
+<html lang="en" data-root="" data-theme="dark" data-empty-art="assets/art/empty-servers.webp">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,10 +7,16 @@
 <meta name="description" content="MKWMP sets up mkw-recomp from your own copy of the game, plays offline right away, and takes you online to community servers with friends, voice chat and mods. Free and open source.">
 <meta property="og:title" content="MKWMP: play Mario Kart World online on your PC">
 <meta property="og:description" content="MKWMP sets up mkw-recomp from your own copy of the game, plays offline right away, and takes you online to community servers with friends, voice chat and mods. Free and open source.">
-<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/launcher/home-dark.webp">
+<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/art/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://anarqz.github.io/mkwmp/assets/art/og.png">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#2A2A2D">
-<link rel="icon" href="assets/launcher/mkwmp-mark.svg" type="image/svg+xml">
+<link rel="icon" href="assets/art/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="assets/art/glyph.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/art/apple-touch-icon.png">
 <link rel="alternate" hreflang="en" href="https://anarqz.github.io/mkwmp/">
 <link rel="alternate" hreflang="pt-BR" href="https://anarqz.github.io/mkwmp/pt-br/">
 <link rel="preload" href="assets/launcher/fonts/Nunito-Regular.woff2" as="font" type="font/woff2" crossorigin>
@@ -25,7 +31,7 @@
 
 <header class="top">
   <div class="wrap">
-    <a class="brand focusable" href="./"><img src="assets/launcher/mkwmp-mark.svg" alt="">MKWMP</a>
+    <a class="brand focusable" href="./"><img src="assets/art/icon-192.png" alt="">MKWMP</a>
     <nav class="nav" aria-label="Sections">
       <a href="#setup">Setup</a>
       <a href="#servers">Servers</a>
@@ -44,17 +50,23 @@
 </header>
 
 <main id="main">
-  <section class="wrap hero">
-    <div>
-      <h1>Race online. <em>On your terms.</em></h1>
-      <p class="lead">MKWMP is a launcher for mkw-recomp, the PC version of Mario Kart World built from your own copy of the game. It sets the game up for you, plays offline from the first minute, and takes you online to community servers, with friends, voice chat and mods.</p>
-      <div class="btns">
-        <a class="btn btn--primary focusable" data-download="launcher" href="https://github.com/anarqz/mkwmp/releases/latest"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 V15 M7,10.5 L12,15.5 L17,10.5 M4,20 H20"/></svg>Download for Windows</a>
-        <a class="btn btn--secondary focusable" href="#deck"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,7 H17 A5,5 0 0 1 22,12 V15 A3,3 0 0 1 16.6,16.8 L15.4,15 H8.6 L7.4,16.8 A3,3 0 0 1 2,15 V12 A5,5 0 0 1 7,7 Z M7.5,10 V13 M6,11.5 H9 M15.5,10.6 L15.5,10.7 M17.8,12.6 L17.8,12.7"/></svg>Steam Deck</a>
-        <a class="btn btn--ghost focusable" href="#host"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg>Host a server</a>
+  <section class="hero-band">
+    <div class="wrap hero">
+      <div class="hero__text">
+        <img class="hero__logo" src="assets/art/logo.webp" alt="MKWMP" width="1280" height="289">
+        <h1>Race online. <em>On your terms.</em></h1>
+        <p class="lead">MKWMP is a launcher for mkw-recomp, the PC version of Mario Kart World built from your own copy of the game. It sets the game up for you, plays offline as soon as it's ready, and takes you online to community servers, with friends, voice chat and mods.</p>
+        <div class="btns">
+          <a class="btn btn--primary focusable" data-download="launcher" href="https://github.com/anarqz/mkwmp/releases/latest"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 V15 M7,10.5 L12,15.5 L17,10.5 M4,20 H20"/></svg>Download for Windows</a>
+          <a class="btn btn--secondary focusable" href="#deck"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,7 H17 A5,5 0 0 1 22,12 V15 A3,3 0 0 1 16.6,16.8 L15.4,15 H8.6 L7.4,16.8 A3,3 0 0 1 2,15 V12 A5,5 0 0 1 7,7 Z M7.5,10 V13 M6,11.5 H9 M15.5,10.6 L15.5,10.7 M17.8,12.6 L17.8,12.7"/></svg>Steam Deck</a>
+          <a class="btn btn--ghost focusable" href="#host"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg>Host a server</a>
+        </div>
+        <p class="status"><span><span class="dot"></span>Latest <span data-version>v1.4.0</span></span><span class="sep"></span><span>Windows · Steam Deck</span><span class="sep"></span><span>Free and open source</span></p>
       </div>
-      <p class="status"><span><span class="dot"></span>Latest <span data-version>v1.4.0</span></span><span class="sep"></span><span>Windows · Steam Deck</span><span class="sep"></span><span>Free and open source</span></p>
     </div>
+  </section>
+
+  <section class="wrap showcase">
     <figure><img class="shot" data-shot="home" src="assets/launcher/home-dark.webp" alt="The MKWMP launcher's Home: Play Online, Friends, Game and What's New tiles, and the dock below." width="1920" height="1080"></figure>
   </section>
 
@@ -146,6 +158,7 @@
 
   <section class="wrap page" id="mods">
     <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,2.5 L20.5,7 V17 L12,21.5 L3.5,17 V7 Z M3.5,7 L12,11.5 L20.5,7 M12,11.5 V21.5 M7.7,4.8 L16.3,9.3"/></svg><h2>Mods</h2></div>
+    <img class="banner" src="assets/art/banner-mods-3x1.webp" alt="" width="1536" height="512" loading="lazy">
     <div class="cols flip">
       <div>
         <p class="lead">Browse GameBanana from the launcher, install with one button, and switch mods on and off.</p>
@@ -180,6 +193,7 @@
 
   <section class="wrap page" id="deck">
     <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,7 H17 A5,5 0 0 1 22,12 V15 A3,3 0 0 1 16.6,16.8 L15.4,15 H8.6 L7.4,16.8 A3,3 0 0 1 2,15 V12 A5,5 0 0 1 7,7 Z M7.5,10 V13 M6,11.5 H9 M15.5,10.6 L15.5,10.7 M17.8,12.6 L17.8,12.7"/></svg><h2>Steam Deck and SteamOS</h2></div>
+    <img class="banner" src="assets/art/banner-handheld-3x1.webp" alt="" width="1536" height="512" loading="lazy">
     <div class="cols flip">
       <div>
         <p class="lead">One command in Desktop Mode (Konsole) installs MKWMP, adds it to Steam with artwork and the controller layout, and runs it under Proton.</p>
@@ -195,6 +209,7 @@
 
   <section class="wrap page" id="host">
     <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg><h2>Host your own server</h2></div>
+    <img class="banner" src="assets/art/banner-server-3x1.webp" alt="" width="1536" height="512" loading="lazy">
     <div class="cols">
       <div>
         <p class="lead">A small cloud VM, about US$5 a month, runs a server for dozens of players. One command installs it, opens the firewall and lists it in the server directory, so it shows up in everyone's launcher.</p>

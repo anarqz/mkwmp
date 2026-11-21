@@ -150,9 +150,10 @@
     if (!list) return;
     list.innerHTML = `<div class="servers__empty"><span class="spinner"></span> ${esc(T.loading)}</div>`;
     let items;
+    const art = root.dataset.emptyArt ? `<img src="${root.dataset.emptyArt}" alt="">` : "";
     try { const r = await fetch(BEHOLDER, { cache: "no-store" }); items = (await r.json()).items || []; }
-    catch { list.innerHTML = `<div class="servers__empty">${esc(T.serversError)}</div>`; return; }
-    if (!items.length) { list.innerHTML = `<div class="servers__empty">${esc(T.serversNone)}</div>`; return; }
+    catch { list.innerHTML = `<div class="servers__empty">${art}${esc(T.serversError)}</div>`; return; }
+    if (!items.length) { list.innerHTML = `<div class="servers__empty">${art}${esc(T.serversNone)}</div>`; return; }
     const rows = items.slice(0, 12).map((s) => ({ s, ms: undefined }));
     const draw = () => {
       rows.sort((a, b) => (a.ms ?? 1e9) - (b.ms ?? 1e9) || b.s.seated - a.s.seated);

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{=lang}}" data-root="{{=root}}" data-theme="dark">
+<html lang="{{=lang}}" data-root="{{=root}}" data-theme="dark" data-empty-art="{{=root}}assets/art/empty-servers.webp">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,10 +7,16 @@
 <meta name="description" content="{{meta.description}}">
 <meta property="og:title" content="{{meta.title}}">
 <meta property="og:description" content="{{meta.description}}">
-<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/launcher/home-dark.webp">
+<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/art/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://anarqz.github.io/mkwmp/assets/art/og.png">
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#2A2A2D">
-<link rel="icon" href="{{=root}}assets/launcher/mkwmp-mark.svg" type="image/svg+xml">
+<link rel="icon" href="{{=root}}assets/art/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="{{=root}}assets/art/glyph.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{=root}}assets/art/apple-touch-icon.png">
 <link rel="alternate" hreflang="en" href="https://anarqz.github.io/mkwmp/">
 <link rel="alternate" hreflang="pt-BR" href="https://anarqz.github.io/mkwmp/pt-br/">
 <link rel="preload" href="{{=root}}assets/launcher/fonts/Nunito-Regular.woff2" as="font" type="font/woff2" crossorigin>
@@ -25,7 +31,7 @@
 
 <header class="top">
   <div class="wrap">
-    <a class="brand focusable" href="{{=root}}{{nav.home_href}}"><img src="{{=root}}assets/launcher/mkwmp-mark.svg" alt="">MKWMP</a>
+    <a class="brand focusable" href="{{=root}}{{nav.home_href}}"><img src="{{=root}}assets/art/icon-192.png" alt="">MKWMP</a>
     <nav class="nav" aria-label="{{nav.label}}">
       <a href="#setup">{{nav.setup}}</a>
       <a href="#servers">{{nav.servers}}</a>
@@ -44,17 +50,23 @@
 </header>
 
 <main id="main">
-  <section class="wrap hero">
-    <div>
-      <h1>{{hero.title}}</h1>
-      <p class="lead">{{hero.lead}}</p>
-      <div class="btns">
-        <a class="btn btn--primary focusable" data-download="launcher" href="https://github.com/anarqz/mkwmp/releases/latest">{{i:download}}{{hero.download}}</a>
-        <a class="btn btn--secondary focusable" href="#deck">{{i:gamepad}}{{hero.deck}}</a>
-        <a class="btn btn--ghost focusable" href="#host">{{i:computer}}{{hero.host}}</a>
+  <section class="hero-band">
+    <div class="wrap hero">
+      <div class="hero__text">
+        <img class="hero__logo" src="{{=root}}assets/art/logo.webp" alt="MKWMP" width="1280" height="289">
+        <h1>{{hero.title}}</h1>
+        <p class="lead">{{hero.lead}}</p>
+        <div class="btns">
+          <a class="btn btn--primary focusable" data-download="launcher" href="https://github.com/anarqz/mkwmp/releases/latest">{{i:download}}{{hero.download}}</a>
+          <a class="btn btn--secondary focusable" href="#deck">{{i:gamepad}}{{hero.deck}}</a>
+          <a class="btn btn--ghost focusable" href="#host">{{i:computer}}{{hero.host}}</a>
+        </div>
+        <p class="status"><span><span class="dot"></span>{{hero.latest}} <span data-version>{{hero.version}}</span></span><span class="sep"></span><span>{{hero.platforms}}</span><span class="sep"></span><span>{{hero.free}}</span></p>
       </div>
-      <p class="status"><span><span class="dot"></span>{{hero.latest}} <span data-version>{{hero.version}}</span></span><span class="sep"></span><span>{{hero.platforms}}</span><span class="sep"></span><span>{{hero.free}}</span></p>
     </div>
+  </section>
+
+  <section class="wrap showcase">
     <figure><img class="shot" data-shot="home" src="{{=root}}assets/launcher/home-dark.webp" alt="{{hero.shot_alt}}" width="1920" height="1080"></figure>
   </section>
 
@@ -146,6 +158,7 @@
 
   <section class="wrap page" id="mods">
     <div class="page__head">{{i:package}}<h2>{{mods.title}}</h2></div>
+    <img class="banner" src="{{=root}}assets/art/banner-mods-3x1.webp" alt="" width="1536" height="512" loading="lazy">
     <div class="cols flip">
       <div>
         <p class="lead">{{mods.lead}}</p>
@@ -180,6 +193,7 @@
 
   <section class="wrap page" id="deck">
     <div class="page__head">{{i:gamepad}}<h2>{{deck.title}}</h2></div>
+    <img class="banner" src="{{=root}}assets/art/banner-handheld-3x1.webp" alt="" width="1536" height="512" loading="lazy">
     <div class="cols flip">
       <div>
         <p class="lead">{{deck.lead}}</p>
@@ -195,6 +209,7 @@
 
   <section class="wrap page" id="host">
     <div class="page__head">{{i:computer}}<h2>{{host.title}}</h2></div>
+    <img class="banner" src="{{=root}}assets/art/banner-server-3x1.webp" alt="" width="1536" height="512" loading="lazy">
     <div class="cols">
       <div>
         <p class="lead">{{host.lead}}</p>

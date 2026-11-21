@@ -7,9 +7,12 @@
 <meta name="description" content="Rode seu próprio servidor MKWMP em uma VM pequena da Vultr: chaves SSH, firewall, um comando, HTTPS, atualizações e backups.">
 <meta property="og:title" content="Hospede um servidor MKWMP: uma VM na nuvem com um comando">
 <meta property="og:description" content="Rode seu próprio servidor MKWMP em uma VM pequena da Vultr: chaves SSH, firewall, um comando, HTTPS, atualizações e backups.">
-<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/launcher/home-dark.webp">
+<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/art/og.png">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#2A2A2D">
-<link rel="icon" href="../assets/launcher/mkwmp-mark.svg" type="image/svg+xml">
+<link rel="icon" href="../assets/art/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="../assets/art/glyph.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../assets/art/apple-touch-icon.png">
 <link rel="alternate" hreflang="en" href="https://anarqz.github.io/mkwmp/host.html">
 <link rel="alternate" hreflang="pt-BR" href="https://anarqz.github.io/mkwmp/pt-br/host.html">
 <link rel="stylesheet" href="../assets/site.css">
@@ -23,7 +26,7 @@
 
 <header class="top">
   <div class="wrap">
-    <a class="brand focusable" href="./"><img src="../assets/launcher/mkwmp-mark.svg" alt="">MKWMP</a>
+    <a class="brand focusable" href="./"><img src="../assets/art/icon-192.png" alt="">MKWMP</a>
     <nav class="nav" aria-label="Nesta página">
       <a href="#ssh">SSH</a><a href="#vm">VM</a><a href="#firewall">Firewall</a><a href="#run">O script</a><a href="#https">HTTPS</a><a href="#ops">Atualizações</a><a href="#trouble">Ajuda</a>
     </nav>
@@ -38,6 +41,7 @@
 <main id="main">
   <section class="wrap page" style="padding-top: calc(80 * var(--u))">
     <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg><h2>Hospede um servidor MKWMP</h2><a class="btn btn--ghost focusable pill-btn" href="./"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15,5 L8,12 L15,19"/></svg>Voltar ao MKWMP</a></div>
+    <img class="banner" src="../assets/art/banner-server-3x1.webp" alt="" width="1536" height="512">
     <p class="lead">Uma VM da Vultr e um comando. Uns US$5 por mês rodam um servidor para dezenas de jogadores. Você precisa de uma conta na Vultr, uma chave SSH e alguns minutos.</p>
     <button class="cmd focusable" type="button"><code>curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash</code><span class="cmd__copy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5,3 H14 L19,8 V19.5 A1.5,1.5 0 0 1 17.5,21 H6.5 A1.5,1.5 0 0 1 5,19.5 V4.5 A1.5,1.5 0 0 1 6.5,3 Z M14,3 V8 H19"/></svg>Copiar</span></button>
   </section>
