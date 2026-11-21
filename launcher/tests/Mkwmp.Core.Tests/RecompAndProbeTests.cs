@@ -36,8 +36,11 @@ public class RecompTests
         Assert.Contains(("0.1.16-mkwmp", "0bceb91d6156af779f5fad48963908fc39e4bf0d477f826e0d7106ec4605a34f"), Recomp.Known);
         Assert.Contains("0.1.16-mkwmp", Recomp.Supported);
         Assert.Contains("0.1.16-mkwmp", Recomp.ModRuntimes);
-        Assert.Equal("0.1.16-mkwmp", Recomp.Recommended);
-        Assert.Equal("https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp", Recomp.Download);
+        Assert.Contains("0.1.16-mkwmp.1", Recomp.ModRuntimes);
+        Assert.Contains("0.1.16-mkwmp.1", Recomp.Supported);
+        Assert.Contains(("0.1.16-mkwmp.1", "d04dc49a14618dce8385cdb1c3e61ba1bd62a2e5938ddf7dd216c926517cc72d"), Recomp.Known);
+        Assert.Equal("0.1.16-mkwmp.1", Recomp.Recommended);
+        Assert.Equal("https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp.1", Recomp.Download);
         Assert.Equal(Recomp.Known.Length, Recomp.Known.Select(k => k.Sha256).Distinct().Count());
         Assert.All(Recomp.ModRuntimes, v => Assert.Contains(v, Recomp.Supported));
     }
@@ -122,6 +125,7 @@ public class RecompTests
         Assert.NotNull(Recomp.RebuildProblemFor(S("0.1.16"), Id13)); // coming from 0.1.13 or from 0.1.15-mkwmp
         Assert.NotNull(Recomp.RebuildProblemFor(S("0.1.16-mkwmp"), Id13)); // the update from the 0.1.15-mkwmp pin builds the game again
         Assert.Null(Recomp.RebuildProblemFor(S("0.1.16-mkwmp"), Id15)); // 0.1.16's id
+        Assert.Null(Recomp.RebuildProblemFor(S("0.1.16-mkwmp.1"), Id15)); // .1 keeps that id: no rebuild
         Assert.Null(Recomp.RebuildProblemFor(S("0.1.10"), "anything")); // no id known for 0.1.10
         Assert.Null(Recomp.RebuildProblemFor(new RecompId(RecompKind.Unknown, null), Id13));
         Assert.Equal(Id15, Recomp.IdWord("C9BBCB75A9AC9A49\n"));

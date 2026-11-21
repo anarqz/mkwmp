@@ -48,22 +48,24 @@ public static class RecompRuntime
         + "copy, on your device; MKWMP is not affiliated with mkw-recomp or with Nintendo.";
 
     /// <summary>
-    /// The pinned build: mkw-recomp 0.1.16-mkwmp, the Windows zip (also what runs under Proton).
+    /// The pinned build: mkw-recomp 0.1.16-mkwmp.1, the Windows zip (also what runs under Proton: .1 is the
+    /// setup under Wine, where zig cannot use its cache, and the game window under Proton on a Linux desktop).
+    /// Same game id as 0.1.16-mkwmp, so an installed game keeps its compiled code and shaders.
     /// The release's no-AVX2 zip is not installed by the launcher; its mkw.exe is in <see cref="Recomp.Known"/>.
     /// </summary>
     public static RuntimeManifest Pinned { get; } = new()
     {
         Name = "mkw-recomp",
-        Version = "0.1.16-mkwmp",
+        Version = "0.1.16-mkwmp.1",
         Repository = "anarqz/mkw-recomp",
-        Tag = "v0.1.16-mkwmp",
-        Asset = "mkw-recomp-0.1.16-mkwmp-windows-x64.zip",
-        Size = 221_144_444,
-        Sha256 = "cf41cb0cdab4af58a2aff586e9be3d09ef00f4a85699319675fb443928fc365d",
+        Tag = "v0.1.16-mkwmp.1",
+        Asset = "mkw-recomp-0.1.16-mkwmp.1-windows-x64.zip",
+        Size = 221_145_220,
+        Sha256 = "313bd96d9f8fdbd5844debc35dbd759c2f3bd54ed87496b591e8c737531e970e",
         Executable = Recomp.Exe,
-        ExecutableSha256 = "73997d10f8cca878e9654b174c194833053a529ec04ff3b03be587c1e592eb8f",
-        // 23,344 files under one "mkw-recomp/" folder; 698,604,837 bytes of them are setup/ (clang, zig, glslc, python).
-        InstalledSize = 738_675_063,
+        ExecutableSha256 = "d04dc49a14618dce8385cdb1c3e61ba1bd62a2e5938ddf7dd216c926517cc72d",
+        // 23,344 files under one "mkw-recomp/" folder; most of the size is setup/ (clang, zig, glslc, python).
+        InstalledSize = 738_676_052,
         // Measured on an install of game 1.8.0 set up with "link" (the game's data is not copied):
         // spirv 1.80 GB, pipeline cache 0.49 GB, setup-work 0.37 GB, mkwgame.dll 0.23 GB, exefs,
         // sm86 and python's caches 0.07 GB: 2.96 GB, rounded up.
@@ -89,7 +91,7 @@ public static class RecompRuntime
             CreditSummary,
             "mkw-recomp",
             new Uri("https://github.com/adriadam10/mkw-recomp"),
-            new Uri("https://github.com/anarqz/mkw-recomp/tree/v0.1.16-mkwmp"),
+            new Uri("https://github.com/anarqz/mkw-recomp/tree/v0.1.16-mkwmp.1"),
             "MIT",
             Notice,
             "licenses") { SummaryKey = "core.recomp.credit" },

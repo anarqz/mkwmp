@@ -12,7 +12,7 @@ namespace Mkwmp.Core.Tests;
 /// </summary>
 internal sealed class SetupRig : IDisposable
 {
-    public const string Pinned = "0.1.16-mkwmp";
+    public const string Pinned = "0.1.16-mkwmp.1";
     public const string PinnedId = "c9bbcb75a9ac9a49";
 
     /// <summary>The game id of the previous pin, 0.1.15-mkwmp (0.1.13's).</summary>
@@ -601,11 +601,11 @@ public class SetupGateTests
         Assert.Equal(Path.Combine(rig.Game, "setup", "python", "python.exe"), RecompSetup.Python(install));
         Assert.Equal(Path.Combine(rig.Game, "setup", "src", "tools", "prepare", "prepare.py"), RecompSetup.Script(install));
         Assert.Equal(
-            ["--game", rig.Game, "--runtime", rig.Game, "--port", "0.1.16-mkwmp", "--source", rig.Dump, "--romfs", "link"],
+            ["--game", rig.Game, "--runtime", rig.Game, "--port", "0.1.16-mkwmp.1", "--source", rig.Dump, "--romfs", "link"],
             RecompSetup.Arguments(install, new GameSetupRequest(rig.Dump)));
         Assert.Equal("copy", RecompSetup.Arguments(install, new GameSetupRequest(rig.Dump, GameDataMode.Copy))[^1]);
         // Repeating the last setup: neither the source nor the mode, so prepare.py takes both from its state.
-        Assert.Equal(["--game", rig.Game, "--runtime", rig.Game, "--port", "0.1.16-mkwmp"], RecompSetup.Arguments(install, new GameSetupRequest(null, GameDataMode.Copy)));
+        Assert.Equal(["--game", rig.Game, "--runtime", rig.Game, "--port", "0.1.16-mkwmp.1"], RecompSetup.Arguments(install, new GameSetupRequest(null, GameDataMode.Copy)));
         // "Choose game folder": the data is elsewhere, the runtime stays the folder of mkw.exe.
         var moved = install with { DataRoot = @"D:\mkw-data" };
         Assert.Equal(["--game", @"D:\mkw-data", "--runtime", rig.Game], RecompSetup.Arguments(moved, new GameSetupRequest(null)).Take(4));
@@ -672,7 +672,7 @@ public class SetupDriverTests
         Assert.True(result.Ok, result.Message);
         Assert.Equal((null, null, "1.8.0", 0), (result.ErrorCode, result.Message, result.GameVersion, result.ExitCode));
         // Started as mkw-recomp's own screen starts it, with the copy linked, not copied.
-        Assert.Equal($"\"--game\" \"{rig.Game}\" \"--runtime\" \"{rig.Game}\" \"--port\" \"0.1.16-mkwmp\" \"--source\" \"{rig.Dump}\" \"--romfs\" \"link\"", rig.Arguments);
+        Assert.Equal($"\"--game\" \"{rig.Game}\" \"--runtime\" \"{rig.Game}\" \"--port\" \"0.1.16-mkwmp.1\" \"--source\" \"{rig.Dump}\" \"--romfs\" \"link\"", rig.Arguments);
         var seen = progress.Seen;
         Assert.Equal(
             ["Reading your game", "Copying the game's program", "Finding the game's data", "Translating the game", "Building the game", "Preparing shaders", "Warming up the graphics", "Finishing up"],
@@ -803,7 +803,7 @@ public class SetupDriverTests
 
         Assert.True(result.Ok, result.Message);
         // No --source and no --romfs: prepare.py repeats the last setup, and only the steps left.
-        Assert.Equal($"\"--game\" \"{rig.Game}\" \"--runtime\" \"{rig.Game}\" \"--port\" \"0.1.16-mkwmp\"", rig.Arguments);
+        Assert.Equal($"\"--game\" \"{rig.Game}\" \"--runtime\" \"{rig.Game}\" \"--port\" \"0.1.16-mkwmp.1\"", rig.Arguments);
         var log = File.ReadAllText(result.Log!);
         Assert.Contains("skip generate", log, StringComparison.Ordinal);
         Assert.Contains("skipped exefs romfs generate", log, StringComparison.Ordinal);
@@ -1031,7 +1031,7 @@ public class LauncherGameSetupTests
         await using var home = await Home.New(arrange: (game, files) => Home.SetUp(game, files, port: "0.1.14-mkwmp"));
         var view = home.Launcher.GameSetup;
         Assert.Equal((GameSetupState.NeedsSetup, GameSetupReason.RuntimeChanged, false, home.Files.Dump), (view.State, view.Reason, view.NeedsDump, view.DumpPath));
-        Assert.Equal(Strings.SetupRuntimeChanged("mkw-recomp", "0.1.16-mkwmp"), home.Launcher.PlayProblem);
+        Assert.Equal(Strings.SetupRuntimeChanged("mkw-recomp", "0.1.16-mkwmp.1"), home.Launcher.PlayProblem);
 
         // "Set up again" needs no game picked: it repeats the last setup, and PLAY is free afterwards.
         home.Files.Script(["echo step check", "echo version 1.8.0", "echo skip exefs", "echo skip romfs", "echo skip generate", "echo skip compile",

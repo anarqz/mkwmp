@@ -40,7 +40,7 @@ public static partial class RecompSettings
     /// The runtimes whose settings this table describes (others name or read some keys differently).
     /// 0.1.16-mkwmp is the fork's next build: upstream 0.1.16's menu, unchanged.
     /// </summary>
-    public static readonly IReadOnlyList<string> Runtimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp"];
+    public static readonly IReadOnlyList<string> Runtimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"];
 
     /// <summary>
     /// The Logic rate row came right after upstream 0.1.15 (the fork's 0.1.15-mkwmp is built from
@@ -49,7 +49,7 @@ public static partial class RecompSettings
     internal static bool HasLogicRate(string version) => version != "0.1.15";
 
     /// <summary>0.1.16's rows: the HDR tone mapper with its peak and paper white, Keyboard and mouse, NSFW mods.</summary>
-    internal static bool Has016Rows(string version) => version is "0.1.16" or "0.1.16-mkwmp";
+    internal static bool Has016Rows(string version) => version is "0.1.16" or "0.1.16-mkwmp" or "0.1.16-mkwmp.1";
 
     /// <summary>
     /// Where the setup puts the HDR tone mapper's programs (prepare.py <c>tonemap</c>, from 0.1.16).

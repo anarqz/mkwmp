@@ -66,11 +66,11 @@ internal static class Recomp
     public const string Exe = "mkw.exe";
 
     /// <summary>The runtimes the game patch supports.</summary>
-    public static readonly string[] Supported = ["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp"];
+    public static readonly string[] Supported = ["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"];
 
     /// <summary>What the window recommends installing.</summary>
-    public const string Recommended = "0.1.16-mkwmp";
-    public const string Download = "https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp";
+    public const string Recommended = "0.1.16-mkwmp.1";
+    public const string Download = "https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp.1";
 
     /// <summary>mkw.exe SHA-256 per mkw-recomp release (mkw-recomp-&lt;v&gt;-windows-x64.zip).</summary>
     internal static readonly (string Version, string Sha256)[] Known =
@@ -85,6 +85,9 @@ internal static class Recomp
         ("0.1.16-mkwmp", "73997d10f8cca878e9654b174c194833053a529ec04ff3b03be587c1e592eb8f"),
         // the same release's build for CPUs without AVX2 (mkw-recomp-0.1.16-mkwmp-windows-x64-noavx2.zip)
         ("0.1.16-mkwmp", "0bceb91d6156af779f5fad48963908fc39e4bf0d477f826e0d7106ec4605a34f"),
+        // 0.1.16-mkwmp.1: setup under Wine/Proton (zig's cache lock), no SDL x11 request from the Windows build
+        ("0.1.16-mkwmp.1", "d04dc49a14618dce8385cdb1c3e61ba1bd62a2e5938ddf7dd216c926517cc72d"),
+        ("0.1.16-mkwmp.1", "59af1fcc9c3a233e2d86c8437224f90a958e9ecb473118d71d92090379fbe3c0"),
     ];
 
     /// <summary>MKWMP's mod folder name, under mkw-recomp's <c>mods/</c>.</summary>
@@ -94,7 +97,7 @@ internal static class Recomp
     /// The supported releases that load mods (MKW_MODS): plugin API 1 in 0.1.15, 3 in 0.1.15-mkwmp
     /// and 0.1.16, and the fork's 0.1.16-mkwmp. The mod asks the runtime which version it has and leaves out what is missing.
     /// </summary>
-    public static readonly string[] ModRuntimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp"];
+    public static readonly string[] ModRuntimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"];
 
     /// <summary>
     /// Game versions the game patch has guest-address tables for. On any other version its hooks
@@ -116,6 +119,7 @@ internal static class Recomp
         ("0.1.15-mkwmp", "c0dd6cf12c07c23a"),
         ("0.1.16", "c9bbcb75a9ac9a49"), // unchanged from 0.1.15: a game set up by it needs no rebuild
         ("0.1.16-mkwmp", "c9bbcb75a9ac9a49"), // 0.1.16's: an update from 0.1.15-mkwmp builds the game again
+        ("0.1.16-mkwmp.1", "c9bbcb75a9ac9a49"), // only setup tools and mkw.exe changed: no rebuild from 0.1.16-mkwmp
     ];
 
     private static readonly string[] ModLibraries = ["mkwmp.dll", "libmkwmp.so", "mkwmp.so"];

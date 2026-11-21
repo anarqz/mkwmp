@@ -99,7 +99,7 @@ public class GameSettingsTests
     {
         var (_, install, ini, _) = Game();
         GameSettingsSchema For(string version) => RecompSettings.Schema(install with { Version = version }, NoEnv)!;
-        Assert.Equal(["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp"], RecompSettings.Runtimes);
+        Assert.Equal(["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"], RecompSettings.Runtimes);
         string[] rows016 = ["hdr_tonemap", "hdr_peak", "hdr_white", "keyboard_mouse", "gb_mature"];
 
         // upstream 0.1.15: no Logic rate (it came right after that release) and none of 0.1.16's rows
@@ -112,7 +112,7 @@ public class GameSettingsTests
         Assert.All(rows016, id => Assert.Null(fork15.Find(id)));
         Assert.Equal(v15.Settings.Count() + 1, fork15.Settings.Count());
 
-        foreach (var version in new[] { "0.1.16", "0.1.16-mkwmp" })
+        foreach (var version in new[] { "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1" })
         {
             var s = For(version);
             Assert.NotNull(s.Find("logic_hz"));
