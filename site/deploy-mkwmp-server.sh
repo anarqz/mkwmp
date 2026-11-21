@@ -5,8 +5,9 @@
 #   curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash -s -- --name "Friday kart" --region eu-west
 #
 # What it does (docs/HOSTING.md has the long version):
-#   1. downloads mkwmp-server-x86_64-linux from the latest MKWMP release and checks it against the
-#      release's SHA256SUMS, whose Ed25519 signature must verify with the release key below;
+#   1. downloads the server (mkwmp-server-<version>.zip; `server` inside) from the latest MKWMP
+#      release and checks it against the release's SHA256SUMS, whose Ed25519 signature must verify
+#      with the release key below;
 #   2. creates the `mkwmp` user and its data folder /var/lib/mkwmp (keys, registry.db, config);
 #   3. writes the config: server name, region, seats, the privacy policy, and [announce], so the
 #      server lists itself in the public server directory (https://beholder.anarqz.dev);
@@ -183,7 +184,7 @@ say "server \"$NAME\"${REGION:+ ($REGION)} at $ENDPOINT, $CAPACITY seats, listed
 # ---- packages ---------------------------------------------------------------------------------
 export DEBIAN_FRONTEND=noninteractive
 need=""
-for c in curl openssl ufw; do command -v "$c" >/dev/null || need="$need $c"; done
+for c in curl openssl ufw unzip; do command -v "$c" >/dev/null || need="$need $c"; done
 command -v ip >/dev/null || need="$need iproute2"
 if [ -n "$need" ]; then
   say "installing:$need"
@@ -201,7 +202,7 @@ b64url_decode() { local s; s="$(printf %s "$1" | tr -- '-_' '+/')"; while [ $(( 
 
 say "downloading MKWMP $VERSION"
 base="https://github.com/$REPO/releases/download/$VERSION"
-for f in SHA256SUMS SHA256SUMS.sig mkwmp-server-x86_64-linux; do
+for f in SHA256SUMS SHA256SUMS.sig; do
   curl -fsSL --retry 3 -o "$WORK/$f" "$base/$f" || die "download failed: $base/$f"
 done
 { printf '\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00'; b64url_decode "$RELEASE_KEY"; } > "$WORK/release.der"
@@ -210,20 +211,32 @@ b64url_decode "$(tr -d '\r\n' < "$WORK/SHA256SUMS.sig")" > "$WORK/sig.bin"
 openssl pkeyutl -verify -pubin -inkey "$WORK/release.pem" -rawin -in "$WORK/SHA256SUMS" -sigfile "$WORK/sig.bin" >/dev/null 2>&1 ||
   die "SHA256SUMS signature does NOT verify: not installing"
 [ "$(head -1 "$WORK/SHA256SUMS")" = "# mkwmp ${VERSION#v}" ] || die "SHA256SUMS is not for $VERSION: not installing"
-want="$(awk '$2 == "mkwmp-server-x86_64-linux" {print $1}' "$WORK/SHA256SUMS")"
-got="$(sha256sum "$WORK/mkwmp-server-x86_64-linux" | cut -d' ' -f1)"
-[ -n "$want" ] && [ "$want" = "$got" ] || die "mkwmp-server-x86_64-linux doesn't match the signed SHA256SUMS: not installing"
-say "signature and checksum OK ($got)"
+# 1.4.0+: the server zip (`server` inside); 1.3.x: the loose mkwmp-server-x86_64-linux.
+ZIP="mkwmp-server-${VERSION#v}.zip"
+if grep -q "  $ZIP\$" "$WORK/SHA256SUMS"; then ASSET="$ZIP"; else ASSET="mkwmp-server-x86_64-linux"; fi
+curl -fsSL --retry 3 -o "$WORK/$ASSET" "$base/$ASSET" || die "download failed: $base/$ASSET"
+want="$(awk -v a="$ASSET" '$2 == a {print $1}' "$WORK/SHA256SUMS")"
+got="$(sha256sum "$WORK/$ASSET" | cut -d' ' -f1)"
+[ -n "$want" ] && [ "$want" = "$got" ] || die "$ASSET doesn't match the signed SHA256SUMS: not installing"
+if [ "$ASSET" = "$ZIP" ]; then
+  unzip -p "$WORK/$ZIP" server > "$WORK/server" || die "$ZIP has no server binary"
+  SEAT_CMD=seat
+else
+  mv "$WORK/$ASSET" "$WORK/server"
+  SEAT_CMD=server   # what 1.3.x calls the seat server
+fi
+say "signature and checksum OK ($ASSET, $got)"
 
 # ---- user, program, keys, config --------------------------------------------------------------
 id "$SVC_USER" >/dev/null 2>&1 || useradd --system --home-dir "$DATA" --shell /usr/sbin/nologin "$SVC_USER"
 install -d -m 755 "$PREFIX/bin"
 install -d -m 700 -o "$SVC_USER" -g "$SVC_USER" "$DATA"
-install -m 755 "$WORK/mkwmp-server-x86_64-linux" "$PREFIX/bin/mkwmp.new" && mv -f "$PREFIX/bin/mkwmp.new" "$PREFIX/bin/mkwmp"
+install -m 755 "$WORK/server" "$PREFIX/bin/server.new" && mv -f "$PREFIX/bin/server.new" "$PREFIX/bin/server"
+rm -f "$PREFIX/bin/mkwmp"   # the 1.3.x name
 
 # Keys (ticket key, lobby tokens, the lobby's TLS certificate) are made once; server.toml is
 # rewritten from the settings on every run.
-runuser -u "$SVC_USER" -- "$PREFIX/bin/mkwmp" host --init-only --data "$DATA" \
+runuser -u "$SVC_USER" -- "$PREFIX/bin/server" host --init-only --data "$DATA" \
   --public-ip "$PUBLIC_IP" --name "$NAME" --capacity "$CAPACITY" --seat-bind "$SEAT_BIND" >/dev/null
 
 if [ -n "$PRIVACY_FILE" ]; then
@@ -318,7 +331,7 @@ Wants=network-online.target
 [Service]
 User=$SVC_USER
 WorkingDirectory=$DATA
-ExecStart=$PREFIX/bin/mkwmp $3 $DATA/server.toml
+ExecStart=$PREFIX/bin/server $3 $DATA/server.toml
 Restart=always
 RestartSec=2
 NoNewPrivileges=yes
@@ -333,7 +346,7 @@ MemoryMax=384M
 WantedBy=multi-user.target
 EOF
 }
-unit mkwmp-seat "MKWMP seat server (launchers, HTTP)" server
+unit mkwmp-seat "MKWMP seat server (launchers, HTTP)" "$SEAT_CMD"
 unit mkwmp-lobby "MKWMP lobby (the game: NPLN, Gamesync, TURN, voice/camera relay)" lobby
 
 # Logs hold gamertags and IP addresses: 7 days, as the policy template says.
