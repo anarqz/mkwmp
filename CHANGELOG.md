@@ -2,7 +2,7 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
-## 1.4.2 — unreleased
+## 1.4.2 — 2026-11-21
 
 - **Ready to Play checklist.** A new page (Home's dock, Settings › Game, and Play when something is missing) lists what the game needs: mkw-recomp in the version MKWMP needs, your copy of the game, game version 1.8.0, the game set up on this device, MKWMP's files in the game, launcher updates and, online, server and sign-in. Each row has a button that fixes it. Play stays off until every row is ready.
 - **Set the game up again.** Settings › Game and the checklist can rebuild the game from your copy (saves, mods and settings stay). The launcher also notices when your copy changed since it was set up, for example after you updated it somewhere else, and asks you to set it up again.
