@@ -243,6 +243,8 @@ a.row:hover, button.row:hover, summary.row:hover { text-decoration: none; }
 .row__value small { display: block; color: var(--text-muted); font-size: var(--fs-caption); }
 .row__chevron { width: calc(34 * var(--u)) !important; height: calc(34 * var(--u)) !important; margin-left: calc(14 * var(--u)); color: var(--text-muted); }
 .row__check { color: var(--good); }
+.row--credit > svg.i:first-child { color: var(--warn); }
+.row__caption a, .foot a { text-decoration: underline; text-underline-offset: 2px; }
 .rows-note { margin: calc(14 * var(--u)) calc(20 * var(--u)) 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--text-muted); }
 
 /* the FAQ: a row that opens */

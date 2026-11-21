@@ -70,7 +70,9 @@
     "s5": "Continua portátil",
     "s5c": "Tudo fica ao lado do launcher, nada no AppData. Configurações › Jogo troca para outra cópia do jogo depois.",
     "shot_alt": "A configuração do jogo em andamento: uma barra de progresso, a etapa atual e o tempo restante.",
-    "shot_cap": "A primeira configuração demora um pouco. Depois, o jogo abre em segundos."
+    "shot_cap": "A primeira configuração demora um pouco. Depois, o jogo abre em segundos.",
+    "credit": "Obrigado ao mkw-recomp",
+    "creditc": "O <a href=\"https://github.com/adriadam10/mkw-recomp\">mkw-recomp</a>, uma recompilação estática do jogo, é feito por <a href=\"https://github.com/adriadam10\">Adrià</a> e distribuído sob a Licença MIT. O MKWMP instala a sua própria versão dele, o fork <a href=\"https://github.com/anarqz/mkw-recomp\">anarqz/mkw-recomp</a>, e é construído sobre ele nos termos dessa licença."
   },
   "offline": {
     "title": "Offline primeiro, online quando quiser",
@@ -206,7 +208,8 @@
     "changelog": "Mudanças",
     "hosting": "Guia de hospedagem",
     "bug": "Relatar um bug",
-    "legal": "O MKWMP é um projeto comunitário, independente e de código aberto. Você precisa da sua própria cópia do jogo. A arte daqui é do próprio MKWMP."
+    "legal": "O MKWMP é um projeto comunitário, independente e de código aberto. Você precisa da sua própria cópia do jogo. A arte daqui é do próprio MKWMP.",
+    "credits": "Feito sobre o <a href=\"https://github.com/adriadam10/mkw-recomp\">mkw-recomp</a>, uma recompilação estática do jogo, de <a href=\"https://github.com/adriadam10\">Adrià</a> (Licença MIT). O MKWMP instala a sua própria versão dele, o fork <a href=\"https://github.com/anarqz/mkw-recomp\">anarqz/mkw-recomp</a>."
   },
   "hints": {
     "move": "Mover",
