@@ -193,6 +193,7 @@ fi
 openssl version | grep -qE '^OpenSSL [3-9]' || die "needs OpenSSL 3 (Ubuntu 22.04+ or Debian 12+) to check the release signature"
 
 # ---- the release: download and verify ---------------------------------------------------------
+if [ -z "$VERSION" ] && [ -n "${MKWMP_RELEASE_BASE:-}" ]; then die "MKWMP_RELEASE_BASE needs --version"; fi
 if [ -z "$VERSION" ]; then
   VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
   [ -n "$VERSION" ] || die "can't read the latest release from GitHub"
@@ -202,6 +203,9 @@ b64url_decode() { local s; s="$(printf %s "$1" | tr -- '-_' '+/')"; while [ $(( 
 
 say "downloading MKWMP $VERSION"
 base="https://github.com/$REPO/releases/download/$VERSION"
+# For testing a release before it's published (its files served from elsewhere): the files must
+# still verify against the release key above, so this can't install anything unsigned.
+if [ -n "${MKWMP_RELEASE_BASE:-}" ]; then base="${MKWMP_RELEASE_BASE%/}"; warn "release files from $base (MKWMP_RELEASE_BASE)"; fi
 for f in SHA256SUMS SHA256SUMS.sig; do
   curl -fsSL --retry 3 -o "$WORK/$f" "$base/$f" || die "download failed: $base/$f"
 done
