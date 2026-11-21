@@ -89,7 +89,7 @@ public partial class MainWindow : Window
         ApplyFullscreen();
         // The welcome flow until it was finished once (or was never needed: Core marks a working online profile as done).
         // Offline is a complete state: no consent is asked for to reach home.
-        shell.Nav.ResetTo(shell.Settings.Ui.SetupDone ? Routes.Home : Routes.Setup);
+        shell.Nav.ResetTo(StartRoute(shell));
         if (App.Option(args, "--page") is { } page)
         {
             shell.Navigate(page);
@@ -103,6 +103,9 @@ public partial class MainWindow : Window
     }
 
     partial void ConfigureHarness(string[] args, ref bool handled);
+
+    /// <summary>The page the window opens on: the welcome flow until it was finished (or was never needed), else home.</summary>
+    internal static string StartRoute(ShellViewModel shell) => shell.Settings.Ui.SetupDone ? Routes.Home : Routes.Setup;
 
     // ── stage ──
 

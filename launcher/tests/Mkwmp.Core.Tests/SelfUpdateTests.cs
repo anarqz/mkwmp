@@ -655,4 +655,77 @@ public class SelfUpdateTests
             Assert.Equal("launcher 1.5.0 alone", File.ReadAllText(exe));
         }
     }
+
+    /// <summary>
+    /// The way from the Rust launcher (1.3.x): it downloaded mkwmp-launcher-x86_64-windows.exe (this launcher as one
+    /// file), renamed itself to <c>mkwmp-launcher.exe.old</c> and started that file in its place, in the folder of the
+    /// 1.3.x zip: no i18n/, no helper, no native libraries, game/ for 1.3.1, and the Rust launcher's client.toml.
+    /// </summary>
+    [Fact]
+    public async Task After_the_rust_launcher_swapped_this_one_in_the_player_keeps_everything_and_the_next_update_brings_the_whole_zip()
+    {
+        _ = Rig.TestExe;
+        var root = Rig.NewFolder("from-rust");
+        var home = Path.Combine(root, "mkwmp");
+        var game = Path.Combine(root, "mkw-recomp");
+        Directory.CreateDirectory(Path.Combine(home, "game"));
+        Directory.CreateDirectory(game);
+        File.WriteAllBytes(Path.Combine(game, "mkw.exe"), Rig.TestExe);
+        var exe = Path.Combine(home, "mkwmp-launcher.exe");
+        File.WriteAllText(exe, "launcher 1.4.0, one file");
+        File.WriteAllText(exe + ".old", "the rust launcher 1.3.1");
+        File.WriteAllText(Path.Combine(home, "LICENSE"), "GPL");
+        File.WriteAllText(Path.Combine(home, "game", "SHA256SUMS"), "# mkwmp 1.3.1\n" + new string('a', 64) + "  winmm.dll\n");
+        // As the Rust launcher's ClientConfig::save writes it (rust/client/src/config.rs).
+        var rust = string.Join('\n',
+            "# mkwmp launcher settings (edited by the launcher window).", "# Guide: https://anarqz.github.io/mkwmp/", "",
+            "server = \"https://mkw.example.net\"", "name = \"Ana_1\"", "pin = \"482913\"", $"game = {ClientConfig.Quote(game)}", "launch = true",
+            "seat = \"online\"", "local_port = 47821", "update = true", "slot = 1", "launch_command = \"\"", "patch = true", "adult_consent = true", "",
+            "[background]", "close_to_tray = false", "start_with_system = true", "notify_online = true", "notify_playing = false", "notify_requests = true",
+            "tray_hint_shown = true", "", "[voice]", "enabled = true", "input = \"{0.0.1.00000000}.{mic}\"", "output = \"\"", "input_gain = 70",
+            "output_gain = 90", "inputs = []", "outputs = []", "", "[[voice.mutes]]", "account = \"123\"", "name = \"Bia\"", "");
+        File.WriteAllText(Path.Combine(home, "client.toml"), rust);
+        var zip = Zip(
+            ("mkwmp/mkwmp-launcher.exe", "launcher 1.4.1"),
+            ("mkwmp/mkwmp-updater.exe", "helper 1.4.1"),
+            ("mkwmp/wpfgfx_cor3.dll", "native 1.4.1"),
+            ("mkwmp/i18n/en.json", "{ \"home.play\": \"Play\" }"),
+            ("mkwmp/licenses/Nunito-LICENSE.txt", "OFL"),
+            ("mkwmp/game/SHA256SUMS", "# mkwmp 1.4.1\n"));
+        var github = new FakeGitHub().Release("1.4.1", new() { [Updater.ZipAsset("1.4.1")] = zip, [Updater.LauncherAsset] = "launcher 1.4.1, one file"u8.ToArray() });
+
+        var (launcher, _, _, _, helpers) = Launch(github, home);
+        await using (launcher)
+        {
+            // Nothing to fill in again: a registered player with the consent is past the welcome.
+            var s = launcher.Settings;
+            Assert.Equal(("https://mkw.example.net", "Ana_1", "482913", game, true, true), (s.Server, s.Name, s.Pin, s.Game, s.AdultConsent, s.Ui.SetupDone));
+            Assert.Equal((SeatMode.Online, 47821, true, false, true, false), (s.Seat, s.LocalPort, s.AutoUpdate, s.Background.CloseToTray, s.Background.StartWithSystem, s.Background.NotifyPlaying));
+            Assert.Equal(("{0.0.1.00000000}.{mic}", 70, 90), (s.Voice.Input, s.Voice.InputGain, s.Voice.OutputGain));
+            await launcher.StartAsync(default);
+            await launcher.StartupUpdates;
+            Assert.False(File.Exists(exe + ".old")); // what the Rust launcher's swap left
+            Assert.Equal((UpdateState.Available, "1.4.1"), (launcher.Update.State, launcher.Update.AvailableVersion));
+
+            // The next update is the zip, installed by the helper that comes out of it (none is installed yet).
+            await launcher.DownloadUpdateAsync(default);
+            Assert.DoesNotContain(github.Requests, r => r.Name == Updater.LauncherAsset);
+            await launcher.ApplyUpdateAsync(default);
+            var started = Assert.Single(helpers);
+            Assert.Equal("helper 1.4.1", File.ReadAllText(started.Helper));
+            var plan = UpdatePlan.Read(UpdaterArgs.Parse(started.Arguments, out _)!.Plan!);
+            Assert.Equal((UpdatePlan.KindZip, "1.4.0", "mkwmp-launcher.exe"), (plan.Kind, plan.FromVersion, plan.Launcher));
+            var settings = File.ReadAllText(Path.Combine(home, "client.toml"));
+            Assert.Equal(UpdateOutcome.Installed, new UpdateRunner(Installer(), _ => { }) { StartLauncher = (_, _) => true }.Run(plan, 0));
+            Assert.Equal(("launcher 1.4.1", "helper 1.4.1", "native 1.4.1", "{ \"home.play\": \"Play\" }", "GPL"),
+                (File.ReadAllText(exe), File.ReadAllText(Path.Combine(home, "mkwmp-updater.exe")), File.ReadAllText(Path.Combine(home, "wpfgfx_cor3.dll")),
+                 File.ReadAllText(Path.Combine(home, "i18n", "en.json")), File.ReadAllText(Path.Combine(home, "LICENSE"))));
+            Assert.Equal(settings, File.ReadAllText(Path.Combine(home, "client.toml")));
+        }
+
+        // The file the C# launcher writes still holds what the Rust launcher reads (name, PIN, game), should the player go back.
+        var after = ClientConfig.Load(Path.Combine(home, "client.toml"));
+        Assert.Equal(("Ana_1", "482913", game), (after.Settings.Name, after.Settings.Pin, after.Settings.Game));
+        Assert.Equal([new MutedPlayer("123", "Bia")], after.Mutes);
+    }
 }

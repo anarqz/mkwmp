@@ -12,7 +12,7 @@ namespace Mkwmp.App;
 
 /// <summary>
 /// The screenshot harness (see docs/DESIGN.md, "Checking your page"):
-/// <c>mkwmp-launcher --demo --shot out.png [--page home|settings|setup|gallery|privacy|whatsnew|connect] [--category key]
+/// <c>mkwmp-launcher --demo --shot out.png [--page home|settings|setup|gallery|privacy|whatsnew|connect|start] [--category key]
 /// [--modal update|available|ready|ready-game|confirm|message|progress|crash|crash-report|bug-report|gamework|gameupdate|install]
 /// [--state crashed|crashed-solo|crashed-exit|downloading|installing|download-failed|setting-up|setup-failed|need-dump|setup-again|runtime-update|install-fails|dev-package|uptodate|update-ready|no-policy] [--friends] [--toast]
 /// [--press right,down,a,…] [--size 1920x1080] [--theme dark] [--battery 93] [--input keyboard] [--locale pt-BR]
@@ -91,6 +91,11 @@ public partial class MainWindow
             _ = _vm.SetThemeAsync(theme);
         }
         var page = App.Option(args, "--page") ?? Routes.Home;
+        if (page == "start")
+        {
+            // the page a real start opens on (welcome or home), as decided from client.toml: e.g. after an old launcher updated into this one
+            page = StartRoute(_vm);
+        }
         if (page is Routes.Home or Routes.Setup)
         {
             _vm.Nav.ResetTo(page);
