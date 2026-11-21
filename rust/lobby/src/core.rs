@@ -23,14 +23,16 @@ pub const AUTH_SIGN_IN: &str = "/nn.npln.auth.v1.Auth/IssuePrearrangedUserToken"
 /// The game refreshes its NPLN token shortly before it expires, on a new connection.
 pub const AUTH_REFRESH: &str = "/nn.npln.auth.v1.Auth/RefreshToken";
 /// Unary calls the game makes whose answer it ignores: an empty OK, as always (seen in production).
-pub const EMPTY_OK: [&str; 7] = [
+/// None of the token-returning Auth RPCs may be here: the game aborts on an empty Token
+/// (research AUTH-REPLIES-1.8.0.md). Ugcstore/IssueUploadUri isn't either: an empty upload URI
+/// only makes uploads fail quietly, so it gets UNIMPLEMENTED like anything unknown.
+pub const EMPTY_OK: [&str; 6] = [
     "/nn.npln.auth.v1.Auth/ValidateToken",
     "/nn.npln.friends.v1.Friends/ActivateUser",
     "/nn.npln.leaderboard.v1.LeaderboardService/UpdateHolder",
     "/nn.npln.leaderboard.v1.LeaderboardService/BrowseLeaderboard",
     "/nn.npln.leaderboard.v1.LeaderboardService/GetScore",
     "/nn.npln.matchmaking.v1.GameSessionService/IssueUserDelegationToken",
-    "/nn.npln.ugcstore.v1.Ugcstore/IssueUploadUri",
 ];
 pub const GS_ISSUE_TOKEN: &str = "/nn.npln.gamesync.v1.Gamesync/IssueToken";
 pub const GS_REFRESH_TOKEN: &str = "/nn.npln.gamesync.v1.Gamesync/RefreshToken";
