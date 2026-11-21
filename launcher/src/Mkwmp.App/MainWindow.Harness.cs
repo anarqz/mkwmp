@@ -15,7 +15,7 @@ namespace Mkwmp.App;
 /// <c>mkwmp --demo --shot out.png [--page home|settings|setup|gallery|privacy|whatsnew|connect|start] [--category key]
 /// [--modal update|available|ready|ready-game|confirm|message|progress|crash|crash-report|bug-report|gamework|gameupdate|install]
 /// [--state crashed|crashed-solo|crashed-exit|downloading|installing|download-failed|setting-up|setup-failed|need-dump|setup-again|runtime-update|install-fails|dev-package|uptodate|update-ready|no-policy] [--friends] [--toast]
-/// [--press right,down,a,east,…] [--pad-layout nintendo] [--size 1920x1080] [--theme dark] [--battery 93] [--input keyboard] [--locale pt-BR]
+/// [--press right,down,a,east,…] [--pad-layout nintendo] [--size 1920x1080] [--theme dark] [--contrast high] [--battery 93] [--input keyboard] [--locale pt-BR]
 /// [--overlay [--overlay-frame png|none] [--overlay-no-menu] [--overlay-progress 0..1 | --overlay-return 0..1]]</c>
 /// renders the stage at that size once everything has settled, saves the PNG and exits. The window
 /// stays off-screen and never takes the focus. <c>--icon dir</c> writes the app icon instead.
@@ -89,6 +89,11 @@ public partial class MainWindow
         if (App.Option(args, "--theme") is { } theme)
         {
             _ = _vm.SetThemeAsync(theme);
+        }
+        // --contrast low|normal|high|higher: Settings › Appearance › Contrast
+        if (App.Option(args, "--contrast") is { } contrast)
+        {
+            _ = _vm.SetContrastAsync(contrast);
         }
         // --pad-layout nintendo|xbox: the game's button layout, which the window's buttons follow (--press east: the right face button)
         if (App.Option(args, "--pad-layout") is { } layout)

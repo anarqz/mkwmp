@@ -53,6 +53,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         RecompSourceCommand = new RelayCommand(() => Links.Open(Shell, RecompSourceUrl));
         WhatsNewCommand = new RelayCommand(() => Shell.Navigate(new WhatsNewViewModel(Shell)));
         ThemeCommand = RelayCommand.Async(() => Shell.SetThemeAsync(Shell.IsDark ? "light" : "dark"));
+        ContrastCommand = RelayCommand.Async(PickContrastAsync);
         LanguageCommand = RelayCommand.Async(Shell.PickLanguageAsync);
         CheckUpdateCommand = RelayCommand.Async(() => Launcher.CheckForUpdatesAsync(), () => Launcher.Update.State is not (UpdateState.Checking or UpdateState.Downloading or UpdateState.Restarting));
         UpdateCommand = new RelayCommand(Shell.ShowUpdateModal);
@@ -286,6 +287,21 @@ public sealed partial class SettingsViewModel : PageViewModel
     public string ThemeName => Shell.IsDark ? S["settings.theme_dark"] : S["settings.theme_light"];
 
     public ICommand ThemeCommand { get; }
+
+    /// <summary>How far cards, rows and the dock stand from the background (Themes/Palette.cs).</summary>
+    public string ContrastName => S["settings.contrast." + Shell.Contrast];
+
+    public ICommand ContrastCommand { get; }
+
+    private async Task PickContrastAsync()
+    {
+        var options = Themes.Palette.Steps.Select(step => new ChoiceOption(step, S["settings.contrast." + step])).ToList();
+        if (await Choice.AskAsync(Shell, S["settings.contrast"], S["settings.contrast.caption"], options, Shell.Contrast).ConfigureAwait(true) is { } picked)
+        {
+            await Shell.SetContrastAsync(picked).ConfigureAwait(true);
+            Raise(nameof(ContrastName));
+        }
+    }
 
     public bool Fullscreen
     {

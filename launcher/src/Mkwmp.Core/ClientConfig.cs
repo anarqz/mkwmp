@@ -201,6 +201,7 @@ internal sealed record ClientConfig
             {
                 Fullscreen = Bool(ui, "fullscreen", true),
                 Theme = Str(ui, "theme", "light"),
+                Contrast = Str(ui, "contrast", "normal"),
                 Locale = Str(ui, "locale", ""),
                 SetupDone = Bool(ui, "setup_done", false),
             },
@@ -294,6 +295,7 @@ internal sealed record ClientConfig
         b.Append("\n[ui]\n");
         Line(b, "fullscreen", s.Ui.Fullscreen);
         Line(b, "theme", s.Ui.Theme);
+        Line(b, "contrast", s.Ui.Contrast);
         Line(b, "locale", s.Ui.Locale);
         Line(b, "setup_done", s.Ui.SetupDone);
 

@@ -577,6 +577,8 @@ public sealed record UiSettings
     public bool Fullscreen { get; init; } = true;
     /// <summary>"light" or "dark".</summary>
     public string Theme { get; init; } = "light";
+    /// <summary>How far the surfaces stand from the background: "low", "normal", "high" or "higher".</summary>
+    public string Contrast { get; init; } = "normal";
     public string Locale { get; init; } = "";
     /// <summary>The first-start welcome flow (name, game, "go online?") finished, or was never needed (a working online profile was already here).</summary>
     public bool SetupDone { get; init; }

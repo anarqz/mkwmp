@@ -325,6 +325,8 @@
           <StackPanel Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=appearance'}">
             <c:SectionHeader Text="{Binding S[settings.appearance.look]}" />
             <c:SettingsRow Label="{Binding S[settings.theme]}" Kind="Value" Value="{Binding ThemeName}" Command="{Binding ThemeCommand}" />
+            <c:SettingsRow Label="{Binding S[settings.contrast]}" Kind="Chevron" Value="{Binding ContrastName}" Command="{Binding ContrastCommand}"
+                           Caption="{Binding S[settings.contrast.caption]}" />
             <c:SettingsRow Label="{Binding S[settings.fullscreen]}" Kind="Toggle" IsOn="{Binding Fullscreen}"
                            Caption="{Binding S[settings.fullscreen.caption]}" />
             <c:SectionHeader Text="{Binding S[settings.appearance.language]}" />
