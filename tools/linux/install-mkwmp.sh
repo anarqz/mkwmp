@@ -3,6 +3,9 @@
 #
 #   bash install-mkwmp.sh                      install the newest release and add it to Steam
 #   bash install-mkwmp.sh --help               every option
+#   curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash
+#                                              the same, this script fetched from the repository at the newest
+#                                              release's tag (it is not a release asset)
 #
 # What it does (docs/LINUX.md has the reasons):
 #   1. downloads the MKWMP launcher (the Windows build; it runs under Proton) and checks it against the
@@ -27,7 +30,12 @@ REPO = "anarqz/mkwmp"
 # The release keys (launcher/src/Mkwmp.Update/ReleaseSums.cs ReleaseKeys), kid:base64url.
 RELEASE_KEYS = ["release1:Zuvb-AuF9DcXEzXRSu49EFrb2ilCQnJl1e4ApQJI9Dw"]
 NAME = "MKWMP"
-EXE = "mkwmp-launcher.exe"
+EXE = "mkwmp.exe"
+# The C# launcher's files under their names before 1.4.0's rename (now mkwmp.exe, updater.exe). No release had them,
+# only test builds: an install of one is moved over (its shortcut keeps its place, artwork, Proton and prefix) and the
+# two files are removed.
+FORMER_EXE = "mkwmp-launcher.exe"
+FORMER_FILES = (FORMER_EXE, "mkwmp-updater.exe")
 MARKER = ".mkwmp-install"
 # What a run under Proton needs besides the compatibility tool: nothing. The launcher sets the per-application
 # DLL override itself, and the game is Vulkan (no DXVK / VKD3D in its path). See docs/LINUX.md, "Launch options".
@@ -315,10 +323,11 @@ def is_legacy(entry):
     return name in LEGACY_NAMES or program.rsplit("/", 1)[-1] == LEGACY_EXE
 
 
-def shortcuts_edit(raw, appid, exe, startdir, name, launch_options, icon, remove=False, legacy=None):
+def shortcuts_edit(raw, appid, exe, startdir, name, launch_options, icon, remove=False, legacy=None, former=()):
     """The new bytes of shortcuts.vdf and what happened ('added', 'updated', 'unchanged', 'removed', 'absent').
     Every other entry keeps its bytes. With a list as `legacy` (an install), the shortcuts of older MKWMP
-    installers are removed too and described there as (id, name, exe)."""
+    installers are removed too and described there as (id, name, exe). `former`: (id, exe) pairs of this
+    install's own shortcut under an earlier exe name: that entry is this shortcut, updated to the new id and exe."""
     if raw:
         root = bvdf_load(raw)
         if bvdf_dump(root)[:-1] != raw and bvdf_dump(root) != raw:
@@ -333,7 +342,7 @@ def shortcuts_edit(raw, appid, exe, startdir, name, launch_options, icon, remove
 
     def is_ours(entry):
         a, e = bget(entry, "appid"), bget(entry, "exe")
-        return (a is not None and a[2] == appid) or (e is not None and e[2] == exe.encode())
+        return any((a is not None and a[2] == i) or (e is not None and e[2] == x.encode()) for i, x in [(appid, exe), *former])
     mine = [it for it in items if it[0] == 0 and is_ours(it[2])]
     if legacy is not None and not remove:
         for it in [it for it in items if it[0] == 0 and it not in mine and is_legacy(it[2])]:
@@ -537,7 +546,7 @@ def steam_running():
 
 
 def launcher_running(dest):
-    target = str(dest / EXE)
+    targets = [str(dest / n) for n in (EXE, FORMER_EXE)]
     try:
         pids = [p for p in os.listdir("/proc") if p.isdigit()]
     except OSError:
@@ -547,7 +556,7 @@ def launcher_running(dest):
             cmd = open(f"/proc/{pid}/cmdline", "rb").read().decode("utf-8", "replace").replace("\\", "/")
         except OSError:
             continue
-        if target in cmd or ("Z:" + target) in cmd:
+        if any(t in cmd or ("Z:" + t) in cmd for t in targets):
             return True
     return False
 
@@ -710,7 +719,15 @@ def unpack(z, dest):
                 continue
             write_atomic(out, data, 0o755 if rel.lower().endswith(".exe") else 0o644)
             written += 1
+        names = {rel.lower() for rel, _ in members}
     say(f"{'would write' if DRY else 'wrote'} {written} files into {dest}" + (f" ({kept} of yours kept)" if kept else ""))
+    # A test build's launcher under its former names: the zip's mkwmp.exe and updater.exe take their place.
+    for n in FORMER_FILES:
+        old = dest / n
+        if n.lower() not in names and old.is_file():
+            if not DRY:
+                old.unlink()
+            say(f"{'would remove' if DRY else 'removed'} {old} (the launcher's name before 1.4.0)")
     return version
 
 
@@ -806,7 +823,8 @@ ART_SLOTS = {  # slot: (grid file suffix, asset type of SteamGridDB's search, it
     "icon": ("_icon", "icon", None),
 }
 ART_UA = {"User-Agent": "mkwmp-installer/1.0"}
-ART_LIST = f"https://raw.githubusercontent.com/{REPO}/main/tools/linux/artwork.json"
+# Not a release asset: the repository's copy at the release's tag, else main's.
+ART_LIST = "https://raw.githubusercontent.com/" + REPO + "/{ref}/tools/linux/artwork.json"
 ART_SEARCH = "https://www.steamgriddb.com/api/public/search/main/games"
 
 
@@ -842,15 +860,20 @@ def image_ext(data):
     return None
 
 
-def art_list(given):
-    """artwork.json: the file given, the one beside this script, else the repository's."""
+def art_list(given, version=None):
+    """artwork.json: the file given, the one beside this script, else the repository's at the tag v<version>, else main's."""
     here = os.environ.get("MKWMP_SELF_DIR", "")
     for p in [given, os.path.join(here, "artwork.json") if here else None]:
         if p and os.path.isfile(p):
             return json.loads(pathlib.Path(p).read_text(encoding="utf-8"))
     if given:
         die(f"--artwork {given}: no such file")
-    return json.loads(fetch(ART_LIST, 1 << 20))
+    if version and re.fullmatch(r"[0-9][0-9A-Za-z.+-]*", version):
+        try:
+            return json.loads(fetch(ART_LIST.format(ref="v" + version), 1 << 20))
+        except urllib.error.HTTPError:
+            pass  # no such tag (a test build's version): main's
+    return json.loads(fetch(ART_LIST.format(ref="main"), 1 << 20))
 
 
 def art_search(slot, term, game_id):
@@ -876,11 +899,11 @@ def art_search(slot, term, game_id):
     return max(good, key=lambda a: (a.get("style") == "official", (a.get("upvotes") or 0) - (a.get("downvotes") or 0)))["url"]
 
 
-def art_download(given):
+def art_download(given, version=None):
     """{slot: (bytes, extension)}. A slot that fails is left out: artwork never stops an install."""
     out = {}
     try:
-        listed = art_list(given)
+        listed = art_list(given, version)
     except (OSError, ValueError) as e:
         say(f"artwork: the list of links could not be read ({e})")
         listed = {}
@@ -932,15 +955,38 @@ def art_install(grid, appid, art):
 def steam_apply(root, dest, proton, launch_options, art, stamp, remove=False):
     exe = f'"{dest / EXE}"'
     appid = shortcut_id(exe, NAME)
+    # This install's shortcut as a test build before the rename made it: its id came from mkwmp-launcher.exe.
+    former_exe = f'"{dest / FORMER_EXE}"'
+    former = [(shortcut_id(former_exe, NAME), former_exe)]
     users = steam_users(root)
-    old_ids = set()
+    old_ids = {i for i, _ in former}  # their Proton setting goes (the new id gets it)
     if not users:
         say(f"no Steam user in {root}/userdata: sign in to Steam once, then run this again")
         return appid, False
+    for fid, _ in [] if remove else former:
+        # Its Proton prefix (nothing of the player's, but minutes to make again) goes with it.
+        pfx, new_pfx = root / "steamapps/compatdata" / str(fid), root / "steamapps/compatdata" / str(appid)
+        if pfx.is_dir() and not new_pfx.exists():
+            if not DRY:
+                pfx.rename(new_pfx)
+            say(f"{'would move' if DRY else 'moved'} the shortcut's Proton prefix {pfx.name} to {new_pfx.name} (its id before the rename)")
     for u in users:
         cfg = u / "config"
         f = cfg / "shortcuts.vdf"
         icon = None
+        # The artwork of the shortcut under its former id: renamed to the new id (or removed with it).
+        for fid, _ in former:
+            for g in art_files(cfg / "grid", fid):
+                if remove:
+                    if not DRY:
+                        g.unlink()
+                    continue
+                to = g.with_name(str(appid) + g.name[len(str(fid)):])
+                taken = to.exists()  # the new id has its own already
+                if not DRY:
+                    g.unlink() if taken else g.rename(to)
+                say(f"Steam user {u.name}: {'would ' if DRY else ''}{'remove' if taken else 'move'}{'' if DRY else 'd'} {g.name}"
+                    + ("" if taken else f" to {to.name}") + " (the shortcut's id before the rename)")
         if not remove:
             icon = art_install(cfg / "grid", appid, art) if art else None
             if icon is None:
@@ -951,7 +997,7 @@ def steam_apply(root, dest, proton, launch_options, art, stamp, remove=False):
         legacy = []
         try:
             new, what = shortcuts_edit(raw, appid, exe, f'"{dest}"', NAME, launch_options, str(icon) if icon else "", remove,
-                                       None if remove else legacy)
+                                       None if remove else legacy, former)
         except (ValueError, IndexError) as e:
             die(f"{f}: {e}. Nothing of Steam was changed for user {u.name}")
         if new != raw:
@@ -1097,14 +1143,14 @@ def main():
     if a["art_only"]:
         if not root:
             die("--art-only needs Steam")
-        art = art_download(a["artwork"])
-        if not art:
-            die("no artwork was downloaded")
-        need_steam_closed("setting the icon")
         try:
             marker = json.loads((dest / MARKER).read_text())
         except (OSError, ValueError):
             die(f"MKWMP is not installed in {dest} (--dir names another folder)")
+        art = art_download(a["artwork"], marker.get("version"))
+        if not art:
+            die("no artwork was downloaded")
+        need_steam_closed("setting the icon")
         steam_apply(root, dest, marker.get("proton"), marker.get("launch_options", a["launch"]), art, stamp)
         say("artwork installed. Open Steam")
         return
@@ -1144,7 +1190,7 @@ def main():
         return
     art = {}
     if a["art"]:
-        art = art_download(a["artwork"])
+        art = art_download(a["artwork"], version)
     appid, ok = steam_apply(root, dest, proton, a["launch"], art, stamp)
     if not ok:
         return

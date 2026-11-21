@@ -14,7 +14,7 @@ The game patch (probe, `winmm.dll`) asks the launcher for a seat. Owners:
     ticket = "mkw1..."                  # seat = "start" only, once seated
     voice_port = 8907                   # seat status voicePort: the voice relay on the lobby host (0 = off)
     slot = 2                            # loopback testing only
-    launcher_exe = "C:/.../mkwmp-launcher.exe"   # the launcher's executable, forward slashes: the mod starts it as its
+    launcher_exe = "C:/.../mkwmp.exe"   # the launcher's executable, forward slashes: the mod starts it as its
                                         # overlay host when no launcher runs ("The overlay host" below)
 
 The file is replaced atomically, and rewritten when the ticket or token changes. The probe is dormant until the game's first network request (Online Play).
@@ -137,7 +137,7 @@ Limits: `open` burst 10 then 2/s; `state` burst 20 then 2/s.
 ## The overlay host: mkwmp-overlay.toml, launcher.json, POST /local/v1/instance/show, POST /local/v1/instance/host
 
 For a game no launcher started (the mod alone, with its own account). The mod starts the
-launcher at game start as `mkwmp-launcher.exe --overlay-host --parent-pid <game pid> --session
+launcher at game start as `mkwmp.exe --overlay-host --parent-pid <game pid> --session
 "<mod folder>/mkwmp-overlay.toml"`. In that mode the launcher shows no window and takes no seat,
 answers `/local/v1/overlay/...` only, and exits when the game does. Ready is the session file,
 which it writes once its local API is up and deletes when it leaves:
@@ -152,12 +152,12 @@ The mod reads it as it reads mkwmp.toml's two keys, and is armed by the first
 names a launcher that answers (that launcher started the game and is the overlay).
 
 Where the mod finds the executable, first hit wins: the mod's setting `launcher_path`;
-`launcher_exe = "C:/.../mkwmp-launcher.exe"` in mkwmp.toml (forward slashes; written by the
+`launcher_exe = "C:/.../mkwmp.exe"` in mkwmp.toml (forward slashes; written by the
 launcher beside `launcher`); `"exe"` of `%LOCALAPPDATA%\mkwmp\launcher.json`;
-`mkwmp-launcher.exe` in the mod's folder. The mod's setting `overlay = 0` turns the overlay off.
+`mkwmp.exe` in the mod's folder. The mod's setting `overlay = 0` turns the overlay off.
 
 `%LOCALAPPDATA%\mkwmp\launcher.json`, written by the launcher at every start:
-`{"exe":"C:/.../mkwmp-launcher.exe","pid":1234,"port":47820,"token":"3f1c9a..."}`. One launcher
+`{"exe":"C:/.../mkwmp.exe","pid":1234,"port":47820,"token":"3f1c9a..."}`. One launcher
 per user (named mutex `Local\mkwmp-launcher`): a second one reads the record and hands its
 request to the first, same bearer, then exits.
 

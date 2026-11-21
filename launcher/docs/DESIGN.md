@@ -1,6 +1,6 @@
 # MKWMP Launcher: design system and shell
 
-Everything a page needs is here. The app is `src/Mkwmp.App` (WPF, .NET 10, assembly `mkwmp-launcher`);
+Everything a page needs is here. The app is `src/Mkwmp.App` (WPF, .NET 10, assembly `mkwmp`);
 it binds only to `Mkwmp.Core.ILauncher`. Look at the result before reading: `.\run.ps1 --demo --windowed --page gallery`
 shows every control and icon on one page.
 
@@ -368,7 +368,7 @@ If a control lacks something, add a property to it rather than restyling it in a
 .\shot.ps1 out.png --friends      .\shot.ps1 out.png --toast      .\shot.ps1 out.png --demo-offline --friends
 ```
 
-`shot.ps1` builds, runs `mkwmp-launcher --demo --shot <png> …`, waits about 2 s for animations to
+`shot.ps1` builds, runs `mkwmp --demo --shot <png> …`, waits about 2 s for animations to
 settle and writes the PNG. Options: `--page home|settings|settings/online|setup|connect|privacy|whatsnew|gallery` (section 13 for connect and privacy; whatsnew: the changelog, `CHANGELOG.md` built in, with the update banner), `--category <key>`
 (settings), `--press a,b,x,y,up,down,left,right,start` (pressed in order before the shot: the way to
 put the focus somewhere or to walk into a sub-step), `--size WxH`, `--theme dark`, `--battery 93`,

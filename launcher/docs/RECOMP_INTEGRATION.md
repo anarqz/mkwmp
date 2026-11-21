@@ -546,7 +546,7 @@ sha256 makes it safe) or carry it inside the installer (217 MB more, works offli
 makes MKWMP the distributor of everything in `setup\`, so section 4's list applies in full. The dump is asked for on
 the Setup screen and nowhere else.
 
-**Steam Deck / Proton.** One Steam shortcut: the launcher (`mkwmp-launcher.exe` under Proton). It installs the
+**Steam Deck / Proton.** One Steam shortcut: the launcher (`mkwmp.exe` under Proton). It installs the
 Windows zip inside its prefix or under `Z:\home\deck\...`, runs the setup there, starts mkw.exe as its child (one app
 id, one prefix: what `OVERLAY.md` section 4 needs). Section 5 has the open points.
 

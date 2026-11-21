@@ -18,11 +18,12 @@ starts the game").
 In Desktop Mode, in a terminal (Konsole):
 
 ```
-curl -fsSL https://github.com/anarqz/mkwmp/releases/latest/download/install-mkwmp.sh | bash
+curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash
 ```
 
-(the same as `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`, which runs the newest
-release's script. Every release from 1.4.0 carries `install-mkwmp.sh` and `artwork.json`.)
+(`site/install.sh`: it fetches `tools/linux/install-mkwmp.sh` and `artwork.json` from the repository
+at the newest release's tag, else `main`, and runs it. Neither file is a release asset; the release
+is the launcher zip, the server zip and the signed `SHA256SUMS`.)
 
 **Coming from MKWMP 1.3 or older** (the native Linux launcher, usually `~/mkwmp`): that launcher does
 not update itself into this one (1.4.0 has no Linux build; it keeps working as it is, with its own
@@ -99,8 +100,14 @@ What it does, in order; nothing is written before everything that can refuse has
    touched, else the script stops. One entry is added, or the one with the same id or the same exe
    is updated in the fields the script owns (name, exe, start folder, launch options, icon); every
    other entry keeps its bytes, and its own `LastPlayTime` and tags stay. The id is
-   `crc32("\"<dir>/mkwmp-launcher.exe\"" + "MKWMP") | 0x80000000`, what Steam itself computes, so it
+   `crc32("\"<dir>/mkwmp.exe\"" + "MKWMP") | 0x80000000`, what Steam itself computes, so it
    is stable for an install folder: a second run changes nothing.
+   **The rename.** Test builds before 1.4.0's release named the launcher `mkwmp-launcher.exe` (and its
+   helper `mkwmp-updater.exe`), which gave the shortcut another id. The entry with that id or exe is
+   this install's own: it is updated in place to the new id and exe (no second shortcut), its grid
+   artwork is renamed to the new id, its Proton prefix `compatdata/<old id>` is moved to the new id
+   (when the new one does not exist), its `CompatToolMapping` entry goes to the new id, and the two
+   old files are removed from the folder. `--uninstall` removes it under either id.
    **Older MKWMP shortcuts are removed** in the same edit: an entry named "Mario Kart World
    (MKWMP)" or "Mario Kart World (debug)", or whose program is the old Linux launcher (a file named
    `mkwmp-launcher`, no `.exe`), and that is not this install's own. Their grid artwork (copied to
@@ -301,7 +308,7 @@ started from a shell with Proton 11.0 inside Steam Linux Runtime 4 with the shor
   files) in 18 s; `mkw.ini` written.
 - The setup driver: starts the runtime's `python.exe`, reads its lines, shows the step and the time
   left, and reports the failure with the log.
-- The update helper (`mkwmp-updater.exe --shot`): draws.
+- The update helper (`updater.exe --shot`): draws.
 
 **Small things**
 
@@ -345,8 +352,9 @@ started from a shell with Proton 11.0 inside Steam Linux Runtime 4 with the shor
 
 ## 6. For maintainers
 
-- The script is the release's `install-mkwmp.sh` (launcher/docs/UPDATES.md, section 8). It must stay
-  LF (`*.sh text eol=lf` in `.gitattributes`).
+- The script is read from the repository at the release's tag (launcher/docs/UPDATES.md, section 8):
+  a fix to it reaches players with the next release's tag (`site/install.sh` falls back to `main`
+  only when the tag has none). It must stay LF (`*.sh text eol=lf` in `.gitattributes`).
 - A new release key goes into `RELEASE_KEYS` in the script as well as `ReleaseSums.cs`.
 - Testing the Steam edits without a Steam: the Python between the `MKWMP_PY` markers runs anywhere;
   point `HOME` at a folder holding copies of `shortcuts.vdf`, `config.vdf` and
@@ -355,7 +363,7 @@ started from a shell with Proton 11.0 inside Steam Linux Runtime 4 with the shor
 - Starting the installed launcher as Steam does, from a shell (for logs, or `--shot`): set
   `STEAM_COMPAT_CLIENT_INSTALL_PATH` to Steam's folder, `STEAM_COMPAT_DATA_PATH` to
   `steamapps/compatdata/<id>`, and run `<SteamLinuxRuntime_4>/run -- "<Proton 11.0>/proton"
-  waitforexitandrun ./mkwmp-launcher.exe ...` in the install folder. The container kills the
+  waitforexitandrun ./mkwmp.exe ...` in the install folder. The container kills the
   program when the shell that started it ends: use `systemd-run --user` for a window that stays.
   `waitforexitandrun` first waits until nothing else runs in the prefix, and `proton run` from a
   second shell joins the wineserver that is already there: two tests in one prefix are not

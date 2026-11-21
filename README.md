@@ -29,13 +29,11 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 
 ## Play
 
-1. Set up **mkw-recomp [0.1.16-mkwmp.1](https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp.1)** (MKWMP's build of mkw-recomp 0.1.16, with the camera; take the `-noavx2` zip if your CPU has no AVX2; 0.1.15-mkwmp still works too, and the official 0.1.16, 0.1.15, 0.1.13, 0.1.12 and 0.1.10 work without the camera) with your own copy of the game, version **1.0.0 or 1.8.0**. Players only meet others on the same game version. On a Steam Deck, run it through Proton 10.0.
-2. Download the zip for your system from the [latest release](https://github.com/anarqz/mkwmp/releases/latest) and unzip it anywhere:
-   - `mkwmp-<version>-windows-x64.zip` for Windows;
-   - `mkwmp-<version>-linux-x64.zip` for SteamOS and Linux. On a Steam Deck, one command in Desktop Mode (Konsole) installs it to `~/mkwmp` and adds it to Steam:
-     `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`
-3. Open `mkwmp-launcher`, register a gamertag and pick the game folder. The line under GAME FOLDER says whether the game patch is installed; press **INSTALL** if it isn't, then **PLAY**. SETTINGS → GAME PATCH → UNINSTALL removes every mkwmp file from the game folder.
-4. **Optional, the MKWMP mod** (mkw-recomp 0.1.15 or newer, official or -mkwmp; the camera needs an -mkwmp build and game 1.8.0): unzip `mkwmp-mod.zip` from the release into mkw-recomp's data folder's `mods/` (you get `mods/mkwmp/`), then on mkw-recomp's start screen open **Mods**, tick **MKWMP**, and in its **Options** confirm you're 18+ and sign in or register. With the mod enabled, the launcher takes its own game patch out of the game folder (the mod wins) and still works for your gamertag, friends and PLAY.
+1. Have your own copy of the game, version **1.0.0 or 1.8.0**. Players only meet others on the same game version.
+2. Download `mkwmp-<version>-windows-x64.zip` from the [latest release](https://github.com/anarqz/mkwmp/releases/latest) and unzip it anywhere. On SteamOS and Linux (Steam Deck included) the same launcher runs under Proton: one command in Desktop Mode (Konsole) installs it to `~/Games/MKWMP` and adds it to Steam:
+   `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`
+3. Open `mkwmp.exe` (on Linux, the MKWMP shortcut in Steam). The welcome asks for a name and your own copy of the game, sets up mkw-recomp and installs the MKWMP mod into it; then press **PLAY**.
+4. Coming from 1.3: the old launcher does not update itself to 1.4.0. Unzip the new zip over your old `mkwmp` folder (your name, PIN and server stay), delete the old `mkwmp-launcher.exe` and open `mkwmp.exe`; on Linux run the command above once.
 
 Step-by-step guides for Windows and the Steam Deck: <https://anarqz.github.io/mkwmp/>.
 
@@ -43,7 +41,7 @@ Step-by-step guides for Windows and the Steam Deck: <https://anarqz.github.io/mk
 
 > **Needs rc.2 or later**, for the server and for every player. The rc.2 launcher and game patch trust each server's own certificate; rc.1 can only reach the official server. Launchers update themselves when you press PLAY. Self-hosted servers have been tested end to end without the real game; the first real-game runs are coming.
 
-The whole server is one program, `mkwmp-server`. It runs gamertags, friends, seats and the game lobby, and it sets itself up on the first run. A normal PC is enough to host your friends.
+The whole server is one program, `server` (`server.exe` on Windows), in the release's `mkwmp-server-<version>.zip`. It runs gamertags, friends, seats and the game lobby, and it sets itself up on the first run. A normal PC is enough to host your friends.
 
 ### What you need
 
@@ -55,8 +53,8 @@ The whole server is one program, `mkwmp-server`. It runs gamertags, friends, sea
 
 ### 1. Start the server
 
-- **Windows:** download `mkwmp-server-x86_64-windows.exe` from the [releases](https://github.com/anarqz/mkwmp/releases) and put it in a folder of its own. Double-click it.
-- **Linux:** download `mkwmp-server-x86_64-linux`, then run `chmod +x mkwmp-server-x86_64-linux` and `./mkwmp-server-x86_64-linux`.
+- **Windows:** download `mkwmp-server-<version>.zip` from the [releases](https://github.com/anarqz/mkwmp/releases) and unzip it into a folder of its own. Double-click `server.exe`.
+- **Linux:** the same zip; unzip it and run `./server` (or, on a Linux server, `curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash` downloads, checks and sets it up; see [HOSTING](docs/HOSTING.md)).
 
 On the first run it asks one question: **which address do players reach this machine at?**
 - **LAN party:** press Enter to accept the suggested LAN address, e.g. `192.168.1.20`.
@@ -85,8 +83,8 @@ Keep that window open while you play. Next time, just start it again: it remembe
 | 8907 | UDP | the game: voice chat |
 | 49152–49407 | UDP | the game: relayed race traffic |
 
-- **Windows firewall:** when Windows asks whether to allow `mkwmp-server`, allow it. If you missed the prompt, run this in an administrator terminal:
-  `netsh advfirewall firewall add rule name="mkwmp-server" dir=in action=allow program="<full path to mkwmp-server-x86_64-windows.exe>"`
+- **Windows firewall:** when Windows asks whether to allow `server.exe`, allow it. If you missed the prompt, run this in an administrator terminal:
+  `netsh advfirewall firewall add rule name="mkwmp-server" dir=in action=allow program="<full path to server.exe>"`
 - **Linux firewall** (ufw): `sudo ufw allow 7000,8905,8906/tcp && sudo ufw allow 3478,8907,10025/udp && sudo ufw allow 49152:49407/udp`.
 - **Router (internet only):** forward every port in the table to the hosting PC's LAN address. Give that PC a fixed LAN address (a DHCP reservation) so the forwarding keeps working.
 
@@ -100,10 +98,10 @@ Each player, including you, does three things in the launcher:
 ### Day to day
 
 - **Change settings:** start it from a terminal with flags; they're saved for next time:
-  `mkwmp-server host --public-ip 203.0.113.7 --name "Friday kart" --capacity 12`
-  Other options: `--turn-port`, `--seat-bind`, `--data`. Run `mkwmp-server host --help` for the list.
+  `server host --public-ip 203.0.113.7 --name "Friday kart" --capacity 12`
+  Other options: `--turn-port`, `--seat-bind`, `--data`. Run `server host --help` for the list.
 - **Forgotten PIN, reserved names:** run these on the hosting machine while the server runs:
-  `mkwmp-server admin reset-pin <gamertag> --config mkwmp-data/server.toml`. The other commands are `list`, `register <name>` (reserve it and get its PIN) and `release <name>`.
+  `server admin reset-pin <gamertag> --config mkwmp-data/server.toml`. The other commands are `list`, `register <name>` (reserve it and get its PIN) and `release <name>`.
 - **Back up** the `mkwmp-data` folder while the server is stopped. Keep it private: it holds your server's keys.
 - **Update:** replace the program with the newer release and start it again. `mkwmp-data` stays.
 
@@ -205,7 +203,7 @@ Two tests start the real `mkwmp` binary. One plays two clients from sign-in to a
 
 ## Reporting a bug
 
-Open an [issue](https://github.com/anarqz/mkwmp/issues/new/choose) and fill in the form. The most useful thing you can add is the logs: in the launcher, open **SETTINGS** and press **SAVE LOGS FOR A BUG REPORT** (or run `mkwmp-launcher --save-logs`), then drag the zip into the issue. It holds the launcher log, the game patch and mkw-recomp logs, with your PIN and tickets left out.
+Open an [issue](https://github.com/anarqz/mkwmp/issues/new/choose) and fill in the form. The most useful thing you can add is the logs: in the launcher, open **SETTINGS** and press **SAVE LOGS FOR A BUG REPORT** (or run `mkwmp.exe --save-logs`), then drag the zip into the issue. It holds the launcher log, the game patch and mkw-recomp logs, with your PIN and tickets left out.
 
 ## License
 

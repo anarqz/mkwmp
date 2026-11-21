@@ -22,7 +22,8 @@ What changed in each MKWMP release, newest first. The launcher shows this file o
 - **Game settings.** Change mkw-recomp's screen, graphics, sound and controls settings from the launcher, in Settings › Game.
 - **Your game's real cover.** Home shows the cover art of your own copy of the game.
 - **Steam Deck and Proton.** The launcher runs on the Steam Deck and other Linux PCs through Proton, in Game Mode and Desktop Mode.
-- **Coming from 1.3.** On Windows, the 1.3 launcher updates itself into this one and keeps your settings: name, PIN, server and game folder. On SteamOS and Linux, run `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash` once in Desktop Mode: it installs the new launcher under Proton and brings your name and PIN over from the old one. The old Linux launcher keeps working, but it gets no more updates.
+- **Coming from 1.3: download 1.4.0 by hand.** The 1.3 launcher does not update itself to this one. On Windows, download `mkwmp-1.4.0-windows-x64.zip` and unzip it into the same place as your old one, so its `mkwmp` folder goes over the old folder: your settings (name, PIN, server, game folder) stay. Then delete the old `mkwmp-launcher.exe` and open `mkwmp.exe`. On SteamOS and Linux, run `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash` once in Desktop Mode: it installs the new launcher under Proton and brings your name and PIN over from the old one. The old Linux launcher keeps working, but it gets no more updates.
+- **New file names.** The launcher is `mkwmp.exe` and its update helper `updater.exe`; the server is `server` (Linux) and `server.exe` (Windows), in `mkwmp-server-1.4.0.zip`. A release is now two zips and their signed checksums, nothing else.
 
 ## 1.3.1 — 2026-11-21
 

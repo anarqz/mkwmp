@@ -1,10 +1,10 @@
 # The launcher's own update
 
 How MKWMP Launcher updates itself: a download into a staging folder, "Install and Restart", and a
-small separate helper (`mkwmp-updater.exe`) that swaps the files once the launcher is gone. The
+small separate helper (`updater.exe`) that swaps the files once the launcher is gone. The
 design is Infinity Launcher's (`Infinity.Update` / `Infinity.Updater`: a Native AOT helper run from
 a copy, a verified package, a backup that a failure puts back), reduced to what MKWMP's releases
-are: assets on GitHub listed in a signed `SHA256SUMS`.
+are: a zip on GitHub listed in a signed `SHA256SUMS`.
 
 Not this document: the game runtime's install (`RuntimeInstaller`, `.mkwmp-update` in the game
 folder) and the game patch's sync (`game/`), which have their own rules.
@@ -45,13 +45,13 @@ renamed aside), then the new launcher is started and its exit code passed on, as
 | Project | What it is |
 |---|---|
 | `src/Mkwmp.Update` | The library both sides share (`net10.0`, no dependency, AOT-clean): the plan (`UpdatePlan`), the signed list (`ReleaseSums`), the package's files and path rules (`UpdatePackage`), the swap with backup and rollback (`UpdateInstaller`), the helper's whole run (`UpdateRunner`), its arguments (`UpdaterArgs`), strings (`UpdaterStrings`) and log (`UpdateLog`). |
-| `src/Mkwmp.Updater` | `mkwmp-updater.exe`: `Program` (the run), the window (`UpdaterWindow`, `Painter`, `Native`) and the Ed25519 check (`ReleaseSignature`, BouncyCastle). |
+| `src/Mkwmp.Updater` | `updater.exe`: `Program` (the run), the window (`UpdaterWindow`, `Painter`, `Native`) and the Ed25519 check (`ReleaseSignature`, BouncyCastle). |
 | `src/Mkwmp.Core` | `Updates/Updater.cs` (GitHub, the resumable download), `Updates/SelfUpdate.cs` (staging), `Launcher.Updates.cs` (the states, the hand-over, "after the game"). |
 | `src/Mkwmp.App` | `ViewModels/UpdateModal.cs` (the card), `ShellViewModel.Update.cs` (the toast), the tile and Settings › Updates. |
 
 ### The helper: why native, and how big
 
-`mkwmp-updater.exe` is published with **Native AOT**: one native executable of **2.36 MB**
+`updater.exe` is published with **Native AOT**: one native executable of **2.36 MB**
 (2 358 784 bytes; the launcher's single file is 71 MB), no .NET runtime to unpack, so it is on
 screen at once. Its window is plain **Win32 + GDI+** through P/Invoke (`user32`, `gdiplus`,
 optionally `dwmapi` for Windows 11's rounded corners, `shlwapi` to decode the mark), all of which
@@ -71,10 +71,10 @@ tools for the link.
 
 ### The helper can be replaced like any other file
 
-The launcher never runs the installed `mkwmp-updater.exe`. It runs `worker.exe`, a **copy in the
+The launcher never runs the installed `updater.exe`. It runs `worker.exe`, a **copy in the
 staging folder**: the new release's own helper, taken out of the verified zip (so the code that
-installs a release is that release's), or, for a release that ships only an executable, a copy of
-the installed helper. The installed one is then free to be replaced with everything else.
+installs a release is that release's; a zip without one would get a copy of the installed helper).
+The installed one is then free to be replaced with everything else.
 Infinity's approach, with the staging folder as the "temp name".
 
 ## 3. The staging folder
@@ -86,7 +86,6 @@ every move is a rename:
 SHA256SUMS, SHA256SUMS.sig   as downloaded (the signed bytes)
 notes.md                     the release notes, for the card after a restart
 package.zip                  the release's zip           (or package.zip.part while downloading)
-launcher.exe                 instead: the single executable of a release without the zip
 worker.exe                   the helper that will run
 plan.json                    written at "Install and Restart" (below)
 incoming/                    the package unpacked, during the install
@@ -111,8 +110,8 @@ verified download waits, it is `ReadyToInstall` all the same.
 1. `SHA256SUMS` and `SHA256SUMS.sig` are fetched and verified: Ed25519 by the release key
    (`release1:…`), and the list's first line must name the release's version (a signed list of an
    old release is not accepted under a new tag).
-2. The package is chosen: `mkwmp-<version>-windows-x64.zip` when the release and the list have it,
-   else `mkwmp-launcher-x86_64-windows.exe`.
+2. The package is `mkwmp-<version>-windows-x64.zip`, the only one: a release (or a list) without it
+   has nothing to install (`Failed`). No loose executable is ever downloaded.
 3. It is streamed to `package.zip.part` with progress (`UpdateView.Received`, `Total`,
    `BytesPerSecond` over the last four seconds, `Remaining`). A part left by an earlier try (the
    launcher was closed, the line dropped, Cancel) is continued with an HTTP `Range` request; a server
@@ -137,7 +136,7 @@ The hand-over, exactly:
 
 ```json
 { "root": "C:\\Games\\mkwmp", "version": "1.5.0", "from": "1.4.0", "kind": "zip",
-  "asset": "mkwmp-1.5.0-windows-x64.zip", "launcher": "mkwmp-launcher.exe", "arguments": ["--tray"] }
+  "asset": "mkwmp-1.5.0-windows-x64.zip", "launcher": "mkwmp.exe", "arguments": ["--tray"] }
 ```
 
 The plan names no path but the launcher's folder: the package, the list and the signature are where
@@ -169,13 +168,13 @@ launcher's session logs.
 
 ## 5. What a release may and may not replace
 
-- The zip's files are taken from under its top folder `mkwmp/`. `mkwmp-launcher.exe` is installed
-  under the name the launcher has here (a player may have kept the download's name).
+- The zip's files are taken from under its top folder `mkwmp/`. `mkwmp.exe` is installed under the
+  name the launcher has here (a player may have renamed it), and that name is started afterwards.
 - **Player data is never replaced or removed**, whatever a zip holds: any `.toml` in the launcher's
   folder (client.toml), `logs/`, and `.mkwmp-selfupdate/`.
 - A path must be relative and made of plain names: no `..`, no drive, no backslash, no stream. A
   duplicate (ignoring case), more than 512 files or more than 1 GiB unpacked refuse the whole
-  package before anything is touched; so does a zip without `mkwmp-launcher.exe`.
+  package before anything is touched; so does a zip without `mkwmp.exe`.
 - Files in the folder that no release brought are left alone.
 
 ## 6. The helper's strings
@@ -193,8 +192,8 @@ English catalog, built-in English. A new language therefore needs only its catal
 ## 7. Looking at the helper without installing anything
 
 ```
-mkwmp-updater.exe --shot out.png [--theme dark] [--locale pt-BR] [--step waiting|verifying|replacing|starting|failed]
-                  [--progress 0.6] [--scale 2] [--i18n <folder of catalogs>]
+updater.exe --shot out.png [--theme dark] [--locale pt-BR] [--step waiting|verifying|replacing|starting|failed]
+            [--progress 0.6] [--scale 2] [--i18n <folder of catalogs>]
 ```
 
 writes one frame as a PNG and opens no window. The card's states are in the launcher's harness:
@@ -205,24 +204,25 @@ writes one frame as a PNG and opens no window. The card's states are in the laun
 Build: `launcher/publish.ps1 -Out <folder> [-Version 1.5.0] [-Zig <zig.exe>]` gives
 
 ```
-mkwmp-launcher.exe     single file, self-contained, compressed (every managed assembly)
+mkwmp.exe              single file, self-contained, compressed (every managed assembly)
 *.dll                  its native libraries, beside it: WPF's (*_cor3.dll, D3DCompiler_47_cor3.dll), libsodium
-mkwmp-updater.exe      the helper, Native AOT              2.4 MB
+updater.exe            the helper, Native AOT              2.4 MB
 mkwmp-launcher.png
 i18n/*.json
 licenses/              Nunito, Noto Sans CJK, BouncyCastle (the helper's)
 game/mkwmp-mod.zip     the MKWMP mod built from this tree (plugin, voice and camera libraries)
-game/SHA256SUMS        "# mkwmp <version>" and the zip's hash, to be signed
+game/SHA256SUMS        "# mkwmp <version>" and the zip's hash (unsigned: for -Dev)
 ```
 
 `game/` is the integration package the launcher installs into mkw-recomp (launcher/docs/TARGETS.md,
 "The integration package"). `publish.ps1` builds the mod (`native/voice/build.py`,
 `native/camera/build.py`, `native/probe/build_plugin.py --target all --package`; needs Zig and
-Python; `-NoGame` skips it) and writes the list; the **release machine signs it**
-(`tools/release/sign_sums.py` → `game/SHA256SUMS.sig`; `make_zips.py` does it for the release zip,
-where `mkwmp-mod.zip` is in `game/` beside the older game patch). Without the signature the launcher
-ignores the folder and downloads `mkwmp-mod.zip` from its own release, which is how a launcher that
-updated itself (and so has an older `game/`) gets the new mod.
+Python; `-NoGame` skips it). In a release `game/` also holds the game patch and voice chat, and its
+list, over the three, is signed on the release machine (`make_zips.py`). **The launcher downloads
+nothing for the game**: it takes `game/` beside itself when its signed list is for its own version,
+and every update installs the whole zip, `game/` included, so the two never part. A `game/` that is
+missing or another version's is said ("The MKWMP files for version … are not beside the launcher …:
+download MKWMP … again").
 
 **Local test builds: `publish.ps1 -Dev`.** No release key on a developer's machine, so `-Dev` also
 writes `game/DEV-PACKAGE` and, when there is none, a `client.toml` with `dev_package = true`. The
@@ -239,85 +239,76 @@ every first start of a build. They are files of the release like any other: in t
 helper with the exe (the exe last, all of them rolled back together), installed by
 `tools/linux/install-mkwmp.sh`.
 
-`publish.ps1 -Loose <file>` also makes the one-file build, native libraries inside (they unpack into
-`%TEMP%\.net`), for the loose asset `mkwmp-launcher-x86_64-windows.exe` alone: a launcher from before
-the zip replaces only its executable, so what it downloads must start with nothing beside it. Its
-next update installs the zip.
+### `tools/release` (from 1.4.0)
 
-### `tools/release` (applied for 1.4.0)
-
-The release builds and packs this launcher, which ships several files, instead of the Rust launcher's
-one. **No asset name changed**: the Windows assets are the same names with new contents. Added:
-`install-mkwmp.sh` and `artwork.json` (below). Gone: the Rust launcher for Linux and the Linux zip
-(below, "Linux").
-
-| Asset | Up to 1.3.1 | From 1.4.0 |
-|---|---|---|
-| `mkwmp-launcher-x86_64-windows.exe` | the Rust launcher | the WPF launcher as one self-extracting file (`publish.ps1 -Loose`): **not** the zip's `mkwmp-launcher.exe`, which needs its native DLLs beside it. What the 1.3.0 Rust launcher's self-update and every launcher before this one download. |
-| `mkwmp-<version>-windows-x64.zip` | `mkwmp/mkwmp-launcher.exe`, `game/`, `LICENSE`, `NOTICE.md`, `licenses/`, `README.txt` | the same, plus the rest of the publish folder under `mkwmp/`: the native `*.dll` beside the exe, `mkwmp-updater.exe`, `i18n/`, `mkwmp-launcher.png`, `CHANGELOG.md`, and the launcher's `licenses/`. It is at once the download for a new player and the package the helper installs. |
-| `SHA256SUMS`, `SHA256SUMS.sig` | list and sign every asset | unchanged (`sign_sums.py` as it is). The zip's hash in the signed list is what authenticates every file of an update. |
-
-Why the existing zip and not a new `mkwmp-launcher-windows-x64.zip`: it would be the same 70 MB a
-second time in every release, and a second thing to keep in step. The zip's name is derived from
-the version (`Updater.ZipAsset`), which the tag gives.
-
-The scripts:
-
-1. `release.sh draft` (the Mac): the two servers, `install-mkwmp.sh` and `artwork.json`; the version is
-   the launcher's (`launcher/Directory.Build.props`), no longer `rust/Cargo.toml`'s.
-2. `tools/release/windows.ps1` (Windows: the helper's native link needs MSVC): `native/probe/build.py`
-   and `launcher/publish.ps1 -Out <out> -Version <version> -Loose mkwmp-launcher-x86_64-windows.exe`, then
-   uploads the loose file, `winmm.dll`, `mkwmp-voice.dll`, `mkwmp-mod.zip` and one working file,
-   `mkwmp-launcher-files-windows.zip` (everything in `<out>` but `game/`: `mkwmp-launcher.exe`, the native
-   `*.dll`, `mkwmp-updater.exe`, `i18n/`, `licenses/`, `mkwmp-launcher.png`, `CHANGELOG.md`).
-3. `release.sh publish` (the Mac): downloads every asset and the working file; `make_zips.py` takes
-   `mkwmp/mkwmp-launcher.exe` and every other entry from the working file (not the loose asset, which
-   is the self-extracting build), with the fixed date and modes it uses, refusing a working file with
-   a `.toml`, `logs/`, `game/` or no helper; signs `SHA256SUMS`; deletes the working file from the draft
-   (never an asset, never in `SHA256SUMS`); publishes.
-
-Compatibility, both ways:
-
-- **Old launcher → new release.** The Rust launcher of 1.3.x (and older, back to 0.0.1-rc.1) takes the
-  newest release above its version, downloads `mkwmp-launcher-x86_64-windows.exe`, checks it against
-  the signed list, renames itself to `mkwmp-launcher.exe.old`, puts the file in its place and starts
-  it with its own arguments and `MKWMP_UPDATED=1`. This launcher then runs alone in the 1.3.x zip's
-  folder: no `i18n/` (every catalog is built in: `Mkwmp.Core.Catalogs`), no helper, no native
-  libraries beside it (the loose build unpacks them into `%TEMP%\.net`), `game/` of 1.3.x (its list
-  names another version, so the mod comes from this launcher's own release), and the Rust launcher's
-  `client.toml`, which it reads as it is (same file, same keys): a registered player with the consent
-  goes straight home (`SetupDone` is set for a working online profile), name, PIN, server, game folder,
-  voice and tray settings kept. It removes `mkwmp-launcher.exe.old`. `MKWMP_UPDATED` keeps it from
-  checking at once; its *next* update installs the whole zip, helper and native libraries included
-  (the helper always comes out of the new zip). Covered by
-  `SelfUpdateTests.After_the_rust_launcher_swapped_this_one_in_…`.
-- **New launcher → a release without the zip** (or with a zip that has no helper): it downloads the
-  single executable and installs it with the installed helper's copy; with no helper at all, in
-  place, as the launcher did before.
-- **Linux.** From 1.4.0 the release has **no `mkwmp-launcher-x86_64-linux` and no Linux zip**: this
-  launcher runs under Proton from the Windows zip, installed by `install-mkwmp.sh`. A 1.3.x native
-  Linux launcher finds no asset of its name in the newest signed list: its update check fails with a
-  line in its log ("… is not in SHA256SUMS"), and it goes on as before, its game patch from its own
-  release (still published). Shipping the 1.3.1 binary again under 1.4.0 would make it "update" at
-  every start (its version stays below the tag), and a Linux "bridge" would have to edit Steam's
-  shortcuts while Steam runs it. The way over is `install-mkwmp.sh` (the site's `install.sh` runs it),
-  which takes the old launcher's `client.toml` on a first install (docs/LINUX.md).
-
-### The SteamOS / Linux installer in the release (applied for 1.4.0)
-
-`tools/linux/install-mkwmp.sh` (docs/LINUX.md) installs the **Windows zip above** under Proton and makes
-the Steam shortcut. It downloads `mkwmp-<version>-windows-x64.zip` and checks it against the same
-signed `SHA256SUMS`, so the zip needs nothing new. What the release adds:
+A release is **exactly four assets**:
 
 | Asset | What |
 |---|---|
-| `install-mkwmp.sh` | `tools/linux/install-mkwmp.sh` as it is, a loose asset listed in `SHA256SUMS`. The one command for players is `curl -fsSL https://github.com/anarqz/mkwmp/releases/latest/download/install-mkwmp.sh \| bash`; the site's `install.sh` fetches and runs the same file. |
-| `artwork.json` | `tools/linux/artwork.json` (links to SteamGridDB only, no picture), a loose asset. The script reads the copy beside itself, else the one of the repository's `main`. |
+| `mkwmp-<version>-windows-x64.zip` | the launcher, under `mkwmp/`: `mkwmp.exe`, its native `*.dll`, `updater.exe`, `i18n/`, `licenses/`, `mkwmp-launcher.png`, `CHANGELOG.md`, `game/` (`winmm.dll`, `mkwmp-voice.dll`, `mkwmp-mod.zip`, their signed `SHA256SUMS`), `LICENSE`, `NOTICE.md`, `README.txt`. At once the download for a new player, what `install-mkwmp.sh` installs under Proton, and the package the helper installs. |
+| `mkwmp-server-<version>.zip` | the server, flat: `server` (Linux x86-64, static, mode 755), `server.exe` (Windows x86-64), `LICENSE`, `NOTICE.md`, `licenses/`, `README.txt` (docs/HOSTING.md and the deploy script). |
+| `SHA256SUMS`, `SHA256SUMS.sig` | `# mkwmp <version>` and the two zips' hashes, signed (Ed25519) with the release key. The zip's hash in it authenticates every file of an update. |
 
-In the scripts: `release.sh draft` uploads the two files; `sign_sums.py` lists them like any asset;
-`make_zips.py` does not change (neither file goes into a zip: the Windows zip stays what the helper
-installs, and a player on Linux needs the script before any zip). `README-linux.txt` and the Linux
-zip describe the Rust launcher and go away with it.
+Nothing loose: no executable, DLL or mod zip of its own, no Linux launcher. `install-mkwmp.sh` and
+`artwork.json` are read from the repository at the tag (`raw.githubusercontent.com/anarqz/mkwmp/v<version>/tools/linux/…`;
+`site/install.sh` falls back to `main`). The version is the launcher's (`launcher/Directory.Build.props`),
+the tag `v<version>`.
+
+The scripts:
+
+1. `release.sh draft` (the Mac): builds the two servers (`cargo zigbuild -p mkwmp`, the crate's bin
+   `server`, for `x86_64-unknown-linux-musl` and `x86_64-pc-windows-gnu`), keeps them in
+   `rust/target/release-assets/v<version>/server/` on the Mac (not uploaded), and creates the draft.
+2. `tools/release/windows.ps1` (Windows: the helper's native link needs MSVC): `native/probe/build.py`
+   and `launcher/publish.ps1 -Out <out> -Version <version>`, puts `winmm.dll` and `mkwmp-voice.dll` into
+   its `game/` beside the mod (and drops publish.ps1's unsigned list), then uploads one **working file**,
+   `mkwmp-launcher-files-windows.zip` (the whole folder). `-NoUpload` stops before the upload.
+3. `release.sh publish` (the Mac): downloads the working file; `make_zips.py` builds the launcher zip
+   from it (fixed date and modes, refusing a `.toml`, `logs/`, anything in `game/` but the three files,
+   a missing `mkwmp.exe` / `updater.exe`, or the pre-1.4.0 names) with `game/SHA256SUMS(.sig)` signed,
+   and the server zip from the two servers; `sign_sums.py` lists and signs the two zips; uploads the
+   four; checks the draft holds exactly them besides the working file (else it stops, unpublished);
+   deletes the working file; publishes. `release.sh publish --dry-run` does everything up to the
+   upload and lists the four files.
+
+Compatibility:
+
+- **1.3.x → 1.4.0: by hand.** No asset of 1.4.0 has the name a 1.3.x launcher looks for
+  (`mkwmp-launcher-x86_64-windows.exe`, `mkwmp-launcher-x86_64-linux`): its update check finds nothing
+  in the signed list, logs it, and it keeps working with its own release's game patch. The player
+  downloads the 1.4.0 zip. Unzipped into the 1.3.x folder, `mkwmp.exe` stands beside the Rust
+  `mkwmp-launcher.exe` (README.txt says to delete it) and reads the Rust launcher's `client.toml` as it
+  is (same file, same keys): a registered player with the consent goes straight home (`SetupDone` is
+  set for a working online profile); name, PIN, server, game folder, voice and tray settings kept;
+  the start-up entry (`HKCU\…\Run`, `MKWMP`, the same value) is pointed at `mkwmp.exe`. Covered by
+  `SelfUpdateTests.A_1_3_folder_the_new_zip_was_unzipped_into_…`. On Linux the way over is
+  `install-mkwmp.sh` (docs/LINUX.md), which takes the old launcher's `client.toml` on a first install.
+- **1.4.x → later.** The zip, through the helper (sections 3 to 5).
+- **The rename (`mkwmp-launcher.exe` → `mkwmp.exe`, `mkwmp-updater.exe` → `updater.exe`).** No release
+  had the old names for this launcher (1.3.1, the newest release, is the Rust one), so only test
+  installs have them. Such an install updating from a zip keeps its launcher's name (section 5: the
+  zip's `mkwmp.exe` is installed as `mkwmp-launcher.exe`, so its shortcuts keep working) and the new
+  `updater.exe` arrives beside it; the old helper goes when `installed.txt` listed it. To take the new
+  names, unzip the release over it and delete the two old files; on Linux run `install-mkwmp.sh`
+  again, which removes them and moves the Steam shortcut (section below).
+- **`MKWMP_UPDATED` and `<exe>.old`.** The helper still sets `MKWMP_UPDATED=1` on the launcher it
+  starts; the launcher still removes an `<exe>.old` at start, which nothing makes any more.
+
+### The SteamOS / Linux installer
+
+`tools/linux/install-mkwmp.sh` (docs/LINUX.md) installs the **launcher zip above** under Proton and
+makes the Steam shortcut. It downloads `mkwmp-<version>-windows-x64.zip` and checks it against the
+same signed `SHA256SUMS`. It is not a release asset: players run
+`curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`, and `site/install.sh` fetches the
+script and `artwork.json` from the repository at the newest release's tag (else `main`). The script
+reads the `artwork.json` beside itself, else the repository's at `v<version>`, else `main`'s.
+
+The shortcut's id is derived from the exe's path (`crc32("\"<dir>/mkwmp.exe\"" + "MKWMP")`), so the
+rename changes it. Run again on a test install made with `mkwmp-launcher.exe`, the script finds that
+shortcut by its old id or exe and updates it in place (new id and exe; its place, play time and tags
+kept), renames its grid artwork and moves its Proton prefix (`compatdata/<old id>`) to the new id,
+moves the Proton setting to the new id, and removes `mkwmp-launcher.exe` and `mkwmp-updater.exe`
+from the folder. No second shortcut is made.
 
 When the launcher updates itself under Proton it replaces its own files in the same folder
 (section 4); the script is only needed again to move the shortcut to another Proton or to repair it.
@@ -332,7 +323,7 @@ opened) and `UpdaterTests.cs`:
   bad ones are refused; the strings' fallback order, and en/pt-BR catalogs carry every `updater.*` key;
 - the helper's BouncyCastle check and the launcher's NSec check agree on a signature, bit by bit;
 - the swap: every changed file, unchanged ones left alone, player data never, the launcher under
-  the name it has, a dropped file removed, a single-executable release;
+  the name it has, a dropped file removed; a plan of another kind than the zip refused;
 - rollback: a file that cannot be moved half way puts everything back, and the install can be retried;
 - refused untouched: a changed package, another signer, a replayed list, unsafe paths, no launcher;
 - the helper's run: installed and started; a launcher that does not start is rolled back and the old
@@ -341,7 +332,8 @@ opened) and `UpdaterTests.cs`:
   pid, theme and language, the stage cleared by the new launcher; a cut download continued with a
   Range request; a staged download that survives a restart, also offline; a tampered stage
   downloaded again; refused while a game runs, installed after the game when asked; `--headless` in
-  place from the zip; a release without the zip through the installed helper.
+  place from the zip; a 1.3.x folder the zip was unzipped into (the Rust launcher's client.toml);
+- the game's package: only `game/` beside the launcher, never downloaded (UpdaterTests, ModInstallTests).
 
 ## 10. Not done, and to check on a device
 
@@ -355,5 +347,6 @@ opened) and `UpdaterTests.cs`:
   `backup/` with the originals (a later attempt never overwrites it), but nothing restores it by itself.
 - **The launcher ends with `Environment.Exit`** after disposing the core (as the update did before):
   the window's own exit path (`App.OnExit`, the tray icon) does not run.
-- The release scripts (section 8) were run on Windows with a test key only (`windows.ps1`'s packing,
-  `make_zips.py`, `sign_sums.py`), not yet for a real release; `release.sh` was not run.
+- The release scripts (section 8) were run on Windows with a test key and stand-in servers only
+  (`windows.ps1 -NoUpload`, `make_zips.py`, `sign_sums.py`), not yet for a real release; `release.sh`
+  was only read (no shell here), not run.

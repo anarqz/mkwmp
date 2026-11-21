@@ -1,4 +1,4 @@
-"""Write and sign SHA256SUMS for a launcher release (rust/client/src/update.rs).
+"""Write and sign SHA256SUMS (launcher/src/Mkwmp.Update/ReleaseSums.cs checks it).
 
     python tools/release/sign_sums.py <version> <release key file> <asset>...
 
@@ -6,6 +6,10 @@ Writes SHA256SUMS ("# mkwmp <version>" then "<sha256>  <name>" per asset) and
 SHA256SUMS.sig (Ed25519, base64url without padding, over SHA256SUMS) in the
 current directory. The key file holds the base64url seed (`mkwmp keygen`);
 keep it off the repo. Needs the `cryptography` package.
+
+From 1.4.0 release.sh lists exactly the release's two zips
+(mkwmp-<version>-windows-x64.zip, mkwmp-server-<version>.zip); make_zips.py
+also uses it for the launcher zip's inner game/SHA256SUMS.
 """
 
 import base64

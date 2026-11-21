@@ -290,7 +290,7 @@ Mod-only players (mkwmp-mod.zip in `mods/`, the mod signs in itself) have no lau
 
 | | (a) start on demand | **(b) pre-warm** | (c) composite in the game | (d) UI in the mod |
 |---|---|---|---|---|
-| How | the trigger starts `mkwmp-launcher.exe` | the mod starts it at game start, windowless; the trigger only shows it | the launcher renders offscreen, the mod draws it in the game's window and forwards input | ImGui-like pages in the mod |
+| How | the trigger starts `mkwmp.exe` | the mod starts it at game start, windowless; the trigger only shows it | the launcher renders offscreen, the mod draws it in the game's window and forwards input | ImGui-like pages in the mod |
 | Latency of the trigger | the launcher's cold start: an estimate of 1-2 s on Windows and 4-8 s under Proton (self-contained single-file WPF: unpack, runtime start, WPF's first frame; **not measured**) | the time to show a window: one frame | one frame | one frame |
 | The shrink animation | starts seconds late, on a stale picture | as designed | possible, but at the frame rate of the offscreen render | none of the launcher's look |
 | Windows | works | works | works | works |
@@ -310,7 +310,7 @@ How it works:
 - **Where the launcher is**, first hit: the mod's setting `launcher_path`; `launcher_exe` of mkwmp.toml (the launcher
   writes it beside `launcher`; a leftover file still tells); `"exe"` of `%LOCALAPPDATA%\mkwmp\launcher.json`, which
   the launcher writes at every start (so one run of the launcher is enough for a mod-only player);
-  `mkwmp-launcher.exe` in the mod's folder. None: the overlay is off, said once in `mkwmp.log`, and every button stays
+  `mkwmp.exe` in the mod's folder. None: the overlay is off, said once in `mkwmp.log`, and every button stays
   the game's.
 - **Under Proton** every one of these is a path of the game's prefix, and `%LOCALAPPDATA%` is the prefix's. If the
   launcher was only ever run in another prefix (its own Steam shortcut), the game's prefix has no `launcher.json` and
@@ -318,7 +318,7 @@ How it works:
   prefix; mkwmp.toml then names it), or set `launcher_path` to the executable through `Z:\`, or put the launcher's
   folder into the mod's. The launcher can write that setting itself when it installs the mod
   (`Targets/MkwRecomp/ModSettings.cs`).
-- **The command.** `mkwmp-launcher.exe --overlay-host --parent-pid <pid> --session "<mod folder>/mkwmp-overlay.toml"`,
+- **The command.** `mkwmp.exe --overlay-host --parent-pid <pid> --session "<mod folder>/mkwmp-overlay.toml"`,
   started detached in the launcher's folder with the game's environment (so Steam's app id under Proton).
 - **Host mode.** No window, no tray icon, no seat (the mod holds the account's seat), no update prompt, no autostart
   of a game. It serves `/local/v1/overlay/...` and exits when the parent game does (`OverlayHost.ParentExited`).
@@ -410,7 +410,7 @@ How it behaves:
   (`App.CoreArguments`: the session file ends in .toml too). The player starting the launcher meanwhile:
   `instance/show`, the window appears, the tray is made, and what was held back runs once
   (`Launcher.LeaveOverlayHostMode`); it then stays when the game ends.
-- **mkwmp.toml** has `launcher_exe = "C:/.../mkwmp-launcher.exe"` after `launcher_token` (`Probe.SessionText`), left
+- **mkwmp.toml** has `launcher_exe = "C:/.../mkwmp.exe"` after `launcher_token` (`Probe.SessionText`), left
   out when the launcher runs from the dotnet host.
 
 The animation (`MainWindow.Overlay.cs`): one number, 0 to 1, drawn by `ApplyFx` from a `CompositionTarget.Rendering`
