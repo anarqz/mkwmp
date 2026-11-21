@@ -101,6 +101,38 @@ struct game_addrs {
     uint16_t kart_info, kart_player, kart_state, kart_frames, kart_error, kart_strikes, kart_pos, kart_moves, kart_fe;
     uint16_t kart_size;
     uint8_t kart_idle_kick;
+    // MKWMP_TRACE_KART race-progress trace (kartrace.h; 1.8.0, research GAME-1.8.0-PROTOCOL.md §10.6). 0 kart_dispatch:
+    // off. kart_dispatch: the controller's state update (x0 = state entry: object +8, delegate +0x20, this-adjust
+    // +0x28; it inlines kart_racing, the racing update, when that is the delegate); kart_racing (x0 = controller);
+    // kart_post: the state-9 enter that posts the latched id (x0 = controller). Globals (addresses of the pointer
+    // variables): course path, player table, kart position table.
+    uint64_t kart_dispatch, kart_racing, kart_post;
+    uint64_t kart_path_g, kart_ptable_g, kart_pos_g;
+    struct kart_layout {
+        // controller: kart object, info (player index at +i_player), LapChecker pointer, state, frames, size read
+        uint16_t c_obj, c_info, c_lap, c_state, c_frames, c_size, i_player;
+        // controller bytes: bit 0 of c_off = no rule at all; c_skip non-zero = no rules 3-5
+        uint16_t c_off, c_skip;
+        // controller: the watchdog's fields
+        uint16_t w_error, w_strikes, w_xy, w_nomove, w_target, w_slow, w_behind, w_grace, w_best, w_moves, w_rescued,
+            w_window;
+        // LapChecker: state flags, progress, best, lap (s8) + highest lap (s8), checkpoint (s16), path selector
+        uint16_t l_flags, l_p, l_best, l_lap, l_cp, l_path;
+        uint16_t g_paths, p_scale;               // path global -> two path pointers at +g_paths; scale float at +p_scale
+        // player table: header (count u32 +t_count, entries +t_items, mode u32 +t_mode); entry size; local index,
+        // two indices that must be >= 0, flags (bit 0 must be set)
+        uint16_t t_count, t_items, t_mode, t_size, t_local, t_a, t_b, t_flags;
+        // kart lookup: obj +o_comp -> +o_map = map (root +m_root, two non-zero words +m_n1/+m_n2), node key +n_key,
+        // handle at node +n_handle (holder +h_ptr, generation +h_gen); holder: actor +a_actor, generation +a_gen;
+        // actor: state +a_state, -> +a_comp -> +a_comp2 -> kart +a_kart
+        uint16_t o_comp, o_map, m_root, m_n1, m_n2, n_key, n_handle, h_ptr, h_gen, a_actor, a_gen, a_state, a_comp,
+            a_comp2, a_kart;
+        // kart: kart object +k_obj (flags byte +ko_flags), no-input frames +k_idle, position ref +k_posref (index
+        // +r_idx), flags +k_flags
+        uint16_t k_obj, ko_flags, k_idle, k_posref, r_idx, k_flags;
+        // position table: count +q_count, items +q_items, default +q_default; position at entry +q_pos
+        uint16_t q_count, q_items, q_default, q_pos;
+    } kl;
     // always-on logs of profile_dispatch
     uint64_t bulkget_lr, bulkget_fn;                // BulkGetDocuments result retrieval: return address, target
     uint64_t ctl_event_sink;                        // online race controller: event sink

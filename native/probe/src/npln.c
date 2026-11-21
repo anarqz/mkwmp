@@ -18,6 +18,7 @@
 #include "friends.h"
 #include "gameaddrs.h"
 #include "guesthook.h"
+#include "kartrace.h"
 #include "probe.h"
 #include "uuid5.h"
 #include "voice.h"
@@ -1346,11 +1347,172 @@ static void trace_kart_watchdog(uint8_t *ctrl) {
          player, state, frames, moves, ctrl[A.kart_fe], cc, strikes, (double)pos[0], (double)pos[1]);
 }
 
+// MKWMP_TRACE_KART=1 on builds with a kart_dispatch row (1.8.0): race progress per kart (kartrace.h). Every
+// controller update (60 a second per kart at full speed) runs the cheap part: the controller's own watchdog fields,
+// compared with the last update's. A full line (LapChecker, player table, kart lookup) is written once a second per
+// kart and when something changes (state, latched id, strikes start / clear / reach 12 s, rescue, lap); the state-9
+// enter (the game posting the latched id) names the kart. Every 5 s one line gives the race sim's own rate.
+// Off by default; the hooks only go in with the variable set at start.
+enum { KART_SLOTS = 32 };
+static struct kart_slot {
+    uint64_t ctrl, seen_ms, line_ms, event_ms, tick_ms;
+    struct kart_snap last;
+    uint32_t ticks, tps, ticks5;
+    int8_t lap;
+} g_karts[KART_SLOTS];
+static struct kart_rd g_kart_rd = {.fn = plat_mem_readable};
+static volatile int32_t g_kart_lock;
+static uint64_t g_kart_speed_ms;
+
+static int kart_lock(void) { return plat_cas(&g_kart_lock, 1, 0) == 0; }   // try only: never make the game wait
+static void kart_unlock(void) { plat_xchg(&g_kart_lock, 0); }
+
+static struct kart_slot *kart_slot_of(uint64_t ctrl, uint64_t now) {
+    struct kart_slot *free = NULL;
+    for (int i = 0; i < KART_SLOTS; i++) {
+        struct kart_slot *k = &g_karts[i];
+        if (k->ctrl == ctrl) return k;
+        if (!free && (!k->ctrl || now - k->seen_ms > 10000)) free = k;   // a controller gone for 10 s: reused
+    }
+    if (!free) return NULL;
+    memset(free, 0, sizeof *free);
+    free->ctrl = ctrl;
+    free->tick_ms = free->line_ms = now;
+    free->lap = -2;
+    return free;
+}
+
+static void kart_line(const char *what, const struct kart_snap *s, int tps, int important) {
+    char body[640];
+    kart_format(s, tps, body, sizeof body);
+    if (important) mlog("kart %s: %s", what, body);
+    else mkwmp_log("kart %s: %s", what, body);   // the once-a-second lines: mkwmp.log only, not the crash record
+}
+
+static int kart_full(uint64_t ctrl, uint64_t now, struct kart_snap *s) {
+    return kart_read(&A.kl, A.kart_path_g, A.kart_ptable_g, A.kart_pos_g, &g_kart_rd, ctrl, 1, now, s);
+}
+
+// 0x5bb220's x0 is the state entry; the controller when its delegate is the racing update (not a virtual member)
+static uint64_t kart_ctrl_of(const Cpu *c, uint64_t now) {
+    if (at(c->pc, A.kart_racing)) return c->x[0];
+    const uint8_t *e = (const uint8_t *)(uintptr_t)c->x[0];
+    if (!kart_rd_ok(&g_kart_rd, e, 0x30, now)) return 0;
+    uint64_t obj, fn, adj;
+    memcpy(&obj, e + 8, 8); memcpy(&fn, e + 0x20, 8); memcpy(&adj, e + 0x28, 8);
+    if (fn != A.kart_racing || (adj & 1) || !obj) return 0;
+    return obj + (uint64_t)((int64_t)adj >> 1);
+}
+
+static void kart_after(uint64_t ctrl, uint64_t now) {
+    struct kart_slot *k = kart_slot_of(ctrl, now);
+    struct kart_snap cur;
+    if (!k || !kart_read(&A.kl, 0, 0, 0, &g_kart_rd, ctrl, 0, now, &cur)) return;
+    k->seen_ms = now;
+    k->ticks++;
+    k->ticks5++;
+    if (now - k->tick_ms >= 1000) {
+        k->tps = (uint32_t)((uint64_t)k->ticks * 1000u / (now - k->tick_ms));
+        k->ticks = 0;
+        k->tick_ms = now;
+    }
+    unsigned ev = k->last.ctrl ? kart_events(&k->last, &cur) : 0;
+    uint32_t was_id = k->last.error, was_state = k->last.state;
+    k->last = cur;
+    int loud = (ev & (KART_EV_STATE | KART_EV_MAXED | KART_EV_RESCUE | KART_EV_ID)) != 0;
+    int event = ev && (loud || now - k->event_ms >= 250);   // strikes can flicker 0 <-> 1: at most 4 such lines a second
+    if (event || now - k->line_ms >= 1000) {
+        struct kart_snap s;
+        if (kart_full(ctrl, now, &s)) {
+            if (s.lap_ok && k->lap != -2 && s.lap != k->lap) ev |= KART_EV_LAP, event = 1;
+            if (s.lap_ok) k->lap = s.lap;
+            int tps = k->tps ? (int)k->tps : -1;
+            if (event) {
+                char what[160], names[96];
+                kart_events_text(ev, names, sizeof names);
+                snprintf(what, sizeof what, "EVENT %s", names);
+                if (ev & KART_EV_ID) {
+                    size_t n = strlen(what);
+                    snprintf(what + n, sizeof what - n, " (id %#x -> %#x)", was_id, s.error);
+                }
+                if (ev & KART_EV_STATE) {
+                    size_t n = strlen(what);
+                    snprintf(what + n, sizeof what - n, " (state %u -> %u)", was_state, s.state);
+                }
+                kart_line(what, &s, tps, 1);
+                k->event_ms = now;
+            } else {
+                kart_line("", &s, tps, 0);
+            }
+            k->line_ms = now;
+        }
+    }
+    if (!g_kart_speed_ms) g_kart_speed_ms = now;
+    if (now - g_kart_speed_ms >= 5000) {
+        uint32_t most = 0;
+        int karts = 0, local = 0;
+        for (int i = 0; i < KART_SLOTS; i++) {
+            struct kart_slot *o = &g_karts[i];
+            if (!o->ctrl || now - o->seen_ms > 5000) continue;
+            karts++;
+            struct kart_snap s;
+            if (kart_full(o->ctrl, now, &s) && s.tbl_ok && s.t_local >= 0) local++;
+            if (o->ticks5 > most) most = o->ticks5;
+            o->ticks5 = 0;
+        }
+        double secs = (double)(now - g_kart_speed_ms) / 1000.0;
+        mkwmp_log("kart speed %.2fx over %.1f s (%u race updates, 60/s = 1.00x; %d karts updating, %d local)",
+                  most / (secs * 60.0), secs, most, karts, local);
+        g_kart_speed_ms = now;
+    }
+}
+
+// The kart controller's state update (or the racing update itself): the original, then the trace
+static void kart_dispatch_traced(Cpu *c) {
+    uint64_t now = plat_ms(), ctrl = 0;
+    if (kart_lock()) {
+        ctrl = kart_ctrl_of(c, now);
+        kart_unlock();
+    }
+    original_dispatch(c);
+    if (ctrl && kart_lock()) {
+        kart_after(ctrl, plat_ms());
+        kart_unlock();
+    }
+}
+
+// The state-9 enter: the game is about to post this kart's latched id (the "communication error ... posted" line
+// follows)
+static void kart_post_traced(uint64_t ctrl) {
+    uint64_t now = plat_ms();
+    struct kart_snap s;
+    int ok = 0;
+    for (int spin = 0; spin < 1000 && !(ok = kart_lock()); spin++) {}
+    if (!ok) { mlog("kart watchdog POSTS (controller %#llx; trace busy)", (unsigned long long)ctrl); return; }
+    struct kart_slot *k = kart_slot_of(ctrl, now);
+    if (kart_full(ctrl, now, &s)) {
+        char what[96];
+        snprintf(what, sizeof what, "watchdog POSTS %#x for p%d, a %s kart", s.error, s.player,
+                 !s.tbl_ok ? "?" : s.t_local >= 0 ? "LOCAL" : "REMOTE");
+        kart_line(what, &s, k && k->tps ? (int)k->tps : -1, 1);
+    } else {
+        mlog("kart watchdog POSTS (controller %#llx unreadable)", (unsigned long long)ctrl);
+    }
+    kart_unlock();
+}
+
 static void profile_dispatch(Cpu *c) {
     if (g_trace_kart < 0) {
         const char *e = getenv("MKWMP_TRACE_KART"), *k = getenv("MKWMP_NO_IDLE_KICK");
         g_trace_kart = e && e[0] == '1';
         g_no_idle_kick = k && k[0] == '1';
+    }
+    if (g_trace_kart && A.kart_dispatch) {
+        if (at(c->pc, A.kart_dispatch) || at(c->pc, A.kart_racing)) {
+            kart_dispatch_traced(c);
+            return;
+        }
+        if (at(c->pc, A.kart_post)) kart_post_traced(c->x[0]);   // then on to the original below
     }
     if ((g_trace_kart || g_no_idle_kick) && (at(c->pc, A.kart_entry[0]) || at(c->pc, A.kart_entry[1])))
         trace_kart_watchdog((uint8_t *)(uintptr_t)c->x[0]);
@@ -1527,6 +1689,7 @@ static void install_by_address(const struct game_addrs *a) {
     const char *e = getenv("MKWMP_TRACE_KART"), *k = getenv("MKWMP_NO_IDLE_KICK"), *r = getenv("MKWMP_TRACE_ROOM");
     t[n++] = a->errsvc_post;
     if ((e && e[0] == '1') || (k && k[0] == '1')) t[n++] = a->kart_entry[0], t[n++] = a->kart_entry[1];
+    if (e && e[0] == '1') t[n++] = a->kart_dispatch, t[n++] = a->kart_racing, t[n++] = a->kart_post;
     if (r && r[0] == '1') t[n++] = a->room_sync, t[n++] = a->room_main, t[n++] = a->room_vote, t[n++] = a->room_event;
     t[n++] = a->bulkget_fn, t[n++] = a->ctl_event_sink, t[n++] = a->seq_wait, t[n++] = a->seq_start;
     for (int i = 0; i < GAME_PIA_STEPS; i++) t[n++] = a->pia_join_step[i];
@@ -1572,6 +1735,11 @@ static void install_profile_dispatch_trace(void) {
     if (kick && kick[0] == '1' && !a.kart_idle_kick)
         mlog("game build %s: MKWMP_NO_IDLE_KICK refused (the kart state field is not confirmed for this build)",
              game_build_name(build));
+    const char *tk = getenv("MKWMP_TRACE_KART");
+    if (tk && tk[0] == '1')
+        mlog("game build %s: MKWMP_TRACE_KART %s", game_build_name(build),
+             a.kart_dispatch ? "on: race progress per kart (kart lines; dispatcher, racing update, state-9 enter)"
+             : a.kart_entry[0] ? "on: kart watchdog lines" : "has no addresses for this build (off)");
     g_sdk_memmove = g_rt.guest_symbol ? g_rt.guest_symbol("memmove") : 0;
     A = a;   // before the hook goes in: profile_dispatch only ever sees the whole row
     crumb_state("game", "%s", game_build_name(build));

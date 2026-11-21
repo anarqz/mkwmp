@@ -126,10 +126,31 @@ static const struct game_addrs kRows[] = {
         // ReadyVoteSetter 0x1cd0b50, event handler 0x1cc9da0) but the fields behind global+200 / +0x188 and the
         // PrivateRoomMain node are not (§4.3, §5).
         .room_start_event = 0x9d424b78,
-        // MKWMP_TRACE_KART / MKWMP_NO_IDLE_KICK: off. Entries 0x5c1680 (medium) / 0x5bb220, frames +0xc0, error id
-        // +0x1e4, move count +0x20c are mapped; state (+0x40?), strikes, position and +0x1fe are not, and
-        // MKWMP_NO_IDLE_KICK writes guest memory, so it stays refused until the state field is confirmed.
+        // MKWMP_TRACE_KART: the race-progress trace (kartrace.h), not the 1.0.0 kart_entry trace (kart_entry stays 0:
+        // 0x5bb220's x0 is a state entry, not the controller). Read in the binary 2026-11-21 (GAME-1.8.0-PROTOCOL.md
+        // §10.6): dispatcher 0x5bb220 inlines the racing update 0x5c1680 (`adr x8, 0x5c1680; cmp x1, x8`), state-9
+        // enter 0x23acc60 posts ctrl+0x1e4 (`add x0, x0, #0x1e4; bl 0x2981170`); the state is the state machine's
+        // current index (ctrl+0x38 +8, written by 0x584ac0). MKWMP_NO_IDLE_KICK writes guest memory and stays refused:
+        // the 1.8.0 battle-end check 0xd74a60 was not re-read for it.
         .kart_idle_kick = 0,
+        .kart_dispatch = M(0x5bb220), .kart_racing = M(0x5c1680), .kart_post = M(0x23acc60),
+        .kart_path_g = M(0x37c9a30), .kart_ptable_g = M(0x37b22f8), .kart_pos_g = M(0x37c7030),
+        .kl = {
+            .c_obj = 0x20, .c_info = 0x28, .c_lap = 0x30, .c_state = 0x40, .c_frames = 0xc0, .c_size = 0x240,
+            .i_player = 0x3c, .c_off = 0x222, .c_skip = 0x21f,
+            .w_error = 0x1e4, .w_strikes = 0x1e8, .w_xy = 0x1ec, .w_nomove = 0x1f4, .w_target = 0x1f8, .w_slow = 0x1fc,
+            .w_behind = 0x200, .w_grace = 0x204, .w_best = 0x208, .w_moves = 0x20c, .w_rescued = 0x210,
+            .w_window = 0x214,
+            .l_flags = 0x14, .l_p = 0x28, .l_best = 0x2c, .l_lap = 0x30, .l_cp = 0x32, .l_path = 0x307c,
+            .g_paths = 0x70, .p_scale = 0x68,                                   // 0x298da00
+            .t_count = 8, .t_items = 0x10, .t_mode = 0x1c, .t_size = 0xd8,      // 0xd92920, 0x5c1a00..0x5c1ad0
+            .t_local = 0xc4, .t_a = 0x50, .t_b = 0x54, .t_flags = 0xd0,
+            .o_comp = 0x248, .o_map = 0xc8, .m_root = 0x200, .m_n1 = 0x210, .m_n2 = 0x218,   // 0x9d5ce0
+            .n_key = 0x18, .n_handle = 0x20, .h_ptr = 8, .h_gen = 0x10,
+            .a_actor = 0x80, .a_gen = 0x88, .a_state = 0x2c, .a_comp = 0x248, .a_comp2 = 0x100, .a_kart = 0x48,
+            .k_obj = 0x88, .ko_flags = 0x191, .k_idle = 0x5b8, .k_posref = 0x70, .r_idx = 0x18, .k_flags = 0x110,
+            .q_count = 0x70, .q_items = 0x78, .q_default = 0xc0, .q_pos = 0x120,   // 0x2528bc0
+        },
         .bulkget_lr = M(0x2107d48), .bulkget_fn = M(0x1593c30),
         .ctl_event_sink = M(0x20ffa60),
         .ctl_next_lr = M(0x297bc60), .ctl_prepare_lr = M(0x297b1c0), .ctl_mode = 0x4c8, .ctl_phase = 0x4cc,

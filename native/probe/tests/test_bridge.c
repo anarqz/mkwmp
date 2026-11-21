@@ -5,7 +5,7 @@
 //   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_bridge.exe `
 //       native\probe\tests\test_bridge.c native\probe\tests\stub_coff.c $s\log.c $s\breadcrumbs.c $s\config.c $s\notify.c `
 //       $s\friends.c $s\lobby_ca.c $s\seat.c $s\voice.c $s\voice_ui.c $s\guesthook.c $s\gameaddrs.c `
-//       $s\launcher.c $s\uuid5.c $s\plat_win.c $s\plat_net_win.c -lws2_32
+//       $s\kartrace.c $s\launcher.c $s\uuid5.c $s\plat_win.c $s\plat_net_win.c -lws2_32
 //   scratch\test_bridge.exe
 #undef NDEBUG
 #include <assert.h>
