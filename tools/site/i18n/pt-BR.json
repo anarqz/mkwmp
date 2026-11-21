@@ -68,13 +68,13 @@
     "s4": "Instala o mod MKWMP",
     "s4c": "Jogo online, amigos e o overlay dentro do jogo.",
     "s5": "Continua portátil",
-    "s5c": "Tudo fica ao lado do launcher. \"Usar outra cópia\" troca de cópia depois.",
+    "s5c": "Tudo fica ao lado do launcher, nada no AppData. Configurações › Jogo troca para outra cópia do jogo depois.",
     "shot_alt": "A configuração do jogo em andamento: uma barra de progresso, a etapa atual e o tempo restante.",
     "shot_cap": "A primeira configuração demora um pouco. Depois, o jogo abre em segundos."
   },
   "offline": {
     "title": "Offline primeiro, online quando quiser",
-    "lead": "O jogo é seu desde o primeiro minuto, sem conta. Ir para o online é uma escolha: escolha um servidor, registre uma gamertag, receba um PIN.",
+    "lead": "Assim que o jogo estiver configurado, ele é seu para jogar, sem conta. Ir para o online é uma escolha: escolha um servidor, registre uma gamertag, receba um PIN.",
     "r1": "Jogar offline",
     "r1c": "Sem servidor e sem cadastro.",
     "r2": "Jogar online",
@@ -126,7 +126,7 @@
     "r3": "Opções",
     "r3c": "Mods que trazem opções ganham uma página própria no launcher.",
     "r4": "Segurança primeiro",
-    "r4c": "Mods que rodam código próprio pedem permissão antes. Mods que alteram o código do jogo aparecem, mas ficam bloqueados. Seu save ganha um backup antes de você jogar com um novo conjunto de mods.",
+    "r4c": "Mods que rodam código próprio pedem permissão antes. Mods que alteram o código do jogo ficam na página Mods do próprio mkw-recomp. O save de cada jogador ganha um backup antes de jogar com um novo conjunto de mods.",
     "shot_alt": "Buscar mods: uma grade de mods do GameBanana, com busca e ordenação."
   },
   "langs": {

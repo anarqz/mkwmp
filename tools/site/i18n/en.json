@@ -68,13 +68,13 @@
     "s4": "Installs the MKWMP mod",
     "s4c": "Online play, friends and the in-game overlay, inside the game.",
     "s5": "Stays portable",
-    "s5c": "Everything lives next to the launcher. \"Use another copy\" switches to a different one later.",
+    "s5c": "Everything lives next to the launcher, nothing in AppData. Settings › Game switches to another copy of the game later.",
     "shot_alt": "The game setup in progress: a progress bar, the current step and the time left.",
     "shot_cap": "The first setup takes a while. After that the game starts in seconds."
   },
   "offline": {
     "title": "Offline first, online when you want",
-    "lead": "The game is yours from the first minute, with no account. Going online is one choice away: pick a server, register a gamertag, get a PIN.",
+    "lead": "Once the game is set up, it's yours to play, with no account. Going online is one choice away: pick a server, register a gamertag, get a PIN.",
     "r1": "Play offline",
     "r1c": "No server and no sign-up.",
     "r2": "Go online",
@@ -126,7 +126,7 @@
     "r3": "Options",
     "r3c": "Mods that ship options get their own page in the launcher.",
     "r4": "Safety first",
-    "r4c": "Mods that run their own code ask first. Mods that change the game's code are listed but locked. Your save is backed up before you play with a new set of mods.",
+    "r4c": "Mods that run their own code ask first. Mods that change the game's code stay on mkw-recomp's own Mods page. Every player's save is backed up before playing with a new set of mods.",
     "shot_alt": "Get Mods: a grid of GameBanana mods with search and sorting."
   },
   "langs": {
