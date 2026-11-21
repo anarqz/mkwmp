@@ -72,6 +72,12 @@
 html { scroll-behavior: smooth; scroll-padding-top: calc(140 * var(--u)); }
 body { margin: 0; background: var(--bg); color: var(--text); font: 400 var(--fs-body)/var(--lh-body) var(--font);
   -webkit-font-smoothing: antialiased; padding-bottom: var(--hintbar-h); }
+/* the road backdrop (art/bg-*.webp), fixed behind the page under a veil of the theme's background */
+body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(var(--veil), var(--veil)), var(--backdrop) right center / cover no-repeat; }
+:root { --veil: #EBEBEBB8; --backdrop: url(art/bg-light.webp); }
+[data-theme=dark] { --veil: #2A2A2DA6; --backdrop: url(art/bg-dark.webp); }
+.top, .hintbar { background: color-mix(in srgb, var(--bg) 84%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 p { margin: 0 0 calc(20 * var(--u)); }
@@ -108,7 +114,7 @@ svg.i.fill { fill: currentColor; stroke: none; }
 @keyframes ring-in { from { opacity: .2; } }
 
 /* ── header (a launcher page header) ── */
-.top { position: sticky; top: 0; z-index: 20; background: var(--bg); }
+.top { position: sticky; top: 0; z-index: 20; }
 .top .wrap { height: calc(126 * var(--u)); display: flex; align-items: center; gap: calc(28 * var(--u));
   border-bottom: var(--rule-w) solid var(--rule); }
 .brand { display: flex; align-items: center; gap: calc(20 * var(--u)); color: var(--text); font-weight: 800; font-size: var(--fs-title); --r: var(--r-card); --ring-x: calc(12 * var(--u)); --ring-y: calc(8 * var(--u)); }
@@ -306,7 +312,7 @@ pre.block { background: var(--surface); border: var(--rule-w) solid var(--rule);
 .toast svg.i { color: var(--good); font-size: calc(34 * var(--u)); }
 
 /* ── the hint bar (DESIGN.md §6), fixed at the bottom ── */
-.hintbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: var(--hintbar-h); background: var(--bg); }
+.hintbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: var(--hintbar-h); }
 .hintbar .wrap { height: 100%; display: flex; align-items: center; justify-content: flex-end; border-top: var(--rule-w) solid var(--rule); gap: calc(6 * var(--u)); }
 .hintbar__device { margin-right: auto; position: relative; color: var(--glyph); display: flex; }
 .hintbar__device svg.i { font-size: calc(58 * var(--u)); }
