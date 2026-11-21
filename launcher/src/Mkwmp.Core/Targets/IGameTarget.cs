@@ -221,6 +221,16 @@ public interface IGameTarget
     /// </summary>
     void SetModEnabled(GameInstall install, string id, bool on, bool acceptCode) => MkwRecomp.RecompMods.SetEnabled(this, install, id, on, acceptCode);
 
+    /// <summary>
+    /// Turns every mod the player can switch off, keeping the list to bring back (on false); or brings that list
+    /// back in its order (on true). Never MKWMP's own mod or a locked one. How many mods changed. Throws
+    /// <see cref="LauncherException"/> like <see cref="SetModEnabled"/>.
+    /// </summary>
+    int SetAllModsEnabled(GameInstall install, bool on) => MkwRecomp.RecompMods.SetAllEnabled(this, install, on);
+
+    /// <summary>The mods the last "turn all off" took out, in the game's order; empty when there is nothing to bring back.</summary>
+    IReadOnlyList<string> ModsTurnedOff(GameInstall install) => MkwRecomp.RecompMods.TurnedOff(install);
+
     /// <summary>Removes a mod from the game (its settings stay). Throws <see cref="LauncherException"/> like <see cref="SetModEnabled"/>; never the launcher's own mod.</summary>
     void UninstallMod(GameInstall install, string id) => MkwRecomp.RecompMods.Uninstall(this, install, id);
 

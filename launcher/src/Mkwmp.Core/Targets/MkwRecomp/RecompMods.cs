@@ -362,6 +362,160 @@ internal static class RecompMods
         }
     }
 
+    // ---- all off, all back on ---------------------------------------------------------------
+
+    /// <summary>
+    /// Beside mkw.ini: the <c>mods =</c> list as it was when the player turned every mod off (one line,
+    /// the game's own format), so "Turn all back on" brings back exactly that set in that order.
+    /// </summary>
+    public const string AllOffFile = "mkwmp-mods-off.txt";
+
+    internal static string AllOffPath(GameInstall install) => Path.Combine(Recomp.DataDir(install.Root), AllOffFile);
+
+    /// <summary>The list kept by the last "Turn all off", in mkw.ini's order; empty when there is none. Never throws.</summary>
+    public static IReadOnlyList<string> TurnedOff(GameInstall install)
+    {
+        ArgumentNullException.ThrowIfNull(install);
+        try
+        {
+            var path = AllOffPath(install);
+            return Capable(install) && File.Exists(path) && new FileInfo(path).Length <= 65536
+                ? [.. File.ReadAllText(path).Split(',').Select(m => m.Trim()).Where(ValidId).Distinct(StringComparer.OrdinalIgnoreCase)]
+                : [];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Turns every mod the player can switch off (<paramref name="on"/> false), keeping the list as it was
+    /// beside mkw.ini; or brings that list back (<paramref name="on"/> true), in its order (the order is the
+    /// precedence), with any mod turned on since kept after it. MKWMP's own mod and the mods that change
+    /// the game's code are never touched; a mod of the kept list that is gone stays out. The mods with
+    /// native code that come back were on before: the player said yes to them then. How many mods changed.
+    /// Throws <see cref="LauncherException"/> for the player: the game runs, the environment sets the list.
+    /// </summary>
+    public static int SetAllEnabled(IGameTarget target, GameInstall install, bool on, Action<string>? note = null)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(install);
+        if (!Capable(install))
+        {
+            throw new LauncherException(Strings.ModsNone(target.DisplayName));
+        }
+        if (target.IsRunning(install))
+        {
+            throw new LauncherException(Strings.ModsCloseGame); // the game reads mkw.ini when it starts: nothing is written while it runs
+        }
+        if (Environment.GetEnvironmentVariable("MKW_MODS") is not null)
+        {
+            throw new LauncherException(Strings.ModsEnvironment);
+        }
+        var listed = Mod.Listed(Mod.ReadIni(install.Root));
+        var kept = TurnedOff(install);
+        var path = AllOffPath(install);
+        List<string> after;
+        int changed;
+        if (on)
+        {
+            if (kept.Count == 0)
+            {
+                return 0;
+            }
+            after = Merge(kept, listed, id => Switchable(install, id));
+            changed = after.Count(id => !listed.Contains(id, StringComparer.OrdinalIgnoreCase));
+        }
+        else
+        {
+            var off = listed.Where(id => Switchable(install, id)).ToList();
+            if (off.Count == 0)
+            {
+                return 0;
+            }
+            // a list kept from an earlier "all off" that was never brought back keeps its mods too
+            var keep = Merge(kept, listed, _ => true);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, string.Join(',', keep));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                throw new LauncherException(Strings.GameSettingsSaveFailed(e.Message), e); // nothing turned off: the set could not be kept
+            }
+            after = [.. listed.Where(id => !off.Contains(id, StringComparer.Ordinal))];
+            changed = off.Count;
+        }
+        if (Mod.EditIni(install.Root, ini => WithList(ini, after)))
+        {
+            note?.Invoke($"mods: all {(on ? "back on" : "off")} in mkw.ini ([launcher] mods = {string.Join(',', after)})");
+            Remerge(install, note);
+        }
+        if (on)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                note?.Invoke($"mods: {AllOffFile} stays: {e.Message}");
+            }
+        }
+        return changed;
+    }
+
+    /// <summary>
+    /// <paramref name="kept"/>'s order, each mod in it that is on now or that <paramref name="bringBack"/> allows,
+    /// then the mods on now that it does not name (turned on since: they keep winning over the others).
+    /// </summary>
+    internal static List<string> Merge(IReadOnlyList<string> kept, IReadOnlyList<string> now, Func<string, bool> bringBack)
+    {
+        var merged = new List<string>();
+        foreach (var id in kept)
+        {
+            var current = now.FirstOrDefault(n => n.Equals(id, StringComparison.OrdinalIgnoreCase));
+            if ((current is not null || bringBack(id)) && !merged.Contains(id, StringComparer.OrdinalIgnoreCase))
+            {
+                merged.Add(current ?? id);
+            }
+        }
+        merged.AddRange(now.Where(n => !merged.Contains(n, StringComparer.OrdinalIgnoreCase)));
+        return merged;
+    }
+
+    /// <summary>A mod "all off" and "all back on" may change: there, not MKWMP's own, not one that patches the game's code.</summary>
+    private static bool Switchable(GameInstall install, string id)
+    {
+        if (!ValidId(id) || IsManaged(id))
+        {
+            return false;
+        }
+        var folder = Path.Combine(ModsDir(install), id);
+        if (!Directory.Exists(folder))
+        {
+            return false;
+        }
+        var manifest = Manifest.Read(folder, id);
+        return !(manifest.Code || manifest.HasExefs || Directory.Exists(Path.Combine(folder, "exefs")));
+    }
+
+    /// <summary>mkw.ini with <c>[launcher] mods =</c> set to exactly <paramref name="mods"/> (none: the key goes), every other line kept.</summary>
+    internal static string WithList(string ini, IReadOnlyList<string> mods)
+    {
+        static string? Section(string key) => "launcher";
+        var value = mods.Count == 0 ? null : string.Join(',', mods);
+        var after = RecompIni.Apply(ini, [new("mods", value)], Section);
+        if (value is not null && (Recomp.ModsIn(after) is null || !Mod.Listed(after).SequenceEqual(mods)))
+        {
+            // the key's line sat outside [launcher], where the game does not look: it moves there
+            after = RecompIni.Apply(RecompIni.Apply(ini, [new("mods", null)], Section), [new("mods", value)], Section);
+        }
+        return after;
+    }
+
     /// <summary>Removes a mod: its folder, and its name from the list. Its settings file (the player's) stays, as the game's own page leaves it.</summary>
     public static void Uninstall(IGameTarget target, GameInstall install, string id, Action<string>? note = null)
     {
