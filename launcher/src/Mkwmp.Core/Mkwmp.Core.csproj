@@ -22,6 +22,11 @@
     <EmbeddedResource Include="..\Mkwmp.App\i18n\*.json" LogicalName="Mkwmp.Core.%(Filename).json" Link="i18n\%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- The changelog (Changelog.cs, the What's New page), built in for the same reason; a CHANGELOG.md beside the exe wins. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\CHANGELOG.md" LogicalName="Mkwmp.Core.CHANGELOG.md" Link="CHANGELOG.md" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- The plan, the verified swap and its rollback: shared with mkwmp-updater.exe (docs/UPDATES.md). -->
     <ProjectReference Include="..\Mkwmp.Update\Mkwmp.Update.csproj" />

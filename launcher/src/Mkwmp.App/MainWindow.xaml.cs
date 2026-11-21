@@ -144,10 +144,12 @@ public partial class MainWindow : Window
 
     /// <summary>The layer that has the input now: modal, sheet, friends panel, else the page.</summary>
     private FrameworkElement ActiveRoot =>
-        _vm.IsKeyboardOpen ? KeyboardLayer : _vm.IsModalOpen ? ModalLayer : _vm.IsSheetOpen ? SheetLayer : _vm.IsFriendsOpen ? FriendsLayer : BaseLayer;
+        _vm.IsKeyboardOpen ? KeyboardLayer : _vm.IsPickerOpen ? PickerLayer
+        : _vm.IsModalOpen ? ModalLayer : _vm.IsSheetOpen ? SheetLayer : _vm.IsFriendsOpen ? FriendsLayer : BaseLayer;
 
     private int DepthOf(FrameworkElement? root) =>
-        ReferenceEquals(root, KeyboardLayer) ? 4
+        ReferenceEquals(root, KeyboardLayer) ? 5
+        : ReferenceEquals(root, PickerLayer) ? 4
         : ReferenceEquals(root, ModalLayer) ? 3 : ReferenceEquals(root, SheetLayer) ? 2 : ReferenceEquals(root, FriendsLayer) ? 1 : 0;
 
     private void OnShellPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -157,7 +159,8 @@ public partial class MainWindow : Window
             case nameof(ShellViewModel.IsFullscreen):
                 ApplyFullscreen();
                 break;
-            case nameof(ShellViewModel.Modal) or nameof(ShellViewModel.Sheet) or nameof(ShellViewModel.IsFriendsOpen) or nameof(ShellViewModel.Keyboard):
+            case nameof(ShellViewModel.Modal) or nameof(ShellViewModel.Sheet) or nameof(ShellViewModel.IsFriendsOpen) or nameof(ShellViewModel.Keyboard)
+                or nameof(ShellViewModel.IsPickerOpen):
                 Dispatcher.BeginInvoke(DispatcherPriority.Loaded, SyncFocus);
                 break;
             case nameof(ShellViewModel.InputKind):
@@ -212,6 +215,8 @@ public partial class MainWindow : Window
 
     private void OnFriendsScrim(object sender, MouseButtonEventArgs e) => _vm.IsFriendsOpen = false;
 
+    private void OnPickerScrim(object sender, MouseButtonEventArgs e) => _vm.CancelPicker();
+
     private void OnSheetScrim(object sender, MouseButtonEventArgs e) => _vm.CloseSheet();
 
     // ── input ──
@@ -255,6 +260,12 @@ public partial class MainWindow : Window
             slider.Nudge(direction == NavDirection.Right ? 1 : -1);
             return;
         }
+        // a virtualized list (the file picker's) goes line by line by itself: the lines off screen do not exist as stops
+        if (direction is NavDirection.Up or NavDirection.Down && current is ListBoxItem line && FocusNav.IsAlive(line, root)
+            && ItemsControl.ItemsControlFromItemContainer(line) is EntryList entries && entries.Step(line, direction == NavDirection.Down ? 1 : -1))
+        {
+            return;
+        }
         FocusNav.Move(root, direction);
     }
 
@@ -274,6 +285,9 @@ public partial class MainWindow : Window
                 // the button's own key handling does the click: Command, Click, toggling, all as with a real key
                 button.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Space) { RoutedEvent = Keyboard.KeyDownEvent });
                 button.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Space) { RoutedEvent = Keyboard.KeyUpEvent });
+                break;
+            case ListBoxItem line when ItemsControl.ItemsControlFromItemContainer(line) is EntryList entries:
+                entries.Activate(line); // a line of the file picker: open the folder, pick the file
                 break;
             case ListBoxItem:
                 FocusNav.Move(root, NavDirection.Right);

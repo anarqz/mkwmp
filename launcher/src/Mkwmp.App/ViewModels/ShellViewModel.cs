@@ -135,12 +135,13 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     public string AboutTitle => $"MKWMP Launcher {Launcher.Version}";
 
-    public string AboutBasedOn => S["settings.about.based_on_line"] + " - https://github.com/anarqz/InfinityHorizon";
-
     public static string AboutLicense => "GPL-3.0-or-later";
 
-    /// <summary>The three lines of the About box.</summary>
-    public string AboutText => $"{AboutTitle}\n{AboutBasedOn}\n{AboutLicense}";
+    /// <summary>Whose work the game's runtime is (mkw-recomp, MIT): the installed runtime's own credit, else the short line.</summary>
+    public string AboutRuntimeCredit => Launcher.Runtime.Credit?.Summary ?? S["setup.welcome.credit"];
+
+    /// <summary>The lines of the About box.</summary>
+    public string AboutText => $"{AboutTitle}\n{AboutLicense}";
 
     // ── pages ──
 
@@ -398,6 +399,10 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         {
             Hints = keyboard.Hints ?? [];
         }
+        else if (_picker is { } picker)
+        {
+            Hints = picker.Hints ?? [];
+        }
         else if (_modal is { } modal)
         {
             Hints = modal.Hints ?? (modal.CanDismiss ? [new Hint(PadButton.B, S["hint.back"]), new Hint(PadButton.A, S["hint.ok"])] : [new Hint(PadButton.A, S["hint.ok"])]);
@@ -437,6 +442,10 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         if (HandleKeyboardButton(button))
         {
             return true; // the on-screen keyboard is above everything
+        }
+        if (_picker is { } picker)
+        {
+            return picker.OnButton(button); // the file picker, above a modal: it has every button
         }
         if (_modal is { } modal)
         {

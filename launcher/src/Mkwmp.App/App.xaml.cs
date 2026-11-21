@@ -24,6 +24,30 @@ public partial class App : Application
             Log("unobserved task: " + e.Exception);
             e.SetObserved();
         };
+        InstallFatalLog(Environment.GetCommandLineArgs());
+    }
+
+    /// <summary>
+    /// What the two handlers above cannot catch (a fault on another thread, a native fault, a stack
+    /// overflow, a kill) goes to logs/launcher-crash.log (Mkwmp.Core.Diagnostics.FatalLog): under Proton
+    /// such an end left no trace at all. Not for the console modes (their standard error is the
+    /// terminal's), the screenshot harness and the demo.
+    /// </summary>
+    private static void InstallFatalLog(string[] args)
+    {
+        string[] not = ["--headless", "--save-logs", "--version", "-V", "--help", "-h", "--shot", "--icon"];
+        if (args.Any(a => not.Contains(a, StringComparer.OrdinalIgnoreCase) || a.StartsWith("--demo", StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+        var before = Mkwmp.Core.Diagnostics.FatalLog.Install(
+            LauncherOptions.LauncherFolder,
+            LauncherOptions.AssemblyVersion,
+            standardError: !Mkwmp.Core.Diagnostics.FatalLog.HasStandardError || Mkwmp.Core.Platform.WineHost.Detected);
+        if (before is not null)
+        {
+            Log($"the launcher's last session ended without saying so (a crash or a kill); {Mkwmp.Core.Diagnostics.FatalLog.FileName} has:{Environment.NewLine}{before}");
+        }
     }
 
     /// <summary>The flags Core understands; every other argument is the window's (harness, --demo…).</summary>
@@ -148,6 +172,10 @@ public partial class App : Application
             window.Show(); // --tray: the window stays hidden until the tray icon opens it
         }
         _ = StartAsync(_launcher, window, shell, overlay, options.Tray);
+        if (Option(args, "--crash-test") is { } crash)
+        {
+            CrashTest(crash);
+        }
     }
 
     private async Task StartAsync(ILauncher launcher, MainWindow window, ShellViewModel shell, Overlay.OverlayController? overlay, bool tray)

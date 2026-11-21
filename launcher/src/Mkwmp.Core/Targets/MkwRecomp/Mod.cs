@@ -47,7 +47,7 @@ internal static class Mod
 
     public static string Dir(string game) => Path.Combine(Recomp.DataDir(game), "mods", Recomp.Mod);
 
-    private static string IniPath(string game) => Path.Combine(Recomp.DataDir(game), "mkw.ini");
+    internal static string IniPath(string game) => Path.Combine(Recomp.DataDir(game), "mkw.ini");
 
     /// <summary>Does the package carry the mod (zipped or unpacked)?</summary>
     public static bool In(IntegrationPackage? package) =>
@@ -202,7 +202,7 @@ internal static class Mod
 
     // ---- mkw.ini: [launcher] mods ---------------------------------------------------------
 
-    private static string? ReadIni(string game)
+    internal static string? ReadIni(string game)
     {
         try
         {
@@ -228,23 +228,26 @@ internal static class Mod
     }
 
     /// <summary>mkw.ini with MKWMP's mod turned on or off, every other mod and every other line kept; the same text when there is nothing to change.</summary>
-    internal static string WithMod(string ini, bool on)
+    internal static string WithMod(string ini, bool on) => WithMod(ini, Recomp.Mod, on);
+
+    /// <summary>The same for any mod of <c>mods/</c>, by its folder name (launcher/docs/MODS.md): the list edit mkw-recomp's own Mods page makes (set_enabled).</summary>
+    internal static string WithMod(string ini, string id, bool on)
     {
         var mods = Listed(ini);
-        var has = mods.Any(m => m.Equals(Recomp.Mod, StringComparison.OrdinalIgnoreCase));
-        if (has == on && (!on || Recomp.ModsIn(ini) is { } seen && Recomp.ModsListHas(seen, Recomp.Mod)))
+        var has = mods.Any(m => m.Equals(id, StringComparison.OrdinalIgnoreCase));
+        if (has == on && (!on || Recomp.ModsIn(ini) is { } seen && Recomp.ModsListHas(seen, id)))
         {
             return ini;
         }
-        mods.RemoveAll(m => m.Equals(Recomp.Mod, StringComparison.OrdinalIgnoreCase));
+        mods.RemoveAll(m => m.Equals(id, StringComparison.OrdinalIgnoreCase));
         if (on)
         {
-            mods.Add(Recomp.Mod); // enabling appends, as the game's Mods page does
+            mods.Add(id); // enabling appends, as the game's Mods page does: the order is the precedence, the newest wins
         }
         var value = mods.Count == 0 ? null : string.Join(',', mods);
         static string? Section(string key) => "launcher";
         var after = RecompIni.Apply(ini, [new("mods", value)], Section);
-        if (on && !(Recomp.ModsIn(after) is { } now && Recomp.ModsListHas(now, Recomp.Mod)))
+        if (on && !(Recomp.ModsIn(after) is { } now && Recomp.ModsListHas(now, id)))
         {
             // the key's line sat outside [launcher], where the mod itself does not look: it moves there
             after = RecompIni.Apply(RecompIni.Apply(ini, [new("mods", null)], Section), [new("mods", value)], Section);
@@ -253,14 +256,20 @@ internal static class Mod
     }
 
     /// <summary>True when the file was changed. Throws <see cref="LauncherException"/> when it cannot be written.</summary>
-    private static bool SetEnabled(string game, bool on)
+    private static bool SetEnabled(string game, bool on) => SetEnabled(game, Recomp.Mod, on);
+
+    /// <summary>The same for any mod. True when the file was changed.</summary>
+    internal static bool SetEnabled(string game, string id, bool on) => EditIni(game, ini => WithMod(ini, id, on));
+
+    /// <summary>Rewrites the installation's mkw.ini (atomically) with <paramref name="edit"/>'s text. True when the file was changed.</summary>
+    internal static bool EditIni(string game, Func<string, string> edit)
     {
         var path = IniPath(game);
         try
         {
             var exists = File.Exists(path);
             var before = exists ? RecompIni.Decode(File.ReadAllBytes(path)) : "";
-            var after = WithMod(before, on);
+            var after = edit(before);
             if (after == before)
             {
                 return false;

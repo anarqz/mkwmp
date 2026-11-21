@@ -91,12 +91,52 @@ public static class Strings
         return text.ToUpper(Culture);
     }
 
+    // ---- mods (launcher/docs/MODS.md) -----------------------------------------------------
+    public static string ModsCloseGame => T("core.mods.close_game");
+    public static string ModsNone(string game) => F("core.mods.none", ("game", game));
+    public static string ModsNotAMod(string name) => F("core.mods.not_a_mod", ("name", name));
+    public static string ModsManaged => T("core.mods.managed");
+    public static string ModsChangesCode => T("core.mods.changes_code");
+    public static string ModsCodeInstall => T("core.mods.code_install");
+    public static string ModsRunsCode => T("core.mods.runs_code");
+    public static string ModsEnvironment => T("core.mods.environment");
+    public static string ModsWarnShaders => T("core.mods.warn_shaders");
+    public static string ModsWarnGraphics => T("core.mods.warn_graphics");
+    public static string ModsShares(int files, string other) => F("core.mods.shares", ("n", N(files)), ("other", other));
+    public static string ModsNoOptions => T("core.mods.no_options");
+    public static string ModsFailed(string detail) => F("core.mods.failed", ("detail", detail));
+    public static string ModsCancelled => T("core.mods.cancelled");
+    public static string ModsNoSuchFile(string path) => F("core.mods.no_such_file", ("path", path));
+    public static string ModsLayout => T("core.mods.layout");
+    public static string ModsVariants => T("core.mods.variants");
+    public static string ModsName => T("core.mods.name");
+    public static string ModsExists(string name) => F("core.mods.exists", ("name", name));
+    public static string ModsTooMany(int most) => F("core.mods.too_many", ("n", N(most)));
+    public static string ModsTooBig(int files, long bytes) => F("core.mods.too_big", ("files", N(files)), ("size", Size(bytes)));
+    public static string ModsUnsafe(string detail) => F("core.mods.unsafe", ("detail", detail));
+    public static string ModsUnsafeName(string name) => F("core.mods.unsafe_name", ("name", name));
+    public static string ModsUnsafeLink(string name) => F("core.mods.unsafe_link", ("name", name));
+    public static string ModsUnsafeTwice(string name) => F("core.mods.unsafe_twice", ("name", name));
+    public static string ModsUnpack(string detail) => F("core.mods.unpack", ("detail", detail));
+    public static string ModsNotAnArchive => T("core.mods.not_an_archive");
+    public static string ModsNoTar => T("core.mods.no_tar");
+    public static string ModsGameFiles(string detail) => F("core.mods.game_files", ("detail", detail));
+    public static string ModsGameFilesNone => T("core.mods.game_files_none");
+    public static string ModsInstalled(string name) => F("core.mods.installed", ("name", name));
+    public static string ModsBadLink => T("core.mods.bad_link");
+    public static string ModsDownloadFailed(string detail) => F("core.mods.download_failed", ("detail", detail));
+    public static string ModsDownloadTooBig => T("core.mods.download_too_big");
+    public static string GameBananaFailed(string detail) => F("core.mods.gb_failed", ("detail", detail));
+    public static string GameBananaNotThisGame => T("core.mods.gb_not_this_game");
+    public static string GameBananaNotClean(string scan) => F("core.mods.gb_not_clean", ("scan", scan));
+    public static string GameBananaChecksum => T("core.mods.gb_checksum");
+    public static string GameBananaBusy => T("core.mods.gb_busy");
+
     // ---- seat API -------------------------------------------------------------------------
     public static string Unreachable => T("core.unreachable");
     public static string WrongPin => T("core.wrong_pin");
     public static string NotRegistered => T("core.not_registered");
     public static string NoConsent => T("core.no_consent");
-    public const string PrivacyUrl = "https://anarqz.github.io/mkwmp/#privacy";
     public const string GuideUrl = "https://anarqz.github.io/mkwmp/";
     public static string InUse => T("core.in_use");
     public static string QueueFull => T("core.queue_full");
@@ -182,8 +222,11 @@ public static class Strings
     public static string ConsentNotStored => T("core.consent_not_stored");
     public static string PrivacyChanged => T("core.privacy_changed");
 
-    /// <summary>MKWMP's own short policy, shown for a server that publishes none (the Rust window's three paragraphs).</summary>
-    public static string PrivacyFallbackMarkdown => T("core.privacy_fallback");
+    /// <summary>A server without <c>GET /privacy</c> (before 1.4.0). The launcher has no policy of its own to show instead.</summary>
+    public static string PrivacyNone => T("core.privacy_none");
+
+    /// <summary>No server is chosen (offline): there is no policy to show.</summary>
+    public static string PrivacyNoServer => T("core.privacy_no_server");
 
     // ---- the status pill (the session's state machine) ------------------------------------
     public static string Ready => T("core.status.ready");

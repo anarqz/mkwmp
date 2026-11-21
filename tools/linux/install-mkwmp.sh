@@ -10,7 +10,8 @@
 #   2. unpacks it into ~/Games/MKWMP. The launcher is portable: its settings, its logs and the game it
 #      installs all live in that folder;
 #   3. adds the Steam shortcut "MKWMP" (or updates the one it added before), forces a Proton version on it,
-#      and gives it a gamepad layout on the Steam Deck;
+#      and gives it a gamepad layout on the Steam Deck. A shortcut an older MKWMP installer made
+#      ("Mario Kart World (MKWMP)", the old Linux launcher) is removed; no other shortcut is touched;
 #   4. downloads the library artwork (capsules, hero, logo, icon) from SteamGridDB: the links are in
 #      artwork.json; no picture is shipped with MKWMP.
 #
@@ -124,7 +125,11 @@ def write_atomic(path, data, mode=None):
 def backup(path, stamp):
     if DRY or not path.exists():
         return
-    shutil.copy2(path, path.with_name(f"{path.name}.bak-mkwmp-{stamp}"))
+    copy, n = path.with_name(f"{path.name}.bak-mkwmp-{stamp}"), 1
+    while copy.exists():  # never over an earlier copy
+        n += 1
+        copy = path.with_name(f"{path.name}.bak-mkwmp-{stamp}-{n}")
+    shutil.copy2(path, copy)
 
 
 # ---- Ed25519 verification (RFC 8032), pure Python: SteamOS has no `cryptography` ----
@@ -290,9 +295,25 @@ SHORTCUT_FIELDS = [  # a new entry, in Steam's order
     ("sortas", 1, b""), ("tags", 0, None)]
 
 
-def shortcuts_edit(raw, appid, exe, startdir, name, launch_options, icon, remove=False):
+LEGACY_NAMES = ("mario kart world (mkwmp)", "mario kart world (debug)")
+LEGACY_EXE = "mkwmp-launcher"  # the Linux launcher of MKWMP 1.3 and older (no .exe): ~/mkwmp, ~/mkw-180-launcher, ...
+
+
+def is_legacy(entry):
+    """A shortcut an older MKWMP installer made: by its name, or by an exe that is the old Linux launcher.
+    Nothing else matches: another program's shortcut is never touched."""
+    n, e = bget(entry, "appname"), bget(entry, "exe")
+    name = n[2].decode("utf-8", "replace").strip().lower() if n is not None and n[0] == 1 else ""
+    exe = e[2].decode("utf-8", "replace").strip() if e is not None and e[0] == 1 else ""
+    m = re.match(r'"([^"]*)"', exe)  # the program is the first quoted part; what follows are its arguments
+    program = m.group(1) if m else exe.split(" ")[0]
+    return name in LEGACY_NAMES or program.rsplit("/", 1)[-1] == LEGACY_EXE
+
+
+def shortcuts_edit(raw, appid, exe, startdir, name, launch_options, icon, remove=False, legacy=None):
     """The new bytes of shortcuts.vdf and what happened ('added', 'updated', 'unchanged', 'removed', 'absent').
-    Every other entry keeps its bytes."""
+    Every other entry keeps its bytes. With a list as `legacy` (an install), the shortcuts of older MKWMP
+    installers are removed too and described there as (id, name, exe)."""
     if raw:
         root = bvdf_load(raw)
         if bvdf_dump(root)[:-1] != raw and bvdf_dump(root) != raw:
@@ -309,6 +330,12 @@ def shortcuts_edit(raw, appid, exe, startdir, name, launch_options, icon, remove
         a, e = bget(entry, "appid"), bget(entry, "exe")
         return (a is not None and a[2] == appid) or (e is not None and e[2] == exe.encode())
     mine = [it for it in items if it[0] == 0 and is_ours(it[2])]
+    if legacy is not None and not remove:
+        for it in [it for it in items if it[0] == 0 and it not in mine and is_legacy(it[2])]:
+            a, n, e = bget(it[2], "appid"), bget(it[2], "appname"), bget(it[2], "exe")
+            legacy.append((a[2] if a is not None and a[0] == 2 else None, n[2].decode("utf-8", "replace") if n else "",
+                           e[2].decode("utf-8", "replace") if e else ""))
+            items.remove(it)
     if remove:
         if not mine:
             return raw, "absent"
@@ -336,7 +363,9 @@ def shortcuts_edit(raw, appid, exe, startdir, name, launch_options, icon, remove
         for key, (t, v) in want.items():
             bset(entry, key, t, v)
         if before is not None and bvdf_dump(entry) == before:
-            return raw, "unchanged"
+            if not legacy:
+                return raw, "unchanged"
+            what = "unchanged"
     out = bvdf_dump(root)
     return (out[:-1] if trailing else out), what
 
@@ -804,6 +833,7 @@ def steam_apply(root, dest, proton, launch_options, art, stamp, remove=False):
     exe = f'"{dest / EXE}"'
     appid = shortcut_id(exe, NAME)
     users = steam_users(root)
+    old_ids = set()
     if not users:
         say(f"no Steam user in {root}/userdata: sign in to Steam once, then run this again")
         return appid, False
@@ -818,14 +848,28 @@ def steam_apply(root, dest, proton, launch_options, art, stamp, remove=False):
                 own = dest / "mkwmp-launcher.png"
                 icon = have[0] if have else own if own.exists() or DRY else None
         raw = f.read_bytes() if f.exists() else b""
+        legacy = []
         try:
-            new, what = shortcuts_edit(raw, appid, exe, f'"{dest}"', NAME, launch_options, str(icon) if icon else "", remove)
+            new, what = shortcuts_edit(raw, appid, exe, f'"{dest}"', NAME, launch_options, str(icon) if icon else "", remove,
+                                       None if remove else legacy)
         except (ValueError, IndexError) as e:
             die(f"{f}: {e}. Nothing of Steam was changed for user {u.name}")
         if new != raw:
             backup(f, stamp)
             write_atomic(f, new, 0o644)
         say(f"Steam user {u.name}: shortcut {what}" + (" (dry run)" if DRY and new != raw else ""))
+        for old_id, old_name, old_exe in legacy:
+            say(f"Steam user {u.name}: {'would remove' if DRY else 'removed'} the old MKWMP shortcut \"{old_name}\" (id {old_id}, {old_exe})")
+            if old_id is None:
+                continue
+            old_ids.add(old_id)
+            gone = art_files(cfg / "grid", old_id)
+            for g in gone:
+                if not DRY:
+                    backup(g, stamp)
+                    g.unlink()
+            if gone:
+                say(f"Steam user {u.name}: its {len(gone)} artwork files {'would go' if DRY else 'removed (copies: *.bak-mkwmp-' + stamp + ')'}")
         if remove:
             gone = art_files(cfg / "grid", appid)
             for g in gone:
@@ -856,6 +900,11 @@ def steam_apply(root, dest, proton, launch_options, art, stamp, remove=False):
         try:
             text = read_text(cv)
             new_text = compat_edit(text, appid, tool)
+            for old_id in sorted(old_ids):
+                cleaned = compat_edit(new_text, old_id, None)
+                if cleaned != new_text:
+                    new_text = cleaned
+                    say(f"the old shortcut {old_id}'s Proton setting {'would go' if DRY else 'removed'}")
             if new_text != text:
                 backup(cv, stamp)
                 write_atomic(cv, new_text.encode("utf-8", "surrogateescape"))

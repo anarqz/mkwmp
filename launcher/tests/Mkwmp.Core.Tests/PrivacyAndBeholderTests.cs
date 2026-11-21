@@ -142,13 +142,13 @@ public class PrivacyAndBeholderTests
     [Fact]
     public async Task A_server_without_server_side_consent_keeps_working()
     {
-        // Today's production: no /privacy, no privacyAccepted, no PUT. The local adult_consent decides, the policy is the project's.
+        // A 1.3.0 server: no /privacy, no privacyAccepted, no PUT. The local adult_consent decides. The launcher has no
+        // policy of its own to show instead: it says the server publishes none, and links nowhere.
         var server = new FakeSeatServer();
         await using var rig = new Rig(server, s => s with { AdultConsent = false });
         var l = rig.Launcher;
         var policy = await l.GetPrivacyPolicyAsync();
-        Assert.Equal((false, null, Strings.PrivacyUrl, Strings.PrivacyFallbackMarkdown), (policy.FromServer, policy.Version, policy.Link, policy.Markdown));
-        Assert.Null(policy.Note);
+        Assert.Equal((false, null, null, "", Strings.PrivacyNone), (policy.FromServer, policy.Version, policy.Link, policy.Markdown, policy.Note));
         await l.SetConsentAsync(true);
         Assert.True(l.Settings.AdultConsent);
         Assert.DoesNotContain("PUT /seat/v1/privacy", server.Requests); // a sign-in without privacyAccepted told it not to try
@@ -156,14 +156,15 @@ public class PrivacyAndBeholderTests
         await l.PlayAsync();
         await Rig.Until("the game", () => rig.Started);
 
-        // Unreachable: the built-in text, saying why.
+        // Unreachable: no text, saying why.
         await using var down = new Rig(new FakeSeatServer { Unreachable = true });
         var fallback = await down.Launcher.GetPrivacyPolicyAsync();
-        Assert.Equal((false, Strings.PrivacyUnreachable), (fallback.FromServer, fallback.Note));
+        Assert.Equal((false, "", null, Strings.PrivacyUnreachable), (fallback.FromServer, fallback.Markdown, fallback.Link, fallback.Note));
         // Offline: no server is asked.
         await using var offline = new Rig(server, s => s with { Server = "" });
         server.Requests.Clear();
-        Assert.False((await offline.Launcher.GetPrivacyPolicyAsync()).FromServer);
+        var none = await offline.Launcher.GetPrivacyPolicyAsync();
+        Assert.Equal((false, "", Strings.PrivacyNoServer), (none.FromServer, none.Markdown, none.Note));
         Assert.Empty(server.Requests);
     }
 

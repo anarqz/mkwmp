@@ -12,7 +12,7 @@ namespace Mkwmp.App.Design;
 /// download. Nothing touches the network, the disk or the game. Every action answers after a
 /// short delay, as the real one would.
 /// </summary>
-public sealed class DesignLauncher : ILauncher
+public sealed partial class DesignLauncher : ILauncher
 {
     private static readonly string[] Visitors = ["Luna", "Mateus", "Rin", "Sofia", "Kai"];
 
@@ -57,6 +57,7 @@ public sealed class DesignLauncher : ILauncher
 
     /// <summary>A problem a <c>--state</c> put there: it stays whatever the settings say.</summary>
     private string? _pretended;
+    private bool _noPolicy;
 
     /// <summary>
     /// What the real launcher derives from its settings, in short: with no server the launcher is
@@ -339,6 +340,13 @@ public sealed class DesignLauncher : ILauncher
             case "uptodate":
                 Change(() => Update = new UpdateView(UpdateState.UpToDate, null, null, 0, null, CoreStrings.UpToDate));
                 break;
+            case "update-ready":
+                Change(() => Update = Update with { State = UpdateState.ReadyToInstall, Progress = 1, Status = "Version 1.4.1 is downloaded and ready to install" });
+                break;
+            // a server from before 1.4.0: no GET /privacy
+            case "no-policy":
+                _noPolicy = true;
+                break;
             case "queued":
                 Change(() =>
                 {
@@ -559,9 +567,13 @@ public sealed class DesignLauncher : ILauncher
     {
         if (!((ILauncher)this).OnlineEnabled)
         {
-            return PrivacyPolicy.Fallback(null);
+            return PrivacyPolicy.None(CoreStrings.PrivacyNoServer);
         }
         await Pause(400).ConfigureAwait(false);
+        if (_noPolicy)
+        {
+            return PrivacyPolicy.None(CoreStrings.PrivacyNone);
+        }
         return new PrivacyPolicy(DemoPrivacy, "3f6c0a1d9b2e47c58a6f1d0e9c7b5a43210fedcba9876543210fedcba9876543", true, Settings.Server + "/privacy", null);
     }
 
@@ -629,6 +641,18 @@ public sealed class DesignLauncher : ILauncher
         await Pause(400).ConfigureAwait(false);
         return true;
     }
+
+    // The file picker judges with mkw-recomp's real rules, so the demo refuses what the launcher would.
+    private static readonly IGameTarget PickerTarget = new Mkwmp.Core.Targets.MkwRecomp.MkwRecompTarget("demo");
+
+    public Mkwmp.Core.Files.PickFilter GameFolderFilter { get; } = new() { FolderMatches = PickerTarget.LooksLikeInstall };
+
+    public string? GameFolderProblem(string folder) =>
+        PickerTarget.LooksLikeInstall(folder) ? null : CoreStrings.NotAGameFolder(PickerTarget.FolderHint);
+
+    public Mkwmp.Core.Files.PickFilter GameCopyFilter => PickerTarget.GameCopyFilter;
+
+    public string? GameCopyProblem(string path) => PickerTarget.GameCopyProblem(path);
 
     public async Task InstallIntegrationAsync()
     {

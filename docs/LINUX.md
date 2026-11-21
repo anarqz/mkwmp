@@ -89,6 +89,12 @@ What it does, in order; nothing is written before everything that can refuse has
    other entry keeps its bytes, and its own `LastPlayTime` and tags stay. The id is
    `crc32("\"<dir>/mkwmp-launcher.exe\"" + "MKWMP") | 0x80000000`, what Steam itself computes, so it
    is stable for an install folder: a second run changes nothing.
+   **Older MKWMP shortcuts are removed** in the same edit: an entry named "Mario Kart World
+   (MKWMP)" or "Mario Kart World (debug)", or whose program is the old Linux launcher (a file named
+   `mkwmp-launcher`, no `.exe`), and that is not this install's own. Their grid artwork (copied to
+   `*.bak-mkwmp-<time>` first) and their `CompatToolMapping` entries go too; their folders and
+   prefixes are not touched. Each one is listed, also by `--dry-run`. Nothing else matches: on
+   this machine's file, 33 of 34 entries keep their bytes. `--uninstall` does not look for them.
 8. **Proton on the shortcut**: `config/config.vdf`, `CompatToolMapping/<id>` = `{name, config "",
    priority 250}`, as Steam writes it. The text file is edited in place: only that block changes.
 9. **The Steam Deck's layout**: `steamapps/common/Steam Controller Configs/<user>/config/

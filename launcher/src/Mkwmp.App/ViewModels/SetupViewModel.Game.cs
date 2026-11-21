@@ -177,7 +177,7 @@ public sealed partial class SetupViewModel
 
     private bool CanStartSetup => !Launcher.GameSetup.Busy && !Launcher.Runtime.Busy && !Launcher.Session.Busy;
 
-    /// <summary>The copy's path typed by hand (a controller, Game Mode: where the system's file window is no help). Enter starts the setup with it.</summary>
+    /// <summary>The copy's path typed by hand, for who has it at hand. Enter starts the setup with it.</summary>
     public string DumpText
     {
         get => _dumpText;
@@ -300,59 +300,22 @@ public sealed partial class SetupViewModel
 
     // ── 2 and 3. the player's game, and the setup ──
 
-    private void PickDumpFile()
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Title = S["setup.game.pick_file_title"],
-            Filter = S["setup.game.pick_file_filter"] + "|*.nup;*.nx|*.*|*.*",
-            CheckFileExists = true,
-        };
-        Start(dialog);
-        if (Show(() => dialog.ShowDialog(Application.Current?.MainWindow)))
-        {
-            RunSetup(dialog.FileName);
-        }
-    }
+    private void PickDumpFile() => PickDump(folderOnly: false);
 
-    private void PickDumpFolder()
-    {
-        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = S["setup.game.pick_folder_title"] };
-        Start(dialog);
-        if (Show(() => dialog.ShowDialog(Application.Current?.MainWindow)))
-        {
-            RunSetup(dialog.FolderName);
-        }
-    }
+    private void PickDumpFolder() => PickDump(folderOnly: true);
 
-    /// <summary>Starts where the last copy was, else (Proton) in the Linux home, not the prefix's empty C:.</summary>
-    private void Start(Microsoft.Win32.CommonItemDialog dialog)
+    /// <summary>
+    /// The launcher's own picker (never the system's dialog), starting where the last copy was: a package file or the
+    /// folder that holds the game, or only a folder. It gives back only what the setup takes (a wrong choice is refused
+    /// inside it, with the setup's own reason), and the setup starts with it.
+    /// </summary>
+    private void PickDump(bool folderOnly) => RelayCommand.Async(async () =>
     {
-        var last = _dumpText.Length > 0 ? (Directory.Exists(_dumpText) ? _dumpText : System.IO.Path.GetDirectoryName(_dumpText)) : null;
-        if (last is { Length: > 0 } && Directory.Exists(last))
+        if (await Shell.PickAsync(PickerRequests.GameCopy(Shell, folderOnly, _dumpText.Length > 0 ? _dumpText : null)).ConfigureAwait(true) is { } path)
         {
-            dialog.InitialDirectory = last;
+            RunSetup(path);
         }
-        else if (Links.WineHome() is { } home)
-        {
-            dialog.InitialDirectory = home;
-        }
-    }
-
-    private bool Show(Func<bool?> dialog)
-    {
-        try
-        {
-            return dialog() == true;
-        }
-        catch (Exception e) when (e is System.Runtime.InteropServices.COMException or InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
-        {
-            // no file window here (some Wine builds, gamescope): the path can be typed under the buttons
-            App.Log("file dialog: " + e.Message);
-            Shell.ShowToast(S["settings.game.no_dialog"], S["setup.game.no_dialog_body"]);
-            return false;
-        }
-    }
+    }).Execute(null);
 
     private void RunSetup(string? dump)
     {

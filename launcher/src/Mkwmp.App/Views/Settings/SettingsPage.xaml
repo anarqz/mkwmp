@@ -340,6 +340,8 @@
             </c:SettingsRow>
             <c:SettingsRow Label="{Binding S[settings.updates.auto]}" Kind="Toggle" IsOn="{Binding AutoUpdate}"
                            Caption="{Binding S[settings.updates.auto_caption]}" />
+            <c:SettingsRow Label="{Binding S[home.update]}" Kind="Chevron" Icon="{StaticResource Icon.Info}" Command="{Binding WhatsNewCommand}"
+                           Caption="{Binding S[whatsnew.caption]}" />
             <StackPanel Visibility="{Binding UpdateNotes, Converter={StaticResource Conv.Visible}}">
               <c:SectionHeader Text="{Binding S[settings.updates.notes]}" />
               <Border Style="{StaticResource Card}" Margin="0,18,0,0">
@@ -370,18 +372,16 @@
               <StackPanel>
                 <TextBlock Text="{Binding Shell.AboutTitle}" Style="{StaticResource Text.Heading}" />
                 <TextBlock Text="{Binding S[settings.about.what]}" Style="{StaticResource Text.Caption}" Margin="0,10,0,0" />
-                <TextBlock Text="{Binding Shell.AboutBasedOn, Mode=OneWay}" Style="{StaticResource Text.Caption}" Margin="0,14,0,0"
-                           Foreground="{DynamicResource Brush.Text}" />
                 <TextBlock Text="{Binding S[settings.about.gpl]}" Style="{StaticResource Text.Caption}" Margin="0,14,0,0" />
+                <TextBlock Text="{Binding Shell.AboutRuntimeCredit, Mode=OneWay}" Style="{StaticResource Text.Caption}" Margin="0,14,0,0" />
                 <TextBlock Text="{Binding S[settings.about.not_affiliated]}" Style="{StaticResource Text.Caption}" FontSize="22" LineHeight="32" Margin="0,14,0,0" />
               </StackPanel>
             </Border>
             <c:SectionHeader Text="{Binding S[settings.about.links]}" />
-            <c:SettingsRow Label="{Binding S[settings.about.based_on]}" Kind="Chevron" Command="{Binding BasedOnCommand}"
-                           Caption="https://github.com/anarqz/InfinityHorizon" />
+            <c:SettingsRow Label="{Binding S[home.update]}" Kind="Chevron" Command="{Binding WhatsNewCommand}"
+                           Caption="{Binding S[whatsnew.caption]}" />
             <c:SettingsRow Label="{Binding S[settings.support.repo]}" Kind="Chevron" Command="{Binding RepoCommand}"
                            Caption="https://github.com/anarqz/mkwmp" />
-            <c:SettingsRow Label="{Binding S[settings.privacy.policy]}" Kind="Chevron" Command="{Binding PolicyCommand}" />
           </StackPanel>
         </Grid>
       </c:SmoothScrollViewer>

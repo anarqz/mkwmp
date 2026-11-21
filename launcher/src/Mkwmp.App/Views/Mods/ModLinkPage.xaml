@@ -1,0 +1,33 @@
+<UserControl x:Class="Mkwmp.App.Views.Mods.ModLinkPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             xmlns:mods="clr-namespace:Mkwmp.App.Views.Mods"
+             Focusable="False">
+  <!-- DataContext: ModLinkViewModel. The address of a mod's archive (the on-screen keyboard pastes), then download and install. -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <c:PageHeader Title="{Binding S[mods.link]}" Icon="{StaticResource Icon.Globe}" />
+    <c:SmoothScrollViewer Grid.Row="1" Padding="16,26,24,60" EdgePadding="110" input:FocusNav.IsGroup="True" HorizontalAlignment="Center" Width="1300">
+      <StackPanel>
+        <TextBlock Text="{Binding S[mods.link.note]}" Style="{StaticResource Text.Caption}" Margin="20,0,20,30" />
+        <TextBlock Text="{Binding S[mods.link.field]}" Style="{StaticResource Text.Base}" FontSize="25" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextMuted}" Margin="20,0,20,10" />
+        <Grid Margin="20,0">
+          <TextBox x:Name="LinkBox" Text="{Binding Link, UpdateSourceTrigger=PropertyChanged}" MaxLength="1000" InputScope="Url" FontSize="30"
+                   input:TextEntry.Title="{Binding S[mods.link.field]}" />
+          <TextBlock Text="https://…/mod.zip" Style="{StaticResource Text.Base}" FontSize="30" Foreground="{DynamicResource Brush.TextFaint}" Margin="28,0" VerticalAlignment="Center"
+                     IsHitTestVisible="False" Visibility="{Binding Link, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
+        </Grid>
+        <TextBlock Text="{Binding Problem}" Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.Bad}" Margin="20,14,20,0"
+                   Visibility="{Binding Problem, Converter={StaticResource Conv.Visible}}" />
+        <c:ConsoleButton Kind="Primary" Icon="{StaticResource Icon.Download}" Content="{Binding S[mods.link.install]}" Command="{Binding InstallCommand}"
+                         HorizontalAlignment="Left" MinWidth="460" Margin="20,34,20,0" />
+        <TextBlock Text="{Binding S[mods.install.risk.body]}" Style="{StaticResource Text.Caption}" Margin="20,34,20,0" />
+      </StackPanel>
+    </c:SmoothScrollViewer>
+  </Grid>
+</UserControl>

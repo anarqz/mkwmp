@@ -16,7 +16,8 @@ namespace Mkwmp.Core;
 /// launcher and by the server (<c>PRIVACY_REQUIRED</c>).
 /// <para>
 /// A server older than this (no <c>/privacy</c>, no <c>privacyAccepted</c>) keeps working as
-/// before: the launcher's own <c>adult_consent</c> decides, and the policy is the project's page.
+/// before: the launcher's own <c>adult_consent</c> decides. The launcher has no policy of its own, so
+/// for such a server it says the server publishes none (<see cref="Strings.PrivacyNone"/>).
 /// </para>
 /// </summary>
 public sealed partial class Launcher
@@ -88,13 +89,13 @@ public sealed partial class Launcher
         var s = Settings;
         if (!IsOnline(s))
         {
-            return PrivacyPolicy.Fallback(null);
+            return PrivacyPolicy.None(Strings.PrivacyNoServer);
         }
         try
         {
             if (await Api(s.Server).PrivacyTextAsync(_life.Token).ConfigureAwait(false) is not var (markdown, version))
             {
-                return PrivacyPolicy.Fallback(null); // a server without its own policy (before 1.4.0): the project's page
+                return PrivacyPolicy.None(Strings.PrivacyNone); // a server without its own policy (before 1.4.0): nothing stands in for it
             }
             lock (_gate)
             {
@@ -105,7 +106,7 @@ public sealed partial class Launcher
         catch (Exception e) when (e is ApiException or OperationCanceledException)
         {
             Note($"privacy policy: {e.Message}");
-            return PrivacyPolicy.Fallback(Strings.PrivacyUnreachable);
+            return PrivacyPolicy.None(Strings.PrivacyUnreachable);
         }
     }
 

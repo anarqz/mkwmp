@@ -1,7 +1,7 @@
 # Publishes the launcher as it ships (launcher/docs/UPDATES.md, "The release"):
 #   <Out>\mkwmp-launcher.exe     single file, self-contained (also the loose asset mkwmp-launcher-x86_64-windows.exe)
 #   <Out>\mkwmp-updater.exe      the update helper, Native AOT (needs Visual Studio's C++ x64 tools to link)
-#   <Out>\i18n\, licenses\, mkwmp-launcher.png
+#   <Out>\i18n\, licenses\, mkwmp-launcher.png, CHANGELOG.md
 #   <Out>\game\mkwmp-mod.zip     the MKWMP mod built from this tree (native/probe/build_plugin.py --package, with the
 #                                voice and camera libraries), which the launcher installs into mkw-recomp
 #   <Out>\game\SHA256SUMS        "# mkwmp <version>" and the zip's hash. The release machine signs it
@@ -30,6 +30,8 @@ if ($ArtifactsPath) { $common += @('--artifacts-path', $ArtifactsPath) }
 
 dotnet publish "$root/src/Mkwmp.App" --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true @common
 if ($LASTEXITCODE -ne 0) { throw 'launcher publish failed' }
+# The changelog is built into the exe (the What's New page); this loose copy beside it wins when it is there.
+Copy-Item -LiteralPath "$repo/CHANGELOG.md" -Destination (Join-Path $Out 'CHANGELOG.md') -Force
 
 # The native link looks vswhere.exe up on PATH (as in Infinity Launcher's build.ps1).
 $vsInstaller = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'

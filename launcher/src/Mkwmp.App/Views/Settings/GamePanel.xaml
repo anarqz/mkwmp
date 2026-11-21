@@ -4,7 +4,7 @@
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
              Focusable="False">
-  <!-- DataContext: GameForm. The game folder (the system's folder dialog), "search again" with a
+  <!-- DataContext: GameForm. The game folder (the launcher's own picker: Views/PickerSidebar.xaml), "search again" with a
        spinner while the launcher looks around, the lines with lights, and where to get a supported
        build when that is what blocks play. Settings › Game and the setup's game step both show it. -->
   <StackPanel>

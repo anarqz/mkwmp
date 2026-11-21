@@ -475,6 +475,7 @@ public sealed class MkwRecompTarget : IGameTarget
         ArgumentNullException.ThrowIfNull(install);
         ArgumentNullException.ThrowIfNull(options);
         SyncWineOverride(install.Root);
+        RecompMods.BeforePlay(install, DateTime.Now, _note); // the game's own start screen copies the save before a new set of mods: this start goes past it
         var command = options.CustomCommand?.Trim() ?? "";
         var start = command.Length == 0
             ? new ProcessStartInfo(install.Executable, "--play")

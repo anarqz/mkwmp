@@ -123,6 +123,25 @@ public interface ILauncher : IAsyncDisposable
     Task InstallIntegrationAsync();
     Task UninstallIntegrationAsync();
 
+    // The launcher's own file picker (Files/FileBrowser.cs): what each purpose lists, and the target's own word on a choice
+    /// <summary>What the picker lists and marks for a game folder: folders, with the ones a target recognises marked.</summary>
+    Files.PickFilter GameFolderFilter => Files.PickFilter.Folders;
+
+    /// <summary>
+    /// Why a folder cannot be the game folder (no target recognises it), or null: the check
+    /// <see cref="ChooseGameFolderAsync"/> makes, without saving anything. Reads files: call it off the window's thread.
+    /// </summary>
+    string? GameFolderProblem(string folder) => null;
+
+    /// <summary>What the picker lists and marks for the player's own copy of the game (the target in use says: <see cref="IGameTarget.GameCopyFilter"/>).</summary>
+    Files.PickFilter GameCopyFilter => Files.PickFilter.Any;
+
+    /// <summary>
+    /// Why a file or a folder is not a copy of the game the setup takes, or null: the setup's own first check
+    /// (<see cref="IGameTarget.GameCopyProblem"/>). Reads a few bytes and folders: call it off the window's thread.
+    /// </summary>
+    string? GameCopyProblem(string path) => null;
+
     // Play
     Task PlayAsync();
     Task StopAsync();
@@ -239,9 +258,77 @@ public interface ILauncher : IAsyncDisposable
     /// <summary>Stops a setup in progress, or clears the note of the last one.</summary>
     Task CancelGameSetup();
 
-    // The console-style overlay (launcher/docs/OVERLAY.md)
+    // Mods of the game (launcher/docs/MODS.md): whatever the target in use lists
+    /// <summary>The installed mods and whether they can be changed now. Empty until <see cref="RefreshModsAsync"/> ran once.</summary>
+    ModsView Mods => ModsView.None;
+
+    /// <summary>Reads the game's mods again (the Mods page asks when it opens; every change does it itself).</summary>
+    Task RefreshModsAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// Turns a mod on or off. Null when done; else why not, for the player. A mod with native code is only
+    /// turned on with <paramref name="acceptCode"/>: the window asks first (<see cref="GameMod.HasPlugin"/>).
+    /// </summary>
+    Task<string?> SetModEnabledAsync(string id, bool on, bool acceptCode) => Task.FromResult<string?>(null);
+
+    /// <summary>Removes a mod. Null when done; else why not.</summary>
+    Task<string?> UninstallModAsync(string id) => Task.FromResult<string?>(null);
+
+    /// <summary>
+    /// Installs a mod from an archive or folder on this PC (<see cref="IGameTarget.InstallMod"/>). Never throws.
+    /// An archive in the launcher's own downloads folder is deleted once the install has its answer
+    /// (kept while the answer is a question: <see cref="ModInstallCode.Variants"/>, <see cref="ModInstallCode.Exists"/>).
+    /// </summary>
+    Task<ModInstallResult> InstallModAsync(ModInstallRequest request, IProgress<ModProgress>? progress, CancellationToken cancel) =>
+        Task.FromResult(new ModInstallResult(ModInstallCode.NoGame, ""));
+
+    /// <summary>Downloads a mod's archive from an https link into <c>downloads\</c> beside the launcher; its path. Throws <see cref="LauncherException"/> for the player.</summary>
+    Task<string> DownloadModAsync(string link, IProgress<ModProgress>? progress, CancellationToken cancel) => throw new LauncherException(Strings.ModsBadLink);
+
+    /// <summary>The same for a file of a GameBanana mod (only a file its scan calls clean, from gamebanana.com, its checksum verified).</summary>
+    Task<string> DownloadModAsync(Modding.GbDetails mod, Modding.GbFile file, IProgress<ModProgress>? progress, CancellationToken cancel) => throw new LauncherException(Strings.ModsBadLink);
+
+    /// <summary>A mod's options as the window draws them: its schema, the values in effect, whether they can be changed now.</summary>
+    GameSettingsView ModOptions(string id) => new(null, new Dictionary<string, string>(), new HashSet<string>(), false, null, false);
+
+    /// <summary>Changes one option of a mod (null: its default again). Never throws: a refusal is the <see cref="ModOptions"/> note.</summary>
+    Task SetModOptionAsync(string id, string key, string? value) => Task.CompletedTask;
+
+    /// <summary>
+    /// GameBanana's mods of the game, a page of twenty: in an order, or (with a <paramref name="query"/>) a search.
+    /// Throws <see cref="LauncherException"/> for the player when GameBanana does not answer.
+    /// </summary>
+    Task<Modding.GbPage> BrowseModsAsync(Modding.GbSort sort, string query, int page, CancellationToken cancel) => Task.FromResult(new Modding.GbPage([], 1, 0));
+
+    /// <summary>A GameBanana mod's page: description, pictures, files.</summary>
+    Task<Modding.GbDetails> ModPageAsync(int id, CancellationToken cancel) => throw new LauncherException(Strings.GameBananaNotThisGame);
+
+    /// <summary>A preview picture of GameBanana's as a file of the launcher's cache; null when it did not come.</summary>
+    Task<string?> ModImageAsync(string url, CancellationToken cancel) => Task.FromResult<string?>(null);
+
+    /// <summary>Shows the pictures of mods GameBanana marks as mature (the game's own <c>gb_mature</c> setting). Null when done; else why not.</summary>
+    Task<string?> SetShowMatureModsAsync(bool show) => Task.FromResult<string?>(null);
+
+    /// <summary>Asks GameBanana whether the mods installed from it have a newer file; the answer is <see cref="ModsView.Updates"/>.</summary>
+    Task CheckModUpdatesAsync(CancellationToken cancel) => Task.CompletedTask;
+
+// The console-style overlay (launcher/docs/OVERLAY.md)
     /// <summary>The game asks for the launcher over it (<c>Requested</c>); the window answers with <c>ReturnToGame</c>.</summary>
     Overlay.OverlayBridge OverlayBridge { get; }
+}
+
+/// <summary>The mods of the game in use, for the window.</summary>
+/// <param name="Supported">The game in use takes mods the launcher can list.</param>
+/// <param name="Loaded">The list was read at least once.</param>
+/// <param name="Editable">False while nothing can be changed: no game, or it is running.</param>
+/// <param name="Note">Why not, for the player; null when fine.</param>
+/// <param name="ShowMature">GameBanana's rated mods are shown as they are (else their pictures are blurred).</param>
+/// <param name="Updates">The mods GameBanana has a newer file for, by mod id.</param>
+public sealed record ModsView(bool Supported, bool Loaded, IReadOnlyList<GameMod> Mods, bool Editable, string? Note, bool ShowMature, IReadOnlyDictionary<string, Modding.GbFile> Updates)
+{
+    public static ModsView None { get; } = new(false, false, [], false, null, false, new Dictionary<string, Modding.GbFile>());
+
+    public GameMod? Find(string id) => Mods.FirstOrDefault(m => string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>The game's own settings, for the window (see <see cref="IGameTarget.GameSettings"/>).</summary>
@@ -297,13 +384,16 @@ public sealed record ServerProbe(ServerProbeState State, string Address, string?
 /// <summary>A privacy policy to show (<see cref="ILauncher.GetPrivacyPolicyAsync"/>).</summary>
 /// <param name="Markdown">The text, as Markdown.</param>
 /// <param name="Version">The sha256 of the server's text (what a consent names); null for the built-in text.</param>
-/// <param name="FromServer">The server's own policy; false: the project's short text (the server has none, or could not be reached).</param>
-/// <param name="Link">Where the same policy is on the web (shown as text; the launcher renders the Markdown itself).</param>
-/// <param name="Note">Why the server's own policy is not the one shown, when it should have been; else null.</param>
-public sealed record PrivacyPolicy(string Markdown, string? Version, bool FromServer, string Link, string? Note)
+/// <param name="FromServer">The server's own policy; false: there is none to show (the server publishes none, could not be reached, or no server is chosen).</param>
+/// <param name="Link">Where the server serves it (<c>{server}/privacy</c>); null without one. The launcher renders the Markdown itself.</param>
+/// <param name="Note">Why there is no policy to show; else null.</param>
+public sealed record PrivacyPolicy(string Markdown, string? Version, bool FromServer, string? Link, string? Note)
 {
-    /// <summary>The project's own short policy text: for a server that has none of its own, and when it cannot be reached.</summary>
-    public static PrivacyPolicy Fallback(string? note) => new(Strings.PrivacyFallbackMarkdown, null, false, Strings.PrivacyUrl, note);
+    /// <summary>
+    /// No policy: the launcher has none of its own (the server's is the only one), so <paramref name="note"/>
+    /// says why there is nothing, and no other page stands in for it.
+    /// </summary>
+    public static PrivacyPolicy None(string note) => new("", null, false, null, note);
 }
 
 public enum ServerListState
@@ -411,6 +501,8 @@ public sealed record LauncherSettings
     public BackgroundSettings Background { get; init; } = new();
     public VoiceSettings Voice { get; init; } = new();
     public UiSettings Ui { get; init; } = new();
+    /// <summary>Where the launcher's file picker was last used, per purpose (<c>[picker]</c>).</summary>
+    public Files.PickerFolders Picker { get; init; } = Files.PickerFolders.Empty;
 }
 
 public enum SeatMode { Start, Online }

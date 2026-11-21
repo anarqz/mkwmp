@@ -71,7 +71,6 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         Game.Refresh();
         PrimaryCommand = RelayCommand.Async(PrimaryAsync, () => CanPrimary);
         SecondaryCommand = RelayCommand.Async(SecondaryAsync, () => ShowSecondary);
-        PolicyCommand = new RelayCommand(() => Links.Open(Shell, CoreStrings.PrivacyUrl));
         PrivacyCommand = new RelayCommand(() => Shell.Navigate(new PrivacyViewModel(Shell)));
         LanguageCommand = RelayCommand.Async(Shell.PickLanguageAsync);
         InitGame();
@@ -189,8 +188,6 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
     public ICommand PrimaryCommand { get; }
 
     public ICommand SecondaryCommand { get; }
-
-    public ICommand PolicyCommand { get; }
 
     // ── your name (local: nothing is asked of a server) ──
 

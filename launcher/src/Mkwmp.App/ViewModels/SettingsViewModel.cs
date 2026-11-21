@@ -44,11 +44,10 @@ public sealed partial class SettingsViewModel : PageViewModel
 
         SeatCommand = RelayCommand.Async(PickSeatAsync, () => !Busy);
         TestToastCommand = new RelayCommand(Launcher.ShowTestToast);
-        PolicyCommand = new RelayCommand(() => Links.Open(Shell, CoreStrings.PrivacyUrl));
         GuideCommand = new RelayCommand(() => Links.Open(Shell, CoreStrings.GuideUrl));
         IssuesCommand = new RelayCommand(() => Links.Open(Shell, Links.Issues));
         RepoCommand = new RelayCommand(() => Links.Open(Shell, Links.Repo));
-        BasedOnCommand = new RelayCommand(() => Links.Open(Shell, Links.BasedOn));
+        WhatsNewCommand = new RelayCommand(() => Shell.Navigate(new WhatsNewViewModel(Shell)));
         ThemeCommand = RelayCommand.Async(() => Shell.SetThemeAsync(Shell.IsDark ? "light" : "dark"));
         LanguageCommand = RelayCommand.Async(Shell.PickLanguageAsync);
         CheckUpdateCommand = RelayCommand.Async(() => Launcher.CheckForUpdatesAsync(), () => Launcher.Update.State is not (UpdateState.Checking or UpdateState.Downloading or UpdateState.Restarting));
@@ -248,8 +247,6 @@ public sealed partial class SettingsViewModel : PageViewModel
         set => RelayCommand.Async(() => Launcher.SetConsentAsync(value)).Execute(null);
     }
 
-    public ICommand PolicyCommand { get; }
-
     // ── server (its address is chosen in the connect flow: SettingsViewModel.Online.cs) ──
 
     public string ServerStatus => CoreStrings.ServerPill(Launcher.Server);
@@ -327,7 +324,8 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     public ICommand RepoCommand { get; }
 
-    public ICommand BasedOnCommand { get; }
+    /// <summary>The What's New page (the launcher's changelog), also from Settings › Updates.</summary>
+    public ICommand WhatsNewCommand { get; }
 
     public string StarsText => Launcher.GitHubStars > 0 ? S.Format("settings.support.stars", ("n", Launcher.GitHubStars.ToString("N0", CultureInfo.CurrentCulture))) : "";
 

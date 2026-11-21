@@ -10,7 +10,6 @@ internal static class Links
 {
     public const string Repo = "https://github.com/anarqz/mkwmp";
     public const string Issues = Repo + "/issues";
-    public const string BasedOn = "https://github.com/anarqz/InfinityHorizon";
 
     /// <summary>
     /// The launcher runs under Wine / Proton (Linux, the Steam Deck): <see cref="Mkwmp.Core.Platform.WineHost"/>
@@ -60,17 +59,6 @@ internal static class Links
         {
             shell.ShowToast(shell.S["settings.link_opened"], url);
         }
-    }
-
-    /// <summary>The Linux home as Wine shows it (<c>Z:\home\deck</c>), or null on Windows.</summary>
-    public static string? WineHome()
-    {
-        if (!IsWine || Environment.GetEnvironmentVariable("HOME") is not { Length: > 1 } home || home[0] != '/')
-        {
-            return null;
-        }
-        var path = "Z:" + home.Replace('/', '\\');
-        return Directory.Exists(path) ? path : Directory.Exists("Z:\\") ? "Z:\\" : null;
     }
 
     /// <summary>Shows a file in its folder.</summary>

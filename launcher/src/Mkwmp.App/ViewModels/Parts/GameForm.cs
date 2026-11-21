@@ -15,8 +15,8 @@ public sealed record StatusLine(string Tone, string Text, string Detail = "");
 /// <summary>
 /// The game target, its folder and MKWMP's files in it, as Settings › Game and the first-run setup
 /// both show it. Infinity Launcher's picker logic: the launcher looks for the game by itself; the
-/// player can choose the folder in the system's folder dialog (kept only when a target recognises
-/// it) or have the launcher search again; lines with lights say what was found.
+/// player can choose the folder in the launcher's own picker (<c>Shell.PickFolderAsync</c>; kept only
+/// when a target recognises it) or have the launcher search again; lines with lights say what was found.
 /// </summary>
 public sealed class GameForm : ObservableObject
 {
@@ -216,34 +216,18 @@ public sealed class GameForm : ObservableObject
         return lines;
     }
 
-    /// <summary>The system's folder dialog, titled with what the folder must hold, starting at the current one.</summary>
+    /// <summary>
+    /// The launcher's own folder picker (never the system's dialog), titled with what the folder must hold, starting at
+    /// the current one (else where the last one was picked). It only gives back a folder a target recognises: a wrong
+    /// one is refused inside it, with the reason.
+    /// </summary>
     private async Task BrowseAsync()
     {
-        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = S.Format("settings.game.pick_title", ("hint", FolderHint)) };
         var current = Launcher.Settings.Game;
-        if (current.Length > 0 && Directory.Exists(current))
+        var folder = await _shell.PickFolderAsync(PickerRequests.GameFolder(_shell, TargetName, FolderHint, current.Length > 0 ? current : null)).ConfigureAwait(true);
+        if (folder is not null)
         {
-            dialog.InitialDirectory = current;
-        }
-        else if (Links.WineHome() is { } home)
-        {
-            dialog.InitialDirectory = home; // Proton: the Linux home (Z:\home\deck), not the prefix's empty C:
-        }
-        bool? picked;
-        try
-        {
-            picked = dialog.ShowDialog(Application.Current?.MainWindow);
-        }
-        catch (Exception e) when (e is System.Runtime.InteropServices.COMException or InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
-        {
-            // no folder dialog here (some Wine builds, gamescope): the path can still be typed, and the search still looks around
-            App.Log("folder dialog: " + e.Message);
-            _shell.ShowToast(S["settings.game.no_dialog"], S["settings.game.no_dialog_body"]);
-            return;
-        }
-        if (picked == true)
-        {
-            await ChooseAsync(dialog.FolderName).ConfigureAwait(true);
+            await ChooseAsync(folder).ConfigureAwait(true);
         }
     }
 
@@ -256,7 +240,7 @@ public sealed class GameForm : ObservableObject
         Refresh();
     }
 
-    /// <summary>The folder typed by hand (for where the system's folder dialog is no help: a controller, Game Mode). Kept only when it is a game.</summary>
+    /// <summary>The folder typed by hand (Settings › Game › Advanced). Kept only when it is a game.</summary>
     public string TypedFolder
     {
         get => Launcher.Settings.Game;

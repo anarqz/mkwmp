@@ -60,6 +60,18 @@
       <!-- 3: the modal, over everything but the toasts -->
       <c:ModalHost x:Name="ModalLayer" />
 
+      <!-- 3b: the launcher's own file and folder picker (ShellViewModel.Picker.cs), from the right, above a modal (the
+           game setup's card opens it) and under the on-screen keyboard (its path box uses it). It brings the hint bar
+           with it: the one below is under the modal's scrim. -->
+      <Grid x:Name="PickerLayer">
+        <Border Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnPickerScrim"
+                Visibility="{Binding IsPickerOpen, Converter={StaticResource Conv.Visible}}" />
+        <c:SlideHost IsOpen="{Binding IsPickerOpen}" Edge="Right" HorizontalAlignment="Right" Width="1180">
+          <v:PickerSidebar DataContext="{Binding Picker}" />
+        </c:SlideHost>
+        <c:HintBar Visibility="{Binding IsPickerOpen, Converter={StaticResource Conv.Visible}}" />
+      </Grid>
+
       <!-- 4: the on-screen keyboard (Input/TextEntry opens it for any text box) -->
       <c:OnScreenKeyboard x:Name="KeyboardLayer" />
       <c:ToastHost />

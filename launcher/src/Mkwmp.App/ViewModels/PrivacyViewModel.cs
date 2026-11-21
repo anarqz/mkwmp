@@ -6,9 +6,10 @@ namespace Mkwmp.App.ViewModels;
 
 /// <summary>
 /// The privacy policy, read inside the launcher (never a browser): the server's own
-/// (<c>GET /privacy</c>, Markdown) rendered by Views/Settings/MarkdownView, else MKWMP's short
-/// text. A sub-page: pushed from the consent page and from Settings › Online, B goes back. A
-/// link of the text is a row; it opens (in the browser) only when chosen.
+/// (<c>GET /privacy</c>, Markdown) rendered by Views/Settings/MarkdownView. The launcher has no
+/// policy of its own: a server that publishes none (before 1.4.0) gets a note saying so, and
+/// nothing stands in for it. A sub-page: pushed from the consent page and from Settings › Online,
+/// B goes back. A link of the text is a row; it opens (in the browser) only when chosen.
 /// </summary>
 public sealed class PrivacyViewModel : PageViewModel
 {
@@ -25,12 +26,12 @@ public sealed class PrivacyViewModel : PageViewModel
 
     public string Markdown => _policy?.Markdown ?? "";
 
-    /// <summary>Whose policy it is: the server's (with its address), or MKWMP's.</summary>
-    public string Source => _policy is null ? ""
-        : _policy.FromServer ? S.Format("privacy.from_server", ("server", ProfileForm.HostOf(Launcher.Settings.Server)))
-        : S["privacy.from_project"];
+    /// <summary>Whose policy it is: the server's, with its address (nothing when there is none).</summary>
+    public string Source => _policy is { FromServer: true }
+        ? S.Format("privacy.from_server", ("server", ProfileForm.HostOf(Launcher.Settings.Server)))
+        : "";
 
-    /// <summary>Why the server's own policy is not the one shown.</summary>
+    /// <summary>Why there is no policy to show (the server publishes none, or could not be reached).</summary>
     public string Note => _policy?.Note ?? "";
 
     /// <summary>The first characters of the version a consent would name.</summary>

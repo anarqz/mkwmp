@@ -208,6 +208,7 @@ internal sealed record ClientConfig
                 Locale = Str(ui, "locale", ""),
                 SetupDone = Bool(ui, "setup_done", false),
             },
+            Picker = PickerOf(Table(t, "picker")),
         };
         var servers = new List<ServerProfile>();
         if (Table(t, "servers") is { } table)
@@ -327,6 +328,15 @@ internal sealed record ClientConfig
                 Line(b, "name", x.Name);
             }
         }
+        // Where the file picker was last used, per purpose (nothing is written until it was used).
+        if (s.Picker.All.Count > 0)
+        {
+            b.Append("\n[picker]\n");
+            foreach (var (purpose, folder) in s.Picker.All)
+            {
+                Line(b, purpose, folder);
+            }
+        }
         // The servers hidden from the server list (nothing is written while there are none).
         foreach (var h in HiddenServers)
         {
@@ -382,6 +392,23 @@ internal sealed record ClientConfig
             }
         }
         return b.Append('"').ToString();
+    }
+
+    /// <summary><c>[picker]</c>: a folder per purpose; anything else in it is skipped.</summary>
+    private static Files.PickerFolders PickerOf(TomlTable? table)
+    {
+        var folders = Files.PickerFolders.Empty;
+        if (table is not null)
+        {
+            foreach (var (purpose, value) in table)
+            {
+                if (value is string folder)
+                {
+                    folders = folders.With(purpose, folder);
+                }
+            }
+        }
+        return folders;
     }
 
     private static TomlTable? Table(TomlTable? t, string key) => t is not null && t.TryGetValue(key, out var v) ? v as TomlTable : null;

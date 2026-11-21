@@ -128,6 +128,7 @@ public sealed class HomeViewModel : PageViewModel
         });
         UpdateCommand = new RelayCommand(Shell.ShowUpdateModal);
         SettingsCommand = new RelayCommand(() => Shell.OpenSettings());
+        ModsCommand = new RelayCommand(() => Shell.Navigate(Routes.Mods));
         FullscreenCommand = RelayCommand.Async(() => Shell.SetFullscreenAsync(!Shell.IsFullscreen));
         PowerCommand = new RelayCommand(ShowPowerMenu);
         GameMenuCommand = new RelayCommand(() => Shell.LeaveOverlay(toMenu: true));
@@ -143,7 +144,8 @@ public sealed class HomeViewModel : PageViewModel
         _play = new HomeTile("play", "Icon.Kart", "#0", () => PlayCommand.Execute(null));
         _friends = new HomeTile("friends", "Icon.Friends", "#3", () => FriendsCommand.Execute(null));
         _game = new HomeTile("game", "Icon.Folder", "#2", () => GameCommand.Execute(null));
-        _update = new HomeTile("update", "Icon.Download", "#5", () => UpdateCommand.Execute(null));
+        // What's New: the changelog page, with the update (when there is one) as its banner
+        _update = new HomeTile("update", "Icon.Download", "#5", () => Shell.Navigate(new WhatsNewViewModel(Shell)));
         Tiles = [_play, _friends, _game, _update];
         Refresh();
     }
@@ -251,6 +253,12 @@ public sealed class HomeViewModel : PageViewModel
     public ICommand UpdateCommand { get; }
 
     public ICommand SettingsCommand { get; }
+
+    /// <summary>The game's mods (launcher/docs/MODS.md).</summary>
+    public ICommand ModsCommand { get; }
+
+    /// <summary>Mods in the dock: with a game in use, and not over a running one (nothing of a game changes while it runs).</summary>
+    public bool ShowMods => !Overlay && Launcher.Game.Install is not null;
 
     public ICommand FullscreenCommand { get; }
 

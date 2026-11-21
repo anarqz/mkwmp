@@ -157,6 +157,24 @@ public interface IGameTarget
         Task.FromResult(GameSetupResult.Refused("none", Strings.SetupNone));
 
     /// <summary>
+    /// What the launcher's file picker lists for the player's own copy of the game: the files that can be one (by
+    /// extension) and the folders that hold one (marked in the list). The default: every file.
+    /// </summary>
+    Files.PickFilter GameCopyFilter => Files.PickFilter.Any;
+
+    /// <summary>
+    /// Why <paramref name="path"/> is not a copy of the game <see cref="RunSetupAsync"/> takes, in words for the
+    /// player; null when it is one (or when this target has no setup). Never throws; reads little.
+    /// </summary>
+    string? GameCopyProblem(string? path) => null;
+
+    /// <summary>
+    /// Whether a folder looks like an install, for the picker's mark: one or two file checks, no
+    /// reading (<see cref="Detect"/> stays the judge of a choice).
+    /// </summary>
+    bool LooksLikeInstall(string folder) => Detect(folder) is not null;
+
+    /// <summary>
     /// Writes the game settings the launcher keeps for an install it manages (shown locked in
     /// <see cref="GameSettings"/>). Called after the launcher installed or updated the runtime and
     /// before a setup; does nothing while the game runs. Returns what it changed, for the log.
@@ -177,6 +195,42 @@ public interface IGameTarget
     /// player's own: shown on this PC only, never sent anywhere and never put in a report or a release.
     /// </summary>
     string? CoverArt(GameInstall install, string cacheFolder) => null;
+
+    // ---- mods (launcher/docs/MODS.md): the defaults serve mkw-recomp installs and no other ----
+
+    /// <summary>Whether this install takes mods the launcher can list (mkw-recomp: a runtime that loads mods).</summary>
+    bool SupportsMods(GameInstall install) => MkwRecomp.RecompMods.Capable(install);
+
+    /// <summary>
+    /// The mods in this install, with what the game is told to load. <paramref name="locale"/>: the
+    /// language for the texts of a mod's own options ("pt-BR"; null: English). Reads folders and small
+    /// files: call it off the window's thread. Never throws.
+    /// </summary>
+    IReadOnlyList<GameMod> Mods(GameInstall install, string? locale) => MkwRecomp.RecompMods.List(install, locale);
+
+    /// <summary>
+    /// Turns a mod on or off for the game's next start. Throws <see cref="LauncherException"/> with what the
+    /// player must know: the game runs, the mod is locked (<see cref="GameMod.Locked"/>), or it carries native
+    /// code and <paramref name="acceptCode"/> is false (the player was not asked yet).
+    /// </summary>
+    void SetModEnabled(GameInstall install, string id, bool on, bool acceptCode) => MkwRecomp.RecompMods.SetEnabled(this, install, id, on, acceptCode);
+
+    /// <summary>Removes a mod from the game (its settings stay). Throws <see cref="LauncherException"/> like <see cref="SetModEnabled"/>; never the launcher's own mod.</summary>
+    void UninstallMod(GameInstall install, string id) => MkwRecomp.RecompMods.Uninstall(this, install, id);
+
+    /// <summary>
+    /// Installs a mod from an archive or a folder on this PC: checked, unpacked beside the mods and put
+    /// in place whole or not at all. Never throws for a refusal: the result says which
+    /// (<see cref="ModInstallCode"/>) and what to tell the player. Refused while the game runs.
+    /// </summary>
+    ModInstallResult InstallMod(GameInstall install, ModInstallRequest request, IProgress<ModProgress>? progress, CancellationToken cancel) =>
+        MkwRecomp.ModImport.Install(this, install, request, progress, cancel);
+
+    /// <summary>The values a mod's own settings file has for the options it declares (<see cref="GameMod.Options"/>), by key.</summary>
+    IReadOnlyDictionary<string, string> ReadModOptions(GameInstall install, GameMod mod) => MkwRecomp.RecompMods.ReadOptions(install, mod);
+
+    /// <summary>Changes options of a mod (null: back to the default), checked against its schema. Throws <see cref="LauncherException"/> for the player.</summary>
+    void WriteModOptions(GameInstall install, GameMod mod, IReadOnlyDictionary<string, string?> changes) => MkwRecomp.RecompMods.WriteOptions(this, install, mod, changes);
 }
 
 /// <param name="Name">The file's name in the release and in SHA256SUMS.</param>

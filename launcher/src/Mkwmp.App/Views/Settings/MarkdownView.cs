@@ -243,8 +243,28 @@ public sealed class MarkdownView : StackPanel
     public static readonly DependencyProperty LinkCommandProperty = DependencyProperty.Register(
         nameof(LinkCommand), typeof(ICommand), typeof(MarkdownView), new PropertyMetadata(null, (d, _) => ((MarkdownView)d).Build()));
 
+    /// <summary>
+    /// Shown at the top of the first card, with the view's DataContext (What's New: a release's version,
+    /// date and "This version"), so it scrolls into view with that card when the card takes the focus.
+    /// </summary>
+    public static readonly DependencyProperty HeaderTemplateProperty = DependencyProperty.Register(
+        nameof(HeaderTemplate), typeof(DataTemplate), typeof(MarkdownView), new PropertyMetadata(null, (d, _) => ((MarkdownView)d).Build()));
+
     /// <summary>At most this many blocks in one card: a long section is cut, so a card fits the screen.</summary>
-    private const int BlocksPerCard = 7;
+    public static readonly DependencyProperty BlocksPerCardProperty = DependencyProperty.Register(
+        nameof(BlocksPerCard), typeof(int), typeof(MarkdownView), new PropertyMetadata(7, (d, _) => ((MarkdownView)d).Build()));
+
+    public DataTemplate? HeaderTemplate
+    {
+        get => (DataTemplate?)GetValue(HeaderTemplateProperty);
+        set => SetValue(HeaderTemplateProperty, value);
+    }
+
+    public int BlocksPerCard
+    {
+        get => (int)GetValue(BlocksPerCardProperty);
+        set => SetValue(BlocksPerCardProperty, value);
+    }
 
     public string Markdown
     {
@@ -263,9 +283,10 @@ public sealed class MarkdownView : StackPanel
     {
         Children.Clear();
         var card = new List<MarkdownBlock>();
+        var most = Math.Max(1, BlocksPerCard);
         foreach (var block in MarkdownReader.Blocks(Markdown))
         {
-            if ((block.Kind == MarkdownKind.Heading && card.Count > 0) || card.Count >= BlocksPerCard)
+            if ((block.Kind == MarkdownKind.Heading && card.Count > 0) || card.Count >= most)
             {
                 AddCard(card);
                 card = [];
@@ -277,15 +298,23 @@ public sealed class MarkdownView : StackPanel
 
     private void AddCard(List<MarkdownBlock> blocks)
     {
-        if (blocks.Count == 0)
+        var header = Children.Count == 0 ? HeaderTemplate : null;
+        if (blocks.Count == 0 && header is null)
         {
             return;
         }
         var panel = new StackPanel();
+        if (header is not null)
+        {
+            // the header takes the view's DataContext (inherited), and a little room before the text
+            var presenter = new ContentPresenter { ContentTemplate = header, Margin = new Thickness(0, 0, 0, blocks.Count > 0 ? 16 : 0) };
+            presenter.SetBinding(ContentPresenter.ContentProperty, new System.Windows.Data.Binding());
+            panel.Children.Add(presenter);
+        }
         var links = new List<(string Text, string Url)>();
         foreach (var block in blocks)
         {
-            panel.Children.Add(Render(block, panel.Children.Count == 0, links));
+            panel.Children.Add(Render(block, panel.Children.Count == (header is null ? 0 : 1), links));
         }
         var button = new Button { Content = panel, Margin = new Thickness(0, Children.Count == 0 ? 0 : 14, 0, 0) };
         button.SetResourceReference(StyleProperty, "CardButton");

@@ -25,14 +25,21 @@ public sealed class GameSettingRow : ObservableObject
     private double? _pending;
     private GameSettingsView _view;
 
-    public GameSettingRow(ShellViewModel shell, GameSetting setting, GameSettingsView view, bool startsGroup)
+    private readonly Func<string, string, Task> _set;
+    private readonly Func<string, Task> _reset;
+
+    /// <param name="set">Where a change goes (id, value); null: the game's own settings.</param>
+    /// <param name="reset">What puts a setting back to its default; null: the game's own settings. A mod's options use both (Views/Mods).</param>
+    public GameSettingRow(ShellViewModel shell, GameSetting setting, GameSettingsView view, bool startsGroup, Func<string, string, Task>? set = null, Func<string, Task>? reset = null)
     {
         _shell = shell ?? throw new ArgumentNullException(nameof(shell));
         Setting = setting ?? throw new ArgumentNullException(nameof(setting));
         _view = view ?? throw new ArgumentNullException(nameof(view));
+        _set = set ?? ((id, value) => _shell.Launcher.SetGameSettingAsync(id, value));
+        _reset = reset ?? (id => _shell.Launcher.ResetGameSettingAsync(id));
         Heading = startsGroup ? setting.Group ?? "" : "";
         PickCommand = RelayCommand.Async(PickAsync, () => Enabled);
-        ResetCommand = RelayCommand.Async(() => _shell.Launcher.ResetGameSettingAsync(Setting.Id), () => CanReset);
+        ResetCommand = RelayCommand.Async(() => _reset(Setting.Id), () => CanReset);
     }
 
     public GameSetting Setting { get; }
@@ -163,7 +170,7 @@ public sealed class GameSettingRow : ObservableObject
         }
         RelayCommand.Async(async () =>
         {
-            await _shell.Launcher.SetGameSettingAsync(Setting.Id, Setting.Format(value)).ConfigureAwait(true);
+            await _set(Setting.Id, Setting.Format(value)).ConfigureAwait(true);
             if (_pending is { } now && Math.Abs(now - value) < Setting.Step / 1000)
             {
                 _pending = null;
@@ -180,7 +187,7 @@ public sealed class GameSettingRow : ObservableObject
         }
         RelayCommand.Async(async () =>
         {
-            await _shell.Launcher.SetGameSettingAsync(Setting.Id, value).ConfigureAwait(true);
+            await _set(Setting.Id, value).ConfigureAwait(true);
             RaiseAll(); // a refusal changes nothing in the view: the row shows the game's value again
         }).Execute(null);
     }

@@ -94,6 +94,7 @@ public sealed partial class ShellViewModel
         {
             // a console's HOME: whatever was open is put away, the game's card has the focus
             CloseKeyboard();
+            CancelPicker();
             CloseSheet();
             IsFriendsOpen = false;
             DismissModal();

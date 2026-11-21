@@ -277,39 +277,15 @@ public sealed class GameWorkModal : ModalViewModel
     private void RunSetup(string? dump) =>
         RelayCommand.Async(() => Launcher.RunGameSetupAsync(dump, CancellationToken.None)).Execute(null);
 
-    /// <summary>The system's file (or folder) window for the player's own copy of the game; the setup starts with what was picked.</summary>
-    private void PickDump(bool folder)
+    /// <summary>
+    /// The launcher's own picker for the player's copy of the game, over this card (never the system's dialog); the
+    /// setup starts with what was picked. A choice the setup would not take is refused in the picker, with its reason.
+    /// </summary>
+    private void PickDump(bool folder) => RelayCommand.Async(async () =>
     {
-        try
+        if (await _shell.PickAsync(PickerRequests.GameCopy(_shell, folder, Launcher.GameSetup.DumpPath)).ConfigureAwait(true) is { } path)
         {
-            var owner = System.Windows.Application.Current?.MainWindow;
-            if (folder)
-            {
-                var dialog = new Microsoft.Win32.OpenFolderDialog { Title = S["setup.game.pick_folder_title"] };
-                if (dialog.ShowDialog(owner) == true)
-                {
-                    RunSetup(dialog.FolderName);
-                }
-            }
-            else
-            {
-                var dialog = new Microsoft.Win32.OpenFileDialog
-                {
-                    Title = S["setup.game.pick_file_title"],
-                    Filter = S["setup.game.pick_file_filter"] + "|*.nup;*.nx|*.*|*.*",
-                    CheckFileExists = true,
-                };
-                if (dialog.ShowDialog(owner) == true)
-                {
-                    RunSetup(dialog.FileName);
-                }
-            }
+            RunSetup(path);
         }
-        catch (Exception e) when (e is System.Runtime.InteropServices.COMException or InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
-        {
-            // no file window here (some Wine builds, gamescope): the welcome's game page has a box to type the path
-            App.Log("file dialog: " + e.Message);
-            _shell.ShowToast(S["settings.game.no_dialog"], S["gamework.no_dialog_body"]);
-        }
-    }
+    }).Execute(null);
 }

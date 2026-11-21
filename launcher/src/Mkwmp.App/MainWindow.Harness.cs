@@ -12,9 +12,9 @@ namespace Mkwmp.App;
 
 /// <summary>
 /// The screenshot harness (see docs/DESIGN.md, "Checking your page"):
-/// <c>mkwmp-launcher --demo --shot out.png [--page home|settings|setup|gallery] [--category key]
+/// <c>mkwmp-launcher --demo --shot out.png [--page home|settings|setup|gallery|privacy|whatsnew|connect] [--category key]
 /// [--modal update|available|ready|ready-game|confirm|message|progress|crash|crash-report|bug-report|gamework|gameupdate|install]
-/// [--state crashed|crashed-solo|crashed-exit|downloading|installing|download-failed|setting-up|setup-failed|need-dump|setup-again|runtime-update|install-fails|dev-package] [--friends] [--toast]
+/// [--state crashed|crashed-solo|crashed-exit|downloading|installing|download-failed|setting-up|setup-failed|need-dump|setup-again|runtime-update|install-fails|dev-package|uptodate|update-ready|no-policy] [--friends] [--toast]
 /// [--press right,down,a,…] [--size 1920x1080] [--theme dark] [--battery 93] [--input keyboard] [--locale pt-BR]
 /// [--overlay [--overlay-frame png|none] [--overlay-no-menu] [--overlay-progress 0..1 | --overlay-return 0..1]]</c>
 /// renders the stage at that size once everything has settled, saves the PNG and exits. The window
@@ -101,6 +101,12 @@ public partial class MainWindow
             _vm.Nav.ResetTo(Routes.Home);
             _vm.Navigate(Routes.SettingsOnline);
             _vm.Navigate(new PrivacyViewModel(_vm));
+        }
+        else if (page == "whatsnew")
+        {
+            // Home's What's New tile: the changelog, with the demo's update as its banner (--state uptodate: none)
+            _vm.Nav.ResetTo(Routes.Home);
+            _vm.Navigate(new WhatsNewViewModel(_vm));
         }
         else if (page == "connect")
         {
@@ -263,6 +269,8 @@ public partial class MainWindow
                 _vm.ShowProgress("Installing…", "Copying the online play files into the game folder.").Report(0.65, "3 files left");
                 break;
         }
+        // --picker copy|copy-folder|game [--fake-wine] [--picker-at <path>]: the launcher's own file picker (MainWindow.Harness.Picker.cs)
+        await OpenHarnessPickerAsync(args).ConfigureAwait(true);
         if (args.Contains("--toast"))
         {
             _vm.Launcher.ShowTestToast();

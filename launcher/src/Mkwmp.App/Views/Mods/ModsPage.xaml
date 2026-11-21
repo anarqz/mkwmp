@@ -1,0 +1,54 @@
+<UserControl x:Class="Mkwmp.App.Views.Mods.ModsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             xmlns:mods="clr-namespace:Mkwmp.App.Views.Mods"
+             x:Name="Self" Focusable="False">
+  <!-- DataContext: ModsViewModel. The mods in the game (A opens one, X switches it), then the three ways to get one. -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <c:PageHeader Title="{Binding S[mods.title]}" Icon="{StaticResource Icon.Package}" />
+    <c:Spinner Grid.Row="1" Width="72" Height="72" Visibility="{Binding Loading, Converter={StaticResource Conv.Visible}}" />
+    <c:SmoothScrollViewer Grid.Row="1" Padding="16,26,24,60" EdgePadding="110" input:FocusNav.IsGroup="True" HorizontalAlignment="Center" Width="1300"
+                          Visibility="{Binding Loading, Converter={StaticResource Conv.Visible}, ConverterParameter=!}">
+      <StackPanel>
+        <Border Style="{StaticResource Card}" Margin="0,0,0,26" Visibility="{Binding Note, Converter={StaticResource Conv.Visible}}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <c:Icon Data="{StaticResource Icon.Info}" Width="40" Height="40" VerticalAlignment="Top" Margin="0,2,20,0" Foreground="{DynamicResource Brush.Accent}" />
+            <TextBlock Grid.Column="1" Text="{Binding Note}" Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.Text}" />
+          </Grid>
+        </Border>
+        <StackPanel Visibility="{Binding Supported, Converter={StaticResource Conv.Visible}}">
+          <c:SectionHeader Text="{Binding S[mods.installed]}" />
+          <ItemsControl x:Name="RowsHost" ItemsSource="{Binding Rows}" Focusable="False">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <c:SettingsRow Label="{Binding Name}" Caption="{Binding Caption}" Icon="{Binding Icon, Converter={StaticResource Conv.Icon}}"
+                               Value="{Binding State}" Kind="Chevron" Command="{Binding OpenCommand}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <TextBlock Text="{Binding S[mods.empty]}" Style="{StaticResource Text.Caption}" Margin="20,18,20,0"
+                     Visibility="{Binding IsEmpty, Converter={StaticResource Conv.Visible}}" />
+          <TextBlock Text="{Binding S[mods.restart]}" Style="{StaticResource Text.Caption}" Margin="20,18,20,0" />
+
+          <c:SectionHeader Text="{Binding S[mods.add]}" Margin="0,40,0,0" />
+          <c:SettingsRow Label="{Binding S[mods.get]}" Caption="{Binding S[mods.get.caption]}" Icon="{StaticResource Icon.Search}" Kind="Chevron"
+                         Command="{Binding BrowseCommand}" />
+          <c:SettingsRow Label="{Binding S[mods.link]}" Caption="{Binding S[mods.link.caption]}" Icon="{StaticResource Icon.Globe}" Kind="Chevron"
+                         Command="{Binding LinkCommand}" />
+          <c:SettingsRow Label="{Binding S[mods.file]}" Caption="{Binding S[mods.file.caption]}" Icon="{StaticResource Icon.File}" Kind="Chevron"
+                         Command="{Binding FileCommand}" />
+        </StackPanel>
+      </StackPanel>
+    </c:SmoothScrollViewer>
+  </Grid>
+</UserControl>

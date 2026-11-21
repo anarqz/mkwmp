@@ -1,0 +1,76 @@
+<UserControl x:Class="Mkwmp.App.Views.Mods.ModDetailPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             xmlns:mods="clr-namespace:Mkwmp.App.Views.Mods"
+             Focusable="False">
+  <!-- DataContext: ModDetailViewModel. One installed mod: its switch, its own options (the game settings' rows), what it is, uninstall. -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <c:PageHeader Title="{Binding Title}" Icon="{Binding Icon, Converter={StaticResource Conv.Icon}}" />
+    <c:SmoothScrollViewer Grid.Row="1" Padding="16,26,24,60" EdgePadding="110" input:FocusNav.IsGroup="True" HorizontalAlignment="Center" Width="1300">
+      <StackPanel>
+        <Border Style="{StaticResource Card}" Margin="0,0,0,26" Visibility="{Binding Note, Converter={StaticResource Conv.Visible}}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <c:Icon Data="{StaticResource Icon.Info}" Width="40" Height="40" VerticalAlignment="Top" Margin="0,2,20,0" Foreground="{DynamicResource Brush.Accent}" />
+            <TextBlock Grid.Column="1" Text="{Binding Note}" Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.Text}" />
+          </Grid>
+        </Border>
+        <TextBlock Text="{Binding Description}" Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.Text}" Margin="20,0,20,22"
+                   Visibility="{Binding Description, Converter={StaticResource Conv.Visible}}" />
+        <c:SettingsRow Label="{Binding S[mods.detail.enabled]}" Kind="Toggle" IsOn="{Binding IsOn}" IsEnabled="{Binding CanToggle}" Caption="{Binding SwitchCaption}" />
+        <Border Style="{StaticResource Card}" Margin="0,22,0,0" Visibility="{Binding Problems, Converter={StaticResource Conv.Visible}}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <c:Icon Data="{StaticResource Icon.Warning}" Width="40" Height="40" VerticalAlignment="Top" Margin="0,2,20,0" Foreground="{DynamicResource Brush.Warn}" />
+            <TextBlock Grid.Column="1" Text="{Binding Problems}" Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.Text}" />
+          </Grid>
+        </Border>
+        <c:SettingsRow Label="{Binding UpdateLabel}" Caption="{Binding UpdateCaption}" Icon="{StaticResource Icon.Download}" Kind="Chevron" Command="{Binding UpdateCommand}"
+                       Visibility="{Binding HasUpdate, Converter={StaticResource Conv.Visible}}" />
+
+        <!-- ═════════ its own options ═════════ -->
+        <StackPanel Visibility="{Binding HasOptions, Converter={StaticResource Conv.Visible}}">
+          <c:SectionHeader Text="{Binding S[mods.detail.options]}" Margin="0,40,0,0" />
+          <TextBlock Text="{Binding OptionsNote}" Margin="20,10,20,0" Visibility="{Binding OptionsNote, Converter={StaticResource Conv.Visible}}">
+            <TextBlock.Style>
+              <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding OptionsNoteIsError}" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </TextBlock.Style>
+          </TextBlock>
+          <mods:OptionRows DataContext="{Binding OptionRows}" Margin="0,8,0,0" />
+        </StackPanel>
+
+        <!-- ═════════ what it is ═════════ -->
+        <c:SectionHeader Text="{Binding S[mods.detail.about]}" Margin="0,40,0,0" />
+        <c:SettingsRow Label="{Binding S[mods.detail.version]}" Value="{Binding Version}" Kind="Value" Focusable="False"
+                       Visibility="{Binding Version, Converter={StaticResource Conv.Visible}}" />
+        <c:SettingsRow Label="{Binding S[mods.detail.author]}" Value="{Binding Author}" Kind="Value" Focusable="False"
+                       Visibility="{Binding Author, Converter={StaticResource Conv.Visible}}" />
+        <c:SettingsRow Label="{Binding S[mods.detail.contents]}" Value="{Binding Contents}" Kind="Value" Focusable="False"
+                       Visibility="{Binding Contents, Converter={StaticResource Conv.Visible}}" />
+        <c:SettingsRow Label="{Binding S[mods.detail.size]}" Value="{Binding Size}" Kind="Value" Focusable="False" />
+        <c:SettingsRow Label="{Binding S[mods.detail.source]}" Value="{Binding Source}" Kind="Chevron" Icon="{StaticResource Icon.Globe}" Command="{Binding PageCommand}"
+                       Visibility="{Binding HasPage, Converter={StaticResource Conv.Visible}}" />
+        <c:SettingsRow Label="{Binding S[mods.detail.uninstall]}" Icon="{StaticResource Icon.Trash}" Command="{Binding UninstallCommand}" Margin="0,26,0,0"
+                       Visibility="{Binding CanUninstall, Converter={StaticResource Conv.Visible}}" />
+      </StackPanel>
+    </c:SmoothScrollViewer>
+  </Grid>
+</UserControl>

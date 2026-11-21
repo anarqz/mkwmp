@@ -79,6 +79,7 @@ public sealed partial class Launcher
             }
         });
         FollowGameSettings();
+        FollowMods();
         FollowCover(install, setup); // the Play card's picture, made once from the player's copy (Launcher.Cover.cs)
         PublishModRecord(); // the mod finds this launcher in its own folder (portable)
     }

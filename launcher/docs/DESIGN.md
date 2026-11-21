@@ -276,7 +276,7 @@ public sealed class RoomsViewModel : PageViewModel
 | `SetFullscreenAsync(bool)`, `IsFullscreen` | saved to `UiSettings.Fullscreen` |
 | `UpdateSettingsAsync(s => s with { … })` | saves a changed copy of `LauncherSettings` |
 | `StateChanged` | launcher changed; UI thread, coalesced. Pages get `OnStateChanged()` instead |
-| `AboutTitle`, `AboutBasedOn`, `AboutLicense`, `AboutText` | the About lines |
+| `AboutTitle`, `AboutLicense`, `AboutRuntimeCredit`, `AboutText` | the About lines (no policy of its own: the only privacy policy is the server's) |
 | `InputKind`, `GamepadConnected`, `HasBattery`, `BatteryPercent`, `ClockText`, `TopAvatars` | chrome state |
 | `Quit()` | closes the window |
 
@@ -369,7 +369,7 @@ If a control lacks something, add a property to it rather than restyling it in a
 ```
 
 `shot.ps1` builds, runs `mkwmp-launcher --demo --shot <png> …`, waits about 2 s for animations to
-settle and writes the PNG. Options: `--page home|settings|settings/online|setup|connect|privacy|gallery` (section 13 for the last three), `--category <key>`
+settle and writes the PNG. Options: `--page home|settings|settings/online|setup|connect|privacy|whatsnew|gallery` (section 13 for connect and privacy; whatsnew: the changelog, `CHANGELOG.md` built in, with the update banner), `--category <key>`
 (settings), `--press a,b,x,y,up,down,left,right,start` (pressed in order before the shot: the way to
 put the focus somewhere or to walk into a sub-step), `--size WxH`, `--theme dark`, `--battery 93`,
 `--input keyboard`, `--locale pt-BR`, `-NoBuild`; `--then a,down,…` presses after the panel / modal is open
@@ -517,7 +517,7 @@ Core marks a working online profile as done so an existing player never meets it
 | `Online` | "Want to go online?": **Not Now** → `Done` → home, locked; **Go Online** → the next four |
 | `Server` | the beholder's list (`ServerPicker` / `ServerList`: latency bars and ms measured to each server, name, region, version, players, queue; the five nearest first and five more with each "Show More"; Refresh; re-measured every 15 s while shown; Y on a row, or its "…", hides that server on this PC and the next takes its place, Settings › Online › Hidden Servers shows it again) and a typed address; Connect asks the server who it is ("MKWMP server · 20/32 seats free", or why not) |
 | `Register` | sign in: register the name (a new PIN), or, for a name that exists, "It's Mine" with its PIN (masked) |
-| `Consent` | only **after** signing in (the server keeps the consent): the three paragraphs, "Read the Privacy Policy" (`PrivacyViewModel`: the server's Markdown rendered by `MarkdownView`, never a browser), the 18+ box; skipped when the sign-in said the server already has it |
+| `Consent` | only **after** signing in (the server keeps the consent): the three paragraphs, "Read the Privacy Policy" (`PrivacyViewModel`: the server's Markdown rendered by `MarkdownView`, never a browser; a server without `/privacy` gets "This server doesn't publish a privacy policy", never another page), the 18+ box; skipped when the sign-in said the server already has it |
 | `Pin` | the PIN, masked, with its eye (and X) |
 | `Done` | what is ready and what waits |
 
@@ -544,3 +544,60 @@ Harness (all with a demo start: `--demo` online, `--demo-offline`, `--demo-fresh
 (a server, no profile), `taken`, `signed-in` (a profile, no consent yet), `registered`, `no-list` (no beholder),
 `list-cached`. In the demo a name of the demo's friends ("Luna") is taken, and an address with `down`, `other` or
 `old` in it fails in that way.
+
+## 14. Choosing a folder or a file: the launcher's own picker
+
+**Every folder or file the launcher asks for is chosen in its own picker, never in the system's dialog** (Infinity
+Launcher's rule, 2026-10-28): the system's is another window with another look on Windows and under Proton, shows the
+prefix's empty `C:\users\steamuser` on a Steam Deck, and is no use with a controller. "Show in folder" (a saved log, a
+report) still opens the file manager: that is not a pick.
+
+```csharp
+var folder = await Shell.PickFolderAsync(new PickerRequest(S["mods.pick_title"], "mods_folder")
+{
+    Caption = S["mods.pick_caption"],                         // under the list: what a right choice looks like
+    Filter = new PickFilter { FolderMatches = f => File.Exists(Path.Combine(f, "mod.toml")) },   // marks such folders
+    Validate = path => Task.Run(() => Launcher.ModFolderProblem(path)),   // why not, or null; the picker stays open on a refusal
+    MatchBadge = "Mod", MatchNote = S["mods.pick_here"], InitialFolder = current,
+});
+if (folder is not null) { … }                                 // null: closed without a pick
+```
+
+| Piece | |
+| --- | --- |
+| `Shell.PickAsync` / `PickFolderAsync` / `PickFileAsync(PickerRequest)` → `Task<string?>` | `ShellViewModel.Picker.cs`. `PickKind.Either`: a file from the list, or the open folder. A second pick closes the first (its caller gets null) |
+| `PickerRequest(Title, Purpose, Kind)` | `Purpose` is the key the last folder is kept under in client.toml's `[picker]` (`LauncherSettings.Picker`): the next pick for it starts there. `Filter` (`PickFilter`: `Files`, `Extensions`, `FolderMatches`), `Validate`, `InitialFolder`, `Caption`, `MatchBadge`, `MatchNote`, `Icon` |
+| `PickerRequests.GameCopy` / `GameFolder` | the launcher's two picks, judged by the target itself (`ILauncher.GameCopyProblem` → `RecompSetup.DumpProblem`; `GameFolderProblem` → a target's `Detect`) |
+| `PickerViewModel`, `Views/PickerSidebar.xaml` | the panel: 1180 wide from the right (`PickerLayer` of `MainWindow.xaml`: above a modal, under the on-screen keyboard, with its own copy of the hint bar) |
+| `Mkwmp.Core.Files.FileBrowser` / `FileHost` / `PickerFolders` | the logic, with no window: places, listings, typed paths, crumbs, the loop guard. `FilePickerTests` |
+| `c:EntryList` | a virtualized list whose lines are focus stops: up and down go by index (`Step`), A / click / tap raise `Activated` |
+
+**In the panel:** quick places at the left (the last folder of this purpose, Home, Downloads, Desktop, Documents, cards
+and USB drives, Steam's libraries, the launcher's folder, drives with their label and free space, "This Device"); Up,
+the path's steps, and a box to type or paste a path (the on-screen keyboard opens on it; Enter or Go); the list (folders
+first, then by name the way people count; modified and size; a mark on a folder that holds what is looked for); under
+it what is asked for, "this folder is a right one", or why the last choice was refused, and **Use This Folder**.
+
+| Controller | Keyboard | In the picker |
+| --- | --- | --- |
+| A | Enter, click, tap | opens a folder, picks a file |
+| B | Esc, Backspace | back to the folder the player came from; at the start, closes |
+| X | X | Use This Folder |
+| Y | F | every file and the hidden ones / only what can be picked |
+| LB / RB | Q / E | to the places / back to the list (left and right do it too) |
+
+**What it handles** (each one learnt in Infinity Launcher or asked for here; `FileBrowser`'s summary has the why):
+Linux places under Proton through `Z:\` (home from `WINEHOMEDIR` / `HOME` / `USER`; `/run/media/<user>/<card>` and
+the older `/run/media/<card>`; `libraryfolders.vdf`; `/mnt`, `/media`), paths read and typed the Linux way, `Z:` and
+the prefix's `C:` never offered as drives (the prefix only with Y); a refused, vanished or unreadable folder says so
+and stays shown, a card taken out leads to the nearest folder still there; links are followed but a link back to an
+ancestor opens that ancestor (no endless path), and a path deeper than 96 steps is not opened; a huge folder is read
+up to 20,000 entries and shown up to 2,000, off the window's thread, with a line that says so; hidden and system files
+and Linux dot files only with Y; names keep the disk's letter case, a typed path takes it; long paths, `\\?\`, shares,
+`file://`, `%NAME%`, `~`; the second click of a double-click is not a click on what the first one opened.
+
+```powershell
+.\shot.ps1 out.png --picker copy --fake-wine                                  # the game copy, as on a Steam Deck (a made-up /home/deck, SD card, Steam libraries)
+.\shot.ps1 out.png --picker game --fake-wine --picker-at /home/deck/Games --then down,a
+.\shot.ps1 out.png --picker copy-folder --picker-at D:\Dumps --then y         # this PC's real places; Y: every file
+```

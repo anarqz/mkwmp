@@ -1,0 +1,79 @@
+<UserControl x:Class="Mkwmp.App.Views.WhatsNewPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             Focusable="False">
+  <!-- DataContext: WhatsNewViewModel. The launcher's changelog, newest first, read like the privacy policy
+       (MarkdownView: each section a card the D-pad stops on, links are rows). An update that is available,
+       downloading or ready is a banner on top, its button the update card's own next step. -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <c:PageHeader Title="{Binding S[home.update]}" Icon="{StaticResource Icon.Star}">
+      <TextBlock Text="{Binding Running}" Style="{StaticResource Text.Small}" FontSize="23" VerticalAlignment="Center" HorizontalAlignment="Right" />
+    </c:PageHeader>
+    <c:Spinner Grid.Row="1" Width="72" Height="72" Visibility="{Binding Loading, Converter={StaticResource Conv.Visible}}" />
+    <c:SmoothScrollViewer Grid.Row="1" Padding="16,26,24,60" EdgePadding="110" input:FocusNav.IsGroup="True" HorizontalAlignment="Center" Width="1300"
+                          Visibility="{Binding Loading, Converter={StaticResource Conv.Visible}, ConverterParameter=!}">
+      <StackPanel>
+        <!-- ═════════ the update ═════════ -->
+        <Border Style="{StaticResource Card}" Background="{DynamicResource Brush.AccentSoft}" Margin="0,0,0,48" Padding="32,28,32,32"
+                Visibility="{Binding ShowBanner, Converter={StaticResource Conv.Visible}}">
+          <StackPanel>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <c:Icon Data="{StaticResource Icon.Download}" Width="44" Height="44" Margin="0,0,22,0" Foreground="{DynamicResource Brush.Accent}" />
+              <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="{Binding BannerTitle}" Style="{StaticResource Text.Heading}" TextWrapping="Wrap" TextTrimming="None" />
+                <TextBlock Text="{Binding BannerDetail}" Style="{StaticResource Text.Caption}" Margin="0,4,0,0"
+                           Visibility="{Binding BannerDetail, Converter={StaticResource Conv.Visible}}" />
+              </StackPanel>
+              <c:ConsoleButton Grid.Column="2" Kind="Primary" MinWidth="340" Margin="28,0,0,0" VerticalAlignment="Center"
+                               Content="{Binding BannerAction}" Command="{Binding BannerCommand}" />
+            </Grid>
+            <ProgressBar Value="{Binding BannerProgress, Mode=OneWay}" Margin="66,20,0,0"
+                         Visibility="{Binding BannerDownloading, Converter={StaticResource Conv.Visible}}" />
+            <settings:MarkdownView Markdown="{Binding BannerNotes}" LinkCommand="{Binding LinkCommand}" Margin="0,24,0,0"
+                                   Visibility="{Binding BannerNotes, Converter={StaticResource Conv.Visible}}" />
+          </StackPanel>
+        </Border>
+
+        <!-- ═════════ the changelog ═════════ -->
+        <Border Style="{StaticResource Card}" Visibility="{Binding Empty, Converter={StaticResource Conv.Visible}}">
+          <TextBlock Text="{Binding S[whatsnew.empty]}" Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.Text}" />
+        </Border>
+        <ItemsControl ItemsSource="{Binding Releases}" Focusable="False">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <!-- the release's heading is in its first card: it comes into view with the card that takes the focus -->
+              <settings:MarkdownView Margin="0,0,0,40" BlocksPerCard="5" Markdown="{Binding Markdown}"
+                                     LinkCommand="{Binding DataContext.LinkCommand, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                <settings:MarkdownView.HeaderTemplate>
+                  <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="{Binding Version}" Style="{StaticResource Text.Title}" FontWeight="Bold" VerticalAlignment="Bottom" />
+                      <TextBlock Text="{Binding Date}" Style="{StaticResource Text.Caption}" FontSize="25" Margin="22,0,0,5" VerticalAlignment="Bottom" />
+                      <Border Style="{StaticResource Pill}" Height="42" Padding="18,0" Margin="24,0,0,2" VerticalAlignment="Bottom"
+                              Visibility="{Binding IsRunning, Converter={StaticResource Conv.Visible}}">
+                        <TextBlock Text="{Binding DataContext.S[whatsnew.this_version], RelativeSource={RelativeSource AncestorType=UserControl}}" Style="{StaticResource Text.Small}" FontSize="21"
+                                   FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}" />
+                      </Border>
+                    </StackPanel>
+                  </DataTemplate>
+                </settings:MarkdownView.HeaderTemplate>
+              </settings:MarkdownView>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </c:SmoothScrollViewer>
+  </Grid>
+</UserControl>

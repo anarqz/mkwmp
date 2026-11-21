@@ -1,0 +1,64 @@
+<UserControl x:Class="Mkwmp.App.Views.Mods.OptionRows"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             xmlns:mods="clr-namespace:Mkwmp.App.Views.Mods"
+             Focusable="False">
+  <!-- DataContext: a list of GameSettingRow. The rows of Settings › Game settings (Views/Settings/SettingsPage.xaml),
+       for a mod's own options: the same controls, so a mod's options read as the launcher's own. -->
+  <UserControl.Resources>
+    <Style x:Key="Field" TargetType="Border">
+      <Setter Property="BorderBrush" Value="{DynamicResource Brush.Rule}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1.5" />
+      <Setter Property="Padding" Value="20,14,20,14" />
+    </Style>
+    <Style x:Key="FieldLabel" TargetType="TextBlock" BasedOn="{StaticResource Text.Base}">
+      <Setter Property="FontSize" Value="32" />
+      <Setter Property="Margin" Value="0,0,28,0" />
+    </Style>
+  </UserControl.Resources>
+  <ItemsControl ItemsSource="{Binding}" Focusable="False">
+    <ItemsControl.ItemTemplate>
+      <DataTemplate>
+        <StackPanel Visibility="{Binding Visible, Converter={StaticResource Conv.Visible}}">
+          <TextBlock Text="{Binding Heading}" Style="{StaticResource Text.Base}" FontSize="25" FontWeight="SemiBold"
+                     Foreground="{DynamicResource Brush.TextMuted}" Margin="20,34,20,6"
+                     Visibility="{Binding Heading, Converter={StaticResource Conv.Visible}}" />
+          <Grid>
+            <c:SettingsRow Label="{Binding Label}" Kind="Toggle" IsOn="{Binding IsOn}" IsEnabled="{Binding Enabled}" Caption="{Binding Caption}"
+                           Visibility="{Binding IsToggle, Converter={StaticResource Conv.Visible}}" />
+            <c:SettingsRow Label="{Binding Label}" Kind="Chevron" Value="{Binding ChoiceText}" Command="{Binding PickCommand}" Caption="{Binding Caption}"
+                           Visibility="{Binding IsChoice, Converter={StaticResource Conv.Visible}}" />
+            <StackPanel Visibility="{Binding IsRange, Converter={StaticResource Conv.Visible}}">
+              <c:ConsoleSlider Label="{Binding Label}" Value="{Binding Number, Mode=TwoWay}" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}"
+                               SmallChange="{Binding Step}" LargeChange="{Binding Step}" DisplayText="{Binding NumberText}"
+                               IsEnabled="{Binding Enabled}" />
+              <TextBlock Text="{Binding Caption}" Style="{StaticResource Text.Caption}" Margin="20,14,20,20"
+                         Visibility="{Binding Caption, Converter={StaticResource Conv.Visible}}" />
+            </StackPanel>
+            <Border Style="{StaticResource Field}" Visibility="{Binding IsText, Converter={StaticResource Conv.Visible}}">
+              <StackPanel>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="1.2*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{Binding Label}" Style="{StaticResource FieldLabel}" />
+                  <TextBox Grid.Column="1" Text="{Binding Text, UpdateSourceTrigger=LostFocus}" MaxLength="{Binding MaxLength}"
+                           input:TextEntry.Title="{Binding Label}" IsEnabled="{Binding Enabled}" />
+                </Grid>
+                <TextBlock Text="{Binding Caption}" Style="{StaticResource Text.Caption}" Margin="0,12,0,4"
+                           Visibility="{Binding Caption, Converter={StaticResource Conv.Visible}}" />
+              </StackPanel>
+            </Border>
+            <!-- the mark of an option that is not at its default -->
+            <Ellipse Width="10" Height="10" Fill="{DynamicResource Brush.Accent}" HorizontalAlignment="Left" VerticalAlignment="Top"
+                     Margin="2,47,0,0" IsHitTestVisible="False"
+                     Visibility="{Binding IsChanged, Converter={StaticResource Conv.Visible}}" />
+          </Grid>
+        </StackPanel>
+      </DataTemplate>
+    </ItemsControl.ItemTemplate>
+  </ItemsControl>
+</UserControl>

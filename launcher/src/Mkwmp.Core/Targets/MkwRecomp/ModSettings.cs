@@ -23,16 +23,24 @@ public static class ModSettings
     public static string NoProfileYet => Strings.ModSettingsNoProfileYet;
 
     /// <summary>The settings file of this install's first player; null when this is not mkw-recomp or the folder is redirected.</summary>
-    public static string? PathFor(GameInstall install)
+    public static string? PathFor(GameInstall install) => PathFor(install, Recomp.Mod);
+
+    /// <summary>The same file of any mod (<c>profile/mod-settings/&lt;mod&gt;.ini</c>); null also for a name that is not a mod folder's.</summary>
+    public static string? PathFor(GameInstall install, string mod)
     {
         ArgumentNullException.ThrowIfNull(install);
+        ArgumentNullException.ThrowIfNull(mod);
+        if (mod.Length is 0 or >= 64 || mod.IndexOfAny(['/', '\\', ':', '\0']) >= 0 || mod.Contains("..", StringComparison.Ordinal))
+        {
+            return null;
+        }
         if (install.TargetId != MkwRecompTarget.TargetId
             || Environment.GetEnvironmentVariable("MKW_PROFILE_DIR") is { Length: > 0 }
             || Environment.GetEnvironmentVariable("MKW_PLAYER") is { Length: > 0 })
         {
             return null;
         }
-        return Path.Combine(install.DataRoot ?? install.Root, "profile", "mod-settings", Recomp.Mod + ".ini");
+        return Path.Combine(install.DataRoot ?? install.Root, "profile", "mod-settings", mod + ".ini");
     }
 
     /// <summary>Letters, digits, '.', '_', '-' (the host's rule).</summary>
@@ -40,10 +48,40 @@ public static class ModSettings
         key is { Length: > 0 and <= 64 } && key.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-');
 
     /// <summary>The value of <paramref name="key"/>; null when it is unset, the file is missing or this target has no such settings.</summary>
-    public static string? Read(GameInstall install, string key)
+    public static string? Read(GameInstall install, string key) => Read(install, Recomp.Mod, key);
+
+    /// <summary>Every <c>key=value</c> of a mod's file (the last line of a key wins); empty when there is none.</summary>
+    public static IReadOnlyDictionary<string, string> ReadAll(GameInstall install, string mod)
+    {
+        var all = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (PathFor(install, mod) is not { } path)
+        {
+            return all;
+        }
+        try
+        {
+            if (File.Exists(path) && new FileInfo(path).Length <= 1 << 20)
+            {
+                foreach (var line in File.ReadAllLines(path))
+                {
+                    if (Split(line) is { } pair && ValidKey(pair.Key))
+                    {
+                        all[pair.Key] = pair.Value;
+                    }
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            all.Clear();
+        }
+        return all;
+    }
+
+    public static string? Read(GameInstall install, string mod, string key)
     {
         ArgumentNullException.ThrowIfNull(key);
-        if (PathFor(install) is not { } path || !ValidKey(key))
+        if (PathFor(install, mod) is not { } path || !ValidKey(key))
         {
             return null;
         }
@@ -74,15 +112,18 @@ public static class ModSettings
     /// <see cref="LauncherException"/> with what the player must do when the game runs or has never
     /// run, or when the file cannot be written. False when this target has no such settings.
     /// </summary>
-    public static bool Write(IGameTarget target, GameInstall install, string key, string? value)
+    public static bool Write(IGameTarget target, GameInstall install, string key, string? value) => Write(target, install, Recomp.Mod, key, value);
+
+    /// <summary>The same for any mod's file. A value is one line of at most 1024 characters (the host's rule).</summary>
+    public static bool Write(IGameTarget target, GameInstall install, string mod, string key, string? value)
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(key);
-        if (PathFor(install) is not { } path)
+        if (PathFor(install, mod) is not { } path)
         {
             return false;
         }
-        if (!ValidKey(key) || value is not null && value.AsSpan().IndexOfAny('\r', '\n') >= 0)
+        if (!ValidKey(key) || value is not null && (value.Length > 1024 || value.AsSpan().IndexOfAny('\r', '\n') >= 0))
         {
             throw new LauncherException(Strings.ModSettingsNotASetting(key));
         }
