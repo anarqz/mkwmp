@@ -16,7 +16,7 @@
 
 For people hosting a server:
 - The program is now called `server` (`server.exe`): `server host`, `server seat` (the seat API, was `mkwmp server`; `server server` still works), `server lobby`, `server beholder`, `server admin`.
-- **One command sets up a Vultr or DigitalOcean VM:** `curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash` installs the signed server, the services, the firewall and your privacy policy, and lists the server in the directory. Re-run it to update. Guide: https://anarqz.github.io/mkwmp/host.html
+- **One command sets up a Vultr VM:** `curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash` installs the signed server, the services, the firewall and your privacy policy, and lists the server in the directory. Re-run it to update. Guide: https://anarqz.github.io/mkwmp/host.html
 - `[privacy] enforce = true` now makes sense: 1.4.0 launchers accept the policy on the server. Leave it off until your players have 1.4.0.
 
 ---
