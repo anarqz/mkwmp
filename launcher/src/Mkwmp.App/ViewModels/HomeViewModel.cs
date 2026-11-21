@@ -195,7 +195,7 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>The server's part of the status line: only with a server.</summary>
     public bool ShowServer => !Locked;
 
-    /// <summary>The server pill of the Rust launcher, verbatim ("ONLINE · 20/32 SEATS FREE").</summary>
+    /// <summary>The server pill: "ONLINE · 12/32 PLAYERS" (the players in seats, out of the seats; the queue after them when there is one).</summary>
     public string ServerText => CoreStrings.ServerPill(Launcher.Server);
 
     public bool IsServerOnline => Launcher.Server.State == ServerState.Online;

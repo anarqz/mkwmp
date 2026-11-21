@@ -432,7 +432,7 @@ public sealed partial class DesignLauncher : ILauncher
 
     public Task SetConsentAsync(bool adult) => SaveSettingsAsync(Settings with { AdultConsent = adult });
 
-    /// <summary>Any address answers as an MKWMP server with 20 of 32 seats free; one with "down", "other" or "old" in it shows that failure.</summary>
+    /// <summary>Any address answers as an MKWMP server with 12 players in its 32 seats; one with "down", "other" or "old" in it shows that failure.</summary>
     public async Task<ServerProbe> ProbeServerAsync(string address)
     {
         var typed = (address ?? "").Trim();

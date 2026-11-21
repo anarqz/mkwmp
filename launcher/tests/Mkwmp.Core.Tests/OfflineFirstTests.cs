@@ -159,7 +159,9 @@ public class OfflineFirstTests
         await using var l = new Launcher(path, root, new LauncherOptions { BindLocalApi = false, BackgroundLoops = false, Targets = [new MkwRecompTarget("1.4.0")] }, handler);
         var ok = await l.ProbeServerAsync("good.test:8080/");
         Assert.Equal((ServerProbeState.Ok, "http://good.test:8080", "fake", 32, 12, 20), (ok.State, ok.Address, ok.Name, ok.SeatsTotal, ok.Seated, ok.SeatsFree));
-        Assert.Equal("MKWMP server · 20/32 seats free", Strings.ProbeOk(ok));
+        // the players in seats out of the seats, not the free ones
+        Assert.Equal("MKWMP server · 12/32 players", Strings.ProbeOk(ok));
+        Assert.Equal("MKWMP server · 12/32 players · 3 in queue", Strings.ProbeOk(ok with { Queued = 3 }));
         Assert.Null(ok.Message);
         Assert.Equal((ServerProbeState.Unreachable, Strings.ProbeUnreachable), await Probe("https://down.test"));
         Assert.Equal((ServerProbeState.Unreachable, Strings.ProbeUnreachable), await Probe("https://failing.test"));

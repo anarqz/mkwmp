@@ -207,12 +207,12 @@ public static class Strings
     public static string ProbeNotMkwmp => T("core.probe_not_mkwmp");
     public static string ProbeTooOld => T("core.probe_too_old");
 
-    /// <summary>"MKWMP server · 20/32 seats free" (and the queue, when there is one).</summary>
+    /// <summary>"MKWMP server · 12/32 players" (the players in seats, out of the seats; and the queue, when there is one).</summary>
     public static string ProbeOk(ServerProbe probe)
     {
         ArgumentNullException.ThrowIfNull(probe);
         return F(probe.Queued > 0 ? "core.probe_ok_queue" : "core.probe_ok",
-            ("free", N(probe.SeatsFree)), ("total", N(probe.SeatsTotal)), ("queued", N(probe.Queued)));
+            ("players", N(Math.Max(0, probe.Seated))), ("total", N(probe.SeatsTotal)), ("queued", N(probe.Queued)));
     }
 
     // ---- the server list (the beholder) and the privacy policy ----------------------------
@@ -247,7 +247,7 @@ public static class Strings
     public static string NotConnected => T("core.server.not_connected");
     public static string ServerOffline => T("core.server.offline");
 
-    /// <summary>The server pill, as the Rust window wrote it.</summary>
+    /// <summary>The server pill: "ONLINE · 12/32 PLAYERS" (the players in seats, out of the seats), and the queue when there is one.</summary>
     public static string ServerPill(ServerView server)
     {
         ArgumentNullException.ThrowIfNull(server);
@@ -257,7 +257,7 @@ public static class Strings
             ServerState.NotAsked => NotConnected,
             ServerState.Offline => ServerOffline,
             _ => F(server.Queued > 0 ? "core.server.online_queue" : "core.server.online",
-                ("free", N(server.SeatsFree)), ("total", N(server.SeatsTotal)), ("queued", N(server.Queued))),
+                ("players", N(Math.Max(0, server.Seated))), ("total", N(server.SeatsTotal)), ("queued", N(server.Queued))),
         };
     }
 

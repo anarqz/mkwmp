@@ -390,7 +390,8 @@ public class LauncherTests
         await launcher.StartAsync(CancellationToken.None);
         await Rig.Until("the first list", () => launcher.Friends.Loaded);
         await Rig.Until("the server pill", () => launcher.Server.State == ServerState.Online);
-        Assert.Equal("ONLINE · 2/2 SEATS FREE", Strings.ServerPill(launcher.Server));
+        Assert.Equal("ONLINE · 0/2 PLAYERS", Strings.ServerPill(launcher.Server)); // an empty server: nobody playing, not "2/2 free"
+        Assert.Equal("ONLINE · 48/50 PLAYERS · 3 IN QUEUE", Strings.ServerPill(new ServerView(ServerState.Online, "s", 50, 48, 3, null)));
         Assert.Equal((FriendState.Offline, 0), (Assert.Single(launcher.Friends.Friends).State, launcher.Friends.OnlineCount));
         Assert.Empty(toasts); // the first list is only remembered
 
