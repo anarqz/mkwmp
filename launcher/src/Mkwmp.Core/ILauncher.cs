@@ -565,6 +565,12 @@ public sealed record LauncherSettings
     /// takes an unsigned development package from its <c>game/</c> folder (launcher/docs/UPDATES.md). Off in every release.
     /// </summary>
     public bool DevPackage { get; init; }
+    /// <summary>
+    /// <c>recomp_exe_sha256</c> under <c>[dev]</c>, written by hand, never by the window: the SHA-256 of test builds of
+    /// mkw.exe (lower-case hex, comma-separated) taken as the pinned mkw-recomp (launcher/docs/RECOMP_INTEGRATION.md,
+    /// "Testing a fork build"). Empty in every release. <c>MKWMP_DEV_RECOMP_SHA256</c> adds to it.
+    /// </summary>
+    public string DevRecompExes { get; init; } = "";
     /// <summary>The consent (18+, privacy policy). With a server that keeps it, a mirror of what that server holds for the profile.</summary>
     public bool AdultConsent { get; init; }
     public BackgroundSettings Background { get; init; } = new();

@@ -53,11 +53,13 @@ public static class BugReportBuilder
     }
 
     /// <summary>The crash report's text: the summary, the versions, where it crashed, the top frames, the room, and the zip to attach.</summary>
-    public static string CrashBody(CrashIncident crash, string launcherVersion, string? system, string? zipName)
+    /// <param name="devRuntime">mkw.exe's SHA-256 when it is a developer's test build (<c>[dev] recomp_exe_sha256</c>): the runtime is said to be one.</param>
+    public static string CrashBody(CrashIncident crash, string launcherVersion, string? system, string? zipName, string? devRuntime = null)
     {
         ArgumentNullException.ThrowIfNull(crash);
         var b = new StringBuilder();
         var r = crash.Record;
+        var dev = devRuntime is null ? null : $"DEVELOPMENT build, mkw.exe {devRuntime} ({Targets.MkwRecomp.Recomp.DevExeSetting})";
         b.Append("**Mario Kart World stopped unexpectedly.**\n\n");
         Row(b, "Crash", crash.What);
         Row(b, "Crash id", crash.Id);
@@ -89,10 +91,14 @@ public static class BugReportBuilder
             Row(b, "Lobby", r.Lobby);
             Row(b, "ussid", r.Ussid);
             Row(b, "MKWMP in the game", Join(" ", r.State.GetValueOrDefault("mkwmp"), r.State.GetValueOrDefault("loader") is { Length: > 0 } loader ? $"({loader})" : null));
-            Row(b, "mkw-recomp", r.State.GetValueOrDefault("recomp") ?? "");
+            Row(b, "mkw-recomp", Join(" ", r.State.GetValueOrDefault("recomp"), dev));
             Row(b, "Game", r.State.GetValueOrDefault("game") ?? "");
             Row(b, "OS", r.Os);
             Row(b, "GPU", r.Gpu);
+        }
+        if (r is null)
+        {
+            Row(b, "mkw-recomp", dev ?? "");
         }
         Row(b, "Launcher", launcherVersion);
         Row(b, "Dump", crash.Dump is null ? "none" : "in the zip");

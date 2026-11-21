@@ -700,6 +700,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         }
         AppDomain.CurrentDomain.UnhandledException -= OnCrash;
         Strings.Changed -= OnLanguageChanged;
+        global::Mkwmp.Core.Targets.MkwRecomp.Recomp.SetDevExes(this, ""); // this launcher's developer builds are no one else's
         // Window closed: free the seat and show offline before leaving.
         await WaitIdleAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
         await _life.CancelAsync().ConfigureAwait(false);

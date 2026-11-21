@@ -25,6 +25,12 @@ internal readonly record struct RecompId(RecompKind Kind, string? Version)
 {
     public bool Ok => Kind == RecompKind.Supported;
 
+    /// <summary>
+    /// mkw.exe's SHA-256 when it is no release but a developer's build accepted by <see cref="Recomp.DevExeSetting"/>
+    /// (or <see cref="Recomp.DevExeEnv"/>): <see cref="Version"/> is then the pinned one. Null for a release.
+    /// </summary>
+    public string? DevSha256 { get; init; }
+
     /// <summary>One line for the window; null when supported.</summary>
     public string? Problem => Kind switch
     {
@@ -45,6 +51,7 @@ internal readonly record struct RecompId(RecompKind Kind, string? Version)
     /// <summary>As the Rust launcher's bug reports wrote it (<c>Supported("0.1.15")</c>), so old and new reports read alike.</summary>
     public override string ToString() => Kind switch
     {
+        RecompKind.Supported when DevSha256 is { } dev => $"Supported(\"{Version}\") DEVELOPMENT build, mkw.exe {dev} ({Recomp.DevExeSetting})",
         RecompKind.Supported => $"Supported(\"{Version}\")",
         RecompKind.Other => $"Other(\"{Version}\")",
         RecompKind.Unknown => "Unknown",
@@ -131,12 +138,59 @@ internal static class Recomp
     /// <summary>Tests' stand-ins for a real mkw.exe (sha256 → version); never filled outside the test project.</summary>
     internal static ConcurrentDictionary<string, string> TestExes { get; } = new(StringComparer.Ordinal);
 
-    public static RecompId IdentifyBytes(ReadOnlySpan<byte> exe)
+    /// <summary>
+    /// A developer's test builds of mkw.exe, by SHA-256 (comma-separated): taken as the pinned release
+    /// (<see cref="RecompRuntime.Pinned"/>), with all it has (game id, mod, setup), and never replaced by the
+    /// launcher. Adds to <c>recomp_exe_sha256</c> under <c>[dev]</c> in client.toml.
+    /// </summary>
+    public const string DevExeEnv = "MKWMP_DEV_RECOMP_SHA256";
+
+    /// <summary>What the log, the window and the reports say the build was accepted by.</summary>
+    public const string DevExeSetting = "dev recomp_exe_sha256";
+
+    /// <summary>The hashes each launcher's client.toml lists (<see cref="SetDevExes"/>), by launcher: two in one process (tests) never undo each other's.</summary>
+    private static readonly ConcurrentDictionary<object, IReadOnlySet<string>> DevExesBy = new();
+
+    /// <summary>The hashes of <paramref name="owner"/>'s <c>[dev] recomp_exe_sha256</c>, replacing what it set before; empty removes them.</summary>
+    internal static void SetDevExes(object owner, string list)
     {
-        var hash = Updater.Sha256Hex(exe);
+        var hashes = DevHashes(list);
+        if (hashes.Count == 0)
+        {
+            DevExesBy.TryRemove(owner, out _);
+        }
+        else
+        {
+            DevExesBy[owner] = hashes;
+        }
+    }
+
+    /// <summary>
+    /// The list as client.toml keeps it: its hashes, lower-case, comma-separated, in the order typed (commas, spaces or
+    /// semicolons between them). Anything that is not 64 hex digits is left out.
+    /// </summary>
+    internal static string DevHashList(string? list) =>
+        string.Join(',', (list ?? "").Split([',', ';', ' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(h => h.ToLowerInvariant())
+            .Where(h => h.Length == 64 && h.All(char.IsAsciiHexDigit))
+            .Distinct(StringComparer.Ordinal));
+
+    /// <summary>The set of the SHA-256 in a list (<see cref="DevHashList"/>).</summary>
+    internal static HashSet<string> DevHashes(string? list) => new(DevHashList(list).Split(',', StringSplitOptions.RemoveEmptyEntries), StringComparer.Ordinal);
+
+    /// <summary>Whether a SHA-256 is a developer's build accepted now (client.toml of a launcher in this process, or the environment).</summary>
+    internal static bool IsDevExe(string hash) =>
+        DevExesBy.Values.Any(s => s.Contains(hash)) || DevHashes(Environment.GetEnvironmentVariable(DevExeEnv)).Contains(hash);
+
+    public static RecompId IdentifyBytes(ReadOnlySpan<byte> exe) => IdentifyHash(Updater.Sha256Hex(exe));
+
+    internal static RecompId IdentifyHash(string hash)
+    {
         var version = TestExes.TryGetValue(hash, out var test) ? test : Known.FirstOrDefault(k => k.Sha256 == hash).Version;
         return version switch
         {
+            // A release is itself even when listed; only a build no release has is a developer's.
+            null when IsDevExe(hash) => new RecompId(RecompKind.Supported, RecompRuntime.Pinned.Version) { DevSha256 = hash },
             null => new RecompId(RecompKind.Unknown, null),
             _ when Supported.Contains(version) => new RecompId(RecompKind.Supported, version),
             _ => new RecompId(RecompKind.Other, version),
@@ -179,24 +233,25 @@ internal static class Recomp
         }
     }
 
-    private static readonly FileCache<RecompId> ExeCache = new();
+    /// <summary>mkw.exe's SHA-256 (null: unreadable). The hash is what is kept: what it is taken for can change while the launcher runs (a dev setting).</summary>
+    private static readonly FileCache<string?> ExeCache = new();
     private static readonly FileCache<string?> VersionCache = new();
     private static readonly FileCache<string?> IdCache = new();
 
     public static RecompId Identify(string game)
     {
         var missing = new RecompId(RecompKind.Missing, null);
-        return ExeCache.TryGet(Path.Combine(game, Exe), out var id, path =>
+        return ExeCache.TryGet(Path.Combine(game, Exe), out var hash, path =>
         {
             try
             {
-                return IdentifyBytes(File.ReadAllBytes(path));
+                return Updater.Sha256Hex(File.ReadAllBytes(path));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                return missing;
+                return null;
             }
-        }) ? id : missing;
+        }) && hash is not null ? IdentifyHash(hash) : missing;
     }
 
     private static string? ReadText(string path)

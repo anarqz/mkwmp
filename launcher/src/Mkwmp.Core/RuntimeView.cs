@@ -66,6 +66,12 @@ public sealed record RuntimeView(
     /// <summary>Which of the release's builds is pinned for this processor, in the language in use ("no AVX2"); null for its main build.</summary>
     public string? PinnedVariant { get; init; }
 
+    /// <summary>
+    /// The install's executable is a developer's test build accepted as the pinned version (<c>[dev] recomp_exe_sha256</c>):
+    /// its SHA-256. Never updated or replaced; the window says "Development mkw-recomp". Null for a release.
+    /// </summary>
+    public string? DevSha256 { get; init; }
+
     /// <summary>The pinned version as the window names it: "0.1.16-mkwmp.1", or "0.1.16-mkwmp.1 (no AVX2)".</summary>
     public string? PinnedLabel => PinnedVersion is { } version && PinnedVariant is { } variant ? $"{version} ({variant})" : PinnedVersion;
 

@@ -68,6 +68,12 @@ public sealed record RuntimeHost
     /// <summary>The version of the runtime in a folder, by the target's own detection; null when it is none it knows.</summary>
     public required Func<string, string?> Identify { get; init; }
 
+    /// <summary>
+    /// Whether the executable in that folder is a developer's test build the target accepts as the pinned version
+    /// (<see cref="GameInstall.DevSha256"/>): an update or repair puts every other file in place and leaves it as it is.
+    /// </summary>
+    public Func<string, bool> KeepsExecutable { get; init; } = _ => false;
+
     /// <summary>Whether the game in that folder runs.</summary>
     public Func<string, bool> IsRunning { get; init; } = _ => false;
 
@@ -547,11 +553,18 @@ public sealed class RuntimeInstaller
             files.Add(Marker);
 
             RefuseWhileRunning(folder, fresh);
+            // A developer's build of the executable, accepted as this version: never replaced (the release's is not put over it).
+            var keepExe = !fresh && File.Exists(Path.Combine(folder, _manifest.Executable)) && _host.KeepsExecutable(folder);
             progress?.Report(new RuntimeProgress(RuntimePhase.Installing, 0, files.Count, 0, null));
             var (added, swapped) = (0, 0);
             for (var i = 0; i < files.Count; i++)
             {
                 cancel.ThrowIfCancellationRequested();
+                if (keepExe && string.Equals(files[i], _manifest.Executable, StringComparison.OrdinalIgnoreCase))
+                {
+                    kept++;
+                    continue;
+                }
                 var (from, to) = (Inside(staging, files[i]), Inside(folder, files[i]));
                 if (Directory.Exists(to))
                 {

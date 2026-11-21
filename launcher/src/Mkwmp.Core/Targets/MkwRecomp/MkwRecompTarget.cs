@@ -158,7 +158,8 @@ public sealed class MkwRecompTarget : IGameTarget
             {
                 return null;
             }
-            return new GameInstall(TargetId, root, exe, Recomp.Identify(root).Version, Recomp.GameVersion(root), Recomp.DataDir(root));
+            var id = Recomp.Identify(root);
+            return new GameInstall(TargetId, root, exe, id.Version, Recomp.GameVersion(root), Recomp.DataDir(root)) { DevSha256 = id.DevSha256 };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {

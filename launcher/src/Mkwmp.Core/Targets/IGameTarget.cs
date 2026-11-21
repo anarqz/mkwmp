@@ -280,7 +280,14 @@ public enum TargetCapabilities
 }
 
 /// <summary>A found install. <paramref name="Version"/> is the runtime's (mkw-recomp 0.1.15-mkwmp), <paramref name="GameVersion"/> the game's (1.8.0).</summary>
-public sealed record GameInstall(string TargetId, string Root, string Executable, string? Version, string? GameVersion, string? DataRoot);
+public sealed record GameInstall(string TargetId, string Root, string Executable, string? Version, string? GameVersion, string? DataRoot)
+{
+    /// <summary>
+    /// The executable's SHA-256 when it is a developer's test build that a dev setting accepts as <see cref="Version"/>
+    /// (mkw-recomp: <c>[dev] recomp_exe_sha256</c>); null for a release. The launcher never replaces such an executable.
+    /// </summary>
+    public string? DevSha256 { get; init; }
+}
 
 public enum TargetStatus { Missing, Unsupported, NeedsRebuild, NoIntegration, Ready }
 
