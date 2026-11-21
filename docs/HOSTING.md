@@ -113,7 +113,7 @@ To lock an abusive player out, `reset-pin` their gamertag (their launcher's PIN 
    - **Reverse proxy:** use, for example, Caddy with the block in `deploy/docker/Caddyfile`. It passes the player's address to the seat server's rate limits.
 
 8. **Optional: your privacy policy and the server list.**
-   - `[privacy] file = "/opt/mkwmp/config/privacy.md"`: the policy your players accept in the launcher (`GET /privacy`). Without it they see a generic default. `enforce = true` refuses seats, friends and reports to players who haven't accepted the current text; launchers up to 1.3.0 can't accept it, so leave it off until your players have 1.4.0. See SEAT_API.md §2c.
+   - `[privacy] file = "/opt/mkwmp/config/privacy.md"`: the policy your players accept in the launcher (`GET /privacy`). Without it they see a generic default. `enforce = true` refuses seats, friends and reports to players who haven't accepted the current text; the 1.3.x launchers can't accept it (only the new launcher, 1.4.0, can), so leave it off until your players have that one. See SEAT_API.md §2c.
    - `[announce] beholder_url` + `endpoint` (your public `https://` seat API URL) lists your server in a beholder's server browser. Set `key_file = "/var/lib/mkwmp/beholder-ed25519.key"`: the unit's `/opt/mkwmp/keys` is read-only and the key is made on first start. See BEHOLDER_API.md.
    - To run a beholder yourself: `config/beholder.toml` + `deploy/systemd/mkwmp-beholder.service`.
 

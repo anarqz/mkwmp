@@ -555,7 +555,7 @@ struct RosterBody {
     #[serde(default)]
     lobbies: Option<std::collections::BTreeMap<String, usize>>,
     /// Each seat's lobby room by session id; a listed seat absent here is in no room. Optional
-    /// (lobbies before 1.4.0 leave it out and rooms stay unknown).
+    /// (lobbies before 1.3.1 leave it out and rooms stay unknown).
     #[serde(default)]
     rooms: Option<std::collections::HashMap<String, crate::roster::RoomView>>,
 }

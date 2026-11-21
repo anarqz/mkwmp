@@ -18,7 +18,7 @@ pub struct View {
     pub next_poll_ms: u64,
     pub ticket: Option<Ticket>,
     /// The seat's lobby room ({lobby, ussid, ussids, at}; SEAT_API.md §2), passed to the game
-    /// as is for its crash records. Servers before 1.4.0 leave it out.
+    /// as is for its crash records. Servers before 1.3.1 leave it out.
     #[serde(default)]
     pub room: Option<serde_json::Value>,
 }

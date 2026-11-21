@@ -59,7 +59,7 @@ fn signed(seed: u8, seated: u32, issued_at: u64) -> Announce {
         endpoint: format!("https://s{seed}.example.net"),
         name: format!("Server {seed}"),
         region: "eu".into(),
-        version: "1.4.0".into(),
+        version: "1.3.1".into(),
         capacity: 50,
         seated,
         queued: 0,
