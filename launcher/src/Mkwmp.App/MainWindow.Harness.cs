@@ -16,7 +16,7 @@ namespace Mkwmp.App;
 /// [--modal update|available|ready|ready-game|confirm|message|progress|crash|crash-report|bug-report|gamework|gameupdate|install]
 /// [--state crashed|crashed-solo|crashed-exit|downloading|installing|download-failed|setting-up|setup-failed|need-dump|setup-again|runtime-update|install-fails|dev-package|uptodate|update-ready|no-policy
 ///  |ready|wrong-runtime|wrong-version|mod-broken|copy-changed (the checklist's)] [--friends] [--toast]
-/// [--press right,down,a,east,…] [--pad-layout nintendo] [--size 1920x1080] [--theme dark] [--contrast high] [--battery 93] [--input keyboard] [--locale pt-BR]
+/// [--press right,down,a,east,…] [--pad-layout auto|nintendo|xbox] [--pad-device 28de:11ff:switchpro] [--size 1920x1080] [--theme dark] [--contrast high] [--battery 93] [--input keyboard] [--locale pt-BR]
 /// [--overlay [--overlay-frame png|none] [--overlay-no-menu] [--overlay-progress 0..1 | --overlay-return 0..1]]</c>
 /// renders the stage at that size once everything has settled, saves the PNG and exits. The window
 /// stays off-screen and never takes the focus. <c>--icon dir</c> writes the app icon instead.
@@ -96,11 +96,20 @@ public partial class MainWindow
         {
             _ = _vm.SetContrastAsync(contrast);
         }
-        // --pad-layout nintendo|xbox: the game's button layout, which the window's buttons follow (--press east: the right face button)
+        // --pad-layout auto|nintendo|xbox: the game's button layout, which the window's buttons follow (--press east: the right face button)
         if (App.Option(args, "--pad-layout") is { } layout)
         {
             _ = _vm.Launcher.SetGameSettingAsync(PadLayout.SettingId, layout);
-            _gamepad.Layout = PadLayout.FromSetting(layout);
+            _gamepad.Setting = layout;
+        }
+        // --pad-device 045e:0b13 | 057e:2009 | 28de:11ff:switchpro: the controller the game's Automatic is decided for
+        if (App.Option(args, "--pad-device") is { } device && PadIdentity.TryParse(device, out var pad))
+        {
+            _gamepad.Pretend(pad);
+        }
+        if (App.Option(args, "--pad-layout") is not null || App.Option(args, "--pad-device") is not null)
+        {
+            LogPadMapping();
         }
         var page = App.Option(args, "--page") ?? Routes.Home;
         if (page == "start")

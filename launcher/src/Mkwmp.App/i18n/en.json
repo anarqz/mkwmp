@@ -1058,7 +1058,7 @@
   "gs.operation_mode.opt.docked": "Docked",
   "gs.operation_mode.opt.handheld": "Handheld",
   "gs.pad_layout": "Button layout",
-  "gs.pad_layout.desc": "Which button is A. Nintendo: the right one, as on a Switch. Xbox: the bottom one, as labelled on an Xbox controller (cross on a PlayStation controller). Automatic picks Nintendo for controllers with Nintendo labels and Xbox for the others.",
+  "gs.pad_layout.desc": "Which button confirms and accelerates, the same in the game and in this launcher. Nintendo: the right one (A on a Switch controller, B on an Xbox controller). Xbox: the bottom one (A on an Xbox controller, cross on a PlayStation controller, B on a Switch controller). Automatic: Nintendo for Switch controllers, Xbox for all others. The other of the two goes back.",
   "gs.pad_layout.opt.auto": "Automatic",
   "gs.pad_layout.opt.nintendo": "Nintendo (A right)",
   "gs.pad_layout.opt.xbox": "Xbox (A bottom)",

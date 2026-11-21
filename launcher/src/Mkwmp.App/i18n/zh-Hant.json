@@ -1040,7 +1040,7 @@
   "gs.operation_mode.opt.docked": "底座模式",
   "gs.operation_mode.opt.handheld": "掌機模式",
   "gs.pad_layout": "按鍵配置",
-  "gs.pad_layout.desc": "決定哪個鍵是 A。Nintendo：右側的鍵，與 Switch 相同。Xbox：下方的鍵，與 Xbox 控制器上的標示一致（PlayStation 控制器上為叉鍵）。「自動」會為帶有 Nintendo 標示的控制器選擇 Nintendo，其他控制器選擇 Xbox。",
+  "gs.pad_layout.desc": "用哪個鍵確認和加速，遊戲和本啟動器中相同。Nintendo：右側的鍵（Switch 控制器上的 A，Xbox 控制器上的 B）。Xbox：下方的鍵（Xbox 控制器上的 A，PlayStation 控制器上的叉鍵，Switch 控制器上的 B）。「自動」為 Switch 控制器選擇 Nintendo，其他控制器一律選擇 Xbox。兩者中的另一個鍵用於返回。",
   "gs.pad_layout.opt.auto": "自動",
   "gs.pad_layout.opt.nintendo": "Nintendo（A 在右）",
   "gs.pad_layout.opt.xbox": "Xbox（A 在下）",

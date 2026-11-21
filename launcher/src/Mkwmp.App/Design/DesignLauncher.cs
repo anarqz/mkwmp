@@ -1052,7 +1052,7 @@ public sealed partial class DesignLauncher : ILauncher
         ]),
         new("controls", "Controls", "Gamepad",
         [
-            GameSetting.Choice("pad_layout", "Button layout", "Which button is A.", "auto", false,
+            GameSetting.Choice("pad_layout", "Button layout", "Which button confirms and accelerates, the same in the game and in this launcher.", "auto", false,
                 new("auto", "Automatic"), new("nintendo", "Nintendo (A right)"), new("xbox", "Xbox (A bottom)")),
             GameSetting.Toggle("motion", "Motion controls", "Steering by tilting the controller.", true, false),
             GameSetting.Range("rumble_strength", "Vibration strength", "How strong the controller vibrates.", 130, false, 0, 300, 10, "%"),

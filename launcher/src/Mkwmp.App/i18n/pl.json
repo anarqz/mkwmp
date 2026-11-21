@@ -1040,7 +1040,7 @@
   "gs.operation_mode.opt.docked": "Stacja dokująca",
   "gs.operation_mode.opt.handheld": "Przenośny",
   "gs.pad_layout": "Układ przycisków",
-  "gs.pad_layout.desc": "Który przycisk to A. Nintendo: prawy, jak w Switchu. Xbox: dolny, jak oznaczono na kontrolerze Xbox (krzyżyk w kontrolerze PlayStation). Automatycznie wybiera Nintendo dla kontrolerów z oznaczeniami Nintendo, a Xbox dla pozostałych.",
+  "gs.pad_layout.desc": "Który przycisk zatwierdza i przyspiesza, tak samo w grze i w tym launcherze. Nintendo: prawy (A na kontrolerze Switch, B na kontrolerze Xbox). Xbox: dolny (A na kontrolerze Xbox, krzyżyk na kontrolerze PlayStation, B na kontrolerze Switch). Automatycznie: Nintendo dla kontrolerów Switch, Xbox dla wszystkich innych. Drugi z nich cofa.",
   "gs.pad_layout.opt.auto": "Automatycznie",
   "gs.pad_layout.opt.nintendo": "Nintendo (A z prawej)",
   "gs.pad_layout.opt.xbox": "Xbox (A na dole)",

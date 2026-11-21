@@ -10,22 +10,25 @@ namespace Mkwmp.App;
 public partial class MainWindow
 {
     /// <summary>
-    /// The window's buttons follow the game's Settings › Controls › Button layout: with Nintendo the
-    /// right face button confirms (<see cref="PadLayout"/>). Read where the launcher said something
-    /// changed (any thread: after the first read, the core's view is a field).
+    /// The window's buttons follow the game's Settings › Controls › Button layout, as the game applies
+    /// it to the controller in use (<see cref="PadLayout"/>): with Nintendo the right face button
+    /// confirms, with Xbox the bottom one, and Automatic picks as the game does. Read where the launcher
+    /// said something changed (any thread: after the first read, the core's view is a field).
     /// </summary>
     private void FollowPadLayout()
     {
-        var layout = PadLayout.FromSetting(_vm.Launcher.GameSettings.Value(PadLayout.SettingId));
+        var setting = _vm.Launcher.GameSettings.Value(PadLayout.SettingId);
         Dispatcher.BeginInvoke(() =>
         {
-            if (_gamepad.Layout != layout)
+            if (_gamepad.Setting != setting)
             {
-                _gamepad.Layout = layout;
-                App.Log($"input: button layout {layout}");
+                _gamepad.Setting = setting;
             }
         });
     }
+
+    private void LogPadMapping() =>
+        App.Log($"input: button layout {_gamepad.Mapping} (pad_layout = {(_gamepad.Setting is { Length: > 0 } s ? s : "auto")}, controller {(_gamepad.Connected ? _gamepad.Identity.ToString() : "none")})");
 
     private void OnLauncherChangedForPad(object? sender, EventArgs e) => FollowPadLayout();
 
@@ -86,9 +89,9 @@ public partial class MainWindow
     /// </summary>
     private PadButton? HarnessButton(string name)
     {
-        if (PadLayout.FromPosition(name) is { } physical)
+        if (PadLayout.FromPosition(name) is { } position)
         {
-            return PadLayout.ToRole(physical, _gamepad.Layout);
+            return PadLayout.ToRole(position, _gamepad.Mapping.Layout);
         }
         return Enum.TryParse<PadButton>(name, ignoreCase: true, out var button) ? button : null;
     }

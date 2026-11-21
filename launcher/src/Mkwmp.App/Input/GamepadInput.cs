@@ -1,4 +1,5 @@
 // Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Threading;
 
@@ -35,6 +36,9 @@ public sealed class GamepadInput : IDisposable
     private DateTime _lastPoll;
     private DateTime _stickSince;
     private bool _enabled = true;
+    private string? _setting;
+    private bool _noCapabilitiesEx;
+    private PadIdentity? _pretend;
 
     public GamepadInput()
     {
@@ -48,8 +52,25 @@ public sealed class GamepadInput : IDisposable
     /// <summary>The right stick, every poll while it is tilted: how far to scroll (units, positive down / right) since the last poll.</summary>
     public event EventHandler<ScrollStep>? Scrolled;
 
-    /// <summary>Which physical button gives which role (the game's button layout).</summary>
-    public FaceLayout Layout { get; set; }
+    /// <summary>The game's <c>pad_layout</c> ("auto", "nintendo", "xbox"): with <see cref="Identity"/>, which physical button gives which role.</summary>
+    public string? Setting
+    {
+        get => _setting;
+        set
+        {
+            _setting = value;
+            Remap();
+        }
+    }
+
+    /// <summary>The controller in use, as the game's SDL identifies it (<see cref="PadIdentity.Unknown"/> without one).</summary>
+    public PadIdentity Identity { get; private set; }
+
+    /// <summary>What the game does with this controller and <see cref="Setting"/> (<see cref="PadLayout.Resolve"/>).</summary>
+    public PadMapping Mapping { get; private set; } = PadLayout.Resolve(null, PadIdentity.Unknown);
+
+    /// <summary>The mapping changed: a new setting or another controller.</summary>
+    public event EventHandler? MappingChanged;
 
     /// <summary>A controller came or went.</summary>
     public event EventHandler? ConnectedChanged;
@@ -110,6 +131,8 @@ public sealed class GamepadInput : IDisposable
         {
             _slot = found;
             _swallow = true;
+            Identity = _pretend ?? (found >= 0 ? Identify(found) : PadIdentity.Unknown);
+            Remap();
             ConnectedChanged?.Invoke(this, EventArgs.Empty);
         }
         if (found < 0)
@@ -154,7 +177,7 @@ public sealed class GamepadInput : IDisposable
                 _repeatAt = now + ScrollMotion.FirstRepeat;
                 _repeatSince = _repeatAt;
             }
-            Pressed?.Invoke(this, PadLayout.ToRole(button, Layout));
+            Pressed?.Invoke(this, PadLayout.ToRole(button, Mapping));
         }
         if (_repeating is { } held)
         {
@@ -210,6 +233,68 @@ public sealed class GamepadInput : IDisposable
         return 0;
     }
 
+    /// <summary>The harness' <c>--pad-device</c>: take the controller for <paramref name="pad"/>, whatever XInput says.</summary>
+    public void Pretend(PadIdentity pad)
+    {
+        _pretend = pad;
+        Identity = pad;
+        Remap();
+    }
+
+    private void Remap()
+    {
+        var mapping = PadLayout.Resolve(_setting, Identity);
+        if (mapping != Mapping)
+        {
+            Mapping = mapping;
+            MappingChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>
+    /// The controller in <paramref name="slot"/> as SDL identifies it (SDL_xinputjoystick.c: XInputGetCapabilitiesEx,
+    /// xinput1_4's ordinal 108, for the ids; its last field is Steam's virtual pad slot), with Steam's type for its
+    /// virtual pad from the file <c>SteamVirtualGamepadInfo</c> names (SDL_steam_virtual_gamepad.c).
+    /// </summary>
+    private PadIdentity Identify(int slot)
+    {
+        if (_api != 0 || _noCapabilitiesEx)
+        {
+            return PadIdentity.Unknown;
+        }
+        XInputCapabilitiesEx caps;
+        try
+        {
+            if (XInputGetCapabilitiesEx(1, (uint)slot, 0, out caps) != 0)
+            {
+                return PadIdentity.Unknown;
+            }
+        }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        {
+            _noCapabilitiesEx = true;
+            return PadIdentity.Unknown;
+        }
+        var pad = new PadIdentity(caps.VendorId, caps.ProductId);
+        if (!pad.IsSteamVirtual)
+        {
+            return pad;
+        }
+        string? info = null;
+        try
+        {
+            if (Environment.GetEnvironmentVariable(PadLayout.SteamVirtualGamepadInfoVariable) is { Length: > 0 } file)
+            {
+                info = File.ReadAllText(file);
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            // as SDL: without the file, Steam's virtual pad is an Xbox controller
+        }
+        return pad with { SteamType = PadLayout.SteamTypeOf(info, (int)caps.SteamSlot) };
+    }
+
     private bool Read(int slot, out XInputState state)
     {
         state = default;
@@ -240,7 +325,34 @@ public sealed class GamepadInput : IDisposable
         public short ThumbRY;
     }
 
+    /// <summary>XINPUT_CAPABILITIES and what XInputGetCapabilitiesEx adds (SDL_xinput.h SDL_XINPUT_CAPABILITIES_EX).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct XInputCapabilitiesEx
+    {
+        public byte Type;
+        public byte SubType;
+        public ushort Flags;
+        public ushort Buttons;
+        public byte LeftTrigger;
+        public byte RightTrigger;
+        public short ThumbLX;
+        public short ThumbLY;
+        public short ThumbRX;
+        public short ThumbRY;
+        public ushort LeftMotor;
+        public ushort RightMotor;
+        public ushort VendorId;
+        public ushort ProductId;
+        public ushort ProductVersion;
+        public ushort Unknown;
+        public uint SteamSlot;
+    }
+
 #pragma warning disable SYSLIB1054 // plain DllImport: blittable, and no unsafe code in this project
+    [DllImport("xinput1_4.dll", EntryPoint = "#108")]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern uint XInputGetCapabilitiesEx(uint one, uint index, uint flags, out XInputCapabilitiesEx capabilities);
+
     [DllImport("xinput1_4.dll", EntryPoint = "XInputGetState")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern uint XInputGetState14(uint index, out XInputState state);

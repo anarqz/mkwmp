@@ -82,6 +82,7 @@ public partial class MainWindow : Window
             OnButton(button);
         };
         _gamepad.ConnectedChanged += (_, _) => _vm.GamepadConnected = _gamepad.Connected;
+        _gamepad.MappingChanged += (_, _) => LogPadMapping();
         _gamepad.Scrolled += (_, step) =>
         {
             _vm.InputKind = InputKind.Gamepad;

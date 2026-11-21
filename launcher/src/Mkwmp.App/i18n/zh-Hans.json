@@ -1040,7 +1040,7 @@
   "gs.operation_mode.opt.docked": "底座模式",
   "gs.operation_mode.opt.handheld": "掌机模式",
   "gs.pad_layout": "按键布局",
-  "gs.pad_layout.desc": "决定哪个键是 A。Nintendo：右侧的键，与 Switch 相同。Xbox：下方的键，与 Xbox 手柄上的标注一致（PlayStation 手柄上为叉键）。「自动」会为带有 Nintendo 标注的手柄选择 Nintendo，其他手柄选择 Xbox。",
+  "gs.pad_layout.desc": "用哪个键确认和加速，游戏和本启动器中相同。Nintendo：右侧的键（Switch 手柄上的 A，Xbox 手柄上的 B）。Xbox：下方的键（Xbox 手柄上的 A，PlayStation 手柄上的叉键，Switch 手柄上的 B）。「自动」为 Switch 手柄选择 Nintendo，其他手柄一律选择 Xbox。两者中的另一个键用于返回。",
   "gs.pad_layout.opt.auto": "自动",
   "gs.pad_layout.opt.nintendo": "Nintendo（A 在右）",
   "gs.pad_layout.opt.xbox": "Xbox（A 在下）",

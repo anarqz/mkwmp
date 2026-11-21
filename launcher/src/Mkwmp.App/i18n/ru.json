@@ -1040,7 +1040,7 @@
   "gs.operation_mode.opt.docked": "В док-станции",
   "gs.operation_mode.opt.handheld": "Портативный",
   "gs.pad_layout": "Раскладка кнопок",
-  "gs.pad_layout.desc": "Какая кнопка работает как A. Nintendo: правая, как на Switch. Xbox: нижняя, как подписано на контроллере Xbox (крест на контроллере PlayStation). Автоматически: Nintendo для контроллеров с подписями Nintendo, Xbox для остальных.",
+  "gs.pad_layout.desc": "Какая кнопка подтверждает и газует — одинаково в игре и в этом лаунчере. Nintendo: правая (A на контроллере Switch, B на контроллере Xbox). Xbox: нижняя (A на контроллере Xbox, крест на контроллере PlayStation, B на контроллере Switch). Автоматически: Nintendo для контроллеров Switch, Xbox для всех остальных. Вторая из двух — назад.",
   "gs.pad_layout.opt.auto": "Автоматически",
   "gs.pad_layout.opt.nintendo": "Nintendo (A справа)",
   "gs.pad_layout.opt.xbox": "Xbox (A снизу)",

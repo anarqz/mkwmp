@@ -1040,7 +1040,7 @@
   "gs.operation_mode.opt.docked": "Mode TV",
   "gs.operation_mode.opt.handheld": "Mode portable",
   "gs.pad_layout": "Disposition des boutons",
-  "gs.pad_layout.desc": "Quel bouton est A. Nintendo : celui de droite, comme sur une Switch. Xbox : celui du bas, comme sur une manette Xbox (croix sur une manette PlayStation). Automatique choisit Nintendo pour les manettes aux inscriptions Nintendo et Xbox pour les autres.",
+  "gs.pad_layout.desc": "Quel bouton valide et accélère, de la même façon dans le jeu et dans ce launcher. Nintendo : celui de droite (A sur une manette Switch, B sur une manette Xbox). Xbox : celui du bas (A sur une manette Xbox, croix sur une manette PlayStation, B sur une manette Switch). Automatique : Nintendo pour les manettes Switch, Xbox pour toutes les autres. L'autre des deux revient en arrière.",
   "gs.pad_layout.opt.auto": "Automatique",
   "gs.pad_layout.opt.nintendo": "Nintendo (A à droite)",
   "gs.pad_layout.opt.xbox": "Xbox (A en bas)",

@@ -1040,7 +1040,7 @@
   "gs.operation_mode.opt.docked": "TV",
   "gs.operation_mode.opt.handheld": "Portatile",
   "gs.pad_layout": "Disposizione tasti",
-  "gs.pad_layout.desc": "Quale tasto è A. Nintendo: quello a destra, come su Switch. Xbox: quello in basso, come indicato su un controller Xbox (croce su un controller PlayStation). Automatica sceglie Nintendo per i controller con tasti Nintendo e Xbox per gli altri.",
+  "gs.pad_layout.desc": "Quale tasto conferma e accelera, allo stesso modo nel gioco e in questo launcher. Nintendo: quello a destra (A su un controller Switch, B su un controller Xbox). Xbox: quello in basso (A su un controller Xbox, croce su un controller PlayStation, B su un controller Switch). Automatica: Nintendo per i controller Switch, Xbox per tutti gli altri. L'altro dei due torna indietro.",
   "gs.pad_layout.opt.auto": "Automatico",
   "gs.pad_layout.opt.nintendo": "Nintendo (A a destra)",
   "gs.pad_layout.opt.xbox": "Xbox (A in basso)",

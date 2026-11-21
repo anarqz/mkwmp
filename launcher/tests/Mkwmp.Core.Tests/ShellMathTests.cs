@@ -46,6 +46,80 @@ public class ShellMathTests
     [InlineData(null, FaceLayout.Xbox)]
     public void LayoutFromTheGameSetting(string? value, FaceLayout expected) => Assert.Equal(expected, PadLayout.FromSetting(value));
 
+    // The truth table (docs: launcher/docs/DESIGN.md, "Button layout"): for each controller as XInput and the game's
+    // SDL3 see it, and each pad_layout value, the physical place (south, east) that confirms in the launcher. The game's
+    // A is at the same place: input_map.c, Nintendo east A, Xbox south A, auto Nintendo when the east button is labelled A.
+    // xinputA: where XInput's A button physically is on that controller.
+    [Theory]
+    // an Xbox controller on Windows (and the Steam Deck, the ROG Ally, any pad Proton shows the game: 28de:12fd)
+    [InlineData("045e:0b13", "south", "auto", "south")]
+    [InlineData("045e:0b13", "south", "xbox", "south")]
+    [InlineData("045e:0b13", "south", "nintendo", "east")]
+    [InlineData("28de:12fd", "south", "auto", "south")]
+    [InlineData("28de:12fd", "south", "nintendo", "east")]
+    // XInput gave no ids: SDL takes it for an Xbox 360 controller
+    [InlineData("0000:0000", "south", "auto", "south")]
+    [InlineData("0000:0000", "south", "nintendo", "east")]
+    // a PlayStation controller through Steam Input on Windows: cross is XInput's A
+    [InlineData("28de:11ff:ps5", "south", "auto", "south")]
+    [InlineData("28de:11ff:ps5", "south", "xbox", "south")]
+    [InlineData("28de:11ff:ps5", "south", "nintendo", "east")]
+    // a Switch Pro Controller / Joy-Con through Steam Input on Windows: Steam sends the A label (east) as XInput's A
+    [InlineData("28de:11ff:switchpro", "east", "auto", "east")]
+    [InlineData("28de:11ff:switchpro", "east", "nintendo", "east")]
+    [InlineData("28de:11ff:switchpro", "east", "xbox", "south")]
+    [InlineData("28de:11ff:joyconpair", "east", "auto", "east")]
+    [InlineData("28de:11ff:joyconpair", "east", "xbox", "south")]
+    // a Nintendo controller XInput sees with its own ids (a Proton that passes them): labelled A on the right, no Steam swap
+    [InlineData("057e:2009", "south", "auto", "east")]
+    [InlineData("057e:2009", "south", "nintendo", "east")]
+    [InlineData("057e:2009", "south", "xbox", "south")]
+    // the GameCube adapter: A at the bottom
+    [InlineData("057e:0337", "south", "auto", "south")]
+    public void ConfirmIsWhereTheGamesAIs(string device, string xinputA, string setting, string confirms)
+    {
+        Assert.True(PadIdentity.TryParse(device, out var pad));
+        var mapping = PadLayout.Resolve(setting, pad);
+        // XInput's A is at xinputA, its B at the other place
+        var atSouth = xinputA == "south" ? PadButton.A : PadButton.B;
+        var atEast = xinputA == "south" ? PadButton.B : PadButton.A;
+        Assert.Equal(PadButton.A, PadLayout.ToRole(confirms == "south" ? atSouth : atEast, mapping));
+        Assert.Equal(PadButton.B, PadLayout.ToRole(confirms == "south" ? atEast : atSouth, mapping));
+        // the game's A at that place, in the game's own terms (east A in its Nintendo layout, south A in Xbox)
+        Assert.Equal(confirms == "east" ? FaceLayout.Nintendo : FaceLayout.Xbox, mapping.Layout);
+        // the harness' --press east|south names places: the same roles
+        Assert.Equal(PadButton.A, PadLayout.ToRole(PadLayout.FromPosition(confirms)!.Value, mapping.Layout));
+    }
+
+    [Fact]
+    public void SteamsNintendoSwapIsUndoneOnlyForItsVirtualPad()
+    {
+        Assert.True(PadLayout.SwapsFaceButtons(new PadIdentity(0x28DE, 0x11FF, "switchpro")));
+        Assert.True(PadLayout.SwapsFaceButtons(new PadIdentity(0x28DE, 0x11FF, "joyconleft")));
+        Assert.False(PadLayout.SwapsFaceButtons(new PadIdentity(0x28DE, 0x11FF, "xboxone")));
+        Assert.False(PadLayout.SwapsFaceButtons(new PadIdentity(0x28DE, 0x11FF)));
+        Assert.False(PadLayout.SwapsFaceButtons(new PadIdentity(0x28DE, 0x12FD, "switchpro"))); // Proton's: SDL can't tell either
+        Assert.False(PadLayout.SwapsFaceButtons(new PadIdentity(0x057E, 0x2009)));
+        // X and Y follow A and B
+        var pro = PadLayout.Resolve("nintendo", new PadIdentity(0x28DE, 0x11FF, "switchpro"));
+        Assert.Equal(PadButton.X, PadLayout.ToRole(PadButton.X, pro)); // XInput X = Steam's label X = north: Switch X
+        Assert.Equal(PadButton.Y, PadLayout.ToRole(PadButton.Y, pro));
+        Assert.Equal(PadButton.Start, PadLayout.ToRole(PadButton.Start, pro));
+    }
+
+    [Fact]
+    public void SteamVirtualGamepadInfoGivesTheSlotsType()
+    {
+        const string info = "[slot 0]\nhandle=123\nVID=0x45e\nPID=0x28e\ntype=ps5\n[slot 1]\r\nname=Pro Controller\r\ntype=switchpro\r\n[slot 2]\nhandle=9\n";
+        Assert.Equal("ps5", PadLayout.SteamTypeOf(info, 0));
+        Assert.Equal("switchpro", PadLayout.SteamTypeOf(info, 1));
+        Assert.Null(PadLayout.SteamTypeOf(info, 2));
+        Assert.Null(PadLayout.SteamTypeOf(info, 3));
+        Assert.Null(PadLayout.SteamTypeOf(null, 0));
+        Assert.False(PadIdentity.TryParse("28de", out _));
+        Assert.True(PadIdentity.TryParse("28de:11ff:switchpro", out var pad) && pad.IsSteamVirtual && pad.SteamType == "switchpro");
+    }
+
 
     // ── the scroll motion ──
 

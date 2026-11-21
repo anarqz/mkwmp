@@ -558,7 +558,7 @@ public static partial class RecompSettings
         var controls = new List<GameSetting>
         {
             GameSetting.Choice("pad_layout", "Button layout",
-                "Which button is A. Nintendo: the right one, as on a Switch. Xbox: the bottom one, as labelled on an Xbox controller (cross on a PlayStation controller). Automatic picks Nintendo for controllers with Nintendo labels and Xbox for the others.",
+                "Which button confirms and accelerates, the same in the game and in this launcher. Nintendo: the right one (A on a Switch controller, B on an Xbox controller). Xbox: the bottom one (A on an Xbox controller, cross on a PlayStation controller, B on a Switch controller). Automatic: Nintendo for Switch controllers, Xbox for all others. The other of the two goes back.",
                 "auto", Live, O("auto", "Automatic"), O("nintendo", "Nintendo (A right)"), O("xbox", "Xbox (A bottom)")),
             GameSetting.Choice("button_icons", "Button icons",
                 "Which buttons the game's prompts show. Automatic follows the device you used last: the controller's own buttons (Xbox or PlayStation), or your keys and mouse. The icons follow your remapped buttons.",

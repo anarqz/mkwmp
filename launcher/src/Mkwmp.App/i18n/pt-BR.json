@@ -1092,7 +1092,7 @@
   "gs.operation_mode.opt.docked": "Modo TV",
   "gs.operation_mode.opt.handheld": "Portátil",
   "gs.pad_layout": "Layout dos botões",
-  "gs.pad_layout.desc": "Qual botão é o A. Nintendo: o da direita, como no Switch. Xbox: o de baixo, como indicado em um controle de Xbox (a cruz em um controle de PlayStation). “Automático” escolhe Nintendo para controles com legendas da Nintendo e Xbox para os demais.",
+  "gs.pad_layout.desc": "Qual botão confirma e acelera, igual no jogo e neste launcher. Nintendo: o da direita (A em um controle de Switch, B em um de Xbox). Xbox: o de baixo (A em um controle de Xbox, a cruz em um de PlayStation, B em um de Switch). “Automático”: Nintendo para controles de Switch, Xbox para todos os outros. O outro dos dois volta.",
   "gs.pad_layout.opt.auto": "Automático",
   "gs.pad_layout.opt.nintendo": "Nintendo (A à direita)",
   "gs.pad_layout.opt.xbox": "Xbox (A embaixo)",

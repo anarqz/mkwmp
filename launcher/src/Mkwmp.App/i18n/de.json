@@ -1040,7 +1040,7 @@
   "gs.operation_mode.opt.docked": "TV-Modus",
   "gs.operation_mode.opt.handheld": "Handheld",
   "gs.pad_layout": "Tastenbelegung",
-  "gs.pad_layout.desc": "Welche Taste A ist. Nintendo: die rechte, wie bei der Switch. Xbox: die untere, wie auf einem Xbox-Controller beschriftet (Kreuz bei einem PlayStation-Controller). Automatisch wählt Nintendo bei Controllern mit Nintendo-Beschriftung und Xbox bei allen anderen.",
+  "gs.pad_layout.desc": "Welche Taste bestätigt und Gas gibt, im Spiel und in diesem Launcher gleich. Nintendo: die rechte (A auf einem Switch-Controller, B auf einem Xbox-Controller). Xbox: die untere (A auf einem Xbox-Controller, Kreuz auf einem PlayStation-Controller, B auf einem Switch-Controller). Automatisch: Nintendo für Switch-Controller, Xbox für alle anderen. Die andere der beiden geht zurück.",
   "gs.pad_layout.opt.auto": "Automatisch",
   "gs.pad_layout.opt.nintendo": "Nintendo (A rechts)",
   "gs.pad_layout.opt.xbox": "Xbox (A unten)",

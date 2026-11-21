@@ -1040,7 +1040,7 @@
   "gs.operation_mode.opt.docked": "TVモード",
   "gs.operation_mode.opt.handheld": "携帯モード",
   "gs.pad_layout": "ボタン配置",
-  "gs.pad_layout.desc": "どのボタンをAにするか。Nintendo：右のボタン（Switchと同じ）。Xbox：下のボタン（Xboxコントローラーの表記どおり。PlayStationのコントローラーでは×）。「自動」は、Nintendo表記のコントローラーならNintendo、それ以外ならXboxを選びます。",
+  "gs.pad_layout.desc": "決定とアクセルに使うボタン。ゲームでもこのランチャーでも同じです。Nintendo：右のボタン（Switchのコントローラーでは A、Xboxのコントローラーでは B）。Xbox：下のボタン（Xboxのコントローラーでは A、PlayStationのコントローラーでは×、Switchのコントローラーでは B）。「自動」は、Switchのコントローラーなら Nintendo、それ以外なら Xbox を選びます。もう一方のボタンで戻ります。",
   "gs.pad_layout.opt.auto": "自動",
   "gs.pad_layout.opt.nintendo": "Nintendo（Aが右）",
   "gs.pad_layout.opt.xbox": "Xbox（Aが下）",

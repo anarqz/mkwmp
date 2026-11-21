@@ -5,6 +5,7 @@ What changed in each MKWMP release, newest first. The launcher shows this file o
 ## 1.4.3 — unreleased
 
 - **One controller menu in the game.** The overlay shortcut and mkw-recomp's own menu shortcut no longer fight over the same press. The launcher now sets mkw-recomp's menu shortcut itself, to the button your overlay shortcut doesn't use (Select + Start when the overlay is on Guide, Guide otherwise), and the Menu Shortcut row is gone from Settings › Controls. mkw-recomp's menu still opens with F1 / Esc and from the overlay's mkw-recomp menu entry.
+- **The launcher and the game agree on the button layout.** Settings › Controls › Button layout now does the same in both, on every controller: Nintendo confirms and accelerates with the right button, Xbox with the bottom one, and Automatic picks Nintendo for Switch controllers and Xbox for all others. Before, a Switch controller through Steam Input confirmed with the other button in the launcher when Nintendo or Xbox was chosen, and Automatic was always Xbox in the launcher. The setting's description says what each choice does.
 
 ## 1.4.2 — 2026-11-21
 

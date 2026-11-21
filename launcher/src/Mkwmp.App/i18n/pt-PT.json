@@ -1040,7 +1040,7 @@
   "gs.operation_mode.opt.docked": "Na base",
   "gs.operation_mode.opt.handheld": "Portátil",
   "gs.pad_layout": "Disposição dos botões",
-  "gs.pad_layout.desc": "Qual botão é o A. Nintendo: o da direita, como na Switch. Xbox: o de baixo, como está indicado num comando Xbox (a cruz num comando PlayStation). “Automático” escolhe Nintendo para comandos com legendas Nintendo e Xbox para os outros.",
+  "gs.pad_layout.desc": "Qual botão confirma e acelera, igual no jogo e neste launcher. Nintendo: o da direita (A num comando Switch, B num comando Xbox). Xbox: o de baixo (A num comando Xbox, a cruz num comando PlayStation, B num comando Switch). “Automático”: Nintendo para comandos Switch, Xbox para todos os outros. O outro dos dois volta atrás.",
   "gs.pad_layout.opt.auto": "Automático",
   "gs.pad_layout.opt.nintendo": "Nintendo (A à direita)",
   "gs.pad_layout.opt.xbox": "Xbox (A em baixo)",

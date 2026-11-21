@@ -1040,7 +1040,7 @@
   "gs.operation_mode.opt.docked": "독 모드",
   "gs.operation_mode.opt.handheld": "휴대 모드",
   "gs.pad_layout": "버튼 배치",
-  "gs.pad_layout.desc": "A 버튼이 어느 것인지 정합니다. Nintendo: Switch처럼 오른쪽 버튼. Xbox: Xbox 컨트롤러에 표시된 대로 아래쪽 버튼(PlayStation 컨트롤러에서는 ×). 「자동」은 Nintendo 표기의 컨트롤러에는 Nintendo를, 그 외에는 Xbox를 선택합니다.",
+  "gs.pad_layout.desc": "결정과 가속에 쓰는 버튼으로, 게임과 이 런처에서 똑같이 적용됩니다. Nintendo: 오른쪽 버튼(Switch 컨트롤러의 A, Xbox 컨트롤러의 B). Xbox: 아래쪽 버튼(Xbox 컨트롤러의 A, PlayStation 컨트롤러의 ×, Switch 컨트롤러의 B). 「자동」은 Switch 컨트롤러에는 Nintendo를, 그 외에는 모두 Xbox를 선택합니다. 나머지 하나는 뒤로 가기입니다.",
   "gs.pad_layout.opt.auto": "자동",
   "gs.pad_layout.opt.nintendo": "Nintendo(A 오른쪽)",
   "gs.pad_layout.opt.xbox": "Xbox(A 아래쪽)",
