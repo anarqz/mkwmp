@@ -545,12 +545,17 @@ child element. Browsers without `@property` show a still ring.
 
 ## 10. Screenshots
 
-All rendered by the launcher's own off-screen harness (`mkwmp-launcher.exe --demo --shot ...`,
+All rendered by the launcher's own off-screen harness (`mkwmp.exe --demo --shot ...`,
 see `launcher/shot.ps1`) from the demo data, at 1920x1080 (`*-light.webp`, `*-dark.webp`) and
 1280x800 for the Steam Deck (`deck-home-*.webp`); WebP quality 85. The demo has no game cover
 and no game art: the Play tile is a generated gradient, the overlay's "game" is a drawn
 placeholder (sky, hills, a road, a box kart), and the mod store thumbnails are generated
-gradients.
+gradients. The welcome and crash pictures and page backgrounds are MKWMP's own art.
+
+English is in this folder; the same set in Brazilian Portuguese (`--locale pt-BR`) is in
+`pt-BR/`, with the same file names. Some text is still English there, as the launcher shows
+it today: a server's privacy policy, the changelog, a mod's own options, the Game Settings
+pages (Screen, Graphics, ...) and part of About.
 
 | File | Screen |
 |---|---|
