@@ -4,8 +4,8 @@
 // both only record and wake the overlay's own thread, which does the waiting and the talking to the launcher.
 //
 // Plugin API 3 (mkw-recomp 0.1.15-mkwmp as released) has no filter, no picture and no way to keep mkw-recomp's menu
-// shut, so there the thread watches the game's SDL3 pads itself: Guide and the Select hold open the overlay, Select
-// still reaches the game, and the trigger mkw-recomp's own menu uses (MKW_MENU_SHORTCUT: Select+Start, or Guide) is
+// shut, so there the thread watches the game's SDL3 pads itself: the chosen shortcut opens the overlay, its buttons
+// still reach the game, and the trigger mkw-recomp's own menu uses (MKW_MENU_SHORTCUT: Select+Start, or Guide) is
 // left to it. The game reads nothing while the launcher has the focus because SDL drops pad presses of a window
 // without the keyboard focus (SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS is off by default, and mkw-recomp leaves it).
 #include "plat_net.h"   // winsock2.h before windows.h
@@ -26,36 +26,85 @@
 
 static int32_t iabs32(int32_t v) { return v < 0 ? -v : v; }
 
+// One combination: Guide; a first button held back from the game (mod) that triggers with `with` or after `hold_ms`;
+// or buttons that pass to the game until they are all down together (`all`).
+typedef struct {
+    const char *name;
+    int guide;
+    uint64_t mod, with;
+    uint32_t hold_ms;
+    uint64_t all;
+} ComboDef;
+static const ComboDef kCombos[OVERLAY_COMBO_COUNT] = {
+    [OVERLAY_COMBO_DEFAULT] = {"guide_or_select_start", 1, OVERLAY_BTN_MINUS, OVERLAY_BTN_PLUS, OVERLAY_HOLD_MS, 0},
+    [OVERLAY_COMBO_GUIDE] = {"guide", 1, 0, 0, 0, 0},
+    [OVERLAY_COMBO_SELECT_START] = {"select_start", 0, OVERLAY_BTN_MINUS, OVERLAY_BTN_PLUS, 0, 0},
+    [OVERLAY_COMBO_SELECT_HOLD] = {"select_hold", 0, OVERLAY_BTN_MINUS, 0, OVERLAY_HOLD_MS, 0},
+    [OVERLAY_COMBO_START_HOLD] = {"start_hold", 0, OVERLAY_BTN_PLUS, 0, OVERLAY_HOLD_MS, 0},
+    [OVERLAY_COMBO_STICKS] = {"l3_r3", 0, 0, 0, 0, OVERLAY_BTN_STICK_L | OVERLAY_BTN_STICK_R},
+    [OVERLAY_COMBO_BUMPERS_START] = {"lb_rb_start", 0, 0, 0, 0, OVERLAY_BTN_L | OVERLAY_BTN_R | OVERLAY_BTN_PLUS},
+    [OVERLAY_COMBO_SELECT_LB] = {"select_lb", 0, OVERLAY_BTN_MINUS, OVERLAY_BTN_L, 0, 0},
+    [OVERLAY_COMBO_SELECT_RB] = {"select_rb", 0, OVERLAY_BTN_MINUS, OVERLAY_BTN_R, 0, 0},
+};
+
+OverlayCombo overlay_combo_parse(const char *name, int len) {
+    for (int i = 0; name && len > 0 && i < OVERLAY_COMBO_COUNT; i++)
+        if ((int)strlen(kCombos[i].name) == len && !strncmp(kCombos[i].name, name, (size_t)len)) return (OverlayCombo)i;
+    return OVERLAY_COMBO_DEFAULT;
+}
+
+const char *overlay_combo_name(OverlayCombo combo) {
+    return kCombos[(unsigned)combo < OVERLAY_COMBO_COUNT ? combo : OVERLAY_COMBO_DEFAULT].name;
+}
+
+void overlay_gate_set_combo(OverlayGate *g, OverlayCombo combo) {
+    if ((unsigned)combo >= OVERLAY_COMBO_COUNT) combo = OVERLAY_COMBO_DEFAULT;
+    if (g->combo == combo) return;
+    g->combo = combo;
+    g->mod_held = g->mod_fired = 0;
+    g->replay_until = 0;
+    g->all_was = 1;     // what is down now is not a press of the new combination
+    g->guide_was = 1;
+}
+
 OverlayTrigger overlay_gate(OverlayGate *g, OverlayPad *pad, uint64_t now_ms, int armed, int open) {
+    const ComboDef *c = &kCombos[(unsigned)g->combo < OVERLAY_COMBO_COUNT ? g->combo : OVERLAY_COMBO_DEFAULT];
     if (!armed) {
+        OverlayCombo keep = g->combo;
         memset(g, 0, sizeof *g);
+        g->combo = keep;
         return OVERLAY_BY_NONE;
     }
     OverlayTrigger t = OVERLAY_BY_NONE;
     int guide = pad->guide != 0;
-    if (guide && !g->guide_was) t = OVERLAY_BY_GUIDE;
+    if (c->guide && guide && !g->guide_was) t = OVERLAY_BY_GUIDE;
     g->guide_was = guide;
 
-    int minus = (pad->buttons & OVERLAY_BTN_MINUS) != 0, plus = (pad->buttons & OVERLAY_BTN_PLUS) != 0;
-    if (minus) {
-        if (!g->select_held) {
-            g->select_held = 1;
-            g->select_fired = 0;
-            g->select_since = now_ms;
+    uint64_t b = pad->buttons;
+    int mod = c->mod && (b & c->mod) == c->mod;
+    if (mod) {
+        if (!g->mod_held) {
+            g->mod_held = 1;
+            g->mod_fired = 0;
+            g->mod_since = now_ms;
         }
-        if (!g->select_fired) {
-            if (plus) {
-                g->select_fired = 1;
+        if (!g->mod_fired) {
+            if (c->with && (b & c->with) == c->with) {
+                g->mod_fired = 1;
                 if (!t) t = OVERLAY_BY_CHORD;
-            } else if (now_ms - g->select_since >= OVERLAY_HOLD_MS) {
-                g->select_fired = 1;
+            } else if (c->hold_ms && now_ms - g->mod_since >= c->hold_ms) {
+                g->mod_fired = 1;
                 if (!t) t = OVERLAY_BY_HOLD;
             }
         }
-    } else if (g->select_held) {
-        g->select_held = 0;
-        if (!g->select_fired) g->replay_until = now_ms + OVERLAY_REPLAY_MS;   // a normal press: the game gets it, late
+    } else if (g->mod_held) {
+        g->mod_held = 0;
+        if (!g->mod_fired) g->replay_until = now_ms + OVERLAY_REPLAY_MS;   // a normal press: the game gets it, late
     }
+
+    int all = c->all && (b & c->all) == c->all;   // L3+R3, LB+RB+Start: each alone was the game's until now
+    if (all && !g->all_was && !t) t = OVERLAY_BY_CHORD;
+    g->all_was = all;
 
     if (t) g->idle = 1;
     if (open || g->idle) {
@@ -67,16 +116,18 @@ OverlayTrigger overlay_gate(OverlayGate *g, OverlayPad *pad, uint64_t now_ms, in
         memset(pad, 0, sizeof *pad);   // connected and neutral, never disconnected
         return t;
     }
-    pad->guide = 0;
-    pad->buttons &= ~(uint64_t)OVERLAY_BTN_MINUS;
-    if (!minus && now_ms < g->replay_until) pad->buttons |= OVERLAY_BTN_MINUS;
+    if (c->guide) pad->guide = 0;   // otherwise Guide stays the game's (and mkw-recomp's menu_shortcut = guide)
+    if (c->mod) {
+        pad->buttons &= ~c->mod;
+        if (!mod && now_ms < g->replay_until) pad->buttons |= c->mod;
+    }
     return t;
 }
 
 void overlay_gate_closed(OverlayGate *g) {
     g->idle = 1;
     g->replay_until = 0;
-    if (g->select_held) g->select_fired = 1;   // what is held now is not a press for the game
+    if (g->mod_held) g->mod_fired = 1;   // what is held now is not a press for the game
 }
 
 // The value after "key": in a flat JSON object of the launcher's (no nesting, no escapes in what is read here).
@@ -102,6 +153,10 @@ int overlay_parse_state(const char *json, OverlayState *out) {
     if ((v = json_value(json, "seq"))) out->seq = strtoll(v, NULL, 10);
     out->enabled = !(v = json_value(json, "enabled")) || !strncmp(v, "true", 4);
     if ((v = json_value(json, "action"))) out->menu = !strncmp(v, "\"menu\"", 6), out->quit = !strncmp(v, "\"quit\"", 6);
+    if ((v = json_value(json, "shortcut")) && *v == '"') {
+        const char *end = strchr(v + 1, '"');
+        if (end) out->combo = overlay_combo_parse(v + 1, (int)(end - v - 1));
+    }
     return 1;
 }
 
@@ -128,6 +183,7 @@ static int g_filtered;       // the runtime calls pad_filter (plugin API 4)
 static PlatEvent *g_wake;    // a trigger: the thread looks now
 static PlatEvent *g_framed;  // the picture arrived
 static volatile int g_armed, g_open, g_trigger, g_closed, g_idle;
+static volatile int g_combo;   // OverlayCombo: the launcher's "shortcut", at every answer of its (live)
 static OverlayGate g_gate;   // the filter's (the game's input thread only)
 static OverlayGate g_watch;  // the thread's own, on plugin API 3
 
@@ -150,6 +206,13 @@ static void trigger(OverlayTrigger t) {
     plat_event_set(g_wake);
 }
 
+// The launcher's "shortcut" (Settings › Game), from any of its answers: the filter takes it at its next read.
+static void use_combo(OverlayCombo combo) {
+    if ((int)combo == plat_load(&g_combo)) return;
+    plat_store(&g_combo, (int)combo);
+    mkwmp_log("overlay: the shortcut is now %s", overlay_combo_name(combo));
+}
+
 // Plugin API 4: each read of a player's pad, before mkw-recomp's menu shortcut and the game. Does not wait.
 static void pad_filter(MkwPad *pad, void *user) {
     (void)user;
@@ -159,6 +222,7 @@ static void pad_filter(MkwPad *pad, void *user) {
         return;
     }
     if (plat_xchg(&g_closed, 0)) overlay_gate_closed(&g_gate);
+    overlay_gate_set_combo(&g_gate, (OverlayCombo)plat_load(&g_combo));
     OverlayPad p = {pad->buttons, pad->lx, pad->ly, pad->rx, pad->ry, pad->guide};
     OverlayTrigger t = overlay_gate(&g_gate, &p, plat_ms(), armed, open);
     plat_store(&g_idle, g_gate.idle);
@@ -323,7 +387,10 @@ static struct {
     unsigned char (*button)(void *pad, int button);
     void (*free)(void *p);
 } g_sdl;
-enum { SDL_BTN_BACK = 4, SDL_BTN_GUIDE = 5, SDL_BTN_START = 6 };   // SDL_GamepadButton
+enum {   // SDL_GamepadButton
+    SDL_BTN_BACK = 4, SDL_BTN_GUIDE = 5, SDL_BTN_START = 6, SDL_BTN_LSTICK = 7, SDL_BTN_RSTICK = 8, SDL_BTN_LB = 9,
+    SDL_BTN_RB = 10,
+};
 
 static int sdl_ready(void) {
     if (!g_sdl.looked) {
@@ -353,14 +420,21 @@ static void sdl_watch(void) {
         if (g_sdl.button(pad, SDL_BTN_BACK)) p.buttons |= OVERLAY_BTN_MINUS;
         if (g_sdl.button(pad, SDL_BTN_START)) p.buttons |= OVERLAY_BTN_PLUS;
         if (g_sdl.button(pad, SDL_BTN_GUIDE)) p.guide = 1;
+        if (g_sdl.button(pad, SDL_BTN_LSTICK)) p.buttons |= OVERLAY_BTN_STICK_L;
+        if (g_sdl.button(pad, SDL_BTN_RSTICK)) p.buttons |= OVERLAY_BTN_STICK_R;
+        if (g_sdl.button(pad, SDL_BTN_LB)) p.buttons |= OVERLAY_BTN_L;
+        if (g_sdl.button(pad, SDL_BTN_RB)) p.buttons |= OVERLAY_BTN_R;
     }
     if (ids) g_sdl.free(ids);
+    OverlayCombo combo = (OverlayCombo)plat_load(&g_combo);
+    overlay_gate_set_combo(&g_watch, combo);
     OverlayTrigger t = overlay_gate(&g_watch, &p, plat_ms(), 1, plat_load(&g_open));
     if (!t) return;
     // mkw-recomp's menu opens on one of the two and cannot be kept shut from here: that one stays its own
     const char *own = g_api->cfg_get ? g_api->cfg_get("MKW_MENU_SHORTCUT") : NULL;
     int own_guide = own && !strcmp(own, "guide");
-    if ((t == OVERLAY_BY_GUIDE && own_guide) || (t == OVERLAY_BY_CHORD && !own_guide)) return;
+    int select_start = t == OVERLAY_BY_CHORD && (combo == OVERLAY_COMBO_DEFAULT || combo == OVERLAY_COMBO_SELECT_START);
+    if ((t == OVERLAY_BY_GUIDE && own_guide) || (select_start && !own_guide)) return;
     trigger(t);
 }
 
@@ -444,6 +518,7 @@ static void session(OverlayTrigger by) {
         if (status == 200 && overlay_parse_state(answer, &now)) {
             fails = 0;
             st = now;
+            use_combo(now.combo);
         } else if (++fails >= 3) {   // the launcher went away: the game is the player's again
             mkwmp_log("overlay: the launcher stopped answering (HTTP %d): back to the game", status);
             st.open = 0, st.menu = 0, st.quit = 0;
@@ -490,6 +565,7 @@ static void overlay_main(void *arg) {
             OverlayState st;
             int ok = request("GET", "/local/v1/overlay/state", NULL, 0, 2000, buf, sizeof buf, &answer) == 200 &&
                      overlay_parse_state(answer, &st) && st.enabled;
+            if (ok) use_combo(st.combo);
             if (ok != armed) mkwmp_log(ok ? "overlay: the launcher has one: armed" : "overlay: no launcher overlay: off");
             plat_store(&g_armed, armed = ok);
             next_probe = now + PROBE_ARMED_MS;
