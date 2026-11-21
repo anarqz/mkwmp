@@ -257,9 +257,7 @@ def launcher(src, assets):
     n = write_ico(assets / "mkwmp.ico", {s: icon_at(tile, s) for s in (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)})
     report(assets / "mkwmp.ico", n)
     report(assets / "mkwmp-256.png", save_png(tile.resize((256, 256), Image.LANCZOS), assets / "mkwmp-256.png", quant=False))
-    # page backgrounds (behind every page, under a scrim of the theme's background) and the welcome's hero
-    report(art / "backdrop-dark.jpg", save_jpg(Image.open(src / "chat-1.png"), art / "backdrop-dark.jpg", 80))
-    report(art / "backdrop-light.jpg", save_jpg(Image.open(src / "chat-2.png"), art / "backdrop-light.jpg", 80))
+    # the welcome's hero (the page backgrounds were dropped: pages are the plain theme colour)
     report(art / "welcome-hero.jpg", save_jpg(welcome_hero(src), art / "welcome-hero.jpg", 86))
     report(art / "logo.png", save_png(fit(logo_image(src), 960), art / "logo.png"))
     # illustrations: shown at most ~250 stage px (1080 high); stored at 1.5x
