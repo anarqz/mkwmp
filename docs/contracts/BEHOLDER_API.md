@@ -4,7 +4,7 @@ The beholder lists mkwmp seat servers, official and self-hosted, so the launcher
 browser. Servers announce themselves; launchers read the list. Modelled on ForzaInfinity's beholder
 (its ANNOUNCER_API), smaller: **in memory only**, servers only.
 
-- Service: `mkwmp beholder [config/beholder.toml]` (`rust/beholder`), one small process behind HTTPS
+- Service: `server beholder [config/beholder.toml]` (`rust/beholder`), one small process behind HTTPS
   (a Cloudflare tunnel or a reverse proxy).
 - It holds no player data, never sees a token, never contacts an announced endpoint and never
   measures latency. **A listing is a hint, not a trust decision**: the launcher talks to the server it

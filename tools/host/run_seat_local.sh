@@ -7,7 +7,7 @@ set -eu
 cd "$(dirname "$0")/../.."
 cfg="${1:-config/server.toml}"
 cargo build --release --manifest-path rust/Cargo.toml -p mkwmp
-bin=rust/target/release/mkwmp
+bin=rust/target/release/server
 key=scratch/keys/seat-ed25519.key
 if [ ! -s "$key" ]; then
   mkdir -p scratch/keys
@@ -17,4 +17,4 @@ if [ ! -s "$key" ]; then
   echo "created $key; public key entry for lobbies:"
   sed -n 4p scratch/keys/keygen.txt
 fi
-exec "$bin" server "$cfg"
+exec "$bin" seat "$cfg"

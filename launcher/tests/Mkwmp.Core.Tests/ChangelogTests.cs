@@ -47,7 +47,7 @@ public sealed class ChangelogTests
             ["1.4.0", "1.3.1", "1.3.0", "1.2.0", "1.1.1", "1.1.0", "1.0.2", "1.0.1", "1.0.0", "0.0.1-rc.3", "0.0.1-rc.2", "0.0.1-rc.1"],
             releases.Select(r => r.Version));
         Assert.Equal("unreleased", releases[0].Date);
-        Assert.Equal("unreleased", releases[1].Date); // 1.3.1, the Rust launcher's last release, until it is published
+        Assert.Equal("2026-11-21", releases[1].Date); // 1.3.1, the Rust launcher's last release
         Assert.Equal("2026-11-19", releases[2].Date);
         Assert.Equal("2026-11-14", releases[^1].Date);
         Assert.All(releases, r => Assert.False(string.IsNullOrWhiteSpace(r.Markdown)));

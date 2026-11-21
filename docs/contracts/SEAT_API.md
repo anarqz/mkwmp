@@ -1,6 +1,6 @@
 # Contract: the seat API (`/seat/v1`) and the seat ticket
 
-Our own protocol. Not an NPLN/game contract. Served by `mkwmp server` (crate `rust/seat`) over plain HTTP + JSON. Put TLS in front of it with a reverse proxy or tunnel. Consumers:
+Our own protocol. Not an NPLN/game contract. Served by `server seat` (crate `rust/seat`) over plain HTTP + JSON. Put TLS in front of it with a reverse proxy or tunnel. Consumers:
 
 - the launcher (`mkwmp-launcher`, `rust/client`): join, poll/heartbeat, leave; presence and friends;
 - the lobby: the roster, and ticket verification at login.
@@ -18,7 +18,7 @@ Rules for a player's name and for every friend entry:
 
 ## 1a. Profiles (registered names)
 
-A name must be registered before it can join. Registering returns a 6-digit **PIN**, shown once; the launcher saves it in `client.toml`. Joining needs the name's PIN. Profiles, friendships and voice-chat reports are the only state kept across restarts: `[registry] file`, SQLite, PINs as Argon2id hashes. Names unused for `expire_days` (default 30) are deleted with their friendships; a launcher that still has the name's PIN registers it again with that PIN (`POST /seat/v1/profiles` with `pin`) if the name is still free; `reserved_names` can only be registered by the admin (`mkwmp admin register <name>`, loopback + admin token).
+A name must be registered before it can join. Registering returns a 6-digit **PIN**, shown once; the launcher saves it in `client.toml`. Joining needs the name's PIN. Profiles, friendships and voice-chat reports are the only state kept across restarts: `[registry] file`, SQLite, PINs as Argon2id hashes. Names unused for `expire_days` (default 30) are deleted with their friendships; a launcher that still has the name's PIN registers it again with that PIN (`POST /seat/v1/profiles` with `pin`) if the name is still free; `reserved_names` can only be registered by the admin (`server admin register <name>`, loopback + admin token).
 
 Rate limits (client IP = `CF-Connecting-IP` when the request comes through the local tunnel, else the peer): 3 registrations per IP per hour; 10 wrong PINs per IP per 15 min; 10 wrong PINs per name per hour (then that name is locked until the window passes); 30 joins per IP per minute. Over a limit: `429 RATE_LIMITED` with `Retry-After`.
 
@@ -91,7 +91,7 @@ A launcher signs in with its PIN to a **presence**. A presence never takes a sea
 
 ## 2b. Voice-chat abuse reports
 
-A player reports another player's voice chat from the launcher (SETTINGS → REPORT VOICE ABUSE); the server's host reviews reports with `mkwmp admin reports`. Reports are stored in `registry.db`. A profile has **one open report at a time**. Reports are not tied to profiles: one about a player stays when that player's profile goes (it records the reported profile's registration time, so a later owner of the gamertag is told apart). The reporter deleting their profile (or an admin release) deletes the reports they filed. Every report is deleted 90 days after it was filed.
+A player reports another player's voice chat from the launcher (SETTINGS → REPORT VOICE ABUSE); the server's host reviews reports with `server admin reports`. Reports are stored in `registry.db`. A profile has **one open report at a time**. Reports are not tied to profiles: one about a player stays when that player's profile goes (it records the reported profile's registration time, so a later owner of the gamertag is told apart). The reporter deleting their profile (or an admin release) deletes the reports they filed. Every report is deleted 90 days after it was filed.
 
 | Route | Body → answer | Notes |
 | --- | --- | --- |
@@ -131,7 +131,7 @@ Each server serves its own privacy policy and records, per profile, which versio
 
 **Who holds which key:**
 
-- The seat server signs with its private key: `[ticket] private_key_file`, created with `mkwmp keygen <kid>`.
+- The seat server signs with its private key: `[ticket] private_key_file`, created with `server keygen <kid>`.
 - Lobbies hold only public keys: `[ticket] public_keys = ["kid:base64url"]`.
 - So a ticket made by anyone else fails verification.
 

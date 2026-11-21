@@ -1,4 +1,4 @@
-//! Smoke test of the real `mkwmp lobby` process: two game-like clients sign
+//! Smoke test of the real `server lobby` process: two game-like clients sign
 //! in over TLS (NPLN), matchmake, both get the same assignment, open their
 //! Gamesync sessions over h2c, and the UDP services answer. The game-protocol
 //! details are the lobby crate's tests; this checks the wiring end to end.
@@ -56,7 +56,7 @@ fn start() -> (Lobby, rcgen::CertifiedKey) {
     start_with(false)
 }
 
-/// `with_seat`: also run `mkwmp server` with signing keys and the roster
+/// `with_seat`: also run `server seat` with signing keys and the roster
 /// enabled, and point the lobby at it (sync every second).
 fn start_with(with_seat: bool) -> (Lobby, rcgen::CertifiedKey) {
     // One folder per lobby: tests run in parallel.
@@ -71,7 +71,7 @@ fn start_with(with_seat: bool) -> (Lobby, rcgen::CertifiedKey) {
     let (npln, gamesync, turn, nat, seat_port) = (free_port(), free_port(), free_udp(), free_udp(), free_port());
     let voice = free_udp();
     std::fs::write(dir.join("lobby-tokens.txt"), "lt-smoke\n").unwrap();
-    // A fixed test key pair (`mkwmp keygen t1`).
+    // A fixed test key pair (`server keygen t1`).
     std::fs::write(dir.join("seat.key"), "G7pdXMxFuREdTbldNlub-3RQ2ihATuJMBrfdG9Tx7AY\n").unwrap();
     let seat_cfg = if with_seat {
         format!(
@@ -120,7 +120,7 @@ key = "key.pem"
     std::fs::write(dir.join("server.toml"), toml).unwrap();
     let cfg = dir.join("server.toml");
     let seat = with_seat.then(|| {
-        let c = Command::new(env!("CARGO_BIN_EXE_mkwmp")).args(["server", cfg.to_str().unwrap()]).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+        let c = Command::new(env!("CARGO_BIN_EXE_server")).args(["server", cfg.to_str().unwrap()]).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
         for _ in 0..100 {
             if std::net::TcpStream::connect(("127.0.0.1", seat_port)).is_ok() {
                 break;
@@ -129,7 +129,7 @@ key = "key.pem"
         }
         c
     });
-    let mut child = Command::new(env!("CARGO_BIN_EXE_mkwmp"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_server"))
         .args(["lobby", cfg.to_str().unwrap()])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

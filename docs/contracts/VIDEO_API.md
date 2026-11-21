@@ -56,7 +56,7 @@ STUN-shaped, as in VOICE_API.md 2.
 ## 4. Reports
 
 A report names what it is about: `POST /seat/v1/reports` takes an optional
-`kind: "voice" | "camera"` (default `"voice"`); `Report` gains `kind`; `mkwmp admin reports`
+`kind: "voice" | "camera"` (default `"voice"`); `Report` gains `kind`; `server admin reports`
 shows it. The reasons stay the same.
 
 ## 5. Privacy

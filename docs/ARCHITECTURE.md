@@ -9,23 +9,23 @@ There is **one server binary, `mkwmp`, with two parts**. Both run on one machine
 ```
  player PC                                   the server
  ┌──────────────────┐   HTTP(S) seat API   ┌───────────────────────────────┐
- │ mkwmp-launcher   │ ───────────────────► │ mkwmp server  (gamertags,     │
+ │ mkwmp-launcher   │ ───────────────────► │ server seat   (gamertags,     │
  │  gamertag + PIN  │ ◄─ queue / ticket ── │   friends, seats, tickets)    │
  │  friends, tray   │                      │   SQLite registry             │
  │  writes mkwmp.toml + lobby cert         │        ▲ roster (localhost)   │
  │  launches mkw.exe│                      │        │                      │
- │   └ winmm patch ─┼── NPLN gRPC/TLS ────►│ mkwmp lobby   (matchmaking,   │
+ │   └ winmm patch ─┼── NPLN gRPC/TLS ────►│ server lobby  (matchmaking,   │
  │                  │◄── Pia UDP / TURN ──►│   sessions, Gamesync, TURN)   │
  └──────────────────┘                      └───────────────────────────────┘
 ```
 
-    mkwmp host   [--public-ip IP ...]   both parts in one process; sets itself up on first run
-    mkwmp server [config/server.toml]   gamertags, friends, seats, queue, tickets (HTTP)
-    mkwmp lobby  [config/server.toml]   the game-facing lobby
-    mkwmp keygen [kid]                  new ticket signing key
-    mkwmp admin  <list|register|reset-pin|release> [name]
+    server host  [--public-ip IP ...]   both parts in one process; sets itself up on first run
+    server seat  [config/server.toml]   gamertags, friends, seats, queue, tickets (HTTP)
+    server lobby [config/server.toml]   the game-facing lobby
+    server keygen [kid]                 new ticket signing key
+    server admin <list|register|reset-pin|release> [name]
 
-## The seat server (`mkwmp server`, crate `rust/seat`)
+## The seat server (`server seat`, crate `rust/seat`)
 
 - **Gamertags.** A player registers a gamertag and gets a 6-digit PIN. Gamertags, PIN hashes (Argon2), friendships and voice-chat reports are stored in SQLite (`[registry] file`). Unused gamertags are deleted after `expire_days` (30); the launcher registers a deleted one again with its saved PIN.
 - **Friends.** Requests are accepted or declined, then stored on the server. Removing a friend, or deleting a gamertag, removes the friendship on both sides.
@@ -38,7 +38,7 @@ There is **one server binary, `mkwmp`, with two parts**. Both run on one machine
 - **Status.** `GET /seat/v1/status` is public. It shows seats, the queue and live lobbies, plus the lobby endpoint and the lobby's certificate (`lobbyCa`) for the launcher.
 - **Rate limits** cover every route (per IP, per session or per token). Every 429 carries `Retry-After`.
 
-## The lobby (`mkwmp lobby`, crates `rust/lobby` + `rust/gateway`)
+## The lobby (`server lobby`, crates `rust/lobby` + `rust/gateway`)
 
 This is the game-facing side: NPLN Auth, Matchmaker, GameSessionService and Gamesync over gRPC/HTTP2/TLS, plus Pia NAT checks and a TURN relay over UDP.
 
@@ -53,7 +53,7 @@ This is the game-facing side: NPLN Auth, Matchmaker, GameSessionService and Game
 - From rc.2, that root is the certificate the server publishes as `lobbyCa`, which the launcher writes to `<game>/mkwmp-lobby-ca.pem`.
 - Without that file, the patch trusts its built-in certificate.
 
-A self-hosted lobby uses a self-signed certificate for the host names the game asks for; `mkwmp host` creates one on its first run.
+A self-hosted lobby uses a self-signed certificate for the host names the game asks for; `server host` creates one on its first run.
 
 **Networking:**
 - The seat API (`[seats] bind`, HTTP) runs directly, or behind a TLS reverse proxy or a Cloudflare tunnel.
