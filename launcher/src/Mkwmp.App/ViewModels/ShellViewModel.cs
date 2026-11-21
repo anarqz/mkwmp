@@ -524,17 +524,33 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         return UpdateSettingsAsync(s => s with { Ui = s.Ui with { Theme = _appliedTheme } });
     }
 
-    private void ApplyTheme(string theme)
+    /// <summary>Settings › Appearance › Contrast: one of <see cref="Themes.Palette.Steps"/> (<c>UiSettings.Contrast</c>).</summary>
+    public string Contrast => _appliedContrast;
+
+    private string _appliedContrast = Themes.Palette.Normal;
+
+    /// <summary>Switches the contrast now and saves the choice.</summary>
+    public Task SetContrastAsync(string contrast)
+    {
+        contrast = Themes.Palette.Normalize(contrast);
+        ApplyTheme(_appliedTheme, contrast);
+        return UpdateSettingsAsync(s => s with { Ui = s.Ui with { Contrast = contrast } });
+    }
+
+    private void ApplyTheme(string theme, string? contrast = null)
     {
         theme = theme == "dark" ? "dark" : "light";
-        if (_appliedTheme == theme)
+        contrast = Themes.Palette.Normalize(contrast ?? Launcher.Settings.Ui.Contrast);
+        if (_appliedTheme == theme && _appliedContrast == contrast)
         {
             return;
         }
         _appliedTheme = theme;
-        ThemeManager.Apply(theme);
+        _appliedContrast = contrast;
+        ThemeManager.Apply(theme, contrast);
         Raise(nameof(Theme));
         Raise(nameof(IsDark));
+        Raise(nameof(Contrast));
     }
 
     /// <summary>Borderless full screen, or a normal window (F11). The window follows this.</summary>
@@ -640,9 +656,13 @@ public static class ThemeManager
 {
     public static string Current { get; private set; } = "light";
 
-    public static void Apply(string theme)
+    /// <summary>Settings › Appearance › Contrast (<see cref="Themes.Palette.Steps"/>).</summary>
+    public static string Contrast { get; private set; } = Themes.Palette.Normal;
+
+    public static void Apply(string theme, string? contrast = null)
     {
         Current = theme == "dark" ? "dark" : "light";
+        Contrast = Themes.Palette.Normalize(contrast ?? Contrast);
         if (System.Windows.Application.Current is not { } app)
         {
             return;
@@ -651,6 +671,7 @@ public static class ThemeManager
         {
             Source = new Uri($"/mkwmp;component/Themes/Colors.{(Current == "dark" ? "Dark" : "Light")}.xaml", UriKind.Relative),
         };
+        ApplyContrast(colors, Themes.Palette.Factor(Contrast));
         var merged = app.Resources.MergedDictionaries;
         if (merged.Count > 0)
         {
@@ -659,6 +680,26 @@ public static class ThemeManager
         else
         {
             merged.Add(colors);
+        }
+    }
+
+    /// <summary>The palette file's surface, line and text brushes replaced by the ones of that contrast (Themes/Palette.cs).</summary>
+    private static void ApplyContrast(System.Windows.ResourceDictionary colors, double factor)
+    {
+        var palette = new Dictionary<string, Themes.Rgba>(StringComparer.Ordinal);
+        foreach (var key in colors.Keys.OfType<string>())
+        {
+            if (colors[key] is System.Windows.Media.SolidColorBrush brush)
+            {
+                var c = brush.Color;
+                palette[key] = new Themes.Rgba(c.A, c.R, c.G, c.B);
+            }
+        }
+        foreach (var (key, c) in Themes.Palette.Derive(palette, factor))
+        {
+            var brush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(c.A, c.R, c.G, c.B));
+            brush.Freeze();
+            colors[key] = brush;
         }
     }
 }

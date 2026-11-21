@@ -19,6 +19,14 @@
     <None Update="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
     <!-- The window's catalogs, for CatalogTests: every language has English's keys and placeholders. -->
     <None Include="..\..\src\Mkwmp.App\i18n\*.json" Link="i18n\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The window's pure input and palette math (no WPF in these files): ShellMathTests. -->
+    <Compile Include="..\..\src\Mkwmp.App\Themes\Palette.cs" Link="App\Palette.cs" />
+    <Compile Include="..\..\src\Mkwmp.App\Input\PadLayout.cs" Link="App\PadLayout.cs" />
+    <Compile Include="..\..\src\Mkwmp.App\Input\ScrollMotion.cs" Link="App\ScrollMotion.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- the palette files, read as plain XML by ShellMathTests -->
+    <None Include="..\..\src\Mkwmp.App\Themes\Colors.*.xaml" Link="Themes\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

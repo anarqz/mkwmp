@@ -4,13 +4,13 @@ using System.Windows.Threading;
 
 namespace Mkwmp.App.Input;
 
-/// <summary>What a controller (or its keyboard equivalent) can ask the shell for.</summary>
-public enum PadButton { A, B, X, Y, LB, RB, Start, Back, Up, Down, Left, Right }
-
 /// <summary>What the player touched last (Mouse is also touch): decides the glyphs of the hint bar.</summary>
 public enum InputKind { Gamepad, Keyboard, Mouse }
 
 public enum NavDirection { Up, Down, Left, Right }
+
+/// <summary>How far the right stick scrolls in one poll, in units (positive: right, down).</summary>
+public readonly record struct ScrollStep(double X, double Y);
 
 /// <summary>
 /// XInput, polled 60 times a second on the UI thread (xinput1_4.dll, else xinput9_1_0.dll; Wine
@@ -21,8 +21,6 @@ public enum NavDirection { Up, Down, Left, Right }
 public sealed class GamepadInput : IDisposable
 {
     private const double StickThreshold = 0.55;
-    private static readonly TimeSpan FirstRepeat = TimeSpan.FromMilliseconds(380);
-    private static readonly TimeSpan NextRepeat = TimeSpan.FromMilliseconds(105);
     private static readonly TimeSpan ProbeEvery = TimeSpan.FromSeconds(1.5);
 
     private readonly DispatcherTimer _timer;
@@ -33,6 +31,9 @@ public sealed class GamepadInput : IDisposable
     private bool _swallow = true;
     private PadButton? _repeating;
     private DateTime _repeatAt;
+    private DateTime _repeatSince;
+    private DateTime _lastPoll;
+    private DateTime _stickSince;
     private bool _enabled = true;
 
     public GamepadInput()
@@ -41,7 +42,14 @@ public sealed class GamepadInput : IDisposable
         _timer.Tick += (_, _) => Poll();
     }
 
+    /// <summary>A role (<see cref="PadLayout"/>): with the Nintendo layout the east button is A.</summary>
     public event EventHandler<PadButton>? Pressed;
+
+    /// <summary>The right stick, every poll while it is tilted: how far to scroll (units, positive down / right) since the last poll.</summary>
+    public event EventHandler<ScrollStep>? Scrolled;
+
+    /// <summary>Which physical button gives which role (the game's button layout).</summary>
+    public FaceLayout Layout { get; set; }
 
     /// <summary>A controller came or went.</summary>
     public event EventHandler? ConnectedChanged;
@@ -123,10 +131,13 @@ public sealed class GamepadInput : IDisposable
             else if (y < -StickThreshold) buttons |= 0x0002;
         }
 
+        var dt = Math.Clamp((now - _lastPoll).TotalSeconds, 0, 0.1);
+        _lastPoll = now;
         if (!_enabled || _swallow)
         {
             _held = buttons;
             _swallow = !_enabled;
+            _stickSince = default;
             return;
         }
         var pressed = (ushort)(buttons & ~_held);
@@ -140,9 +151,10 @@ public sealed class GamepadInput : IDisposable
             if (button is PadButton.Up or PadButton.Down or PadButton.Left or PadButton.Right)
             {
                 _repeating = button;
-                _repeatAt = now + FirstRepeat;
+                _repeatAt = now + ScrollMotion.FirstRepeat;
+                _repeatSince = _repeatAt;
             }
-            Pressed?.Invoke(this, button);
+            Pressed?.Invoke(this, PadLayout.ToRole(button, Layout));
         }
         if (_repeating is { } held)
         {
@@ -152,9 +164,33 @@ public sealed class GamepadInput : IDisposable
             }
             else if (now >= _repeatAt)
             {
-                _repeatAt = now + NextRepeat;
+                _repeatAt = now + ScrollMotion.RepeatInterval(now - _repeatSince); // held longer: faster
                 Pressed?.Invoke(this, held);
             }
+        }
+        Scroll(state, now, dt);
+    }
+
+    /// <summary>The right stick scrolls; faster the longer it is held (<see cref="ScrollMotion.StickVelocity"/>).</summary>
+    private void Scroll(XInputState state, DateTime now, double dt)
+    {
+        var x = state.ThumbRX / 32767.0;
+        var y = state.ThumbRY / 32767.0;
+        if (Math.Max(Math.Abs(x), Math.Abs(y)) <= ScrollMotion.StickDeadZone)
+        {
+            _stickSince = default;
+            return;
+        }
+        if (_stickSince == default)
+        {
+            _stickSince = now;
+        }
+        var held = (now - _stickSince).TotalSeconds;
+        // up on the stick scrolls up (back); right scrolls right (forward): XInput's Y is up positive
+        var step = new ScrollStep(-ScrollMotion.StickVelocity(x, held) * dt, ScrollMotion.StickVelocity(y, held) * dt);
+        if (step.X != 0 || step.Y != 0)
+        {
+            Scrolled?.Invoke(this, step);
         }
     }
 
