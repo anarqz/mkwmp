@@ -27,4 +27,7 @@
   <SolidColorBrush x:Key="Brush.OnGlyph" Color="#FFEBEBEB" />
   <SolidColorBrush x:Key="Brush.Toast" Color="#FFFFFFFF" />
   <SolidColorBrush x:Key="Brush.Outline" Color="#FF8A8A8A" />
+  <!-- the page background: the theme's road (Assets/Art), under a scrim of Brush.Background so cards and text read as on a plain page -->
+  <BitmapImage x:Key="Image.Backdrop" UriSource="pack://application:,,,/Assets/Art/backdrop-light.jpg" CacheOption="OnLoad" />
+  <SolidColorBrush x:Key="Brush.BackdropScrim" Color="#8CEBEBEB" />
 </ResourceDictionary>

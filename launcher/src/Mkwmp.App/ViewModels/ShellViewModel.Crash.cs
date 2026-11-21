@@ -20,6 +20,9 @@ public sealed partial class ShellViewModel
 {
     private string? _crashOffered;
 
+    /// <summary>The crash screen's picture, and the report card's.</summary>
+    private const string CrashArt = "pack://application:,,,/Assets/Art/empty-crash.png";
+
     /// <summary>
     /// Shows the crash screen for a crash not answered yet, once per crash while the launcher runs
     /// (closing it without an answer leaves it for the next start). Not over another modal, the
@@ -37,7 +40,7 @@ public sealed partial class ShellViewModel
 
     private void ShowCrash(CrashView crash)
     {
-        var modal = new ModalViewModel { Title = S["crash.title"], Body = CrashText(crash) };
+        var modal = new ModalViewModel { Title = S["crash.title"], Body = CrashText(crash), Art = CrashArt };
         modal.Actions.Add(new ModalAction(S["crash.report"], () =>
         {
             CloseModal(modal);
@@ -101,14 +104,18 @@ public sealed partial class ShellViewModel
         var address = BugReportBuilder.NewIssue + "?template=" + (report.Crash ? "crash.yml" : "bug_report.yml");
         var steps = new List<string>
         {
+            // the file's name on a line of its own (on the Desktop it is all there is to find), so the
+            // line never breaks inside it at a hyphen ("mkwmp-" / "crash-…zip")
             report.Zip is { } zip
-                ? S[report.OnDesktop ? "report.step_zip_desktop" : "report.step_zip"] + "\n" + zip
+                ? S[report.OnDesktop ? "report.step_zip_desktop" : "report.step_zip"] + "\n"
+                    + (report.OnDesktop ? System.IO.Path.GetFileName(zip) : System.IO.Path.GetDirectoryName(zip) + System.IO.Path.DirectorySeparatorChar + "\n" + System.IO.Path.GetFileName(zip))
                 : S.Format("report.step_no_zip", ("why", report.ZipProblem ?? "")),
             S[opened ? "report.step_issue" : "report.step_issue_closed"] + "\n" + address,
             S[copied ? "report.step_text" : "report.step_text_failed"],
         };
         var modal = new ModalViewModel
         {
+            Art = report.Crash ? CrashArt : null,
             Title = S[report.Crash ? "report.ready_crash" : "report.ready_bug"],
             Body = string.Join("\n", steps.Select((step, i) => string.Create(CultureInfo.InvariantCulture, $"{i + 1}. {step}"))),
         };

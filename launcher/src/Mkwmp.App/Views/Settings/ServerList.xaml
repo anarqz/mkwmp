@@ -60,6 +60,8 @@
     <!-- the rest of a long list, five at a time -->
     <c:SettingsRow Label="{Binding S[servers.more]}" Caption="{Binding MoreCaption}" Icon="{StaticResource Icon.ChevronDown}" Margin="0,0,72,6"
                    Command="{Binding MoreCommand}" Visibility="{Binding HasMore, Converter={StaticResource Conv.Visible}}" />
+    <Image Source="{Binding EmptyArt}" Height="190" HorizontalAlignment="Center" Margin="0,6,0,4" RenderOptions.BitmapScalingMode="HighQuality"
+           Visibility="{Binding EmptyArt, Converter={StaticResource Conv.Visible}}" />
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,6"
                 Visibility="{Binding Empty, Converter={StaticResource Conv.Visible}}">
       <c:Spinner Width="34" Height="34" Margin="0,0,14,0" Visibility="{Binding Busy, Converter={StaticResource Conv.Visible}}" />

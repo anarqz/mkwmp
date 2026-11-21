@@ -14,6 +14,10 @@
        (a 16:10 screen gets a narrower stage, 1728 wide, never bars). Everything is laid out in
        stage units and scaled by Stage's LayoutTransform. -->
   <Grid x:Name="Root" Background="{DynamicResource Brush.Background}">
+    <!-- the page background: the theme's art, faded by its scrim (Themes/Colors.*.xaml) -->
+    <Image Source="{DynamicResource Image.Backdrop}" Stretch="UniformToFill" IsHitTestVisible="False"
+           RenderOptions.BitmapScalingMode="HighQuality" />
+    <Border Background="{DynamicResource Brush.BackdropScrim}" IsHitTestVisible="False" />
     <Grid x:Name="Stage" Width="1920" Height="1080" HorizontalAlignment="Left" VerticalAlignment="Top">
       <Grid.LayoutTransform>
         <ScaleTransform x:Name="StageScale" />

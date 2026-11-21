@@ -22,6 +22,32 @@ public partial class HomePage : UserControl
         InitializeComponent();
         SizeChanged += (_, _) => PlaceTitle();
         TitleHost.SizeChanged += (_, _) => PlaceTitle();
+        Carousel.SizeChanged += (_, _) => FitTiles();
+        TilesHost.SizeChanged += (_, _) => FitTiles();
+    }
+
+    /// <summary>The smallest the tiles get; a row wider than that scrolls, as before.</summary>
+    private const double MinTileScale = 0.78;
+
+    /// <summary>
+    /// The row of tiles fits the stage: centred, and scaled down when it is wider than the room
+    /// between the page's margins (a 16:10 screen's narrower stage, the wide Play tile of overlay
+    /// mode), so no tile is cut at the right edge while the first one has room on its left.
+    /// </summary>
+    private void FitTiles()
+    {
+        if (DataContext is not HomeViewModel home || Carousel.ActualWidth <= 0 || home.Tiles.Count == 0)
+        {
+            return;
+        }
+        var natural = home.Tiles.Sum(t => t.Width + 28) + TilesHost.Padding.Left + TilesHost.Padding.Right; // each tile and its 14 + 14 margin
+        var room = Carousel.ActualWidth - TilesHost.Margin.Left - TilesHost.Margin.Right;
+        var scale = Math.Round(Math.Clamp(room / natural, MinTileScale, 1.0), 3);
+        if (TilesHost.LayoutTransform is System.Windows.Media.ScaleTransform current && Math.Abs(current.ScaleX - scale) < 0.001)
+        {
+            return;
+        }
+        TilesHost.LayoutTransform = scale >= 1.0 ? System.Windows.Media.Transform.Identity : new System.Windows.Media.ScaleTransform(scale, scale);
     }
 
     private void OnTileFocus(object sender, RoutedEventArgs e)

@@ -36,8 +36,11 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-          <TextBlock Text="{Binding S[mods.empty]}" Style="{StaticResource Text.Caption}" Margin="20,18,20,0"
-                     Visibility="{Binding IsEmpty, Converter={StaticResource Conv.Visible}}" />
+          <StackPanel Orientation="Horizontal" Margin="20,18,20,0" Visibility="{Binding IsEmpty, Converter={StaticResource Conv.Visible}}">
+            <Image Source="pack://application:,,,/Assets/Art/empty-mods.png" Height="150" Margin="0,0,26,0"
+                   RenderOptions.BitmapScalingMode="HighQuality" IsHitTestVisible="False" />
+            <TextBlock Text="{Binding S[mods.empty]}" Style="{StaticResource Text.Caption}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="1000" />
+          </StackPanel>
           <TextBlock Text="{Binding S[mods.restart]}" Style="{StaticResource Text.Caption}" Margin="20,18,20,0" />
 
           <c:SectionHeader Text="{Binding S[mods.add]}" Margin="0,40,0,0" />

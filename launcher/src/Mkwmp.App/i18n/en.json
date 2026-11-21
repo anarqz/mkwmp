@@ -465,7 +465,7 @@
   "setup.server.connect": "Connect",
   "setup.server.asking": "Asking the server…",
   "setup.register.title": "Register Your Profile",
-  "setup.register.text": "Sign in on {server}: register your name (the server gives you a 6-digit PIN), or recover a profile you already have with its PIN.",
+  "setup.register.text": "Sign in on {server}: register your name (the server gives you a PIN of 6 digits), or recover a profile you already have with its PIN.",
   "setup.register.go": "Register {name}",
   "setup.register.mine": "It's Mine",
   "setup.register.taken_hint": "Not yours? Type another name above.",

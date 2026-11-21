@@ -179,6 +179,11 @@ public sealed class ProfileForm : ObservableObject
     {
         get
         {
+            // nothing typed yet: what a gamertag is, not the PIN that comes after it
+            if (_name.Length == 0 && Profile.Register is not (RegisterState.Deleted or RegisterState.Failed))
+            {
+                return CoreStrings.NameRule;
+            }
             if (SignedIn)
             {
                 return Profile.Message ?? CoreStrings.KeepYourPin;
