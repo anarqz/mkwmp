@@ -209,7 +209,7 @@ public static class SystemStatus
             }
             if (up.Any(n => n.NetworkInterfaceType == NetworkInterfaceType.Wireless80211))
             {
-                return new NetworkStatus(NetworkKind.Wifi, Bars(WifiQuality() ?? 100));
+                return new NetworkStatus(NetworkKind.Wifi, WifiBars() is { } bars ? SignalBars(bars) : 3);
             }
             // a link of another kind (USB tethering, a VM adapter) still reaches the internet
             return up.Count > 0 ? new NetworkStatus(NetworkKind.Wired, 0) : new NetworkStatus(NetworkKind.Offline, 0);
@@ -220,61 +220,114 @@ public static class SystemStatus
         }
     }
 
-    /// <summary>The connected Wi-Fi's signal quality (0..100) through the WLAN API, or null.</summary>
-    private static uint? WifiQuality()
+    /// <summary>Windows' 0..5 signal bars (the taskbar's) to the icon's 0..3.</summary>
+    internal static int SignalBars(int windowsBars) => windowsBars switch
     {
-        IntPtr handle = IntPtr.Zero, list = IntPtr.Zero;
+        >= 4 => 3,
+        >= 2 => 2,
+        > 0 => 1,
+        _ => 0,
+    };
+
+    // The Wi-Fi strength comes from NetworkInformation.GetInternetConnectionProfile(): IsWlanConnectionProfile and
+    // GetSignalBars(). Not from the WLAN API: since Windows 11 24H2, WlanQueryInterface(current_connection) and the
+    // other calls that return the network's name (SSID) or its access point (BSSID) count as location access, light
+    // the "location in use" icon and are logged under Settings > Privacy > Location. Signal bars are neither, so this
+    // never reads the SSID, the BSSID, the profile's name or the network names. The WinRT class is called through
+    // its ABI (combase), without the Windows SDK projection, which would add 25 MB to the launcher.
+    private static readonly Guid NetworkInformationStatics = new("5074F851-950D-4165-9C15-365619481EEA");
+    private static readonly Guid ConnectionProfile2 = new("E2045145-4C9F-400C-9150-7EC7D6E2888A");
+    private static IntPtr _networkInformation;
+    private static bool _winRtFailed;
+
+    /// <summary>The internet connection's Wi-Fi signal bars (0..5), or null (not Wi-Fi, unknown, no WinRT).</summary>
+    private static int? WifiBars()
+    {
+        if (_winRtFailed)
+        {
+            return null;
+        }
+        IntPtr profile = IntPtr.Zero, profile2 = IntPtr.Zero, bars = IntPtr.Zero;
         try
         {
-            if (WlanOpenHandle(2, IntPtr.Zero, out _, out handle) != 0 || WlanEnumInterfaces(handle, IntPtr.Zero, out list) != 0)
+            if (_networkInformation == IntPtr.Zero && !ActivateNetworkInformation())
+            {
+                _winRtFailed = true;
+                return null;
+            }
+            // INetworkInformationStatics: IInspectable (slots 0-5), GetConnectionProfiles (6), GetInternetConnectionProfile (7)
+            if (Slot<GetPointer>(_networkInformation, 7)(_networkInformation, out profile) < 0 || profile == IntPtr.Zero)
+            {
+                return null; // no internet profile
+            }
+            var iid = ConnectionProfile2;
+            if (Marshal.QueryInterface(profile, in iid, out profile2) < 0)
             {
                 return null;
             }
-            // WLAN_INTERFACE_INFO_LIST: dwNumberOfItems, dwIndex, then items of
-            // { GUID InterfaceGuid; WCHAR strInterfaceDescription[256]; WLAN_INTERFACE_STATE isState; } (532 bytes)
-            var count = Marshal.ReadInt32(list);
-            for (var i = 0; i < count; i++)
+            // IConnectionProfile2: IsWwanConnectionProfile (6), IsWlanConnectionProfile (7), ..., GetSignalBars (11)
+            if (Slot<GetByte>(profile2, 7)(profile2, out var wlan) < 0 || wlan == 0)
             {
-                var item = list + 8 + (i * 532);
-                if (Marshal.ReadInt32(item + 528) != 1)
-                {
-                    continue; // wlan_interface_state_connected
-                }
-                var guid = Marshal.PtrToStructure<Guid>(item);
-                if (WlanQueryInterface(handle, ref guid, 7, IntPtr.Zero, out _, out var data, out _) != 0)
-                {
-                    continue; // wlan_intf_opcode_current_connection
-                }
-                try
-                {
-                    // WLAN_CONNECTION_ATTRIBUTES: isState, mode, strProfileName[256] (520 bytes), then
-                    // WLAN_ASSOCIATION_ATTRIBUTES: DOT11_SSID (36), bssType (4), bssid (6 + 2 padding),
-                    // phyType (4), phyIndex (4), wlanSignalQuality at 520 + 56 = 576.
-                    return (uint)Marshal.ReadInt32(data + 576);
-                }
-                finally
-                {
-                    WlanFreeMemory(data);
-                }
+                return null;
             }
-            return null;
+            if (Slot<GetPointer>(profile2, 11)(profile2, out bars) < 0 || bars == IntPtr.Zero)
+            {
+                return null; // IReference<byte> null: no signal reading
+            }
+            // IReference<byte>: IInspectable (0-5), get_Value (6)
+            return Slot<GetByte>(bars, 6)(bars, out var value) < 0 ? null : Math.Clamp((int)value, 0, 5);
         }
-        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException)
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException or COMException or InvalidCastException)
         {
+            _winRtFailed = true;
             return null;
         }
         finally
         {
-            if (list != IntPtr.Zero)
+            foreach (var p in (ReadOnlySpan<IntPtr>)[bars, profile2, profile])
             {
-                WlanFreeMemory(list);
-            }
-            if (handle != IntPtr.Zero)
-            {
-                _ = WlanCloseHandle(handle, IntPtr.Zero);
+                if (p != IntPtr.Zero)
+                {
+                    _ = Marshal.Release(p);
+                }
             }
         }
     }
+
+    /// <summary>The NetworkInformation statics, kept for the process's life; false when WinRT has none.</summary>
+    private static bool ActivateNetworkInformation()
+    {
+        // the read runs on a thread-pool thread: keep the process's MTA alive for the WinRT objects it uses
+        if (CoIncrementMTAUsage(out _) < 0)
+        {
+            return false;
+        }
+        const string Class = "Windows.Networking.Connectivity.NetworkInformation";
+        if (WindowsCreateString(Class, (uint)Class.Length, out var name) < 0)
+        {
+            return false;
+        }
+        try
+        {
+            var iid = NetworkInformationStatics;
+            return RoGetActivationFactory(name, ref iid, out _networkInformation) >= 0 && _networkInformation != IntPtr.Zero;
+        }
+        finally
+        {
+            _ = WindowsDeleteString(name);
+        }
+    }
+
+    /// <summary>The method in a COM object's vtable slot.</summary>
+    private static T Slot<T>(IntPtr obj, int slot) where T : Delegate =>
+        Marshal.GetDelegateForFunctionPointer<T>(Marshal.ReadIntPtr(Marshal.ReadIntPtr(obj), slot * IntPtr.Size));
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int GetPointer(IntPtr self, out IntPtr value);
+
+    /// <summary>A boolean or a byte out (WinRT's boolean is one byte).</summary>
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int GetByte(IntPtr self, out byte value);
 
     private static string? ReadLine(string path)
     {
@@ -305,25 +358,20 @@ public static class SystemStatus
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
 
-    [DllImport("wlanapi.dll")]
+    [DllImport("combase.dll")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern uint WlanOpenHandle(uint clientVersion, IntPtr reserved, out uint negotiatedVersion, out IntPtr clientHandle);
+    private static extern int CoIncrementMTAUsage(out IntPtr cookie);
 
-    [DllImport("wlanapi.dll")]
+    [DllImport("combase.dll", CharSet = CharSet.Unicode)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern uint WlanCloseHandle(IntPtr clientHandle, IntPtr reserved);
+    private static extern int WindowsCreateString(string sourceString, uint length, out IntPtr hstring);
 
-    [DllImport("wlanapi.dll")]
+    [DllImport("combase.dll")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern uint WlanEnumInterfaces(IntPtr clientHandle, IntPtr reserved, out IntPtr interfaceList);
+    private static extern int WindowsDeleteString(IntPtr hstring);
 
-    [DllImport("wlanapi.dll")]
+    [DllImport("combase.dll")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern uint WlanQueryInterface(IntPtr clientHandle, ref Guid interfaceGuid, int opCode, IntPtr reserved,
-        out uint dataSize, out IntPtr data, out int opcodeValueType);
-
-    [DllImport("wlanapi.dll")]
-    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-    private static extern void WlanFreeMemory(IntPtr memory);
+    private static extern int RoGetActivationFactory(IntPtr activatableClassId, ref Guid iid, out IntPtr factory);
 #pragma warning restore SYSLIB1054
 }

@@ -97,7 +97,7 @@ public sealed partial class ShellViewModel
         HookPowerEvents();
         if (Interlocked.Exchange(ref _reading, 1) == 1)
         {
-            return; // the last read is still running (a slow WLAN or /sys answer)
+            return; // the last read is still running (a slow network or /sys answer)
         }
         var dispatcher = System.Windows.Application.Current?.Dispatcher;
         _ = Task.Run(() =>
