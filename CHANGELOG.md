@@ -2,7 +2,7 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
-## 1.4.0 — unreleased
+## 1.4.0 — 2026-11-21
 
 **A new launcher.** MKWMP 1.4.0 replaces the launcher with a full-screen app made to be used from the couch, and it sets the game up for you.
 
