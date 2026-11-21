@@ -381,6 +381,16 @@
                 <TextBlock Text="{Binding S[settings.about.not_affiliated]}" Style="{StaticResource Text.Caption}" FontSize="22" LineHeight="32" Margin="0,14,0,0" />
               </StackPanel>
             </Border>
+            <!-- The project MKWMP runs on, and its creator: credit with links (MIT), and the source of MKWMP's build of it -->
+            <c:SectionHeader Text="{Binding S[settings.about.recomp]}" />
+            <c:SettingsRow Label="{Binding S[settings.about.recomp_repo]}" Kind="Chevron" Command="{Binding RecompRepoCommand}"
+                           Caption="{Binding RecompRepoUrl, Mode=OneTime}" />
+            <c:SettingsRow Label="{Binding S[settings.about.recomp_creator]}" Kind="Chevron" Value="{Binding RecompCreatorHandle, Mode=OneTime}"
+                           Command="{Binding RecompCreatorCommand}" Caption="{Binding RecompCreatorUrl, Mode=OneTime}" />
+            <c:SettingsRow Label="{Binding S[settings.about.recomp_license]}" Kind="Chevron" Value="{Binding RecompLicense, Mode=OneTime}"
+                           Command="{Binding RecompLicenseCommand}" Caption="{Binding RecompLicenseUrl, Mode=OneTime}" />
+            <c:SettingsRow Label="{Binding S[settings.about.recomp_fork]}" Kind="Chevron" Command="{Binding RecompSourceCommand}"
+                           Caption="{Binding RecompSourceUrl, Mode=OneTime}" />
             <c:SectionHeader Text="{Binding S[settings.about.links]}" />
             <c:SettingsRow Label="{Binding S[home.update]}" Kind="Chevron" Command="{Binding WhatsNewCommand}"
                            Caption="{Binding S[whatsnew.caption]}" />

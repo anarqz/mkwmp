@@ -169,6 +169,15 @@ public sealed record RuntimeCredit(string Summary, string Project, Uri ProjectUr
     /// <summary>The catalog key of <see cref="Summary"/> (which is its English), when it has one.</summary>
     public string? SummaryKey { get; init; }
 
+    /// <summary>The original project's creator, as the project's license names them.</summary>
+    public string? Author { get; init; }
+
+    /// <summary>The creator's page (Settings › About links it).</summary>
+    public Uri? AuthorUrl { get; init; }
+
+    /// <summary>The original project's license file, online.</summary>
+    public Uri? LicenseUrl { get; init; }
+
     /// <summary>This credit with its summary in the language in use.</summary>
     public RuntimeCredit Localized() => SummaryKey is { } key && Strings.T(key, Summary) is var text && text != Summary ? this with { Summary = text } : this;
 }

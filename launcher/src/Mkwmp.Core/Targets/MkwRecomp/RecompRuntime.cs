@@ -105,7 +105,14 @@ public static class RecompRuntime
             new Uri("https://github.com/anarqz/mkw-recomp/tree/v0.1.16-mkwmp.1"),
             "MIT",
             Notice,
-            "licenses") { SummaryKey = "core.recomp.credit" },
+            "licenses")
+        {
+            SummaryKey = "core.recomp.credit",
+            // "Copyright (c) 2026 Adrià" (its LICENSE); github.com/adriadam10 owns the project.
+            Author = "Adrià",
+            AuthorUrl = new Uri("https://github.com/adriadam10"),
+            LicenseUrl = new Uri("https://github.com/adriadam10/mkw-recomp/blob/main/LICENSE"),
+        },
     };
 
     /// <summary>

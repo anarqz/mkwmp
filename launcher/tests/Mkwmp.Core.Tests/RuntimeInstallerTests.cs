@@ -341,6 +341,9 @@ public class RuntimeManifestTests
         Assert.Contains("mkw-recomp", c.Summary, StringComparison.Ordinal);
         Assert.Contains("Adrià", c.Summary, StringComparison.Ordinal);
         Assert.Equal("https://github.com/adriadam10/mkw-recomp", c.ProjectUrl.ToString());
+        Assert.Equal("Adrià", c.Author);
+        Assert.Equal("https://github.com/adriadam10", c.AuthorUrl?.ToString());
+        Assert.Equal("https://github.com/adriadam10/mkw-recomp/blob/main/LICENSE", c.LicenseUrl?.ToString());
     }
 
     [Theory]

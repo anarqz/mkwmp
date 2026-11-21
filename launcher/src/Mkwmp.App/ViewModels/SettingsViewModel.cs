@@ -47,6 +47,10 @@ public sealed partial class SettingsViewModel : PageViewModel
         GuideCommand = new RelayCommand(() => Links.Open(Shell, CoreStrings.GuideUrl));
         IssuesCommand = new RelayCommand(() => Links.Open(Shell, Links.Issues));
         RepoCommand = new RelayCommand(() => Links.Open(Shell, Links.Repo));
+        RecompRepoCommand = new RelayCommand(() => Links.Open(Shell, RecompRepoUrl));
+        RecompCreatorCommand = new RelayCommand(() => Links.Open(Shell, RecompCreatorUrl));
+        RecompLicenseCommand = new RelayCommand(() => Links.Open(Shell, RecompLicenseUrl));
+        RecompSourceCommand = new RelayCommand(() => Links.Open(Shell, RecompSourceUrl));
         WhatsNewCommand = new RelayCommand(() => Shell.Navigate(new WhatsNewViewModel(Shell)));
         ThemeCommand = RelayCommand.Async(() => Shell.SetThemeAsync(Shell.IsDark ? "light" : "dark"));
         LanguageCommand = RelayCommand.Async(Shell.PickLanguageAsync);
@@ -323,6 +327,31 @@ public sealed partial class SettingsViewModel : PageViewModel
     public ICommand GuideCommand { get; }
 
     public ICommand RepoCommand { get; }
+
+    /// <summary>Whose work the game's runtime is (About's mkw-recomp rows): the installed runtime's credit, else the pinned build's.</summary>
+    private Mkwmp.Core.Targets.RuntimeCredit RecompCredit => Launcher.Runtime.Credit ?? Mkwmp.Core.Targets.MkwRecomp.RecompRuntime.Pinned.Credit;
+
+    public string RecompRepoUrl => RecompCredit.ProjectUrl.AbsoluteUri;
+
+    public string RecompCreatorUrl => RecompCredit.AuthorUrl?.AbsoluteUri ?? RecompRepoUrl;
+
+    /// <summary>The creator's GitHub name, from their page's address (adriadam10).</summary>
+    public string RecompCreatorHandle => RecompCredit.AuthorUrl?.AbsolutePath.Trim('/') ?? "";
+
+    public string RecompLicenseUrl => RecompCredit.LicenseUrl?.AbsoluteUri ?? RecompRepoUrl;
+
+    public string RecompLicense => RecompCredit.License;
+
+    /// <summary>The source of the exact build MKWMP installs (anarqz/mkw-recomp at the pinned tag): MIT and GPL both want it reachable.</summary>
+    public string RecompSourceUrl => RecompCredit.SourceUrl.AbsoluteUri;
+
+    public ICommand RecompRepoCommand { get; }
+
+    public ICommand RecompCreatorCommand { get; }
+
+    public ICommand RecompLicenseCommand { get; }
+
+    public ICommand RecompSourceCommand { get; }
 
     /// <summary>The What's New page (the launcher's changelog), also from Settings › Updates.</summary>
     public ICommand WhatsNewCommand { get; }
