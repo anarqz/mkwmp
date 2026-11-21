@@ -526,6 +526,8 @@
   "settings.online.announcer_reset_caption": "Вернуться к списку, который идёт с MKWMP.",
   "overlay.setup_pending": "MKWMP ещё не настроен",
   "overlay.setup_pending_body": "Открой MKWMP один раз и пройди начальную настройку: там онлайн-игра, друзья и настройки игры.",
+  "overlay.kept_behind": "Оверлей открылся за игрой",
+  "overlay.kept_behind_body": "Рабочий стол оставил игру поверх MKWMP. В KDE Plasma добавь правило окна для mkwmp.exe: Параметры системы › Управление окнами › Особые параметры окон, «Предотвращение перехвата фокуса»: Принудительно, Нет.",
   "core.unreachable": "Сервер недоступен: попробуй ещё раз",
   "core.wrong_pin": "Неверный PIN-код для этого ника",
   "core.not_registered": "Сначала зарегистрируй этот ник",

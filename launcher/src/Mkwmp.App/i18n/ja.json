@@ -526,6 +526,8 @@
   "settings.online.announcer_reset_caption": "MKWMPに最初から入っている一覧に戻します。",
   "overlay.setup_pending": "MKWMPのセットアップがまだです",
   "overlay.setup_pending_body": "MKWMPを一度開いて、最初の案内を終わらせてください。オンラインプレイ、フレンド、ゲームの設定はそこにあります。",
+  "overlay.kept_behind": "オーバーレイがゲームの後ろに開きました",
+  "overlay.kept_behind_body": "デスクトップがゲームを MKWMP の前に表示したままにしました。KDE Plasma では mkwmp.exe のウィンドウルールを追加してください：システム設定 › ウィンドウの管理 › ウィンドウルール、「フォーカスの奪取防止」を「強制」「なし」に。",
   "core.unreachable": "サーバーに接続できません：再試行します",
   "core.wrong_pin": "このゲーマータグのPINが違います",
   "core.not_registered": "先にこのゲーマータグを登録してください",

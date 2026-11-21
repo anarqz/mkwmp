@@ -526,6 +526,8 @@
   "settings.online.announcer_reset_caption": "Ga terug naar de lijst die met MKWMP wordt meegeleverd.",
   "overlay.setup_pending": "De setup van MKWMP is nog niet klaar",
   "overlay.setup_pending_body": "Open MKWMP één keer om het welkom af te ronden: online spelen, vrienden en de instellingen van het spel vind je daar.",
+  "overlay.kept_behind": "De overlay opende achter het spel",
+  "overlay.kept_behind_body": "Je bureaublad hield het spel voor MKWMP. Voeg in KDE Plasma een vensterregel toe voor mkwmp.exe: Systeeminstellingen › Vensterbeheer › Vensterregels, 'Voorkomen van focus stelen' op Afdwingen, Geen.",
   "core.unreachable": "Server onbereikbaar: nieuwe poging",
   "core.wrong_pin": "Verkeerde PIN voor deze gamertag",
   "core.not_registered": "Registreer deze gamertag eerst",

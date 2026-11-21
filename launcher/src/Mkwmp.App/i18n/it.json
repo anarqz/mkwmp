@@ -526,6 +526,8 @@
   "settings.online.announcer_reset_caption": "Torna all'elenco fornito con MKWMP.",
   "overlay.setup_pending": "MKWMP non è ancora configurato",
   "overlay.setup_pending_body": "Apri MKWMP una volta per completare il benvenuto: il gioco online, gli amici e le impostazioni del gioco si trovano lì.",
+  "overlay.kept_behind": "L'overlay si è aperto dietro il gioco",
+  "overlay.kept_behind_body": "Il desktop ha tenuto il gioco davanti a MKWMP. Su KDE Plasma aggiungi una regola per la finestra mkwmp.exe: Impostazioni di sistema › Gestione delle finestre › Regole delle finestre, «Prevenzione del furto del fuoco» su Forza, Nessuna.",
   "core.unreachable": "Server non raggiungibile: nuovo tentativo",
   "core.wrong_pin": "PIN errato per questo gamertag",
   "core.not_registered": "Prima registra questo gamertag",

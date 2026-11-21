@@ -239,6 +239,54 @@ gamescope (Steam Deck Game Mode), from the source:
   shows the app Steam focused, and no window can raise another app. The best alternative is the overlay host: the
   game's own mod starts its own launcher process inside the game's app, whatever else runs.
 
+### 4.1 A Linux desktop under Proton (KDE Plasma, Steam Deck Desktop Mode)
+
+Seen on 2026-11-21 (Debian 12, KDE Plasma on Wayland with Xwayland, NVIDIA): the chord, the picture and the suspend
+worked (`mkwmp.log`: `out of focus and suspended`, `opened by chord (with the picture)`), but the launcher's window
+opened **behind** the full-screen game, so the suspended game looked frozen; Alt+Tab showed the overlay.
+
+Why: on a desktop the window manager decides who is in front, and KWin's focus-stealing prevention (default level
+Low) refuses a window of an application the player has not touched since the game took the front.
+`AllowSetForegroundWindow` is Windows' rule and means nothing to it. What Wine asks for depends on its version
+(`wine: dlls/winex11.drv/window.c`):
+
+- Proton 9 and older: `SetForegroundWindow` of a managed window sends nothing to the window manager; the map alone
+  asks, with the launcher process's own `_NET_WM_USER_TIME` (its last X input: the click on PLAY, older than the
+  game's activation). KWin maps it under the active window and marks it "demands attention".
+- Proton 10: activation sends `_NET_ACTIVE_WINDOW` with source 2 (pager) and timestamp 0, which KWin treats as a
+  tool's request and grants; but a pending map defers it, and `X11DRV_GetWindowStateUpdates` can take the foreground
+  back from what the window manager reports. Not seen to fail; not proven to work either.
+
+The fix (`OverlayFocus` in Core, `OverlayController.ToTheFront`, `GameWindow.StepAside` / `BringBack`): under Wine,
+not in Game Mode, 150 ms after our window is shown (mapped, so managed), the **game's window is minimised**
+(`ShowWindowAsync(SW_MINIMIZE)`, posted to the game's window thread, which runs also while the game is suspended).
+Every stacking window manager lets the active window go away and then focuses the next window of its focus chain,
+without asking focus-stealing prevention: ours, which KWin inserted just behind the active one. On the way back the
+game is **restored first** (`SW_RESTORE`, waited for up to 300 ms + 60 ms), then ours is hidden: the game is then the
+next in the chain. Hidden first, the focus would go to another window and the restored game could be refused the
+front the same way. Every way back restores it: the animation, Alt+Tab or the tray (`QuickReturn`), quitting from
+the overlay. The picture was taken before (the mod's `frame_capture`), and the suspend does not depend on the window.
+
+Not on Windows (the foreground rules already let the launcher in) and not in gamescope (it shows the window mapped
+last; minimising is not its notion). `MKWMP_OVERLAY_MINIMIZE_GAME=0` turns it off, `=1` forces it under Wine also in
+Game Mode (Steam launch options, or the environment of the launcher's process).
+
+Under Wine the launcher also looks, 1.5 s after the show, whether it is in front (`OverlayFocus.KeptBehind`: the
+game still the foreground window, or ours not active); deactivations before that are the window manager's, not the
+player's Alt+Tab (`_settling`). If it was kept behind it logs `overlay: not in front after 1.5 s (...)` and, when the
+player reaches the window by hand, shows once per run the hint `overlay.kept_behind`: the KWin window rule.
+
+**The fallback for the player**, when the game still stays in front (a window manager that does not focus the next
+window, an online race where the game keeps presenting): System Settings › Window Management › Window Rules › Add New,
+"Detect Window Properties" and click the launcher (under Proton the class is Wine's `steam_app_<id>`, shared with the game when
+both run in one app: harmless), then Add Property › "Focus stealing prevention", Force, None. Steam Deck Desktop
+Mode is KDE too: the same rule.
+
+Risks: a minimised game that keeps running (online, the mod's `overlay_pause = 0`) presents to an iconic window: the
+swapchain is out of date until the restore, as on Windows when a full-screen game is minimised. A launcher that dies
+while the overlay is up leaves the game minimised: the mod gives the pad back after three polls, and the player
+restores the window from the task bar.
+
 The game's input while the overlay is up:
 
 - SDL records no pad press for an application whose windows do not have the keyboard focus, unless
@@ -422,6 +470,7 @@ In the launcher:
 | `src/Mkwmp.Core/Net/LocalApi.cs` | the four routes, the query string, the picture's body limit (additive) |
 | `src/Mkwmp.App/Overlay/GameWindow.cs` | `Find`, `IsForeground`, `ShowOver`, `GiveBack`, `ToBitmap`, `Capture`; `Alive`, `RequestClose`, `Kill` (Quit Game) |
 | `src/Mkwmp.Core/Overlay/OverlayShortcut.cs` | `OverlayShortcut` (the choices, their wire names), `OverlayShortcutMatcher` (the launcher's own reading) |
+| `src/Mkwmp.Core/Overlay/OverlayFocus.cs` | when the game's window steps aside on a Linux desktop (section 4.1), and the "kept behind" check; tests in `OverlayFocusTests.cs` |
 | `src/Mkwmp.App/Overlay/GuideWatcher.cs` | the Guide button and the player's shortcut by XInputGetStateEx |
 | `src/Mkwmp.App/ViewModels/SettingsViewModel.Shortcut.cs` | the Settings › Game row and its picker |
 | `src/Mkwmp.App/Overlay/OverlayStartup.cs` | single instance and host mode for `App.xaml.cs` |
@@ -533,6 +582,10 @@ button, the motion on a real screen.
    - the overlay host: started by the mod, found through `launcher.json` in the same prefix, same app id, ready in a
      few seconds, gone with the game;
    - whether an XInput read by the launcher (WPF) works in the same prefix while the game holds the pad through SDL.
+4b. **KDE Plasma under Proton** (section 4.1; also Steam Deck Desktop Mode): the overlay in front at once, the game
+   minimised (the launcher's `logs/launcher-ui.log`: `the game's window is minimised`), the way back restores it full screen and
+   focused, by the animation, by B, and after Alt+Tab; no `not in front` line. Offline (suspended) and online (the
+   game presents while minimised).
 5. **Exclusive full screen on Windows**: what the game does when it loses the foreground and whether it comes back
    by `GiveBack` alone.
 6. **The host's cold start** on Windows and under Proton (the numbers in section 7 are estimates).

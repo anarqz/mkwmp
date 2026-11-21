@@ -526,6 +526,8 @@
   "settings.online.announcer_reset_caption": "MKWMP ile gelen listeye geri dön.",
   "overlay.setup_pending": "MKWMP henüz kurulmadı",
   "overlay.setup_pending_body": "Karşılama adımlarını bitirmek için MKWMP'yi bir kez aç: çevrimiçi oyun, arkadaşlar ve oyun ayarları orada.",
+  "overlay.kept_behind": "Kaplama oyunun arkasında açıldı",
+  "overlay.kept_behind_body": "Masaüstün oyunu MKWMP'nin önünde tuttu. KDE Plasma'da mkwmp.exe için bir pencere kuralı ekle: Sistem Ayarları › Pencere Yönetimi › Pencere Kuralları, \"Odak çalma önleme\" Zorla, Hiçbiri.",
   "core.unreachable": "Sunucuya ulaşılamıyor: tekrar dene",
   "core.wrong_pin": "Bu oyuncu etiketi için PIN yanlış",
   "core.not_registered": "Önce bu oyuncu etiketini kaydet",

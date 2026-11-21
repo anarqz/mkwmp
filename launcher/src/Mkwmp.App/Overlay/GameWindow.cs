@@ -102,6 +102,13 @@ public static class GameWindow
     /// </summary>
     public static void GiveBack(Window launcher, IntPtr game, bool hideLauncher = true)
     {
+        if (WineHost.Detected && game != IntPtr.Zero && IsIconic(game))
+        {
+            // a desktop's window manager (OverlayFocus): the game is restored while ours still has the focus, then ours
+            // goes and the game is the next in the focus chain. Hidden first, the focus would go to another window and
+            // the restored game would be refused the front as ours was.
+            BringBack(game);
+        }
         if (hideLauncher || WineHost.Detected)
         {
             launcher.Hide();
@@ -115,6 +122,32 @@ public static class GameWindow
             _ = ShowWindow(game, 9 /* SW_RESTORE */);
         }
         _ = SetForegroundWindow(game); // this process has the foreground: allowed
+    }
+
+    /// <summary>
+    /// Under Wine on a Linux desktop (<see cref="OverlayFocus"/>): the game's window is minimised, so that the window
+    /// manager gives the focus to ours, which it refused to a request of ours. Posted (the game's window thread may be
+    /// busy); false when there is no window or it is minimised already.
+    /// </summary>
+    public static bool StepAside(IntPtr game) =>
+        game != IntPtr.Zero && !IsIconic(game) && ShowWindowAsync(game, 6 /* SW_MINIMIZE */);
+
+    /// <summary>
+    /// The game's minimised window is restored (and activated), and this waits until it is, at most
+    /// <see cref="OverlayFocus.RestoreWait"/>, plus <see cref="OverlayFocus.RestoreLead"/> for the window manager.
+    /// </summary>
+    public static void BringBack(IntPtr game)
+    {
+        if (game == IntPtr.Zero || !IsIconic(game) || !ShowWindowAsync(game, 9 /* SW_RESTORE */))
+        {
+            return;
+        }
+        var until = Stopwatch.GetTimestamp() + (long)(OverlayFocus.RestoreWait.TotalSeconds * Stopwatch.Frequency);
+        while (IsIconic(game) && Stopwatch.GetTimestamp() < until)
+        {
+            Thread.Sleep(15);
+        }
+        Thread.Sleep(OverlayFocus.RestoreLead);
     }
 
     /// <summary>
@@ -354,6 +387,10 @@ public static class GameWindow
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ShowWindow(IntPtr hwnd, int command);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindowAsync(IntPtr hwnd, int command);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
