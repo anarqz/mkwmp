@@ -91,8 +91,17 @@ public interface ILauncher : IAsyncDisposable
     /// <summary>Reads the list again and measures every server (the page asks when it opens, and for its refresh button).</summary>
     Task RefreshServersAsync();
 
-    /// <summary>Measures the latencies again, without reading the list (the page asks every few seconds while it is open).</summary>
+    /// <summary>
+    /// Measures the latencies again, without reading the list (the page asks every few seconds while it is open).
+    /// Does nothing while <see cref="LauncherSettings.ClosestServers"/> is off.
+    /// </summary>
     Task MeasureServersAsync();
+
+    /// <summary>
+    /// "Show closest to me" on or off (<see cref="LauncherSettings.ClosestServers"/>, saved): the list is ordered again
+    /// at once (nearest first, or the directory's order without latencies) and, when on, measured now.
+    /// </summary>
+    Task SetClosestServersAsync(bool on);
 
     /// <summary>
     /// Takes a server out of the list on this PC (<see cref="ServerListView.Hidden"/>, kept in client.toml by its
@@ -511,6 +520,12 @@ public sealed record LauncherSettings
     public string LaunchCommand { get; init; } = "";
     /// <summary>The beholder (server directory) to list servers from; "" = this release's default (none yet).</summary>
     public string Beholder { get; init; } = "";
+    /// <summary>
+    /// "Show closest to me" (<c>closest_servers</c>): while the server list is on screen the launcher times each listed
+    /// server (a request to the server itself) and shows the nearest first. Off: no server of the list is contacted to
+    /// be timed, and the list keeps the directory's order, without bars or ms. Never the player's location.
+    /// </summary>
+    public bool ClosestServers { get; init; } = true;
     public bool Patch { get; init; } = true;
     /// <summary>
     /// <c>dev_package = true</c>, written by hand (or by <c>publish.ps1 -Dev</c>), never by the window: the launcher

@@ -172,6 +172,7 @@ internal sealed record ClientConfig
             Slot = Int(t, "slot", 1, 0, 255),
             LaunchCommand = Str(t, "launch_command", ""),
             Beholder = Str(t, "beholder", "").Trim(),
+            ClosestServers = Bool(t, "closest_servers", true),
             Patch = Bool(t, "patch", true),
             DevPackage = Bool(t, "dev_package", false),
             AdultConsent = Bool(t, "adult_consent", false),
@@ -273,6 +274,7 @@ internal sealed record ClientConfig
         Line(b, "slot", s.Slot);
         Line(b, "launch_command", s.LaunchCommand);
         Line(b, "beholder", s.Beholder);
+        Line(b, "closest_servers", s.ClosestServers);
         Line(b, "patch", s.Patch);
         if (s.DevPackage)
         {

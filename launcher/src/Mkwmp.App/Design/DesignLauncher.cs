@@ -299,6 +299,13 @@ public sealed partial class DesignLauncher : ILauncher
             case "servers-hidden":
                 PretendHidden();
                 break;
+            case "servers-unsorted": // "Show closest to me" off
+                Change(() =>
+                {
+                    Settings = Settings with { ClosestServers = false };
+                    Servers = Servers with { Items = Servers.Items.Count > 0 ? ShownServers() : [] };
+                });
+                break;
             case "registered":
                 Change(() =>
                 {
@@ -469,10 +476,22 @@ public sealed partial class DesignLauncher : ILauncher
     public ServerListView Servers { get; private set; } = new(ServerListState.Ready, DemoServers, false, null);
 
     /// <summary>The demo's list without the hidden ones, in the real one's order (answered by latency, not measured, no answer).</summary>
-    private ListedServer[] ShownServers(int turn = 0) =>
-        [.. DemoServers.Where(s => !_hiddenServers.Any(h => h.Is(s)))
+    private ListedServer[] ShownServers(int turn = 0) => !Settings.ClosestServers
+        // "Show closest to me" off: the directory's order, nothing measured
+        ? [.. DemoServers.Where(s => !_hiddenServers.Any(h => h.Is(s))).Select(s => s with { LatencyMs = null, Online = null })]
+        : [.. DemoServers.Where(s => !_hiddenServers.Any(h => h.Is(s)))
             .Select((s, i) => s.LatencyMs is { } ms && turn > 0 ? s with { LatencyMs = ms + ((turn * (i + 3)) % 7) - 3 } : s)
             .OrderBy(s => s.Online switch { true => 0, null => 1, _ => 2 }).ThenBy(s => s.LatencyMs ?? int.MaxValue)];
+
+    public async Task SetClosestServersAsync(bool on)
+    {
+        await SaveSettingsAsync(Settings with { ClosestServers = on }).ConfigureAwait(false);
+        Change(() => Servers = Servers with { Items = Servers.Items.Count > 0 ? ShownServers() : [], Hidden = _hiddenServers });
+        if (on)
+        {
+            await MeasureServersAsync().ConfigureAwait(false);
+        }
+    }
 
     /// <summary>For screenshots: no beholder (only a typed address), or the list still loading.</summary>
     public void PretendServers(ServerListState state) =>
@@ -531,7 +550,7 @@ public sealed partial class DesignLauncher : ILauncher
 
     public async Task MeasureServersAsync()
     {
-        if (Servers.Items.Count == 0 || Servers.Busy)
+        if (!Settings.ClosestServers || Servers.Items.Count == 0 || Servers.Busy)
         {
             return;
         }

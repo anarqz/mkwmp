@@ -336,7 +336,7 @@
        </Grid.ColumnDefinitions>
        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
          <Image Source="pack://application:,,,/Assets/Art/step-server.png" Style="{StaticResource StepArt}" Height="84" Margin="0,0,18,0" />
-         <TextBlock Text="{Binding S[setup.server.pick]}" Style="{StaticResource Text.Body}" FontSize="30" VerticalAlignment="Center" />
+         <TextBlock Text="{Binding Servers.PickCaption}" Style="{StaticResource Text.Body}" FontSize="30" VerticalAlignment="Center" />
        </StackPanel>
        <c:ConsoleButton Grid.Column="1" Kind="Ghost" Height="68" MinWidth="0" Padding="22,0" Icon="{StaticResource Icon.Refresh}" Content="{Binding S[servers.refresh]}"
                         Command="{Binding Servers.RefreshCommand}" />

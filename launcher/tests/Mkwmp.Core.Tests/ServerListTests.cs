@@ -200,8 +200,75 @@ public sealed class ServerListTests
         Assert.Equal(["key-4"], l.Servers.Hidden.Select(h => h.Id));
     }
 
-    /// <summary>A beholder listing <c>S1..Sn</c> (<c>https://s1.test</c>…), each answering later than the one before.</summary>
-    private sealed class ManyServers(int count, int gapMs = 0) : HttpMessageHandler
+    private static readonly string[] OnlyTheBeholder = ["beholder.test"];
+
+    [Fact]
+    public void Show_closest_off_keeps_the_directory_order_without_latencies()
+    {
+        ListedServer[] listed = [Server("Far", 240, true), Server("Gone", null, false), Server("Near", 12, true), Server("Waiting", null, null), Server("Mid", 90, true)];
+        var plain = ServerRanking.Visible(listed, [new HiddenServer("key-Mid", "Mid", "")], closest: false);
+        Assert.Equal(["Far", "Gone", "Near", "Waiting"], plain.Select(s => s.Name));
+        // A measure taken while it was on is not shown: no bars, no ms, no "no answer".
+        Assert.All(plain, s => Assert.Equal((null, (bool?)null, 0), (s.LatencyMs, s.Online, s.Bars)));
+        // On, the same list is nearest first.
+        Assert.Equal(["Near", "Mid", "Far", "Waiting", "Gone"], ServerRanking.Visible(listed, [], closest: true).Select(s => s.Name));
+    }
+
+    [Fact]
+    public void Show_closest_is_kept_in_client_toml_and_on_by_default()
+    {
+        Assert.True(new LauncherSettings().ClosestServers);
+        Assert.True(ClientConfig.Parse("name = \"Ana\"\n").Settings.ClosestServers); // an older file: on, as before
+        var off = new ClientConfig { Settings = new LauncherSettings { ClosestServers = false } };
+        Assert.Contains("\nclosest_servers = false\n", off.ToToml(), StringComparison.Ordinal);
+        Assert.False(ClientConfig.Parse(off.ToToml()).Settings.ClosestServers);
+        Assert.Contains("\nclosest_servers = true\n", new ClientConfig().ToToml(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Show_closest_off_contacts_no_listed_server()
+    {
+        var net = new ManyServers(7, gapMs: 40, farthestFirst: true); // S7 answers at once, S1 after 240 ms
+        var root = Rig.NewFolder("servers-unsorted");
+        var path = Path.Combine(root, "client.toml");
+        new ClientConfig { Settings = new LauncherSettings { AutoUpdate = false, Beholder = "https://beholder.test", ClosestServers = false } }.Save(path);
+        var options = new LauncherOptions { BindLocalApi = false, BackgroundLoops = false, Targets = [new MkwRecompTarget("1.4.0")] };
+        await using var l = new Launcher(path, root, options, net);
+
+        // The list is read from the beholder, and nothing else is asked.
+        await l.RefreshServersAsync();
+        Assert.Equal(OnlyTheBeholder, net.Requests.Distinct());
+        var view = l.Servers;
+        Assert.Equal(["S1", "S2", "S3", "S4", "S5", "S6", "S7"], view.Items.Select(i => i.Name)); // the beholder's order
+        Assert.All(view.Items, i => Assert.Null(i.LatencyMs));
+        // The page's timer, hiding a server, showing it again: still nobody timed.
+        net.Requests.Clear();
+        await l.MeasureServersAsync();
+        Assert.True(await l.HideServerAsync(view.Items[0]));
+        await l.ShowServerAsync("key-1");
+        Assert.Empty(net.Requests);
+
+        // On: saved, measured at once, nearest first.
+        await l.SetClosestServersAsync(true);
+        Assert.Contains("\nclosest_servers = true\n", File.ReadAllText(path), StringComparison.Ordinal);
+        Assert.Equal(7, net.Asked().Count);
+        Assert.Equal(["S7", "S6", "S5", "S4", "S3"], l.Servers.Items.Take(ServerListView.PageSize).Select(i => i.Name));
+        Assert.All(l.Servers.Items, i => Assert.True(i.Online));
+
+        // Off again: the directory's order at once, the numbers gone, and no more requests.
+        await l.SetClosestServersAsync(false);
+        Assert.False(l.Settings.ClosestServers);
+        Assert.Equal(["S1", "S2", "S3", "S4", "S5"], l.Servers.Items.Take(ServerListView.PageSize).Select(i => i.Name));
+        Assert.All(l.Servers.Items, i => Assert.Null(i.LatencyMs));
+        net.Requests.Clear();
+        await l.MeasureServersAsync();
+        await l.RefreshServersAsync();
+        Assert.Equal(OnlyTheBeholder, net.Requests.Distinct());
+    }
+
+    /// <summary>A beholder listing <c>S1..Sn</c> (<c>https://s1.test</c>…), each answering later than the one before
+    /// (<paramref name="farthestFirst"/>: earlier).</summary>
+    private sealed class ManyServers(int count, int gapMs = 0, bool farthestFirst = false) : HttpMessageHandler
     {
         public List<string> Requests { get; } = [];
 
@@ -230,7 +297,7 @@ public sealed class ServerListTests
             var number = int.Parse(uri.Host[1..^5], CultureInfo.InvariantCulture);
             if (uri.AbsolutePath == "/ping")
             {
-                await Task.Delay((number - 1) * gapMs, cancellationToken); // the timed request: farther with every number
+                await Task.Delay((farthestFirst ? count - number : number - 1) * gapMs, cancellationToken); // the timed request: farther with every number
                 return new HttpResponseMessage(HttpStatusCode.NoContent);
             }
             return uri.AbsolutePath == "/seat/v1/status"

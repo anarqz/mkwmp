@@ -41,6 +41,9 @@ public sealed class ServerRow : ObservableObject
 
     public int Bars => _server.Bars;
 
+    /// <summary>"Show closest to me" is on: the row has its bars and ms. Off: nothing was measured, so no column for it.</summary>
+    public bool ShowsLatency { get; private set; } = true;
+
     /// <summary>"23 ms", "no answer", or "…" while it is not measured (yet, or at all: a long list measures its first ones).</summary>
     public string Latency => _server.Online switch
     {
@@ -59,11 +62,12 @@ public sealed class ServerRow : ObservableObject
     /// <summary>What the "…" button is called (its tooltip and its name for a screen reader).</summary>
     public string MenuLabel => _s["servers.hide"];
 
-    internal void Update(ListedServer server)
+    internal void Update(ListedServer server, bool showsLatency)
     {
-        if (!Equals(_server, server))
+        if (!Equals(_server, server) || ShowsLatency != showsLatency)
         {
             _server = server;
+            ShowsLatency = showsLatency;
             RaiseAll();
         }
     }
@@ -76,7 +80,8 @@ public sealed class ServerRow : ObservableObject
 /// with each "Show more"; a refresh button, and a new measure every few seconds while its page is
 /// open (<see cref="Start"/> / <see cref="Stop"/>). Rows are updated in place, so the focused one
 /// stays focused while the numbers move. Y on a row (or its "…") hides that server on this PC:
-/// the next one takes its place (<see cref="ILauncher.HideServerAsync"/>).
+/// the next one takes its place (<see cref="ILauncher.HideServerAsync"/>). "Show closest to me"
+/// (<see cref="Closest"/>) off: nothing is measured, the directory's order, the same pages of five.
 /// </summary>
 public sealed class ServerPicker : ObservableObject
 {
@@ -87,6 +92,8 @@ public sealed class ServerPicker : ObservableObject
     private readonly DispatcherTimer _timer;
     private int _limit = ServerListView.PageSize;
     private ServerRow? _focused;
+    private bool _open;
+    private bool? _closestWanted;
 
     public ServerPicker(ShellViewModel shell, Action<ListedServer> pick)
     {
@@ -122,7 +129,7 @@ public sealed class ServerPicker : ObservableObject
     public bool HasMore => Remaining > 0;
 
     /// <summary>"12 more servers".</summary>
-    public string MoreCaption => HasMore ? S.Format("servers.more_count", ("n", Remaining.ToString(CultureInfo.CurrentCulture))) : "";
+    public string MoreCaption => HasMore ? S.Format(Closest ? "servers.more_count" : "servers.more_count_plain", ("n", Remaining.ToString(CultureInfo.CurrentCulture))) : "";
 
     /// <summary>Five more rows; the focus stays on "Show more" (or goes to the last row when that was the end).</summary>
     public ICommand MoreCommand { get; }
@@ -148,6 +155,58 @@ public sealed class ServerPicker : ObservableObject
     public string Note => Rows.Count > 0 ? Launcher.Servers.Note ?? "" : "";
 
     public ICommand RefreshCommand { get; }
+
+    // ── "Show closest to me" ──
+
+    /// <summary>The welcome's line over the list: "Choose a server, nearest first", or without "nearest first" when off.</summary>
+    public string PickCaption => S[Closest ? "setup.server.pick" : "setup.server.pick_plain"];
+
+    /// <summary>
+    /// On (the default): the servers are timed while this list is on screen and the nearest come first. Off: no listed
+    /// server is contacted to be timed; the list keeps the directory's order, without bars or ms. Saved in client.toml
+    /// (<see cref="LauncherSettings.ClosestServers"/>), the same for Settings › Online and the welcome.
+    /// </summary>
+    public bool Closest
+    {
+        get => _closestWanted ?? Launcher.Settings.ClosestServers;
+        set
+        {
+            if (value == Closest)
+            {
+                return;
+            }
+            _closestWanted = value; // shown at once; client.toml is written off the UI thread
+            if (value && _open)
+            {
+                _timer.Start();
+            }
+            else
+            {
+                _timer.Stop();
+            }
+            RelayCommand.Async(async () =>
+            {
+                try
+                {
+                    await Launcher.SetClosestServersAsync(value).ConfigureAwait(true);
+                }
+                finally
+                {
+                    _closestWanted = null; // the setting as saved (or as it stayed, when it could not be)
+                    if (_open && Closest)
+                    {
+                        _timer.Start();
+                    }
+                    else
+                    {
+                        _timer.Stop();
+                    }
+                    Sync();
+                }
+            }).Execute(null);
+            RaiseAll(); // the switch, the captions; the rows follow when the launcher has ordered the list again (Sync)
+        }
+    }
 
     // ── hiding a server: Y on its row, or its "…" ──
 
@@ -224,26 +283,37 @@ public sealed class ServerPicker : ObservableObject
     }
 
     /// <summary>
-    /// The page is open: read the list and measure now, then measure again every 15 s. Always asks
-    /// once (the launcher answers "off" when no beholder is set): before, a list that had never been
-    /// read counted as no list, so it was never read and only the address box showed.
+    /// The page is open: read the list and measure now, then measure again every 15 s (with "Show
+    /// closest to me" off, only the list is read: nothing is timed). Always asks once (the launcher
+    /// answers "off" when no beholder is set): before, a list that had never been read counted as no
+    /// list, so it was never read and only the address box showed.
     /// </summary>
     public void Start()
     {
-        if (_timer.IsEnabled)
+        if (_open)
         {
             return;
         }
-        _timer.Start();
+        _open = true;
+        if (Closest)
+        {
+            _timer.Start();
+        }
         RelayCommand.Async(() => Launcher.RefreshServersAsync()).Execute(null);
     }
 
-    public void Stop() => _timer.Stop();
+    /// <summary>The page is gone (or the list is no longer on it): nothing more is measured.</summary>
+    public void Stop()
+    {
+        _open = false;
+        _timer.Stop();
+    }
 
     /// <summary>The launcher's list changed: the rows follow, each kept when its server is still among the ones shown.</summary>
     public void Sync()
     {
         var items = Launcher.Servers.Items.Take(_limit).ToList();
+        var closest = Closest;
         for (var i = 0; i < items.Count; i++)
         {
             var at = -1;
@@ -257,7 +327,9 @@ public sealed class ServerPicker : ObservableObject
             }
             if (at < 0)
             {
-                Rows.Insert(i, new ServerRow(items[i], S, _pick, ShowMenu));
+                var row = new ServerRow(items[i], S, _pick, ShowMenu);
+                row.Update(items[i], closest);
+                Rows.Insert(i, row);
             }
             else
             {
@@ -265,7 +337,7 @@ public sealed class ServerPicker : ObservableObject
                 {
                     Rows.Move(at, i);
                 }
-                Rows[i].Update(items[i]);
+                Rows[i].Update(items[i], closest);
             }
         }
         while (Rows.Count > items.Count)

@@ -21,6 +21,11 @@ namespace Mkwmp.Core;
 /// A hidden server (<see cref="HideServerAsync"/>, client.toml's <c>[[server_list.hidden]]</c>) is
 /// neither listed nor contacted; the next one takes its place.
 /// </para>
+/// <para>
+/// With "Show closest to me" off (<see cref="LauncherSettings.ClosestServers"/>) nothing is measured:
+/// only the beholder is asked for its list, no listed server is contacted, and the list keeps the
+/// beholder's order without latencies (<see cref="ServerRanking.Visible"/>).
+/// </para>
 /// </summary>
 public sealed partial class Launcher
 {
@@ -56,12 +61,13 @@ public sealed partial class Launcher
         RaiseChanged();
     }
 
-    /// <summary>The view again from <see cref="_serverListAll"/>: without the hidden ones, nearest first.</summary>
+    /// <summary>The view again from <see cref="_serverListAll"/>: without the hidden ones, nearest first (or the beholder's order).</summary>
     private void ShowServers(Func<ServerListView, ServerListView>? change = null)
     {
         lock (_serverListLock)
         {
-            var view = _serverListView with { Items = ServerRanking.Visible(_serverListAll, Config.HiddenServers) };
+            var config = Config;
+            var view = _serverListView with { Items = ServerRanking.Visible(_serverListAll, config.HiddenServers, config.Settings.ClosestServers) };
             SetServers(change is null ? view : change(view));
         }
     }
@@ -131,9 +137,22 @@ public sealed partial class Launcher
 
     public Task MeasureServersAsync() => MeasureServersAsync(onlyNew: false);
 
+    public async Task SetClosestServersAsync(bool on)
+    {
+        if (Settings.ClosestServers != on)
+        {
+            await Task.Run(() => EditConfig(c => c with { Settings = c.Settings with { ClosestServers = on } }, wakeFriends: false)).ConfigureAwait(false);
+        }
+        ShowServers();
+        if (on)
+        {
+            await MeasureServersAsync(onlyNew: false).ConfigureAwait(false);
+        }
+    }
+
     private async Task MeasureServersAsync(bool onlyNew)
     {
-        if (_serverListView.Items.Count == 0 || !await _serverListWork.WaitAsync(0).ConfigureAwait(false))
+        if (!Settings.ClosestServers || _serverListView.Items.Count == 0 ||!await _serverListWork.WaitAsync(0).ConfigureAwait(false))
         {
             return;
         }
@@ -164,7 +183,11 @@ public sealed partial class Launcher
         lock (_serverListLock)
         {
             var config = Config;
-            todo = ServerRanking.ToMeasure(_serverListAll, config.HiddenServers, [.. config.Servers.Select(p => p.Server), config.Settings.Server]);
+            if (!config.Settings.ClosestServers)
+            {
+                return; // "Show closest to me" is off: no listed server is contacted
+            }
+            todo =ServerRanking.ToMeasure(_serverListAll, config.HiddenServers, [.. config.Servers.Select(p => p.Server), config.Settings.Server]);
         }
         if (onlyNew)
         {
@@ -245,13 +268,16 @@ internal static class ServerRanking
     /// <summary>
     /// The servers not hidden, nearest first: the ones that answered by latency, then the ones not measured, then the
     /// ones that did not answer; ties by name. So the first five are the five nearest that answered, and the others
-    /// fill in only when fewer than five did.
+    /// fill in only when fewer than five did. <paramref name="closest"/> false ("Show closest to me" off): the
+    /// beholder's order, every latency left out (an earlier measure is not shown either).
     /// </summary>
-    public static IReadOnlyList<ListedServer> Visible(IEnumerable<ListedServer> listed, IReadOnlyList<HiddenServer> hidden) =>
-        [.. listed.Where(i => !IsHidden(i, hidden))
-            .OrderBy(i => i.Online switch { true => 0, null => 1, _ => 2 })
-            .ThenBy(i => i.LatencyMs ?? int.MaxValue)
-            .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase)];
+    public static IReadOnlyList<ListedServer> Visible(IEnumerable<ListedServer> listed, IReadOnlyList<HiddenServer> hidden, bool closest = true) =>
+        closest
+            ? [.. listed.Where(i => !IsHidden(i, hidden))
+                .OrderBy(i => i.Online switch { true => 0, null => 1, _ => 2 })
+                .ThenBy(i => i.LatencyMs ?? int.MaxValue)
+                .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase)]
+            : [.. listed.Where(i => !IsHidden(i, hidden)).Select(i => i with { LatencyMs = null, Online = null })];
 
     /// <summary>
     /// The servers to contact: the first <see cref="ServerListView.MeasuredAtMost"/> of the list (the beholder's
