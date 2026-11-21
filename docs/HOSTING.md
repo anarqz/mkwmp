@@ -11,8 +11,6 @@ How the parts fit together: [ARCHITECTURE.md](ARCHITECTURE.md). Seat API and tic
 
 Gamertags, hashed PINs and friendships are kept in one SQLite file. Seats and queues live in memory: after a restart, launchers rejoin on their own.
 
-> **Needs rc.2 or later.** A server with its own lobby certificate (every server except the official one) needs players on the **rc.2** launcher and game patch. Those versions trust the certificate each server publishes; rc.1 can only reach the official server.
-
 ## 1. A cloud VM in one command (Vultr)
 
 About US$5 a month runs a server for dozens of players. You need a [Vultr](https://www.vultr.com) account, an SSH key, and five minutes.
@@ -128,7 +126,7 @@ Players then use `https://mkw.example.net`. The game's own ports (8905, 8906 and
 
 ## 2. On your PC: `server host`
 
-Download `mkwmp-server-x86_64-windows.exe` or `mkwmp-server-x86_64-linux` from the [releases](https://github.com/anarqz/mkwmp/releases) (rc.2 onward), or build it yourself (see the README). Run it with no arguments; on Windows you can double-click it. It runs the same as `server host`:
+Download `mkwmp-server-<version>.zip` from the [latest release](https://github.com/anarqz/mkwmp/releases/latest) and unzip it into a folder of its own, or build it yourself (see the README). It holds `server.exe` (Windows) and `server` (Linux). Run it with no arguments; on Windows you can double-click `server.exe`. It runs the same as `server host`:
 
 1. **First run:** it asks for the IPv4 address players reach this machine at.
    - **Friends over the internet:** your public IP. Also forward the ports below on your router to this PC.
@@ -140,8 +138,8 @@ Download `mkwmp-server-x86_64-windows.exe` or `mkwmp-server-x86_64-linux` from t
    - `registry.db`: gamertags, PIN hashes, friends and voice-chat and camera reports.
 3. It runs the seat server and the lobby together until you close it. Later runs reuse `host.toml`; flags change it:
 
-       mkwmp-server host --public-ip 203.0.113.7 --name "Friday kart" --capacity 12
-       mkwmp-server host --help        # --turn-port, --seat-bind, --data, --init-only
+       server.exe host --public-ip 203.0.113.7 --name "Friday kart" --capacity 12     (Linux: ./server host ...)
+       server.exe host --help        # --turn-port, --seat-bind, --data, --init-only
 
 When Windows asks whether to let it through the firewall, allow it. Players set the launcher's **SERVER** to `http://<that IP>:7000`.
 
