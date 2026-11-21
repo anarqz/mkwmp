@@ -16,7 +16,7 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 - **Friends, kept on the server.** Add friends by gamertag; they accept or decline. You see who is playing, online or offline, and they're your friends in the game too.
 - **Matchmaking with any number of lobbies.** Races and battles open new lobbies as players arrive and close them when they empty. After a match you go back into your lobby.
 - **Friend rooms.** Create a room; friends join from their friend card, or by Room ID with the game's on-screen keypad.
-- **Voice chat in friend rooms**, with echo cancelling and noise suppression. Pick your microphone and output in SETTINGS; mute players from the game's lobby menu. Report abusive players from SETTINGS; the server's host reviews reports. Matchmade lobbies have no voice chat.
+- **Voice chat in friend rooms**, with echo cancelling and noise suppression. Pick your microphone and output in SETTINGS. Report abusive players from SETTINGS; the server's host reviews reports. Matchmade lobbies have no voice chat.
 - **Camera in friend rooms** (the MKWMP mod, game 1.8.0): turn it on and mutual friends in the room see you above your kart, at most 4 faces each. Off by default.
 - **Privacy.** For adults (18+). The server keeps only your gamertag, a PIN hash, your friends and any report you file; voice and camera are never recorded. Unused gamertags are deleted after a month, and DELETE MY ACCOUNT removes yours at once. See the [privacy policy](https://anarqz.github.io/mkwmp/#privacy).
 - **Seats and a queue.** Each server has a fixed number of seats. PLAY takes one, or puts you in line. Having the launcher open doesn't take a seat.

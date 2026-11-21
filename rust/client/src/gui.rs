@@ -953,7 +953,7 @@ impl App {
         let mut unmute = None;
         let mut report = None;
         if v.mutes.is_empty() {
-            hint(ui, "Nobody. Mute a player from their menu in the game's lobby.", MUTED);
+            hint(ui, "Nobody is muted.", MUTED);
         } else {
             egui::ScrollArea::vertical().id_salt("voice-mutes").max_height(112.0).show(ui, |ui| {
                 for m in &v.mutes {

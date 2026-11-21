@@ -388,9 +388,9 @@ screen; then `quality`, the four preset rows, `resolution`, and `upscaler = fsr`
 |---|---|
 | The settings window (F1, Esc, Minus+Plus or Guide), "Continue", "Quit game" | The overlay replaces it as the thing a pad opens (`OVERLAY.md`). With plugin API 3 (the pin) the pad shortcut is still mkw-recomp's; with API 4 the mod swallows it. F1 and Esc always open it |
 | Live settings (volume, fps, framegen, present mode...) | The launcher writes `mkw.ini` only while the game is closed. Live changes need the menu, or a new plugin API entry (`cfg_set`) |
-| Notices at the top of the picture (`menu_notice`: controller battery, messages; also the plugin API's `notice`) | used by the mod; must stay |
-| The number pad / text entry (`ui/menu/text_entry.cpp`, reached from `sdk/swkbd`) | the game's software keyboard and the probe's Room ID keypad depend on it; must stay |
-| Plugin drawings (`plugin_overlay.cpp`, `overlay_set`) and mods' tabs (`mod_page_ui.cpp`) | used by the mod; must stay |
+| Notices at the top of the picture (`menu_notice`: controller battery, messages; also the plugin API's `notice`) | the runtime's own; the mod no longer posts notices (1.4.3); must stay |
+| The number pad / text entry (`ui/menu/text_entry.cpp`, reached from `sdk/swkbd`) | the game's software keyboard (the Room ID search) depends on it; the probe's own keypad is gone (1.4.3); must stay |
+| Plugin drawings (`plugin_overlay.cpp`, `overlay_set`) and mods' tabs (`mod_page_ui.cpp`) | the mod's settings tabs use the latter (the mod draws nothing over the game); must stay |
 | Performance overlay (F10, `perf_overlay`) | setting covered; drawn by the menu code |
 
 ### 2.6 Mods page, Tools page, dialogs
@@ -516,8 +516,8 @@ Split it in two, because the two UIs are not equally removable.
   never starts it that way. Better: exit with its own code and one line on stdout.
 
 **2b. No settings menu** (`-DMKW_NO_MENU`). Not a removal of ImGui: notices, the number pad, plugin drawings, mods'
-tabs and the performance overlay are all drawn by `ui/menu/menu.cpp` through ImGui's Vulkan back end, and the mod and
-the probe use them (section 2.5; the probe detours `text_entry_run`). What can go is the window itself:
+tabs and the performance overlay are all drawn by `ui/menu/menu.cpp` through ImGui's Vulkan back end, and the game and
+the mod use them (section 2.5; the mod only its settings tabs: since 1.4.3 it draws nothing over the game). What can go is the window itself:
 `layout_menu` in `menu.cpp`, `settings_tabs.cpp`, `binds_page.cpp`, `option_rows.cpp`, and the triggers
 (`menu_sdl.cpp` F1/Esc, `input.c` `input_menu_gate`). Do this only when the launcher has bindings, the GPU picker and
 live settings. A smaller first step with the same effect for the player: one config value, `menu_shortcut = off`,
@@ -535,7 +535,7 @@ entry `cfg_set(name, value)` for live settings from the overlay.
 | | |
 |---|---|
 | Effort | 2a: 1 to 2 days with CI and a Windows + Deck run. `menu_shortcut = off`: an hour. 2b: 3 to 5 days, after the launcher's settings are complete. `--gpus`, `--version`: half a day each |
-| Risks | Every upstream release moves `launcher.cpp` and `settings_tabs.cpp` (the fork's `v0.1.15-mkwmp` to `v0.1.16-rc`: 97 files, 4,545 lines added); the `#ifdef`s at call sites are few but must be re-checked. A second binary means a second sha256 in `Recomp.Known` and a second asset unless the UI-less build becomes the only one. The probe's detour prologues (`keypad.c`) must be re-checked against the new binary (`check_release.py`). With no start screen there is no fallback UI when the launcher is broken: keep the full build downloadable |
+| Risks | Every upstream release moves `launcher.cpp` and `settings_tabs.cpp` (the fork's `v0.1.15-mkwmp` to `v0.1.16-rc`: 97 files, 4,545 lines added); the `#ifdef`s at call sites are few but must be re-checked. A second binary means a second sha256 in `Recomp.Known` and a second asset unless the UI-less build becomes the only one. The probe's COFF names must be re-checked against the new binary (`check_release.py`). With no start screen there is no fallback UI when the launcher is broken: keep the full build downloadable |
 | Bump workflow adds | rebase the flag commits; build both variants in CI; `check_release.py` on the UI-less zip; confirm by `strings` that no `ui/launcher` text is in it; confirm the game id is the same as the full build's |
 
 ### 3.3 Stage 3: packaging

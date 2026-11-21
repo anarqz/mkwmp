@@ -47,10 +47,6 @@ static void check_functional(const struct game_addrs *a) {
     CHECK(a->grpc_timedwait_lr > GUEST_MAIN(0) && a->grpc_timedwait_bl >> 26 == 0x25);   // a BL
     CHECK(a->errsvc_post > GUEST_MAIN(0) && a->errsvc_vtable > a->errsvc_post);
     CHECK(a->err_referee_timeout == 0x606314c9);
-    CHECK(a->vt_online_pause && a->fn_pause_open && a->fn_pause_frame && a->fn_plate_text);
-    CHECK(a->slot_open == 7 && a->slot_frame == 11);
-    CHECK(a->rows > 0 && a->rows <= GAME_ROWS_MAX && a->plate_size && a->page_count + 8 == a->page_entries);
-    CHECK(a->page_plates + (uint32_t)a->rows * a->plate_size <= a->page_count);   // the plates end before the count
     CHECK(a->stock_lo <= a->stock_hi && (!a->stock_hi || a->stock_lo > GUEST_MAIN(0x3000000)));
 }
 
@@ -66,9 +62,6 @@ int main(int argc, char **argv) {
         check_functional(r180);
         // 1.0.0: the values the probe shipped with
         CHECK(r100->grpc_timedwait_lr == 0x700104a8bcull && r100->errsvc_post == 0x700222d78cull);
-        CHECK(r100->vt_online_pause == 0x7003248970ull && r100->fn_plate_text == 0x70021deb68ull);
-        CHECK(r100->rows == 24 && r100->page_plates == 0x770 && r100->plate_size == 0x150);
-        CHECK(r100->page_count == 0x3d80 && r100->page_entries == 0x3d88 && r100->entry_name == 0x18 && r100->entry_me == 0x78);
         CHECK(r100->kart_idle_kick == 1 && !r100->stock_hi);
         CHECK(r100->game_global == 0x70033d2548ull && r100->kart_entry[0] && r100->kart_entry[1] && r100->room_sync);
         for (int i = 0; i < GAME_PIA_STEPS; i++) CHECK(r100->pia_join_step[i]);
@@ -76,9 +69,6 @@ int main(int argc, char **argv) {
         for (int i = 0; i < GAME_TRACE_RANGES; i++) CHECK(r100->trace_ranges[i][0] < r100->trace_ranges[i][1]);
         // 1.8.0: the functional rows of GAME-1.8.0-ADDRESSES.md §3 ...
         CHECK(r180->grpc_timedwait_lr == 0x700111232cull && r180->errsvc_post == 0x7002564cd0ull);
-        CHECK(r180->vt_online_pause == 0x7003622528ull && r180->fn_plate_text == 0x7002505f10ull);
-        CHECK(r180->rows == 26 && r180->page_plates == 0x778 && r180->plate_size == 0x170);
-        CHECK(r180->page_count == 0x4628 && r180->page_entries == 0x4630 && r180->entry_name == 0x18 && r180->entry_me == 0x78);
         CHECK(r180->stock_lo == 0x7003800000ull && r180->stock_hi == 0x70038e0000ull);   // subsdk0 "movie"
         // ... and what stays off there: zero fields
         CHECK(r180->kart_idle_kick == 0 && !r180->kart_entry[0] && !r180->kart_entry[1]);   // MKWMP_NO_IDLE_KICK refused
@@ -123,23 +113,19 @@ int main(int argc, char **argv) {
         put64(r100->errsvc_vtable + 6 * 8, r100->errsvc_post);
         CHECK(game_guard_slot("errsvc", r100->errsvc_vtable, 6, r100->errsvc_post));
         CHECK(!game_guard_slot("errsvc (expected mismatch)", r100->errsvc_vtable, 6, r180->errsvc_post));
-        CHECK(game_addrs_selfcheck() == 4);   // the pause menu and both functions' first words are not faked here
+        CHECK(game_addrs_selfcheck() == 1);   // the error service post's first words are not faked here
     } else if (!strcmp(mode, "180")) {
         map_main(0x02bb3060u, 0x346ba64u, kId180);
         CHECK(game_build() == GAME_180 && game_addrs() == r180);
         CHECK(game_build() == GAME_180);   // cached
-        put64(r180->vt_online_pause + 7 * 8, r180->fn_pause_open);
-        put64(r180->vt_online_pause + 11 * 8, r180->fn_pause_frame);
-        CHECK(game_guard_slot("open", r180->vt_online_pause, r180->slot_open, r180->fn_pause_open));
-        CHECK(game_guard_slot("frame", r180->vt_online_pause, r180->slot_frame, r180->fn_pause_frame));
-        CHECK(!game_guard_slot("open (expected mismatch)", r180->vt_online_pause, r180->slot_open, r100->fn_pause_open));
+        put64(r180->errsvc_vtable + 6 * 8, r180->errsvc_post);
+        CHECK(game_guard_slot("errsvc", r180->errsvc_vtable, 6, r180->errsvc_post));
+        CHECK(!game_guard_slot("errsvc (expected mismatch)", r180->errsvc_vtable, 6, r100->errsvc_post));
         // the whole self-check on a faked 1.8.0 image: every guard value in place
         put32(r180->grpc_timedwait_lr - 4, r180->grpc_timedwait_bl);
-        put64(r180->errsvc_vtable + 6 * 8, r180->errsvc_post);
         for (int i = 0; i < 2; i++) put32(r180->errsvc_post + 4u * (unsigned)i, r180->errsvc_words[i]);
-        for (int i = 0; i < 4; i++) put32(r180->fn_plate_text + 4u * (unsigned)i, r180->plate_text_words[i]);
         CHECK(game_addrs_selfcheck() == 0);
-        put32(r180->fn_plate_text + 4, 0xd503201f);   // a patched image: one guard fails
+        put32(r180->errsvc_post + 4, 0xd503201f);   // a patched image: one guard fails
         CHECK(game_addrs_selfcheck() == 1);
     } else if (!strcmp(mode, "other")) {
         map_main(0x02c00000u, 0x346ba64u, kId180);   // a MOD0 offset of no known build

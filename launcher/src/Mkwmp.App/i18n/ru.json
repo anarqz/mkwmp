@@ -267,7 +267,7 @@
   "settings.chat.game_camera_consent": "На странице MKWMP в игре ещё нужно подтвердить 18+, прежде чем будет показана какая-либо камера.",
   "settings.chat.game_camera_failed": "Настройка камеры в игре не изменена",
   "settings.chat.muted": "Заглушённые игроки",
-  "settings.chat.muted_none": "Никого. Заглушить игрока можно из его меню в лобби игры.",
+  "settings.chat.muted_none": "Никто не заглушён.",
   "settings.chat.unmute": "Вернуть звук",
   "settings.chat.report": "Пожаловаться",
   "settings.report.title": "Жалоба на голосовой чат",

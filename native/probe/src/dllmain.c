@@ -12,7 +12,6 @@
 #include "breadcrumbs.h"
 #include "coff.h"
 #include "crash.h"
-#include "keypad.h"
 #include "log.h"
 #include "modmode.h"
 #include "plat.h"
@@ -37,7 +36,8 @@ static int mod_enabled(char *plugin, size_t cap) {
     return modmode_mod_enabled(&in, plugin, cap);
 }
 
-// The start-up shared with the plugin loader is probe.c's; only the COFF resolve and the keypad are this loader's.
+// The start-up shared with the plugin loader is probe.c's; only the COFF resolve is this loader's. Nothing is drawn
+// into the game and no input is read: the game's (and mkw-recomp's) own UI does its thing.
 static void probe_init(void) {
     // The mod wins: decided first, before the environment file, any override and any hook. Reading mkw.exe's symbol
     // table changes nothing in the process; it only says whether this runtime loads plugins at all (0.1.15 on).
@@ -67,7 +67,6 @@ static void probe_init(void) {
         crash_set_guest_cpu((void *(*)(void))(uintptr_t)coff_symbol("kern_cpu"));
         log_kv("hostfn_add_override", (uint64_t)(uintptr_t)g_rt.override);
         probe_register();
-        keypad_install();   // x64 detours of runtime functions: needs no override slot
     } else {
         log_line("ERROR: failed to resolve recomp runtime; probe inactive");
     }

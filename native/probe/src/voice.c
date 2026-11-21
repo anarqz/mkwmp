@@ -6,7 +6,6 @@
 #include "log.h"
 #include "rtapi.h"
 #include "seat.h"
-#include "voice_ui.h"
 #include "plat.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -120,11 +119,8 @@ static PlatLock g_lock = PLAT_LOCK_INIT;
 static int g_online;
 static char g_host[128];
 static VoiceSettings g_settings;   // the launcher's last answer (mutes = the launcher's list)
-static uint64_t g_mutes[VOICE_MAX_MUTES];
+static uint64_t g_mutes[VOICE_MAX_MUTES];   // the launcher's list (the mod has no mute control of its own in the game)
 static int g_mute_count;
-// in-game mute changes not yet told to the launcher
-static struct { uint64_t account; int muted; char name[FRIEND_NAME_SIZE]; } g_pending[16];
-static int g_pending_count;
 static int g_thread;   // the voice thread was started
 
 static void dll_log(const char *line) { mkwmp_log("%s", line); }
@@ -193,32 +189,6 @@ static void push_mutes(void) {
     if (g_dll.set_mutes) g_dll.set_mutes(g_mutes, g_mute_count);
 }
 
-static void post_pending(void) {
-    for (;;) {
-        uint64_t account;
-        int muted;
-        char name[FRIEND_NAME_SIZE];
-        plat_lock(&g_lock);
-        if (!g_pending_count) { plat_unlock(&g_lock); return; }
-        account = g_pending[0].account;
-        muted = g_pending[0].muted;
-        memcpy(name, g_pending[0].name, sizeof name);
-        memmove(g_pending, g_pending + 1, (size_t)(--g_pending_count) * sizeof g_pending[0]);
-        plat_unlock(&g_lock);
-        char json[256], esc[2 * FRIEND_NAME_SIZE] = {0};
-        for (size_t i = 0, k = 0; name[i] && k + 2 < sizeof esc; i++) {
-            if (name[i] == '"' || name[i] == '\\') esc[k++] = '\\';
-            esc[k++] = (unsigned char)name[i] < 0x20 ? ' ' : name[i];
-        }
-        snprintf(json, sizeof json, "{\"account\":\"%llu\",\"name\":\"%s\",\"muted\":%s}", (unsigned long long)account, esc,
-                 muted ? "true" : "false");
-        char buf[512];
-        const char *body;
-        int st = launcher_request_json("POST", "/local/v1/voice/mute", json, buf, sizeof buf, &body);
-        mkwmp_log("voice: %s %llu told to the launcher (HTTP %d)", muted ? "mute" : "unmute", (unsigned long long)account, st);
-    }
-}
-
 // Room ID for "SEARCH GROUP ID" (user decision 2026-11-15): mkw-recomp has no text-entry window, so
 // nn::swkbd::ShowKeyboard returns the game's default name ("Jogado") unless MKW_SWKBD_ANSWER is set.
 // The player types the 6-digit Room ID in the launcher (GET /local/v1/room); we keep that variable
@@ -280,14 +250,9 @@ static void voice_thread(void *unused) {
         // an older launcher (404) or none: the defaults (voice on, default devices)
         plat_lock(&g_lock);
         if (st == 200) {
-            // the launcher's list is the truth, plus in-game changes it has not been told yet
+            // the launcher's list is the truth
             g_mute_count = 0;
             for (int i = 0; i < s.mute_count; i++) g_mutes[g_mute_count++] = s.mutes[i];
-            for (int i = 0; i < g_pending_count; i++) {
-                int at = find_mute(g_pending[i].account);
-                if (g_pending[i].muted && at < 0 && g_mute_count < VOICE_MAX_MUTES) g_mutes[g_mute_count++] = g_pending[i].account;
-                if (!g_pending[i].muted && at >= 0) g_mutes[at] = g_mutes[--g_mute_count];
-            }
         }
         g_settings = s;
         push_mutes();
@@ -297,7 +262,6 @@ static void voice_thread(void *unused) {
             last_enabled = s.enabled;
         }
         g_dll.settings(s.enabled, s.input, s.output, s.input_gain, s.output_gain);
-        post_pending();
 
         // the relay: the seat ticket, the lobby host, the voice port
         char ticket[sizeof last_ticket];
@@ -341,7 +305,6 @@ void voice_online(const char *lobby_host) {
     if (ok) {
         snprintf(g_host, sizeof g_host, "%s", lobby_host && *lobby_host ? lobby_host : cfg->host);
         if (!g_thread) g_thread = plat_thread_start(voice_thread, NULL);
-        voice_ui_install();
         mkwmp_event("voice: online (relay %s:%d)", g_host, cfg->voice_port);
     }
     plat_unlock(&g_lock);
@@ -365,15 +328,6 @@ int voice_is_muted(uint64_t account) {
     int m = find_mute(account) >= 0;
     plat_unlock_shared(&g_lock);
     return m;
-}
-
-int voice_is_talking(uint64_t account) {
-    if (!g_dll.peers) return 0;
-    mkwmp_voice_peer p[32];
-    int n = g_dll.peers(p, 32);
-    for (int i = 0; i < n; i++)
-        if (p[i].account == account) return p[i].talking;
-    return 0;
 }
 
 int voice_is_online(void) {
@@ -425,23 +379,4 @@ int voice_room_state(mkwmp_voice_room *out) {
 
 int voice_active(void) {
     return g_dll.status && (g_dll.status() & (MKWMP_VOICE_SUBSCRIBED | MKWMP_VOICE_RUNNING)) == (MKWMP_VOICE_SUBSCRIBED | MKWMP_VOICE_RUNNING);
-}
-
-void voice_set_muted(uint64_t account, const char *name, int muted) {
-    if (!account) return;
-    plat_lock(&g_lock);
-    int at = find_mute(account);
-    if (muted && at < 0 && g_mute_count < VOICE_MAX_MUTES) g_mutes[g_mute_count++] = account;
-    if (!muted && at >= 0) g_mutes[at] = g_mutes[--g_mute_count];
-    if (g_pending_count == (int)(sizeof g_pending / sizeof g_pending[0])) {
-        memmove(g_pending, g_pending + 1, sizeof g_pending - sizeof g_pending[0]);
-        g_pending_count--;
-    }
-    g_pending[g_pending_count].account = account;
-    g_pending[g_pending_count].muted = muted;
-    snprintf(g_pending[g_pending_count].name, sizeof g_pending[0].name, "%s", name ? name : "");
-    g_pending_count++;
-    push_mutes();
-    plat_unlock(&g_lock);
-    mkwmp_log("voice: %s %llu (%s) from the game's menu", muted ? "muted" : "unmuted", (unsigned long long)account, name ? name : "?");
 }

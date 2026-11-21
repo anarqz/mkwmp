@@ -267,7 +267,7 @@
   "settings.chat.game_camera_consent": "La pagina MKWMP del gioco richiede ancora la tua conferma 18+ prima di mostrare qualsiasi videocamera.",
   "settings.chat.game_camera_failed": "L'impostazione della videocamera del gioco non è stata modificata",
   "settings.chat.muted": "Giocatori silenziati",
-  "settings.chat.muted_none": "Nessuno. Silenzia un giocatore dal suo menu nella lobby del gioco.",
+  "settings.chat.muted_none": "Nessuno è silenziato.",
   "settings.chat.unmute": "Riattiva audio",
   "settings.chat.report": "Segnala",
   "settings.report.title": "Segnala un abuso vocale",

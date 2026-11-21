@@ -5,6 +5,11 @@ and overlay, `c7142dc` docs; the wiki's "Writing a plugin"). The probe now build
 (`native/probe/src/mkw_plugin.h`, branch `plugin-v1`); see **Version 1 (upstream)** at the end. The sections before it
 record what was proposed and our fork's prototype, which v1 supersedes.
 
+**Update 1.4.3: the mod draws nothing into the game.** `voice_ui.c` (the online pause menu's voice labels and mute
+toggle, its vtable hooks and keyboard / pad shortcuts), `keypad.c` / `detour.c` (the winmm build's Room ID keypad in
+mkw-recomp's ImGui frame) and the notice sink (`notify_set_sink` to `api->notice`) are removed; `notify.c` only logs.
+The rows below that name them are history. The overlay trigger (`overlay.c`) is the mod's only input in the game.
+
 Proposed by upstream: `.dll`/`.so` from `<mod>/plugin/`, loaded only when the player enables the mod;
 `mkw_plugin_init(const MkwPluginApi *api, uint32_t api_version)` before the game loads; a versioned function table
 (log, cfg_get, override by name without the 64 cap, call a game function, guest memory r/w, nn::os events, romfs);
@@ -122,10 +127,10 @@ Upstream's v1 differs from our prototype; `backend_plugin.c` (branch `plugin-v1`
 | guest symbols, calls, core away/back, log, cfg | `guest_symbol`, `call`, `core_away/back`, `log`, `cfg_get` | as they are |
 | game loaded | `guest_modules`, `on_game_loaded`, `module_base("main")`, `game_version` "1.8.0", `game_id` | `g_rt.guest_modules` / `game_code_loaded`; logged at load |
 | `rt_dispatch` hook (`profile_dispatch`: error skips, idle-kick guard, BulkGet / Pia / matchmake / room traces) | `override_address` + `call_original` | one override per target address of the build's row (`npln.c` `install_by_address`), from `on_game_loaded` only; the kart and room ones only with their switch on. Matches by caller only (controller next-phase / prepare BLRs) and `MKWMP_TRACE_EDGES` have no target: COFF-only |
-| vtable hooks with a fake address (`guesthook.c`, voice UI) | `override_address` on the slot's function | the slot is not written; the function is overridden for every indirect caller, so `voice_ui.c` checks the page's vtable and passes others on (`guesthook_original` = `call_original`) |
-| Room ID keypad (`keypad.c`, text hook) | none needed | mkw-recomp draws its own number pad; no text hook in the plugin |
+| vtable hooks with a fake address (`guesthook.c`) | `override_address` on the slot's function | the slot is not written; the function is overridden for every indirect caller, so a hook checks the object's vtable and passes others on (`guesthook_original` = `call_original`). Its one user, the voice UI, is gone (1.4.3) |
+| Room ID keypad (`keypad.c`, text hook) | none needed | mkw-recomp draws its own number pad; no text hook in the plugin (the winmm keypad is gone too, 1.4.3) |
 | errors to the player | `const char **message` of `mkw_plugin_init` | `refuse()` |
-| notices | `notice` | `notify_set_sink` |
+| notices | `notice` | not used since 1.4.3: status lines go to mkwmp.log only (`notify.c`) |
 | readable guest memory | not in v1 | `plat_mem_readable` (ours) |
 
 Rules that shaped it: address overrides are allowed only in `mkw_plugin_init` and `on_game_loaded` (the probe used to

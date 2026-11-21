@@ -6,8 +6,8 @@
 // (mkw_plugin.h, upstream's header unchanged; Windows and Linux). The rest of the probe does not know which one filled
 // it, except where a hook has to go in differently (host_fn_at / dispatch_hook vs override_address).
 //
-// Exception: keypad.c's detours and ImGui calls resolve their own COFF symbols (coff_symbol). mkw-recomp now draws its
-// own number pad for the software keyboard, so the plugin build has no keypad at all.
+// The probe draws nothing into the game and reads no input of its own there (the overlay trigger aside, overlay.h):
+// the software keyboard is mkw-recomp's own number pad.
 #ifndef MKWMP_RTAPI_H
 #define MKWMP_RTAPI_H
 

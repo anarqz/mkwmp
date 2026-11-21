@@ -267,7 +267,7 @@
   "settings.chat.game_camera_consent": "Die MKWMP-Seite des Spiels braucht noch deine 18+-Bestätigung, bevor eine Kamera gezeigt wird.",
   "settings.chat.game_camera_failed": "Die Kamera-Einstellung des Spiels wurde nicht geändert",
   "settings.chat.muted": "Stummgeschaltete Spieler",
-  "settings.chat.muted_none": "Niemand. Schalte einen Spieler über sein Menü in der Lobby des Spiels stumm.",
+  "settings.chat.muted_none": "Niemand ist stummgeschaltet.",
   "settings.chat.unmute": "Stumm aufheben",
   "settings.chat.report": "Melden",
   "settings.report.title": "Missbrauch im Sprachchat melden",

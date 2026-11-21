@@ -267,7 +267,7 @@
   "settings.chat.game_camera_consent": "카메라가 표시되려면 먼저 게임의 MKWMP 페이지에서 18+ 확인을 해야 합니다.",
   "settings.chat.game_camera_failed": "게임의 카메라 설정을 바꾸지 못했습니다",
   "settings.chat.muted": "음소거한 플레이어",
-  "settings.chat.muted_none": "없습니다. 게임 로비에서 플레이어의 메뉴를 열어 음소거할 수 있습니다.",
+  "settings.chat.muted_none": "음소거한 플레이어가 없습니다.",
   "settings.chat.unmute": "음소거 해제",
   "settings.chat.report": "신고",
   "settings.report.title": "음성 악용 신고",

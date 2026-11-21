@@ -267,7 +267,7 @@
   "settings.chat.game_camera_consent": "Herhangi bir kamera gösterilmeden önce oyundaki MKWMP sayfasında 18+ onayını vermen gerekiyor.",
   "settings.chat.game_camera_failed": "Oyunun kamera ayarı değiştirilemedi",
   "settings.chat.muted": "Susturulan oyuncular",
-  "settings.chat.muted_none": "Kimse yok. Bir oyuncuyu, oyunun lobisindeki menüsünden susturabilirsin.",
+  "settings.chat.muted_none": "Susturulan kimse yok.",
   "settings.chat.unmute": "Sesini aç",
   "settings.chat.report": "Şikâyet et",
   "settings.report.title": "Sesli sohbet şikâyeti",

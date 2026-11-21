@@ -6,8 +6,8 @@ description: Move MKWMP to a new mkw-recomp release (0.1.14, 0.1.15, ...). Use w
 # Bump mkw-recomp to a new release
 
 MKWMP's probe (`native/probe/src`, proxy `winmm.dll`) depends on mkw-recomp internals: COFF symbols of
-mkw.exe (`coff.c`), host-override names and the `.ovr` table (`npln.c` kRegs / stock_handler), three detour
-prologues (`keypad.c`), `rt_dispatch` / `g_host` / `Cpu` layout (`guesthook.c`, `recomp.h`), WINMM forwards
+mkw.exe (`coff.c`), host-override names and the `.ovr` table (`npln.c` kRegs / stock_handler),
+`rt_dispatch` / `g_host` / `Cpu` layout (`guesthook.c`, `recomp.h`), WINMM forwards
 (`winmm.def`) and some `MKW_*` keys. The launcher only accepts runtimes whose mkw.exe SHA-256 is listed in
 `rust/client/src/recomp.rs` (KNOWN / SUPPORTED / RECOMMENDED / DOWNLOAD).
 
@@ -36,10 +36,10 @@ Download each zip into its own new, empty directory.
 # optional: --game-dir <a set-up game folder, read only> to check its mkwgame.id / mkwgame.dll imports
 ```
 
-The checker reads the probe's needs straight from the sources (`coff.c`, `keypad.c`, `npln.c`, `winmm.def`), so keep
+The checker reads the probe's needs straight from the sources (`coff.c`, `npln.c`, `winmm.def`), so keep
 it in sync whenever the probe starts depending on something new. How to read the output:
 - `0 FAIL` and the only WARN is "launcher does not know NEW's hash": the probe binary is fine, and the launcher just needs the hash.
-- A FAIL on a COFF name, detour prologue, `.ovr` name, `rt_dispatch` bytes or a span: probe work. Read the upstream
+- A FAIL on a COFF name, `.ovr` name, `rt_dispatch` bytes or a span: probe work. Read the upstream
   diff for that symbol before you change anything.
 - A changed RT_GAME_ID means `mkw.exe --play` dies until recomp's start screen rebuilds `mkwgame.dll` (see 0.1.12 T1).
   Tell the user, and decide with them whether the launcher should detect it.
@@ -62,7 +62,7 @@ game, no commits), and the instruction to write `research/docs/RECOMP-NEW.md`.
 ## 4. Write `research/docs/RECOMP-NEW.md`
 
 Use the same structure as the previous reports: bottom line, BREAKING (with file:line in our repo), NEEDS LIVE TEST
-(T1..Tn: what to do, what to grep in `mkwmp.log` / `logs/mkw.log`), SAFE (symbol RVA table, detour table, `.ovr`
+(T1..Tn: what to do, what to grep in `mkwmp.log` / `logs/mkw.log`), SAFE (symbol RVA table, `.ovr`
 count, Cpu / g_host layout, env keys). Put the new mkw.exe SHA-256 and RT_GAME_ID at the top.
 
 ## 5. Launcher change: owned by the MACBOOK-MKWMP session
@@ -90,7 +90,7 @@ under Downloads. Run each T item. Under Proton, the Steam Deck is driven by the 
 Minimum set:
 1. Press Play from the MKWMP launcher → `mkwmp.log` shows "runtime resolved" and the overrides registered.
 2. Go online → "BulkGetDocuments and Pia join tracing installed" and no "rt_dispatch import not found".
-3. One full online race and one battle, PC + Deck; friend room via Room ID (keypad); voice UI in the pause menu.
+3. One full online race and one battle, PC + Deck; friend room via Room ID (mkw-recomp's number pad); voice in a friend room.
 4. `logs/mkw.log` grep: `sjlj:`, `fatal`, `crash`, frame-interval lines.
 
 ## 8. Commit

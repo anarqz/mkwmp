@@ -12,8 +12,7 @@ What it prints, for OLD and NEW side by side:
    4. PE exports (mkwgame.dll imports rt_dispatch from mkw.exe: npln.c install_profile_dispatch_trace)
    5. the .ovr table (what npln.c stock_handler reads): names added/removed, and for each npln.c kRegs name
       whether it has a stock handler (that decides which probe overrides are gated)
-   6. the detoured functions' first bytes against keypad_sigs.h: each function has a k*Prologues table of accepted
-      prologues (a k*Sig array and its *_STEAL count per mkw-recomp release that changed it); one must match
+   6. (removed: the keypad's detours; the probe draws nothing into the game any more)
    7. rt_dispatch's first bytes (mov rax,[rcx+0x138]: Cpu.thread at 312, recomp.h)
    8. the span of g_host (distance to the next symbol of the section) and the layout of hostfn.c's added[]: the
       fixed array of RUNTIME_OVERRIDE_MAX entries (up to 0.1.13) or the pointer grown with realloc (from 0.1.15)
@@ -336,32 +335,7 @@ class Probe:
         if not self.names:
             raise ValueError("could not parse kNames from coff.c")
 
-        # keypad.c detours three functions; keypad_sigs.h lists, per function, every accepted prologue (one per
-        # mkw-recomp release that changed it) as {k*Sig, sizeof k*Sig, *_STEAL} rows of a k*Prologues table
-        keypad = strip_comments(rd("keypad.c"))
-        sigs_h = strip_comments(rd("keypad_sigs.h")) if (src / "keypad_sigs.h").is_file() else keypad
-        self.sigs = {}  # sig array name -> bytes
-        for m in re.finditer(r"static const uint8_t (k\w+Sig\w*)\[\]\s*=\s*\{([^}]*)\}", sigs_h):
-            self.sigs[m.group(1)] = bytes(int(x, 16) for x in re.findall(r"0x([0-9A-Fa-f]{2})", m.group(2)))
-        steal = dict(re.findall(r"\b(\w+_STEAL)\s*=\s*(\d+)", sigs_h))
-        tables = {}  # table name -> [(sig name, sig bytes, steal)]
-        for m in re.finditer(r"static const DetourPrologue (k\w+Prologues)\[\]\s*=\s*\{(.*?)\};", sigs_h, flags=re.S):
-            rows = re.findall(r"\{\s*(k\w+)\s*,\s*sizeof\s*\(?\s*(k\w+)\s*\)?\s*,\s*(\w+_STEAL)\s*\}", m.group(2))
-            tables[m.group(1)] = [(a, self.sigs[a], int(steal[st])) for a, b, st in rows
-                                  if a == b and a in self.sigs and st in steal]
-            if len(tables[m.group(1)]) != len(rows) or not rows:
-                raise ValueError(f"could not parse {m.group(1)} in keypad_sigs.h")
-        var_sym = dict(re.findall(r'void \*(\w+)\s*=\s*coff_symbol\("([^"]+)"\)', keypad))
-        # const DetourPrologue *pe = detour_match(entry, kEntryPrologues, ...);  ->  pe: (entry, kEntryPrologues)
-        var_table = {pv: (fv, tb) for pv, fv, tb in
-                     re.findall(r"\*(\w+)\s*=\s*detour_match\(\s*(\w+)\s*,\s*(k\w+Prologues)", keypad)}
-        self.detours = []  # (symbol, [(sig name, sig bytes, steal)]): any one prologue of the list may match
-        for m in re.finditer(r"\binstall\(\s*(\w+)\s*,\s*(\w+)\s*,", keypad):
-            fn_var, p_var = m.groups()
-            if p_var in var_table and var_table[p_var][0] == fn_var and fn_var in var_sym:
-                self.detours.append((var_sym[fn_var], tables.get(var_table[p_var][1], [])))
-        if not self.detours or any(not rows for _s, rows in self.detours):
-            raise ValueError("could not parse the detours from keypad.c / keypad_sigs.h")
+        # (the keypad's detours, once step 6, are gone: the probe detours no mkw.exe function any more)
 
         npln = strip_comments(rd("npln.c"))
         self.regs = re.findall(r'\{\s*"([^"]+)"\s*,', c_block(npln, r"kRegs\s*\[\s*\]\s*="))
@@ -673,51 +647,6 @@ def main() -> int:
         (args.ovr_dump / "ovr-old.txt").write_text("\n".join(on_) + "\n")
         (args.ovr_dump / "ovr-new.txt").write_text("\n".join(nn_) + "\n")
         out(f"  names written to {args.ovr_dump}")
-
-    # 6 ---------------------------------------------------------------------------------------------------------
-    out("\n[6] detours (keypad.c, signatures of keypad_sigs.h)")
-    for sym, rows in probe.detours:
-        accepted = ", ".join(f"{nm}({len(sg)}, steal {st})" for nm, sg, st in rows)
-        for tag, pe in (("old", o), ("new", n)):
-            f = pe.find(sym)
-            if len(f) != 1:
-                (fail if tag == "new" else note)(f"{sym}: {len(f)} symbols in {tag.upper()}")
-                continue
-            code = pe.read(f[0][1], 32)
-            # as detour_match: the first accepted prologue the function starts with
-            hit = next(((nm, sg, st) for nm, sg, st in rows if code[: len(sg)] == sg), None)
-            shown = len(hit[1]) if hit else max(len(sg) for _n, sg, _s in rows)
-            out(f"  {tag}  {sym} @ {f[0][1]:#x}: {hexs(code[:shown])}  "
-                + (f"{hit[0]}({len(hit[1])}, steal {hit[2]}) match" if hit else f"MISMATCH (accepted: {accepted})"))
-            if not hit:
-                if tag == "new":
-                    fail(f"{sym}: first bytes match none of {accepted}: keypad.c will not install its hooks")
-                else:
-                    note(f"{sym}: OLD matches none of the accepted prologues either")
-                continue
-            # the stolen bytes of the matching prologue, in this very build
-            signame, sig, steal = hit
-            ins = disasm(cs, code, f[0][1], 8)
-            if ins:
-                if tag == "new":
-                    out("       " + "; ".join(t for _s, t, _d in ins[:6]))
-                total, bad = 0, False
-                for size, text, dep in ins:
-                    if total >= steal:
-                        break
-                    if dep:
-                        bad = True
-                        fail(f"{sym} ({tag.upper()}): the stolen instruction '{text}' is position-dependent")
-                    total += size
-                if total != steal:
-                    fail(f"{sym} ({tag.upper()}): {steal} stolen bytes of {signame} do not end on an instruction "
-                         f"boundary ({total})")
-                elif not bad and tag == "new":
-                    ok(f"{sym}: {signame}, {steal} stolen bytes are whole position-independent instructions")
-    for nm in probe.names:
-        if "ImGui" in nm or "ImDrawList" in nm:
-            if len(n.find(nm)) != 1:
-                fail(f"{nm}: needed by the keypad's drawing, not exactly one symbol in NEW")
 
     # 7 ---------------------------------------------------------------------------------------------------------
     out("\n[7] rt_dispatch prologue (Cpu.thread offset)")

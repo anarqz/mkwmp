@@ -6,8 +6,10 @@
 // start-up shared with the winmm.dll proxy (probe.c). What the COFF backend dug out of mkw.exe (symbols, the .ovr
 // table, g_host, the rt_dispatch import) is an API entry here, with two differences:
 //   - indirect-call hooks are per address (override_address) and only while the game is being loaded, so the probe's
-//     version-specific hooks (npln_address_hooks, voice_ui_install) go in from on_game_loaded, not lazily online;
-//   - mkw-recomp draws its own number pad for the software keyboard: no keypad, no text hook.
+//     version-specific hooks (npln_address_hooks, camera_game_loaded) go in from on_game_loaded, not lazily online;
+//   - the mod draws nothing into the game: no labels, no notices (api->notice), no keypad (mkw-recomp draws its own
+//     number pad for the software keyboard), and it adds no in-game hotkeys; the overlay trigger (overlay.h) is the
+//     one input of its own, and it brings up the launcher, outside the game.
 //
 // Folders: the probe's home (mkwmp.log, mkwmp.env, the voice library) is the mod's folder, mods/<mod>/. mkwmp.toml
 // and the lobby CA are read from there, else from the game's folder, where the MKWMP launcher writes them
@@ -34,7 +36,6 @@
 #include "guesthook.h"
 #include "launcher.h"
 #include "log.h"
-#include "notify.h"
 #include "overlay.h"
 #include "plat.h"
 #include "probe.h"
@@ -44,7 +45,6 @@
 #include "seat.h"
 #include "seatd.h"
 #include "voice.h"
-#include "voice_ui.h"
 #include "voicetab.h"
 
 #include <stdarg.h>
@@ -107,20 +107,15 @@ static void on_game_loaded(void *user) {
     mkwmp_event("plugin: game %s loaded (build id %s, main at %#llx)", g_api->game_version ? g_api->game_version : "?",
               g_api->game_id ? g_api->game_id : "?", (unsigned long long)main);
     if (g_seat_early && g_active) seat_take_early();   // connecting... / in line / connected, in the menus already
-    if (g_needs_setup && g_api->notice)
-        g_api->notice("MKWMP: open Mods, MKWMP, Options on the start screen to set up online play", 10);
+    if (g_needs_setup)
+        mkwmp_log("plugin: online play is not set up (Mods, MKWMP, Options on the start screen)");
     if (main && main != GUEST_MAIN(0))
         mkwmp_log("plugin: main is not at %#llx: every version-specific hook stays off", (unsigned long long)GUEST_MAIN(0));
     else if (g_active) {
         npln_address_hooks();   // error skips, idle-kick guard, BulkGet / Pia / matchmake traces (by game build)
-        voice_ui_install();     // the online pause menu's voice labels
         camera_game_loaded();   // the game's "Use the camera?" prompt (nothing unless the camera is installed)
     }
     g_rt.override_address = NULL;   // closed from here on: a later install attempt sees no means and stays off
-}
-
-static void notice_sink(NotifyLevel level, const char *text) {
-    g_api->notice(text, level == NOTIFY_ERROR || level == NOTIFY_WARN ? 8 : 5);
 }
 
 // ---- the mod's own settings (plugin API 2: its options page in the start screen, modpage.c)
@@ -189,7 +184,7 @@ static void use_settings(const MkwPluginApi *api) {
     c.voice = voice_on;
     c.setting_get = api->setting_get;
     c.setting_set = api->setting_set;
-    c.watch_friends = 1;   // friends' notices in game, as the launcher's tray gave
+    c.watch_friends = 1;   // presence and the friends list (their changes are logged, not shown in the game)
     c.lang_pt = lang_pt;
     seatd_start(&c);
     launcher_set_direct(seatd_request);
@@ -304,7 +299,8 @@ MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_vers
     g_rt.call_original = api->call_original ? pl_call_original : NULL;
 
     api->on_game_loaded(on_game_loaded, NULL);
-    if (api->notice) notify_set_sink(notice_sink);
+    // api->notice is not used: the mod's status (connected, in line, friends online) is mkwmp.log's and the launcher's,
+    // never a toast over the game (notify.c keeps it in the log only)
 
     use_settings(api);
 

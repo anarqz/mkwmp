@@ -267,7 +267,7 @@
   "settings.chat.game_camera_consent": "La page MKWMP du jeu attend encore ta confirmation 18+ avant d'afficher la moindre caméra.",
   "settings.chat.game_camera_failed": "Le réglage de la caméra du jeu n'a pas été modifié",
   "settings.chat.muted": "Joueurs en sourdine",
-  "settings.chat.muted_none": "Personne. Mets un joueur en sourdine depuis son menu, dans le salon du jeu.",
+  "settings.chat.muted_none": "Personne n'est en sourdine.",
   "settings.chat.unmute": "Réactiver le son",
   "settings.chat.report": "Signaler",
   "settings.report.title": "Signaler un abus vocal",

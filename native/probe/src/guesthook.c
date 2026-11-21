@@ -43,7 +43,7 @@ int guesthook_init(void) {
     if (g_rt.host_fn_at || g_rt.override_address) return 1;
     if (!plat_xchg(&said, 1))
         mkwmp_log("guesthook: the runtime cannot route indirect calls to us now (no g_host, or the plugin API's "
-                  "address overrides are closed: the game is running); in-game voice UI off");
+                  "address overrides are closed: the game is running); vtable hooks off");
     return 0;
 }
 

@@ -95,7 +95,7 @@ static int reply(char *buf, size_t cap, const char **body, int status, const cha
     return status;
 }
 
-// ---- the friends watcher: the server's long poll, a notice per change (as the launcher's tray did)
+// ---- the friends watcher: the server's long poll, a notice per change (notify.c: mkwmp.log only, nothing in the game)
 static int find(const SeatApiFriend *list, int n, const char *name) {
     for (int i = 0; i < n; i++)
         if (!strcmp(list[i].name, name)) return i;
@@ -362,7 +362,8 @@ static int voice_get(char *buf, size_t cap, const char **body) {
     return 200;
 }
 
-// {"account":"123","name":"x","muted":true}, from the pause menu's voice labels: kept across games
+// {"account":"123","name":"x","muted":true} (LAUNCHER_API.md's POST /local/v1/voice/mute; the mod itself no longer
+// posts it since it stopped drawing a mute menu in the game): kept across games
 static int voice_mute(const char *json, char *buf, size_t cap, const char **body) {
     char num[32] = "", name[40] = "";
     seatapi_json_str(json, "account", num, sizeof num);

@@ -4,7 +4,7 @@
     python build_linux.py [--zig PATH]
 
 Produces build/libmkwmp-core.so for x86_64-linux-gnu: every source of build.py except the Windows-only ones
-(loader, COFF backend, keypad detours, Win32 plat), plus the POSIX plat files, compiled with -Werror and linked with
+(loader, COFF backend, Win32 plat), plus the POSIX plat files, compiled with -Werror and linked with
 --no-undefined against tests/stub_rtapi.c (an empty g_rt). Not something to ship: the .so only proves that the core
 needs nothing from Windows (docs/PLUGIN-API-READINESS.md); the plugin build with a real backend is build_plugin.py.
 Runs in CI (.github/workflows/probe-linux.yml).
@@ -22,7 +22,7 @@ from build import SOURCES  # noqa: E402  (the Windows build's list: new core fil
 
 SRC = HERE / "src"
 BUILD = HERE / "build"
-WINDOWS_ONLY = {"dllmain.c", "modmode.c", "coff.c", "keypad.c", "detour.c", "plat_win.c", "plat_net_win.c"}
+WINDOWS_ONLY = {"dllmain.c", "modmode.c", "coff.c", "plat_win.c", "plat_net_win.c"}
 POSIX = ["plat_posix.c", "plat_net_posix.c"]
 STUB = HERE / "tests" / "stub_rtapi.c"
 

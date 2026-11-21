@@ -82,7 +82,7 @@ a seat for it and none of its voice is forwarded.
 | --- | --- |
 | `GET /local/v1/voice` | `200 {"enabled":true,"input":"<device id or empty>","output":"<device id or empty>","inputGain":100,"outputGain":100,"mutes":[{"account":"<u64 decimal>","name":"..."}]}`. Polled by the probe every 2 s; a change applies live. |
 | `POST /local/v1/voice/devices` | `{"inputs":[{"id","name"}],"outputs":[{"id","name"}]}` as the game process sees them: on Windows WASAPI endpoint ids and friendly names; on Linux (PulseAudio, or PipeWire through pipewire-pulse) the PulseAudio source and sink names as ids and their descriptions as names (inputs: every source that is not a monitor; outputs: every sink; see §5.1). The launcher keeps the last list (persisted) for its settings pane. `204`. |
-| `POST /local/v1/voice/mute` | `{"account":"<u64 decimal>","name":"...","muted":true}`: a mute from the game's menus. The launcher persists the list (by account id) and returns it in the next GET. `204`. |
+| `POST /local/v1/voice/mute` | `{"account":"<u64 decimal>","name":"...","muted":true}`: a mute (up to 1.4.2 the mod sent it from its in-game mute menu, which is gone; kept for compatibility). The launcher persists the list (by account id) and returns it in the next GET. `204`. |
 
 Settings pane (launcher SETTINGS): **Voice chat** on/off (default **on**), **Microphone** and
 **Output** dropdowns ("System default" first = empty id, then the devices the game reported; before
@@ -99,7 +99,11 @@ the first game run only "System default"), mic and voice volume sliders 1-100 (d
   normalization** (each talker brought to -20 dBFS speech level, -12..+12 dB, slow attack, no
   pumping), per-talker gain, mix, **mix limiter** (hard ceiling -3 dBFS, soft knee): nobody sounds
   louder than anyone else and no scream reaches the ears at full scale.
-- Mutes from the game's menus go to the relay (op 2) and to the launcher (`POST /voice/mute`).
+- The mute list of the settings (`GET /voice` `mutes`) goes to the relay (op 2). Since 1.4.3 the mod draws
+  nothing into the game: no talking or muted marks next to the players, no mute toggle in the pause menu, no
+  in-game hotkeys. `POST /voice/mute` stays in the contract (the launcher and the mod's in-process local API
+  still answer it), but the mod no longer sends it; a player can unmute from the Muted Players list, and there is
+  no per-player mute control in the game any more.
 
 ### 5.1 Linux (PulseAudio / PipeWire)
 

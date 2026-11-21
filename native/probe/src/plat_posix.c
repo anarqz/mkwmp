@@ -208,7 +208,7 @@ int plat_mem_write_u64(uint64_t *at, uint64_t v) {
 }
 
 // ---- input: no global keyboard or window focus from a library on Linux (X11 / Wayland belong to the game). The
-// voice UI keeps its gamepad shortcuts; keyboard ones need mkw-recomp's input or overlay hooks.
+// overlay's Shift+Tab is Windows-only; its pad triggers come through mkw-recomp's input filter.
 int plat_game_focused(void) { return 0; }
 int plat_key_down(int key) { (void)key; return 0; }
 

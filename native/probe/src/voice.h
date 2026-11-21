@@ -3,9 +3,9 @@
 // (room mode, roomnet.c: the relay routes it, and the voice library keeps the engine off outside a room). Nothing is
 // filtered here. The probe loads mkwmp-voice.dll (the engine and
 // the relay client, native/voice) from the game folder the first time the game goes online, feeds it the seat ticket
-// and the relay address, and polls the launcher's voice settings (GET /local/v1/voice) every 2 s. Mutes chosen in
-// the game's menus go to the engine (and through it to the relay) and to the launcher (POST /local/v1/voice/mute).
-// Without the DLL, a launcher or a ticket, voice simply stays off.
+// and the relay address, and polls the launcher's voice settings (GET /local/v1/voice) every 2 s. The mute list of
+// those settings goes to the engine (and through it to the relay); the mod adds no mute control of its own in the
+// game. Without the DLL, a launcher or a ticket, voice simply stays off.
 #ifndef MKWMP_VOICE_PROBE_H
 #define MKWMP_VOICE_PROBE_H
 
@@ -36,12 +36,8 @@ void voice_offline(void);
 // The game is closing: offline, and the relay left now (the engine closes the microphone and the output).
 void voice_shutdown(void);
 
-// For the game's menus (any thread, never blocks): is this account muted by the player; is it talking now.
+// For the camera (any thread, never blocks): is this account muted by the player (the settings' list).
 int voice_is_muted(uint64_t account);
-int voice_is_talking(uint64_t account);
-// Mute or unmute a player from the game's menus (`name` may be NULL). Applies at once; the launcher is told on the
-// voice thread.
-void voice_set_muted(uint64_t account, const char *name, int muted);
 // For the camera (camera.c): 1 between voice_online and voice_offline, whatever the voice settings.
 int voice_is_online(void);
 // 1 while voice runs in a room (the engine is on and the relay has this player in a lobby).

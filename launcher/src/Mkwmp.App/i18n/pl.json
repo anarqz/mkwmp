@@ -267,7 +267,7 @@
   "settings.chat.game_camera_consent": "Strona MKWMP w grze nadal wymaga potwierdzenia wieku 18+, zanim pokaże się jakakolwiek kamera.",
   "settings.chat.game_camera_failed": "Nie zmieniono ustawienia kamery w grze",
   "settings.chat.muted": "Wyciszeni gracze",
-  "settings.chat.muted_none": "Nikt. Gracza wyciszysz z jego menu w lobby gry.",
+  "settings.chat.muted_none": "Nikt nie jest wyciszony.",
   "settings.chat.unmute": "Wyłącz wyciszenie",
   "settings.chat.report": "Zgłoś",
   "settings.report.title": "Zgłoś nadużycie w czacie głosowym",

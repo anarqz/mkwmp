@@ -1,5 +1,6 @@
 // The Voice chat tab of mkw-recomp's in-game settings (MkwPluginApi.settings_tab, plugin API 2): voice on or off, the
-// microphone and the speakers the voice engine sees, their volumes, and the players muted, without leaving the game.
+// microphone and the speakers the voice engine sees, their volumes, and the players muted (kept from earlier
+// versions, which had a mute menu in the game; the mod adds nothing to the game's own menus any more), without leaving the game.
 // The values are the mod's settings (voice, voice_input, voice_output, voice_in_gain, voice_out_gain); seatd.c hands
 // them to voice.c at its next poll, so a change applies within a second or two. Only without the MKWMP launcher (it
 // has its own voice settings then).
@@ -13,12 +14,11 @@
 #include <string.h>
 
 enum { V_HEAD, V_ON, V_INPUT, V_OUTPUT, V_DEFAULT, V_NO_DEVICES, V_IN_GAIN, V_OUT_GAIN, V_MUTED, V_NONE_MUTED,
-       V_UNMUTE, V_PLAYER, V_HOW, V_REPORT, V_REPORT_NEXT, V_NOT_SIGNED_UP, V_LAUNCHER, V_COUNT };
+       V_UNMUTE, V_PLAYER, V_REPORT, V_REPORT_NEXT, V_NOT_SIGNED_UP, V_LAUNCHER, V_COUNT };
 static const char *const EN[V_COUNT] = {
     "Voice chat", "Voice chat in online lobbies and races", "Microphone", "Speakers or headphones", "System default",
     "The devices show up once voice chat has started (go online once).", "Microphone volume", "Voice volume",
     "Muted players", "Nobody is muted.", "Unmute", "player %llu",
-    "To mute someone: pause in an online race, pick their name with L and R, then press Y (or M on the keyboard).",
     "Report", "%s is in the report form: finish it in the MKWMP tab (Report voice abuse).",
     ("Voice chat needs an MKWMP account: sign up in the MKWMP tab (or Mods > MKWMP > Options in the start screen), "
      "then restart the game."),
@@ -27,7 +27,6 @@ static const char *const PT[V_COUNT] = {
     "Chat de voz", "Chat de voz nos lobbies e corridas online", "Microfone", "Alto-falantes ou fones", "Padrão do sistema",
     "Os dispositivos aparecem depois que o chat de voz começa (entre online uma vez).", "Volume do microfone",
     "Volume das vozes", "Jogadores silenciados", "Ninguém está silenciado.", "Reativar", "jogador %llu",
-    "Para silenciar alguém: pause numa corrida online, escolha o nome com L e R e aperte Y (ou M no teclado).",
     "Denunciar", "%s está no formulário de denúncia: termine na aba MKWMP (Denunciar abuso no chat de voz).",
     ("O chat de voz precisa de uma conta MKWMP: cadastre-se na aba MKWMP (ou em Mods > MKWMP > Opções na tela "
      "inicial) e reinicie o jogo."),
@@ -132,7 +131,6 @@ void voicetab_draw(const MkwPage *p) {
         snprintf(line, sizeof line, T[V_REPORT_NEXT], reported);
         p->note(MKW_NOTE_INFO, line);
     }
-    p->note(MKW_NOTE_DIM, T[V_HOW]);
     p->columns_end();
     p->disabled_end();
 }

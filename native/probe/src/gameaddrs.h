@@ -13,7 +13,6 @@
 #include <stdint.h>
 
 enum {
-    GAME_ROWS_MAX = 26,       // most name plates on the online pause menu of any build (1.0.0: 24, 1.8.0: 26)
     GAME_PIA_STEPS = 7,
     GAME_TRACE_RANGES = 9,
     GAME_WATCH = 6,
@@ -39,14 +38,6 @@ struct game_addrs {
     uint64_t errsvc_post, errsvc_vtable;
     uint32_t errsvc_words[2];
     uint32_t err_referee_timeout;   // id dropped by MKWMP_SKIP_REFEREE_TIMEOUT=1
-    // voice_ui.c: UIPageOnlinePauseMenu. Guards: the two slots hold fn_pause_open / fn_pause_frame, and
-    // fn_plate_text(ctl, char16*) starts with plate_text_words.
-    uint64_t vt_online_pause, fn_pause_open, fn_pause_frame, fn_plate_text;
-    uint32_t plate_text_words[4];
-    uint16_t slot_open, slot_frame;
-    uint16_t rows;                  // plates on the page (<= GAME_ROWS_MAX)
-    uint16_t page_plates, plate_size, entry_name, entry_me;
-    uint32_t page_count, page_entries;
     // A guest module whose calls to the gated SDK overrides always get the runtime's stock handler (npln.c
     // gate_call): 1.8.0's subsdk0 "movie" shares nn::socket::Close/GetLastError/EventFd* with gRPC. 0: none.
     uint64_t stock_lo, stock_hi;

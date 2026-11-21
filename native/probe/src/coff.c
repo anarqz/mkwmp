@@ -8,7 +8,7 @@
 RtApi g_rt;
 
 // Names we need, in a fixed order mirrored by the pointer slots below. The first N_RT are g_rt's required entries;
-// the rest fill its optional ones (or are read by keypad.c through coff_symbol).
+// the rest fill its optional ones (or are read through coff_symbol).
 static const char *const kNames[] = {
     "hostfn_add_override",
     "ldr_count",
@@ -26,17 +26,6 @@ static const char *const kNames[] = {
     "kern_core_back",
     // optional: the dispatch host registry (g_rt.host_fn_at)
     "g_host",
-    // optional: the on-screen keypad (keypad.c): the runtime's text-entry stub, its overlay frame, Dear ImGui
-    "text_entry_run",
-    "_Z17menu_notice_shownv",
-    "_Z16menu_notice_drawff",
-    "_ZN5ImGui21GetForegroundDrawListEv",
-    "_ZN10ImDrawList13AddRectFilledERK6ImVec2S2_jfi",
-    "_ZN10ImDrawList7AddRectERK6ImVec2S2_jfif",
-    "_ZN10ImDrawList7AddTextEP6ImFontfRK6ImVec2jPKcS6_fPK6ImVec4",
-    "_ZN5ImGui12CalcTextSizeEPKcS1_bf",
-    "_ZN5ImGui11GetFontSizeEv",
-    "_ZN5ImGui5GetIOEv",
     // optional, last, never called: its presence says this mkw.exe loads native plugins (runtime/plugin/plugin.c,
     // mkw-recomp 0.1.15 on), which dllmain.c needs for the "mod wins" rule (modmode.h). Absent before: not logged.
     "plugins_load",

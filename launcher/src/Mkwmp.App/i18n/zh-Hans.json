@@ -267,7 +267,7 @@
   "settings.chat.game_camera_consent": "在显示任何摄像头画面之前，游戏内的 MKWMP 页面还需要你完成 18+ 确认。",
   "settings.chat.game_camera_failed": "游戏的摄像头设置没有更改",
   "settings.chat.muted": "已静音的玩家",
-  "settings.chat.muted_none": "没有。可在游戏大厅中通过玩家的菜单将其静音。",
+  "settings.chat.muted_none": "没有已静音的玩家。",
   "settings.chat.unmute": "取消静音",
   "settings.chat.report": "举报",
   "settings.report.title": "举报语音滥用",

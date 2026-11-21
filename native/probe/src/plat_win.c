@@ -155,8 +155,7 @@ int plat_game_focused(void) {
 }
 
 int plat_key_down(int key) {
-    static const int vk[] = {[PLAT_KEY_PAGE_UP] = VK_PRIOR, [PLAT_KEY_PAGE_DOWN] = VK_NEXT, [PLAT_KEY_M] = 'M',
-                             [PLAT_KEY_SHIFT] = VK_SHIFT, [PLAT_KEY_TAB] = VK_TAB};
+    static const int vk[] = {[PLAT_KEY_SHIFT] = VK_SHIFT, [PLAT_KEY_TAB] = VK_TAB};
     if (key < 0 || key >= (int)(sizeof vk / sizeof vk[0])) return 0;
     return (GetAsyncKeyState(vk[key]) & 0x8000) != 0;
 }

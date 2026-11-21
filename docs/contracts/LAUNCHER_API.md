@@ -173,5 +173,6 @@ Limit: burst 5 then 1/s for the two together.
 
 ## Room ID (removed in 1.0.0)
 
-`/local/v1/room` is gone: the probe's on-screen keypad answers the game's "search group ID"
-keyboard. The launcher answers 404, and the probe stops asking after four 404s.
+`/local/v1/room` is gone: mkw-recomp's own number pad (0.1.15 on) answers the game's "search group ID"
+keyboard (the probe's keypad of 1.0.0 to 1.4.2 is gone too: the mod draws nothing into the game). The launcher
+answers 404, and the probe stops asking after four 404s.

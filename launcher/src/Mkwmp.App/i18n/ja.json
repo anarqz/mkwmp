@@ -267,7 +267,7 @@
   "settings.chat.game_camera_consent": "カメラを表示するには、ゲーム内のMKWMPページで18+の確認がまだ必要です。",
   "settings.chat.game_camera_failed": "ゲームのカメラ設定を変更できませんでした",
   "settings.chat.muted": "ミュート中のプレイヤー",
-  "settings.chat.muted_none": "誰もいません。ゲームのロビーで、プレイヤーのメニューからミュートできます。",
+  "settings.chat.muted_none": "ミュート中のプレイヤーはいません。",
   "settings.chat.unmute": "ミュート解除",
   "settings.chat.report": "通報",
   "settings.report.title": "ボイスの迷惑行為を通報",

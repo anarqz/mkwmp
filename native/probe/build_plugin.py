@@ -4,8 +4,8 @@
     python build_plugin.py [--zig PATH] [--version X.Y.Z] [--target linux|windows|all] [--test] [--package]
 
 Produces build/plugin/linux/mkwmp.so (x86_64-linux-gnu) and build/plugin/windows/mkwmp.dll (x86_64-windows-gnu, a
-plain DLL, not the winmm.dll proxy): the core sources of build.py (minus the winmm loader, the COFF backend and the
-keypad detours, as build_linux.py), the plat files of the target (with its HTTP: WinHTTP, or libcurl loaded at run
+plain DLL, not the winmm.dll proxy): the core sources of build.py (minus the winmm loader and the COFF backend, as
+build_linux.py), the plat files of the target (with its HTTP: WinHTTP, or libcurl loaded at run
 time), the plugin's seat client (seatapi.c, seatd.c), its options page (modpage.c), the GameChat camera (camera.c,
 camcodec.c, camlib.c, cameratab.c; plugin API 3), the chat room on the relay (roomnet.c) and src/backend_plugin.c. Both
 export only mkw_plugin_init and mkw_mod_page (Linux: a version script, linked with --no-undefined). --test also builds tests/test_plugin.c and runs

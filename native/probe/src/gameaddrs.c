@@ -15,12 +15,6 @@ static const struct game_addrs kRows[] = {
         .grpc_timedwait_lr = M(0x104a8bc), .grpc_timedwait_bl = 0x945f879a,
         .errsvc_post = M(0x222d78c), .errsvc_vtable = M(0x325bc30), .errsvc_words = {0xd503237f, 0xa9bd7bfd},
         .err_referee_timeout = 0x606314c9,
-        .vt_online_pause = M(0x3248970), .fn_pause_open = M(0x21b22ec), .fn_pause_frame = M(0x21b384c),
-        .fn_plate_text = M(0x21deb68),     // FUN_021deb68(ctl, char16*): writes the plate's two name panes
-        .plate_text_words = {0xd503237f, 0xd10143ff, 0xa9017bfd, 0xf90013f7},
-        .slot_open = 7, .slot_frame = 11, .rows = 24,
-        .page_plates = 0x770, .plate_size = 0x150, .entry_name = 0x18, .entry_me = 0x78,
-        .page_count = 0x3d80, .page_entries = 0x3d88,
         .boot_signin = 1,
         // ---- diagnostic
         .pia_join_step = {
@@ -85,12 +79,6 @@ static const struct game_addrs kRows[] = {
         .err_referee_timeout = 0x606314c9,
         // The error-post row is proven live (T2, 2026-11-18: 0x884b839c, 0x660ac5da and 0x9b928162 posted with the
         // right ids).
-        .vt_online_pause = M(0x3622528), .fn_pause_open = M(0x24ca550), .fn_pause_frame = M(0x24cc010),
-        .fn_plate_text = M(0x2505f10),
-        .plate_text_words = {0xd503237f, 0xd10143ff, 0xa9017bfd, 0xf90013f7},
-        .slot_open = 7, .slot_frame = 11, .rows = 26,
-        .page_plates = 0x778, .plate_size = 0x170, .entry_name = 0x18, .entry_me = 0x78,
-        .page_count = 0x4628, .page_entries = 0x4630,
         .stock_lo = 0x7003800000ull, .stock_hi = 0x7003800000ull + 0xe0000,   // subsdk0 "movie"
         .boot_signin = 0,   // no boot sign-in in a whole offline session (mkwmp.log 2026-11-18, mkw-recomp 0.1.13)
         // The camera set-up (CAMERA-RE.md 9, static RE of 2026-11-19; not proven live yet). The node's update
@@ -192,20 +180,17 @@ int game_addrs_selfcheck(void) {
     int build = game_build();
     const struct game_addrs *a = game_addrs_for(build);
     if (!a) {
-        mkwmp_log("game build %s: no address table row, version-specific hooks stay off (voice menu, "
-                  "communication-error log and skips, traces, gRPC clock fix)", game_build_name(build));
+        mkwmp_log("game build %s: no address table row, version-specific hooks stay off (communication-error log "
+                  "and skips, traces, gRPC clock fix)", game_build_name(build));
         return -1;
     }
     int bad = 0;
     bad += !game_guard_words("gRPC timed wait call", a->grpc_timedwait_lr - 4, &a->grpc_timedwait_bl, 1);
     bad += !game_guard_slot("error service post", a->errsvc_vtable, 6, a->errsvc_post);
     bad += !game_guard_words("error service post", a->errsvc_post, a->errsvc_words, 2);
-    bad += !game_guard_slot("voice-ui open", a->vt_online_pause, a->slot_open, a->fn_pause_open);
-    bad += !game_guard_slot("voice-ui frame", a->vt_online_pause, a->slot_frame, a->fn_pause_frame);
-    bad += !game_guard_words("voice-ui plate text", a->fn_plate_text, a->plate_text_words, 4);
-    if (bad) mkwmp_log("game build %s: address table row found, %d of 6 guards FAILED (those hooks stay off)",
+    if (bad) mkwmp_log("game build %s: address table row found, %d of 3 guards FAILED (those hooks stay off)",
                        game_build_name(build), bad);
-    else mkwmp_log("game build %s: address table row found, 6 of 6 guards ok (hooks go in when Online Play opens)",
+    else mkwmp_log("game build %s: address table row found, 3 of 3 guards ok (hooks go in when Online Play opens)",
                    game_build_name(build));
     return bad;
 }

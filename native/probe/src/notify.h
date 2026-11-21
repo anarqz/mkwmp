@@ -1,7 +1,6 @@
-// In-game notifications. The server tells the DLL what to show ("Connected to
-// MKWMP", "4th in queue", ...); this is the renderer-agnostic core that holds
-// them. A transport (server -> DLL) feeds notify_push; a renderer (overlay)
-// consumes notify_drain. Both are built on top of this; see research/docs/OVERLAY.md.
+// The mod's status lines ("Connected to MKWMP", "4th in queue", friends coming online, ...). They are logged to
+// mkwmp.log and kept in a small queue; nothing of them is shown in the game (the mod draws nothing there: the
+// launcher shows the player's status itself). A transport (seat.c, seatd.c) feeds notify_push.
 #ifndef MKWMP_NOTIFY_H
 #define MKWMP_NOTIFY_H
 
@@ -16,7 +15,7 @@ typedef enum {
 
 typedef struct {
     NotifyLevel level;
-    uint32_t id;         // monotonic; lets a renderer dedupe/replace
+    uint32_t id;         // monotonic
     char text[128];
 } Notification;
 
@@ -25,11 +24,7 @@ typedef struct {
 void notify_push(NotifyLevel level, const char *text);
 
 // Copy up to `max` pending notifications into `out`, removing them from the
-// queue. Returns the count. A renderer calls this each frame/tick.
+// queue. Returns the count.
 int notify_drain(Notification *out, int max);
-
-// Also hand every pushed notification to fn (the plugin backend: the runtime's on-screen notice). Set once, before
-// the first push; NULL by default (the winmm.dll proxy: queue only).
-void notify_set_sink(void (*fn)(NotifyLevel level, const char *text));
 
 #endif

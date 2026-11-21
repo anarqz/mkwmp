@@ -267,7 +267,7 @@
   "settings.chat.game_camera_consent": "De MKWMP-pagina van het spel heeft nog je 18+-bevestiging nodig voordat er een camera wordt getoond.",
   "settings.chat.game_camera_failed": "De camera-instelling van het spel is niet gewijzigd",
   "settings.chat.muted": "Gedempte spelers",
-  "settings.chat.muted_none": "Niemand. Demp een speler via zijn of haar menu in de lobby van het spel.",
+  "settings.chat.muted_none": "Niemand is gedempt.",
   "settings.chat.unmute": "Dempen opheffen",
   "settings.chat.report": "Rapporteren",
   "settings.report.title": "Misbruik van spraak rapporteren",

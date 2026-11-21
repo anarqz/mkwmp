@@ -16,8 +16,8 @@ typedef struct {
     // games (keys mutes.1..mutes.3, account ids). NULL: kept for this game only.
     int (*setting_get)(const char *key, char *out, size_t cap);
     int (*setting_set)(const char *key, const char *value);
-    int watch_friends;   // a thread follows the friends list (long poll) and gives a notice per change
-    int lang_pt;         // the notices in Brazilian Portuguese (the menu language)
+    int watch_friends;   // a thread follows the friends list (long poll) and logs a line per change (notify.c)
+    int lang_pt;         // those lines in Brazilian Portuguese (the menu language)
 } SeatdConfig;
 
 enum { SEATD_MUTES_MAX = 64 };
@@ -31,8 +31,8 @@ void seatd_start(const SeatdConfig *cfg);
 // launcher.c's direct handler: the same contract as its HTTP answers (status, body in buf).
 int seatd_request(const char *method, const char *path, const char *json, char *buf, size_t cap, const char **body);
 // For the in-game Voice chat tab (voicetab.c): the device list the voice engine last reported
-// ({"inputs":[{"id","name"}],"outputs":[...]}; 0 until it did), the players muted, and unmuting one (as the pause
-// menu's labels do: voice.c reads the list back at its next poll).
+// ({"inputs":[{"id","name"}],"outputs":[...]}; 0 until it did), the players muted, and unmuting one (voice.c reads
+// the list back at its next poll).
 int seatd_devices_json(char *out, size_t cap);
 int seatd_mutes(SeatdMute *out, int max);
 void seatd_unmute(unsigned long long account);

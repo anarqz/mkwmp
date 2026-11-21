@@ -280,7 +280,7 @@
   "settings.chat.game_camera_consent": "The game's MKWMP page still needs your 18+ confirmation before any camera shows.",
   "settings.chat.game_camera_failed": "The game's camera setting was not changed",
   "settings.chat.muted": "Muted Players",
-  "settings.chat.muted_none": "Nobody. Mute a player from their menu in the game's lobby.",
+  "settings.chat.muted_none": "Nobody is muted.",
   "settings.chat.unmute": "Unmute",
   "settings.chat.report": "Report",
   "settings.report.title": "Report Voice Abuse",
