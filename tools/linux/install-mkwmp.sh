@@ -8,7 +8,8 @@
 #   1. downloads the MKWMP launcher (the Windows build; it runs under Proton) and checks it against the
 #      release's SHA256SUMS, signed with the MKWMP release key;
 #   2. unpacks it into ~/Games/MKWMP. The launcher is portable: its settings, its logs and the game it
-#      installs all live in that folder;
+#      installs all live in that folder. A first install takes the settings of the old Linux launcher
+#      (MKWMP 1.3 and older, ~/mkwmp): your name, its PIN and your server carry over;
 #   3. adds the Steam shortcut "MKWMP" (or updates the one it added before), forces a Proton version on it,
 #      and gives it a gamepad layout on the Steam Deck. A shortcut an older MKWMP installer made
 #      ("Mario Kart World (MKWMP)", the old Linux launcher) is removed; no other shortcut is touched;
@@ -48,6 +49,10 @@ Install
   --version <x.y.z>       that release instead of the newest
   --from-zip <file>       a local mkwmp-<version>-windows-x64.zip (a test build): nothing is downloaded,
                           and nothing is checked against a signature
+  --import <client.toml>  the settings to start from (name, PIN, server...), when the install folder has
+                          none yet. Default: the old Linux launcher's (MKWMP 1.3 and older: the folder of
+                          its Steam shortcut, else ~/mkwmp); that file itself is only read
+  --no-import             start from no settings at all
 
 Steam
   --proton <name>         the Proton to run it with: "11", "10", "experimental", "GE-Proton11-1", ...
@@ -614,18 +619,30 @@ def steam_users(root):
 
 
 # ---- the release ----
+# The first release whose Windows zip holds this launcher (C#, launcher/). The zips before it hold the Rust
+# launcher of MKWMP 1.3, which is not made to run under Proton.
+FIRST = (1, 4, 0)
+
+
+def release_number(v):
+    m = re.match(r"(\d+)\.(\d+)\.(\d+)", v)
+    return tuple(int(x) for x in m.groups()) if m else (0, 0, 0)
+
+
 def download(version):
     api = os.environ.get("MKWMP_UPDATE_API", "https://api.github.com").rstrip("/")
+    if version and release_number(version) < FIRST:
+        die(f"--version {version}: MKWMP before {'.'.join(map(str, FIRST))} has no launcher for Proton")
     try:
         if version:
             rel = json.loads(get(f"{api}/repos/{REPO}/releases/tags/v{version}", 4 << 20))
         else:
             rels = json.loads(get(f"{api}/repos/{REPO}/releases?per_page=20", 8 << 20))
-            rels = [r for r in rels if not r.get("draft") and not r.get("prerelease")
+            rels = [r for r in rels if not r.get("draft") and not r.get("prerelease") and release_number(r["tag_name"].lstrip("v")) >= FIRST
                     and any(a["name"] == f"mkwmp-{r['tag_name'].lstrip('v')}-windows-x64.zip" for a in r.get("assets", []))]
             if not rels:
-                die("no MKWMP release with a Windows zip was found")
-            rel = rels[0]
+                die(f"no MKWMP release with the launcher for Proton ({'.'.join(map(str, FIRST))} or newer) was found yet")
+            rel = max(rels, key=lambda r: release_number(r["tag_name"].lstrip("v")))
     except urllib.error.URLError as e:
         die(f"GitHub cannot be reached ({e}). Try again, or use --from-zip")
     version = rel["tag_name"].lstrip("v")
@@ -695,6 +712,89 @@ def unpack(z, dest):
             written += 1
     say(f"{'would write' if DRY else 'wrote'} {written} files into {dest}" + (f" ({kept} of yours kept)" if kept else ""))
     return version
+
+
+# ---- the settings of the old Linux launcher (MKWMP 1.3 and older: native, not under Proton) ----
+OLD_HOMES = ("mkwmp", "mkw-180-launcher")  # where the site's installer of 1.3 and the older guides put it
+
+
+def old_launcher_dirs(root):
+    """Folders the old Linux launcher may be in: its Steam shortcuts' (shortcuts.vdf is only read), then the usual ones."""
+    out = []
+    for u in steam_users(root) if root else []:
+        f = u / "config/shortcuts.vdf"
+        try:
+            top = bget(bvdf_load(f.read_bytes()), "shortcuts") if f.is_file() else None
+        except (OSError, ValueError, IndexError, struct.error):
+            top = None
+        for it in top[2] if top is not None and top[0] == 0 else []:
+            if it[0] != 0 or not is_legacy(it[2]):
+                continue
+            e = bget(it[2], "exe")
+            exe = e[2].decode("utf-8", "replace").strip() if e is not None and e[0] == 1 else ""
+            m = re.match(r'"([^"]*)"', exe)
+            program = m.group(1) if m else exe.split(" ")[0]
+            if os.path.isabs(program):
+                out.append(pathlib.Path(program).parent)
+    out += [HOME / d for d in OLD_HOMES]
+    return list(dict.fromkeys(out))
+
+
+def toml_top_string(text, key):
+    """(line index, value) of a top-level `key = "..."` / `key = '...'` line, or (None, None)."""
+    for i, line in enumerate(text.split("\n")):
+        if line.lstrip().startswith("["):
+            break
+        m = re.match(rf"\s*{key}\s*=\s*(\"(?:[^\"\\]|\\.)*\"|'[^']*')\s*(#.*)?$", line)
+        if m:
+            v = m.group(1)
+            try:
+                return i, (json.loads(v) if v.startswith('"') else v[1:-1])
+            except ValueError:
+                return i, None
+    return None, None
+
+
+def windows_settings(text):
+    """The old launcher's client.toml as this launcher reads it under Proton (launcher/src/Mkwmp.Core/ClientConfig.cs:
+    the same keys). Two values meant the native launcher and change: `game`, a Linux path, becomes the same folder
+    on Wine's Z: drive; `launch_command` (run-game.sh, how the old launcher started the game through Proton) goes,
+    since the launcher now runs in Proton and starts the game itself. `launch = false` (the old SteamOS default) the
+    launcher itself takes for its default again. Every other line stays as it is."""
+    lines = text.split("\n")
+    i, game = toml_top_string(text, "game")
+    if i is not None and game and game.startswith("/"):
+        lines[i] = "game = " + json.dumps("Z:" + game.replace("/", "\\"), ensure_ascii=False)
+    i, command = toml_top_string(text, "launch_command")
+    if i is not None and command:
+        lines[i] = 'launch_command = ""'
+    return "\n".join(lines)
+
+
+def import_settings(dest, given, root):
+    """A first install starts from the old launcher's settings, so the name and its PIN (shown once, at registration)
+    are not lost. Nothing is done when the install folder has its own client.toml already; the old file is never changed."""
+    target = dest / "client.toml"
+    if target.exists():
+        return
+    if given:
+        src = pathlib.Path(given).expanduser()
+        if not src.is_file():
+            die(f"--import {given}: no such file")
+    else:
+        src = next((d / "client.toml" for d in old_launcher_dirs(root) if (d / "client.toml").is_file() and d.resolve() != dest.resolve()), None)
+        if src is None:
+            return
+    try:
+        text = read_text(src)
+    except OSError as e:
+        say(f"the old settings in {src} could not be read ({e}): the launcher starts with its welcome")
+        return
+    _, name = toml_top_string(text, "name")
+    _, pin = toml_top_string(text, "pin")
+    write_atomic(target, windows_settings(text).encode("utf-8", "surrogateescape"), 0o600)
+    who = f" ({name}" + (", with its PIN" if pin else "") + ")" if name else ""
+    say(f"{'would take' if DRY else 'took'} your settings{who} from {src}; that file is left as it was")
 
 
 # ---- artwork: links only (tools/linux/artwork.json); the pictures are downloaded here, on the player's machine ----
@@ -925,12 +1025,12 @@ def need_steam_closed(what):
 
 def parse_args(argv):
     a = {"dir": None, "version": None, "zip": None, "proton": None, "launch": LAUNCH_OPTIONS, "root": None, "steam": True,
-         "artwork": None, "art_only": False, "art": True,
+         "artwork": None, "art_only": False, "art": True, "import": None, "no_import": False,
          "uninstall": False, "purge": False, "dry": False, "yes": False}
     flags = {"--no-steam": ("steam", False), "--art-only": ("art_only", True), "--no-art": ("art", False), "--uninstall": ("uninstall", True),
-             "--purge": ("purge", True), "--dry-run": ("dry", True), "--yes": ("yes", True)}
+             "--purge": ("purge", True), "--dry-run": ("dry", True), "--yes": ("yes", True), "--no-import": ("no_import", True)}
     values = {"--dir": "dir", "--version": "version", "--from-zip": "zip", "--proton": "proton", "--launch-options": "launch",
-              "--steam-root": "root", "--artwork": "artwork"}
+              "--steam-root": "root", "--artwork": "artwork", "--import": "import"}
     it = iter(argv)
     for x in it:
         if x in ("-h", "--help"):
@@ -1030,9 +1130,11 @@ def main():
     else:
         version, z = download(a["version"])
 
-    # 2. the files
+    # 2. the files, and the old launcher's settings on a first install
     zv = unpack(z, dest)
     version = version or zv
+    if not a["no_import"]:
+        import_settings(dest, a["import"], root)
     write_atomic(dest / MARKER, json.dumps({"version": version, "installed": stamp, "proton": proton, "launch_options": a["launch"]}).encode() + b"\n", 0o644)
     say(f"MKWMP {version} is in {dest}")
 

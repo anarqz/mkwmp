@@ -21,8 +21,15 @@ In Desktop Mode, in a terminal (Konsole):
 curl -fsSL https://github.com/anarqz/mkwmp/releases/latest/download/install-mkwmp.sh | bash
 ```
 
-(until a release carries the script: download `tools/linux/install-mkwmp.sh` and `artwork.json`
-into one folder and run `bash install-mkwmp.sh`.)
+(the same as `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`, which runs the newest
+release's script. Every release from 1.4.0 carries `install-mkwmp.sh` and `artwork.json`.)
+
+**Coming from MKWMP 1.3 or older** (the native Linux launcher, usually `~/mkwmp`): that launcher does
+not update itself into this one (1.4.0 has no Linux build; it keeps working as it is, with its own
+release's game patch). Run the command above once: on a first install the script takes the old
+launcher's `client.toml` (your name, its PIN, your server, the consent), with the game folder as a
+`Z:` path and without `launch_command` (run-game.sh), and removes the old launcher's Steam shortcut.
+The old folder is left as it was.
 
 1. **Close Steam first** (Steam menu > Exit). The script stops and says so if Steam runs: Steam
    keeps its shortcut list in memory and writes it back when it closes, so a change made under it is
@@ -50,8 +57,9 @@ SteamOS has Python and no pip). Options:
 | Option | What |
 |---|---|
 | `--dir <folder>` | the install folder (default `~/Games/MKWMP`) |
-| `--version <x.y.z>` | that release; default the newest with a Windows zip |
+| `--version <x.y.z>` | that release; default the newest with a Windows zip. Never one before 1.4.0 (their zip holds the Rust launcher) |
 | `--from-zip <file>` | a local `mkwmp-<version>-windows-x64.zip` (a test build): no download, no signature |
+| `--import <client.toml>` | the settings a first install starts from; default the old Linux launcher's (its shortcut's folder, else `~/mkwmp`, `~/mkw-180-launcher`), only read. `--no-import`: none |
 | `--proton <name>` | `11`, `10`, `experimental`, `GE-Proton11-1`, a tool's internal name. Default below |
 | `--launch-options <text>` | the shortcut's launch options; default none |
 | `--steam-root <folder>` | Steam's folder when it is not found |
@@ -82,7 +90,9 @@ What it does, in order; nothing is written before everything that can refuse has
    rename. Never replaced: an existing `*.toml` of the folder, `logs/`, `.mkwmp-selfupdate/`. Files no
    zip brought (`mkw-recomp/`) are not looked at. The same path rules as the launcher's own update
    (launcher/docs/UPDATES.md, section 5). `.mkwmp-install` records the version, the Proton and the
-   launch options.
+   launch options. When the folder has no `client.toml` yet, the old Linux launcher's is copied in
+   (`--import`): top-level `game = "/home/..."` becomes `"Z:\\home\\..."`, a non-empty
+   `launch_command` becomes `""`, every other line stays (written mode 600: it holds the PIN).
 6. **Artwork.** Section 3.
 7. **The shortcut**, for every Steam user of the machine (`userdata/<id>/config/shortcuts.vdf`,
    binary VDF). The file is parsed into ordered lists and must write back byte for byte before it is

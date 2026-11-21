@@ -1,23 +1,25 @@
 mkwmp {version} for Windows: online play for Mario Kart World on community servers
 https://github.com/anarqz/mkwmp
 
-1. Keep this "mkwmp" folder anywhere you like (for example in Documents). The launcher keeps its
-   settings (client.toml) and its logs (logs\) here, so don't delete the folder.
+1. Keep this "mkwmp" folder anywhere you like (for example in Documents). The launcher is portable:
+   its settings (client.toml), its logs (logs\) and the game it sets up all live in this folder, so
+   don't delete it.
 2. Open mkwmp-launcher.exe.
-3. GAMERTAG: type one and press REGISTER. Write the 6-digit PIN down: it is shown only once.
-4. GAME FOLDER: pick the folder that has mkw.exe. The line under it says whether the game patch is
-   installed. Press INSTALL; the line turns green: "Patches installed".
-5. Press PLAY.
+3. The welcome takes you through it: choose a name, point the launcher at your own copy of the game
+   (it sets up mkw-recomp and installs the MKWMP mod into it), then choose a server to play online.
+   When you register a name, write the 6-digit PIN down: it is shown only once.
+4. Press Play.
 
-The game patch is game\winmm.dll (plus game\mkwmp-voice.dll for voice chat). INSTALL copies both
-into your game folder and saves any winmm.dll that was already there as winmm.dll.bak.
-SETTINGS > GAME PATCH > UNINSTALL removes every mkwmp file from the game folder and puts that
-file back.
+Coming from MKWMP 1.3 or older? Your old launcher updates itself into this one and keeps your
+client.toml (name, PIN, server, game folder). To move by hand, copy your old client.toml into this
+folder before the first start.
 
-The launcher updates itself and the game patch. Each download is checked against checksums
-signed with the release key before it is used.
+On SteamOS or Linux this same launcher runs under Proton: see docs/LINUX.md (install-mkwmp.sh).
 
-Bug? SETTINGS > SAVE LOGS FOR A BUG REPORT, then attach the zip to a new issue:
+The launcher updates itself and the game's MKWMP files. Each download is checked against
+checksums signed with the release key before it is used.
+
+Bug? Settings > Support > Save Logs for a Bug Report, then attach the zip to a new issue:
 https://github.com/anarqz/mkwmp/issues/new/choose
 
 mkwmp is free software under the GNU GPL, version 3 or later (LICENSE). Third-party licenses:
