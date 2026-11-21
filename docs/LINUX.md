@@ -41,7 +41,11 @@ The old folder is left as it was.
    Proton makes its prefix.
 4. In MKWMP: a name, then your own copy of the game. MKWMP downloads mkw-recomp into
    `~/Games/MKWMP/mkw-recomp` and builds the game there from your copy.
-5. In a race, hold **View** (Select) for a second to bring MKWMP over the game.
+5. In a race, hold **View** (Select) for a second to bring MKWMP over the game. On SteamOS the Guide (STEAM)
+   button always opens Steam's own menu, so pick a combination without it in Settings › Game › Overlay Shortcut:
+   **Hold Select** is the recommended one (no known conflict with Steam); L3 + R3, LB + RB + Start, Select + LB
+   or Select + RB work too. The default ("Guide or Select + Start") keeps the Select hold as well. A change reaches
+   a running game within about 10 seconds.
 
 Everything MKWMP writes is in `~/Games/MKWMP`: `client.toml` (settings), `logs/`, `mkw-recomp/` (the
 game). The Proton prefix (`steamapps/compatdata/<shortcut id>`) holds nothing of yours.

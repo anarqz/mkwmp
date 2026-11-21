@@ -368,6 +368,8 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
             lines.Add(!Launcher.OnlineEnabled ? new StatusLine("muted", S["setup.done.offline"], S["setup.done.offline_detail"])
                 : Launcher.Profile.SignedIn ? new StatusLine("good", S.Format("setup.done.online", ("name", s.Name), ("server", ServerShort)))
                 : new StatusLine("warn", S.Format("setup.done.online_no_profile", ("server", ServerShort)), S["setup.done.online_no_profile_detail"]));
+            // how to come back here from the game: the player's overlay shortcut (Settings › Game)
+            lines.Add(new StatusLine("muted", S.Format("setup.done.shortcut", ("shortcut", ShortcutText.Name(S, s.Ui.OverlayShortcut))), S["setup.done.shortcut_detail"]));
             return lines;
         }
     }

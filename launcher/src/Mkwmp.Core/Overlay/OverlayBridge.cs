@@ -129,6 +129,13 @@ public sealed class OverlayBridge(TimeProvider clock)
     /// </summary>
     public bool Enabled { get; set; }
 
+    /// <summary>
+    /// The player's shortcut (Settings › Game), told to the mod in every state answer as <c>"shortcut"</c> (left out
+    /// for the default, which is what a mod without the choice does anyway). The mod asks every 10 s: a change
+    /// applies in the running game.
+    /// </summary>
+    public OverlayShortcut Shortcut { get; set; }
+
     public bool IsOpen
     {
         get
@@ -298,9 +305,11 @@ public sealed class OverlayBridge(TimeProvider clock)
     private string StateJson()
     {
         var enabled = Enabled && Requested is not null;
-        return _open || _seq == 0
+        var json = _open || _seq == 0
             ? JsonSerializer.Serialize(new { open = _open, seq = _seq, enabled })
             : JsonSerializer.Serialize(new { open = _open, seq = _seq, enabled, action = _last switch { OverlayReturn.Menu => "menu", OverlayReturn.Quit => "quit", _ => "resume" } });
+        var shortcut = Shortcut;
+        return shortcut == OverlayShortcut.GuideOrSelectStart ? json : json[..^1] + ",\"shortcut\":\"" + shortcut.WireName() + "\"}";
     }
 
     // ---- the routes (LocalApi) ---------------------------------------------------------------

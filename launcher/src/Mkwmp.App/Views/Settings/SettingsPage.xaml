@@ -156,6 +156,11 @@
             <c:SettingsRow Label="{Binding S[settings.game.seat]}" Kind="Chevron" Value="{Binding SeatName}" Command="{Binding SeatCommand}"
                            Caption="{Binding S[settings.game.seat_body]}" />
 
+            <c:SectionHeader Text="{Binding S[settings.game.overlay]}" />
+            <c:SettingsRow Label="{Binding S[settings.game.shortcut]}" Kind="Chevron" Icon="{StaticResource Icon.Gamepad}"
+                           Value="{Binding ShortcutName}" Command="{Binding ShortcutCommand}" Caption="{Binding ShortcutNote}" />
+            <TextBlock Text="{Binding S[settings.game.shortcut_warning]}" Style="{StaticResource Note}" />
+
             <c:SectionHeader Text="{Binding S[settings.game.advanced]}" />
             <Border Style="{StaticResource Field}">
               <StackPanel>

@@ -1,6 +1,7 @@
 # The console-style overlay
 
-In the game, the Guide button (or Select+Start, or Select held for a second) brings the MKWMP launcher over the game
+In the game, the player's overlay shortcut (Settings › Game, "In-Game Overlay"; by default the Guide button, or
+Select+Start, or Select held for a second: section 2.1) brings the MKWMP launcher over the game
 the way the Switch 2's HOME button does: the picture the game was showing shrinks into the Play tile of Home, the
 player looks at friends or settings, and "back to the game" grows the thumbnail back to the full screen.
 mkw-recomp's own menu does not open on that button.
@@ -105,14 +106,53 @@ Which trigger reaches the game where:
 | Steam Deck, Game Mode | never (the STEAM button) | usually yes (View+Menu have no Steam meaning in a game) | **yes** | no keyboard |
 | Steam Deck, Desktop Mode | Steam takes it | may be taken | **yes** | yes |
 
-"Usually" and "may" are to be confirmed live (section 9). The hint bar should name Select-hold where
-`DesktopEnvironment.IsGameMode` or Steam is the parent, Guide otherwise.
+"Usually" and "may" are to be confirmed live (section 9).
+
+### 2.1 The player's shortcut
+
+Which combination opens the overlay is the player's choice (Settings › Game › "In-Game Overlay", a list picker),
+because no single one reaches the game everywhere. One entry is one combination:
+
+| Entry (`overlay_shortcut`) | Triggers | Taken from the game | Conflicts the picker names |
+|---|---|---|---|
+| Guide or Select + Start (`guide_or_select_start`, default) | Guide, Select+Start, Select held 1 s: what the mod always did | Guide; Select (given back as a short press on release) | Steam / Game Bar take Guide; some Steam layouts take Select+Start |
+| Guide (`guide`) | Guide | Guide | Steam's menu, Xbox Game Bar |
+| Select + Start (`select_start`) | Select, then Start (either order) | Select (given back if no Start came) | Steam on some layouts; Steam Deck chords of the … button |
+| Hold Select (`select_hold`) | Select held 1 s | Select (given back as a short press) | none known |
+| Hold Start (`start_hold`) | Start held 1 s | Start (a short Start pauses on release, 60 ms late) | none known |
+| L3 + R3 (`l3_r3`) | both sticks pressed | nothing until both are down; then both | mkw-recomp's own L3+R3 (it steps the performance overlay, F10 still does) |
+| LB + RB + Start (`lb_rb_start`) | Start while LB and RB are held | nothing until all three are down (LB/RB already reached the game) | none known |
+| Select + LB / Select + RB (`select_lb`, `select_rb`) | the bumper while Select is held | Select (given back if no bumper came) | none known |
+
+The picker shows the generic warning ("Some combinations may also open Steam's or Xbox's own menus…") and, per entry,
+a one-line note; the chosen entry's note is the row's caption. Shift+Tab always works besides.
+
+Game controls (no control map of MKW is in this repo; this is the console's default layout as generally known, to
+be confirmed live): the face buttons, both bumpers and triggers while driving (items, drift/hop), Plus to pause,
+Minus in menus; stick presses have no driving role. So a combination built on Select or Start is held
+back from the game only as long as it is incomplete, a bumper alone passes at once, and L3 or R3 alone passes at
+once. Nothing here depends on the face buttons, so the Nintendo / Xbox layout swap (A and B, X and Y exchanged by
+mkw-recomp's `pad_layout` or by the launcher's own pad layout) does not touch any entry.
+
+How it travels: client.toml `[ui] overlay_shortcut = "<name>"`; `OverlayBridge.Shortcut` (set by
+`OverlayController` from the settings) adds `"shortcut":"<name>"` to every overlay state answer when it is not the
+default (docs/contracts/LAUNCHER_API.md). The mod reads it at every answer (`overlay_parse_state`; the 10 s probe,
+and the long poll while the overlay is up) and the pad filter switches at its next read (`overlay_gate_set_combo`,
+which also makes sure buttons already down do not fire the new combination). **A change applies to the running
+game within about 10 s**, no restart. A mod without the choice ignores the key and keeps the default; a name the mod
+does not know is the default too. The matcher is `overlay_gate` with the table `kCombos` (`overlay.c`), tested in
+`tests/test_overlay.c` (each entry, the switch, the parser).
+
+On plugin API 3 the mod only watches (no filter): the chosen combination still opens the overlay, but its buttons
+also reach the game (a Start hold pauses first), and Select+Start stays mkw-recomp's menu as before.
 
 Fallback, for a game without the mod's overlay (the winmm probe, an older mod): the launcher's
 `Overlay/GuideWatcher.cs` polls XInputGetStateEx (xinput1_4 ordinal 100, which reports Guide even unfocused) and the
 shell opens the overlay itself with `OverlayBridge.RequestFromLauncher` when the game's window is the foreground one.
-It is Guide only (XInput without a hook cannot take Select from the game), mkw-recomp's menu is not kept shut, and it
-does nothing under Steam. The winmm probe gets no trigger of its own: the mod wins, and the probe would need a detour
+It looks for the player's shortcut (`OverlayShortcutMatcher` in Core; for the default entry only Guide, since
+Select+Start is mkw-recomp's own menu there), but only sees it: XInput without a hook cannot take the buttons from
+the game, mkw-recomp's menu is not kept shut, and it does nothing under Steam. With the overlay up, Guide (and B on
+home) goes back whatever the shortcut. The winmm probe gets no trigger of its own: the mod wins, and the probe would need a detour
 of `input_menu_gate` for what one API entry does.
 
 ## 3. The picture
@@ -348,7 +388,7 @@ In the game (`native/probe`):
 | `src/plat.h`, `plat_win.c`, `plat_posix.c` | `PLAT_KEY_SHIFT` / `PLAT_KEY_TAB`, `plat_process_id`, `plat_allow_foreground`, `plat_spawn` |
 | `src/config.h`, `config.c` | `launcher_exe` |
 | `build_plugin.py` | `overlay.c` in the plugin's sources |
-| `tests/test_overlay.c` | the gate and the parser |
+| `tests/test_overlay.c` | the gate, every shortcut entry, and the parser |
 
 In the launcher:
 
@@ -359,7 +399,9 @@ In the launcher:
 | `src/Mkwmp.Core/Launcher.Overlay.cs` | `Launcher.OverlayBridge`, `.OverlayHost`, `.PublishRecord()`, `.AttachOverlayHost()` |
 | `src/Mkwmp.Core/Net/LocalApi.cs` | the four routes, the query string, the picture's body limit (additive) |
 | `src/Mkwmp.App/Overlay/GameWindow.cs` | `Find`, `IsForeground`, `ShowOver`, `GiveBack`, `ToBitmap`, `Capture`; `Alive`, `RequestClose`, `Kill` (Quit Game) |
-| `src/Mkwmp.App/Overlay/GuideWatcher.cs` | the Guide button by XInputGetStateEx |
+| `src/Mkwmp.Core/Overlay/OverlayShortcut.cs` | `OverlayShortcut` (the choices, their wire names), `OverlayShortcutMatcher` (the launcher's own reading) |
+| `src/Mkwmp.App/Overlay/GuideWatcher.cs` | the Guide button and the player's shortcut by XInputGetStateEx |
+| `src/Mkwmp.App/ViewModels/SettingsViewModel.Shortcut.cs` | the Settings › Game row and its picker |
 | `src/Mkwmp.App/Overlay/OverlayStartup.cs` | single instance and host mode for `App.xaml.cs` |
 | `tests/Mkwmp.Core.Tests/OverlayTests.cs` | the routes over `HandleAsync` and a socket, the host, the record, the instance |
 

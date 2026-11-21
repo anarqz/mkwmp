@@ -22,7 +22,7 @@ namespace Mkwmp.App.Overlay;
 /// window hidden, the game focused, the mod told.</item>
 /// <item>One visible window at a time: while a game the launcher started is in front, the
 /// launcher's window is hidden (on Windows too); it comes back when the game ends.</item>
-/// <item>A game without the mod's overlay: the launcher's own Guide watch opens it.</item>
+/// <item>A game without the mod's overlay: the launcher's own pad watch opens it on the player's shortcut.</item>
 /// <item>"Quit Game": the game is asked to end itself (the mod, then its window's close), and
 /// only when it does not, the player may end its process.</item>
 /// </list>
@@ -73,6 +73,7 @@ internal sealed class OverlayController : IDisposable
         shell.StateChanged += OnShellChanged;
         shell.Nav.PropertyChanged += OnShellChanged;
         _guide.Pressed += (_, _) => OnGuide();
+        _guide.ShortcutPressed += (_, _) => OnShortcut();
         window.Deactivated += (_, _) => _ui.BeginInvoke(OnDeactivated);
         window.IsVisibleChanged += (_, e) =>
         {
@@ -148,6 +149,7 @@ internal sealed class OverlayController : IDisposable
             return;
         }
         var settings = _shell.Settings;
+        _bridge.Shortcut = _guide.Shortcut = settings.Ui.OverlayShortcut; // the mod's next poll takes it
         // A launcher the mod started for its game (hosted) opens the overlay even before its welcome
         // is finished: a player who only installed the mod still gets the HOME menu (with a note to
         // finish setting up). A launcher the player opened waits for the welcome as before.
@@ -341,21 +343,25 @@ internal sealed class OverlayController : IDisposable
 
     // ── back to the game ──
 
+    /// <summary>Guide with the overlay up goes back to the game (B on home does too, whatever the shortcut).</summary>
     private void OnGuide()
     {
-        if (_disposed || _window.IsOverlayAnimating)
+        if (!_disposed && !_window.IsOverlayAnimating && _shell.IsOverlay && _window.IsActive)
+        {
+            _shell.LeaveOverlay();
+        }
+    }
+
+    /// <summary>
+    /// The player's shortcut on a game without the mod's overlay (the winmm probe, an older mod): the launcher opens
+    /// it itself. It only sees the buttons; the game gets them too.
+    /// </summary>
+    private void OnShortcut()
+    {
+        if (_disposed || _window.IsOverlayAnimating || _shell.IsOverlay)
         {
             return;
         }
-        if (_shell.IsOverlay)
-        {
-            if (_window.IsActive)
-            {
-                _shell.LeaveOverlay();
-            }
-            return;
-        }
-        // a game without the mod's overlay (the winmm probe, an older mod): the launcher opens it itself
         if (!_bridge.IsOpen && !_bridge.GameListening && _gamePid != 0 && GameWindow.IsForeground(_gamePid))
         {
             _ = _bridge.RequestFromLauncher(_gamePid, GameWindow.Capture(GameWindow.Find(_gamePid)));

@@ -203,6 +203,7 @@ internal sealed record ClientConfig
                 Theme = Str(ui, "theme", "light"),
                 Locale = Str(ui, "locale", ""),
                 SetupDone = Bool(ui, "setup_done", false),
+                OverlayShortcut = Overlay.OverlayShortcuts.Parse(Str(ui, "overlay_shortcut", "")),
             },
             Picker = PickerOf(Table(t, "picker")),
         };
@@ -296,6 +297,7 @@ internal sealed record ClientConfig
         Line(b, "theme", s.Ui.Theme);
         Line(b, "locale", s.Ui.Locale);
         Line(b, "setup_done", s.Ui.SetupDone);
+        Line(b, "overlay_shortcut", Overlay.OverlayShortcuts.WireName(s.Ui.OverlayShortcut));
 
         b.Append("\n[voice]\n");
         Line(b, "enabled", s.Voice.Enabled);

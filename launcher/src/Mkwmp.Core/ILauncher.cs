@@ -595,6 +595,8 @@ public sealed record UiSettings
     public string Locale { get; init; } = "";
     /// <summary>The first-start welcome flow (name, game, "go online?") finished, or was never needed (a working online profile was already here).</summary>
     public bool SetupDone { get; init; }
+    /// <summary>The controller shortcut that opens the overlay in the game (<c>overlay_shortcut</c>; the mod takes a change at its next poll).</summary>
+    public Overlay.OverlayShortcut OverlayShortcut { get; init; }
 }
 
 public enum ServerState { Checking, NotAsked, Online, Offline }

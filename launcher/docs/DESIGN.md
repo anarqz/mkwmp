@@ -404,7 +404,7 @@ Mode) and Quit; quitting asks first only while a session holds a seat. Every qui
 
 The design and the wiring are in `docs/OVERLAY.md` (section 8); this is what a page needs to know.
 
-While a game runs, the launcher's window is hidden. The game's Guide button (or Select+Start, or Select held) asks
+While a game runs, the launcher's window is hidden. The player's overlay shortcut (Settings › Game; by default the Guide button, Select+Start or Select held; OVERLAY.md §2.1) asks
 for the launcher: the window comes up over the game showing the picture the game had, the picture shrinks into home's
 Play tile, and the shell is in **overlay mode** (`Shell.IsOverlay`) until the player goes back.
 

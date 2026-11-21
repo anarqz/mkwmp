@@ -2,6 +2,10 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
+## 1.4.2 — unreleased
+
+- **Choose the button that opens MKWMP in the game.** Settings › Game › Overlay Shortcut lists the combinations: Guide or Select + Start (as before), Guide, Select + Start, hold Select, hold Start, L3 + R3, LB + RB + Start, Select + LB and Select + RB. Each says what it may run into: Guide opens Steam's menu or Xbox Game Bar, and some Steam layouts take Select + Start. The game picks up a change within a few seconds, with no restart.
+
 ## 1.4.1 — 2026-11-21
 
 - **No more "location in use".** Windows no longer shows the location icon for the launcher. The Wi-Fi bars no longer read the network's name; they use Windows' signal bars instead.
