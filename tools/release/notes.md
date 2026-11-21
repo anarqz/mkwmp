@@ -1,3 +1,19 @@
+**mkwmp 1.4.2**: a Ready to Play checklist, your own overlay button, smoother scrolling and touch, and a tidier Mods list.
+
+The launcher updates itself from 1.4.0 and 1.4.1: accept the update when it offers it. Coming from 1.3, follow the 1.4.0 instructions further below.
+
+- **Ready to Play checklist.** Home's dock, Settings › Game, and Play when something is missing open a page listing what the game needs: mkw-recomp in the version MKWMP needs, your copy of the game, game version 1.8.0, the game set up on this device, MKWMP's files in the game, launcher updates and, online, server and sign-in. Each row has a button that fixes it. Play stays off until every row is ready.
+- **Set the game up again.** Rebuild the game from your copy from Settings › Game or the checklist (saves, mods and settings stay). The launcher also notices when your copy changed since it was set up and asks you to set it up again.
+- **Choose the button that opens MKWMP in the game.** Settings › Game › Overlay Shortcut: Guide or Select + Start (as before), Guide, Select + Start, hold Select, hold Start, L3 + R3, LB + RB + Start, Select + LB, Select + RB. Each choice says what it may clash with (Guide opens Steam's menu or Xbox Game Bar). On a Steam Deck, hold Select is a good pick.
+- **Smoother, faster scrolling, and touch.** About a third faster per wheel step with a smooth glide, touchpads in small steps, the right stick scrolls; drag and flick lists with a finger.
+- **Nintendo button layout in the launcher too**: with the game's Nintendo layout, the right button confirms.
+- **Contrast**: the dark theme stands out more, and Settings › Appearance › Contrast sets it.
+- **Mods list**: one compact line per mod with its size, a switch on each row, and Turn All Off / Turn All Back On.
+- **Credits**: Settings › About links to mkw-recomp, its creator Adrià, its license and the source of MKWMP's build.
+- **Server**: the crash some players saw about an hour into a session (often noticed when a 4th player joined) was fixed on the official server on 2026-11-21; servers you host get the same fix with this release's server.
+
+---
+
 **mkwmp 1.4.1**: privacy fixes for the new launcher and the mod.
 
 The 1.4.0 launcher updates itself to 1.4.1: accept the update when it offers it. Coming from 1.3, follow the 1.4.0 instructions below.

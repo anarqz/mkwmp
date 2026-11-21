@@ -20,6 +20,18 @@ use crate::value::{Document, Fields, Value};
 use crate::{code, Call, ConnId, CoreConfig, Out, RosterEntry, StreamId};
 
 pub const AUTH_SIGN_IN: &str = "/nn.npln.auth.v1.Auth/IssuePrearrangedUserToken";
+/// The game refreshes its NPLN token shortly before it expires, on a new connection.
+pub const AUTH_REFRESH: &str = "/nn.npln.auth.v1.Auth/RefreshToken";
+/// Unary calls the game makes whose answer it ignores: an empty OK, as always (seen in production).
+pub const EMPTY_OK: [&str; 7] = [
+    "/nn.npln.auth.v1.Auth/ValidateToken",
+    "/nn.npln.friends.v1.Friends/ActivateUser",
+    "/nn.npln.leaderboard.v1.LeaderboardService/UpdateHolder",
+    "/nn.npln.leaderboard.v1.LeaderboardService/BrowseLeaderboard",
+    "/nn.npln.leaderboard.v1.LeaderboardService/GetScore",
+    "/nn.npln.matchmaking.v1.GameSessionService/IssueUserDelegationToken",
+    "/nn.npln.ugcstore.v1.Ugcstore/IssueUploadUri",
+];
 pub const GS_ISSUE_TOKEN: &str = "/nn.npln.gamesync.v1.Gamesync/IssueToken";
 pub const GS_REFRESH_TOKEN: &str = "/nn.npln.gamesync.v1.Gamesync/RefreshToken";
 pub const GS_GET_DOCUMENT: &str = "/nn.npln.gamesync.v1.Gamesync/GetDocument";
@@ -116,7 +128,7 @@ fn exhausted(what: &str) -> Out {
 /// The limit of a unary RPC by path.
 fn unary_rule(path: &str) -> Rule {
     match path {
-        AUTH_SIGN_IN => Rule::SignIn,
+        AUTH_SIGN_IN | AUTH_REFRESH => Rule::SignIn,
         GS_ISSUE_TOKEN | GS_REFRESH_TOKEN => Rule::GamesyncToken,
         MM_CREATE => Rule::Ticket,
         ROOM_CREATE | ALIAS_CREATE => Rule::RoomCreate,
@@ -576,6 +588,7 @@ impl State {
         }
         let reply = match path {
             AUTH_SIGN_IN => self.sign_in(key, body, now),
+            AUTH_REFRESH => self.refresh_token(key, body, now),
             GS_ISSUE_TOKEN | GS_REFRESH_TOKEN => Ok(self.gamesync_token(key, body, now)),
             GS_GET_DOCUMENT => Ok(self.get_document(key, body, now)),
             GS_WRITE_DOCUMENTS => self.write_documents(key, body, now, sends),
@@ -613,7 +626,13 @@ impl State {
                     Ok(msgs::bulk_get_result(&names[names.len() - 1], game))
                 }
             }
-            _ => Ok(Vec::new()),
+            p if EMPTY_OK.contains(&p) => Ok(Vec::new()),
+            // An empty OK is fatal for any answer the game validates with an abort (issue #15):
+            // anything new is refused, and logged so it can be implemented.
+            _ => {
+                warn!(path, user = %subject, bytes = body.len(), body = %body.iter().take(64).map(|b| format!("{b:02x}")).collect::<String>(), "unimplemented unary call");
+                Err(Out::status(code::UNIMPLEMENTED, "not implemented by this server"))
+            }
         };
         match reply {
             Ok(message) => {
@@ -647,13 +666,32 @@ impl State {
             self.users.set_name(&uid, name);
         }
         let access = self.tokens.mint(&user, Audience::Npln, now as u64);
+        let refresh = self.tokens.mint(&user, Audience::Npln, now as u64);
         let new_online = !self.conn_user.values().any(|u| *u == user);
         self.conn_user.insert(key.0, user.clone());
         info!(user = %uid, name = ?name, number, "signed in");
         if new_online {
             self.pending_social = true;
         }
-        Ok(msgs::sign_in_response(&user, &access, number))
+        Ok(msgs::sign_in_response(&user, &access, &refresh))
+    }
+
+    /// Auth `RefreshToken`: a new token for the same user. The user is proven by a token of ours in
+    /// the request (the refresh token we issued; earlier releases' "mkwmp-local-refresh-token-N"
+    /// isn't accepted, it proves nothing) or by the call's bearer. No proof: UNAUTHENTICATED, and
+    /// the game signs in again with its seat ticket.
+    fn refresh_token(&mut self, key: StreamKey, body: &[u8], now: f64) -> Result<Vec<u8>, Out> {
+        let from_body = msgs::texts(body).into_iter().find_map(|t| self.tokens.subject(&t, now as u64));
+        let proof = if from_body.is_some() { "refresh token" } else { "bearer" };
+        let Some(user) = from_body.or_else(|| self.caller(key)) else {
+            warn!(bytes = body.len(), body = %body.iter().take(64).map(|b| format!("{b:02x}")).collect::<String>(), "token refresh without a valid token");
+            return Err(Out::status(code::UNAUTHENTICATED, "sign in again"));
+        };
+        let access = self.tokens.mint(&user, Audience::Npln, now as u64);
+        let refresh = self.tokens.mint(&user, Audience::Npln, now as u64);
+        self.conn_user.insert(key.0, user.clone());
+        info!(user = %users::tail(&user), proof, "token refreshed");
+        Ok(msgs::sign_in_response(&user, &access, &refresh))
     }
 
     /// Display name from a seat ticket. Verified when keys are configured (always in

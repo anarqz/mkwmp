@@ -13,6 +13,7 @@
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -197,8 +198,30 @@ pub struct Options {
     pub password: String,
 }
 
+/// Packets and bytes an allocation relayed: `up` client -> peers, `down` peers -> client.
+#[derive(Default)]
+struct Traffic {
+    up_packets: AtomicU64,
+    up_bytes: AtomicU64,
+    down_packets: AtomicU64,
+    down_bytes: AtomicU64,
+}
+
+impl Traffic {
+    fn up(&self, n: usize) {
+        self.up_packets.fetch_add(1, Ordering::Relaxed);
+        self.up_bytes.fetch_add(n as u64, Ordering::Relaxed);
+    }
+    fn down(&self, n: usize) {
+        self.down_packets.fetch_add(1, Ordering::Relaxed);
+        self.down_bytes.fetch_add(n as u64, Ordering::Relaxed);
+    }
+}
+
 struct Allocation {
+    client: SocketAddr,
     relay: Arc<UdpSocket>,
+    traffic: Arc<Traffic>,
     /// Relayed bytes, both directions (limits::TURN_BYTES_PER_SEC).
     bytes: Arc<Mutex<Bucket>>,
     relay_addr: SocketAddrV4,
@@ -216,6 +239,19 @@ struct Channels {
 impl Drop for Allocation {
     fn drop(&mut self) {
         self.task.abort();
+        // Whether a relay carried anything (released, expired or evicted alike): the one way to
+        // tell a NAT that never got through from a relay that worked.
+        let t = &self.traffic;
+        let peers = self.channels.lock().map(|c| c.by_channel.len()).unwrap_or(0);
+        line(format!(
+            "TURN allocation for {} ended: {} channel(s); up {} packets/{} B to peers, down {} packets/{} B from peers",
+            self.client,
+            peers,
+            t.up_packets.load(Ordering::Relaxed),
+            t.up_bytes.load(Ordering::Relaxed),
+            t.down_packets.load(Ordering::Relaxed),
+            t.down_bytes.load(Ordering::Relaxed),
+        ));
     }
 }
 
@@ -308,6 +344,7 @@ impl Relay {
                 if let Some(peer) = alloc.channels.lock().unwrap().by_channel.get(&channel) {
                     let end = (4 + len).min(data.len());
                     if alloc.bytes.lock().unwrap().take((end - 4) as f64) {
+                        alloc.traffic.up(end - 4);
                         return vec![(Dest::Peer(alloc.relay.clone(), *peer), data[4..end].to_vec())];
                     }
                 }
@@ -321,6 +358,7 @@ impl Relay {
                 (a.get(&client), msg.get(A_PEER).and_then(unxor_addr), msg.get(A_DATA))
             {
                 if alloc.bytes.lock().unwrap().take(d.len() as f64) {
+                    alloc.traffic.up(d.len());
                     return vec![(Dest::Peer(alloc.relay.clone(), SocketAddr::V4(peer)), d.to_vec())];
                 }
             }
@@ -439,8 +477,9 @@ impl Relay {
         let relay_addr = SocketAddrV4::new(self.opts.public_host, port);
         let channels = Arc::new(Mutex::new(Channels::default()));
         let bytes = Arc::new(Mutex::new(Bucket::new(limits::TURN_BYTES_PER_SEC, 2.0 * limits::TURN_BYTES_PER_SEC)));
-        let task = tokio::spawn(from_peers(relay.clone(), channels.clone(), bytes.clone(), self.sock.clone(), client4));
-        let alloc = Allocation { relay, bytes, relay_addr, channels, expires: Instant::now() + KEEP, task };
+        let traffic = Arc::new(Traffic::default());
+        let task = tokio::spawn(from_peers(relay.clone(), channels.clone(), bytes.clone(), traffic.clone(), self.sock.clone(), client4));
+        let alloc = Allocation { client, relay, traffic, bytes, relay_addr, channels, expires: Instant::now() + KEEP, task };
         let mut a = self.allocations.lock().unwrap();
         // Two Allocates raced: keep the first.
         if let Some(existing) = a.get(&client) {
@@ -481,6 +520,7 @@ async fn from_peers(
     relay: Arc<UdpSocket>,
     channels: Arc<Mutex<Channels>>,
     bytes: Arc<Mutex<Bucket>>,
+    traffic: Arc<Traffic>,
     server: Arc<UdpSocket>,
     client: SocketAddrV4,
 ) {
@@ -493,6 +533,7 @@ async fn from_peers(
         if !bytes.lock().unwrap().take(n as f64) {
             continue;
         }
+        traffic.down(n);
         let channel = channels.lock().unwrap().by_peer.get(&peer).copied();
         let frame = match (channel, peer) {
             (Some(ch), _) => channel_data(ch, &buf[..n]),

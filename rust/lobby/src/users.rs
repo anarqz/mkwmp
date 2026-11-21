@@ -23,7 +23,9 @@ pub const LEGACY_USER: &str = "00000000-0000-4000-8000-";
 /// The second local test user's sign-in token (probe slot 2), sent verbatim by the probe.
 pub const SECOND_LOCAL_TOKEN: &str = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJta3dtcC1sb2NhbC0yIiwiaXNzIjoibWt3bXAifQ.";
 /// Token lifetime advertised to the game (Duration in the Token message).
-pub const TOKEN_TTL_SECS: u64 = 3600;
+/// 12 h (was 1 h): the game refreshes shortly before expiry (Auth RefreshToken), so a long
+/// lifetime keeps most sessions from ever needing a refresh (issue #15).
+pub const TOKEN_TTL_SECS: u64 = 12 * 3600;
 const ISSUER: &str = "mkwmp";
 
 /// Stable user id of a registered (PIN-proven) seat-ticket name.

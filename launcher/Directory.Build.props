@@ -9,7 +9,7 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Deterministic>true</Deterministic>
     <IsPackable>false</IsPackable>
-    <Version>1.4.1</Version>
+    <Version>1.4.2</Version>
     <!-- CA1707: test names use underscores; CA1515/CA1716: public types are the API the tests use. -->
     <NoWarn>$(NoWarn);CA1707;CA1515;CA1716</NoWarn>
   </PropertyGroup>

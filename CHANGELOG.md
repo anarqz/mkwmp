@@ -4,6 +4,14 @@ What changed in each MKWMP release, newest first. The launcher shows this file o
 
 ## 1.4.2 — unreleased
 
+- **Ready to Play checklist.** A new page (Home's dock, Settings › Game, and Play when something is missing) lists what the game needs: mkw-recomp in the version MKWMP needs, your copy of the game, game version 1.8.0, the game set up on this device, MKWMP's files in the game, launcher updates and, online, server and sign-in. Each row has a button that fixes it. Play stays off until every row is ready.
+- **Set the game up again.** Settings › Game and the checklist can rebuild the game from your copy (saves, mods and settings stay). The launcher also notices when your copy changed since it was set up, for example after you updated it somewhere else, and asks you to set it up again.
+- **Smoother, faster scrolling.** About a third faster per wheel step, with a smooth glide; touchpads scroll in small steps; the right stick scrolls lists and speeds up when held.
+- **Touch.** Drag any list with a finger and flick it; a drag never clicks the row under your finger. Swipe the Home tiles.
+- **Nintendo button layout in the launcher too.** With the game's Nintendo layout, the right button confirms and the bottom one goes back in the launcher.
+- **Contrast.** The dark theme stands out more from its background, and Settings › Appearance › Contrast sets it from Low to Higher.
+- **Mods list.** One compact line per mod with its size on the right, a switch on each row, and Turn All Off / Turn All Back On (MKWMP itself always stays on).
+- **Credits.** Settings › About links to mkw-recomp, its creator Adrià, its license and the source of MKWMP's build.
 - **Choose the button that opens MKWMP in the game.** Settings › Game › Overlay Shortcut lists the combinations: Guide or Select + Start (as before), Guide, Select + Start, hold Select, hold Start, L3 + R3, LB + RB + Start, Select + LB and Select + RB. Each says what it may run into: Guide opens Steam's menu or Xbox Game Bar, and some Steam layouts take Select + Start. The game picks up a change within a few seconds, with no restart.
 
 ## 1.4.1 — 2026-11-21

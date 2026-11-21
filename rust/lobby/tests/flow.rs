@@ -743,3 +743,48 @@ fn friend_rooms_stay_with_their_game_version() {
     assert!(join(&new, true).is_ok());
     assert_eq!(listed(&new), 1);
 }
+
+const REFRESH: &str = "/nn.npln.auth.v1.Auth/RefreshToken";
+
+/// Issue #15: the game refreshes its NPLN token ~58 min after signing in, on a new connection, and
+/// aborts (NN_ABORT) unless the answer's Token.user parses as "tenants/<t>/users/<u>".
+#[test]
+fn token_refresh_answers_a_token_for_the_same_user() {
+    let w = World::new(Policy::default());
+    let conn = w.id();
+    let body = Msg::new().bytes(1, "tenants/t-test").msg(3, &Msg::new().bytes(1, dev_ticket("Ana"))).into_bytes();
+    let reply = w.unary(conn, SIGN_IN, None, &body).unwrap();
+    let token = wire::bytes_field(&reply, 2).unwrap().unwrap();
+    let user = wire::str_field(token, 1).unwrap().unwrap();
+    let refresh = wire::str_field(token, 3).unwrap().unwrap();
+    assert!(!refresh.starts_with("mkwmp-local-refresh-token"), "the refresh token proves the user");
+
+    // 58 minutes later, a new connection, no bearer, the refresh token in the request.
+    w.advance(58.0 * 60.0);
+    let req = Msg::new().bytes(1, &user).bytes(2, &refresh).into_bytes();
+    let reply = w.unary(w.id(), REFRESH, None, &req).expect("refreshed");
+    let t = wire::bytes_field(&reply, 2).unwrap().expect("a Token in field 2");
+    assert_eq!(wire::str_field(t, 1).unwrap().unwrap(), user, "Token.user = tenants/<t>/users/<u>");
+    let access = wire::str_field(t, 2).unwrap().unwrap();
+    assert!(!access.is_empty() && !wire::str_field(t, 3).unwrap().unwrap().is_empty());
+
+    // The new access token works as a bearer: a refresh proven by it alone.
+    let reply = w.unary(w.id(), REFRESH, Some(&access), &[]).expect("bearer refresh");
+    assert_eq!(wire::str_field(wire::bytes_field(&reply, 2).unwrap().unwrap(), 1).unwrap().unwrap(), user);
+
+    // No proof, the old guessable token, or a forged one: refused, never an empty OK.
+    assert_eq!(w.unary(w.id(), REFRESH, None, &[]), Err(16));
+    let old = Msg::new().bytes(2, "mkwmp-local-refresh-token-1").into_bytes();
+    assert_eq!(w.unary(w.id(), REFRESH, None, &old), Err(16));
+    let forged = Msg::new().bytes(2, format!("{refresh}x")).into_bytes();
+    assert_eq!(w.unary(w.id(), REFRESH, None, &forged), Err(16));
+}
+
+#[test]
+fn known_empty_calls_stay_ok_and_unknown_ones_are_unimplemented() {
+    let w = World::new(Policy::default());
+    let p = sign_in(&w, &dev_ticket("Bia"));
+    assert_eq!(w.unary(p.conn, "/nn.npln.friends.v1.Friends/ActivateUser", Some(&p.token), &[]), Ok(Vec::new()));
+    assert_eq!(w.unary(p.conn, "/nn.npln.auth.v1.Auth/ValidateToken", Some(&p.token), &[]), Ok(Vec::new()));
+    assert_eq!(w.unary(p.conn, "/nn.npln.auth.v1.Auth/RefreshAnonymousUserToken", Some(&p.token), &[]), Err(12));
+}
