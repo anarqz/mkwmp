@@ -92,7 +92,8 @@
     <Setter Property="Focusable" Value="False" />
     <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
     <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
-    <Setter Property="PanningMode" Value="VerticalOnly" />
+    <!-- the finger drags through SmoothScrollViewer itself (with the mouse's path: under Wine touch is the mouse) -->
+    <Setter Property="PanningMode" Value="None" />
     <Setter Property="CanContentScroll" Value="False" />
     <Setter Property="Template">
       <Setter.Value>
@@ -114,7 +115,7 @@
     <Setter Property="Focusable" Value="False" />
     <Setter Property="VerticalScrollBarVisibility" Value="Disabled" />
     <Setter Property="HorizontalScrollBarVisibility" Value="Hidden" />
-    <Setter Property="PanningMode" Value="HorizontalOnly" />
+    <Setter Property="PanningMode" Value="None" />
     <Setter Property="CanContentScroll" Value="False" />
     <Setter Property="EdgePadding" Value="120" />
     <Setter Property="input:FocusNav.IsGroup" Value="True" />
