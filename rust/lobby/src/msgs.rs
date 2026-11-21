@@ -24,14 +24,39 @@ pub fn parse_sign_in(buf: &[u8]) -> Result<SignIn> {
     Ok(SignIn { tenant, token })
 }
 
-/// Auth response (main+0xec7100): `{2: Token{1 user, 2 access, 3 refresh, 4 Duration}}`.
-pub fn sign_in_response(user: &str, access: &str, number: u32) -> Vec<u8> {
+/// Auth response (main+0xec7100): `{2: Token{1 user, 2 access, 3 refresh, 4 Duration}}`. Also the
+/// answer to Auth `RefreshToken`: the game parses `user` as "tenants/<t>/users/<u>" and aborts
+/// (NN_ABORT) when it doesn't parse, so an empty answer there kills the game (issue #15).
+pub fn sign_in_response(user: &str, access: &str, refresh: &str) -> Vec<u8> {
     let token = Msg::new()
         .bytes(1, user)
         .bytes(2, access)
-        .bytes(3, format!("mkwmp-local-refresh-token-{number}"))
+        .bytes(3, refresh)
         .msg(4, &token_duration());
     Msg::new().msg(2, &token).into_bytes()
+}
+
+/// Every length-delimited field of `buf` that is UTF-8 text, one level deep and inside nested
+/// messages (the layout of Auth `RefreshToken`'s request isn't known: the token is searched for).
+pub fn texts(buf: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_texts(buf, 0, &mut out);
+    out
+}
+
+fn collect_texts(buf: &[u8], depth: u8, out: &mut Vec<String>) {
+    for field in wire::fields(buf) {
+        let Ok((_, field)) = field else { return };
+        let Some(value) = field.bytes() else { continue };
+        if let Ok(s) = std::str::from_utf8(value) {
+            if !s.is_empty() && s.chars().all(|c| !c.is_control()) {
+                out.push(s.to_owned());
+            }
+        }
+        if depth < 2 {
+            collect_texts(value, depth + 1, out);
+        }
+    }
 }
 
 /// Gamesync `IssueToken` / `RefreshToken` (request main+0x12a1ee0 `{1, 2}`; response

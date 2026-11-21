@@ -121,5 +121,6 @@ pub mod code {
     pub const NOT_FOUND: u32 = 5;
     pub const PERMISSION_DENIED: u32 = 7;
     pub const FAILED_PRECONDITION: u32 = 9;
+    pub const UNIMPLEMENTED: u32 = 12;
     pub const UNAUTHENTICATED: u32 = 16;
 }
