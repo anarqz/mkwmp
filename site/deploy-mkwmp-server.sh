@@ -136,7 +136,7 @@ ask() { # ask VAR "question" default
 }
 
 detect_ip() {
-  # The source address of the default route: on Vultr and DigitalOcean that is the public IPv4.
+  # The source address of the default route: on Vultr that is the public IPv4.
   ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1
 }
 is_public_ipv4() {

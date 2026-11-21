@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hospede um servidor MKWMP: uma VM na nuvem com um comando</title>
-<meta name="description" content="Rode seu próprio servidor MKWMP em uma VM pequena da Vultr ou da DigitalOcean: chaves SSH, firewall, um comando, HTTPS, atualizações e backups.">
+<meta name="description" content="Rode seu próprio servidor MKWMP em uma VM pequena da Vultr: chaves SSH, firewall, um comando, HTTPS, atualizações e backups.">
 <meta property="og:title" content="Hospede um servidor MKWMP: uma VM na nuvem com um comando">
-<meta property="og:description" content="Rode seu próprio servidor MKWMP em uma VM pequena da Vultr ou da DigitalOcean: chaves SSH, firewall, um comando, HTTPS, atualizações e backups.">
+<meta property="og:description" content="Rode seu próprio servidor MKWMP em uma VM pequena da Vultr: chaves SSH, firewall, um comando, HTTPS, atualizações e backups.">
 <meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/launcher/home-dark.webp">
 <meta name="theme-color" content="#2A2A2D">
 <link rel="icon" href="../assets/launcher/mkwmp-mark.svg" type="image/svg+xml">
@@ -38,7 +38,7 @@
 <main id="main">
   <section class="wrap page" style="padding-top: calc(80 * var(--u))">
     <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg><h2>Hospede um servidor MKWMP</h2><a class="btn btn--ghost focusable pill-btn" href="./"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15,5 L8,12 L15,19"/></svg>Voltar ao MKWMP</a></div>
-    <p class="lead">Uma VM na nuvem e um comando. Uns US$5 a 6 por mês rodam um servidor para dezenas de jogadores. Você precisa de uma conta em um provedor de nuvem, uma chave SSH e alguns minutos.</p>
+    <p class="lead">Uma VM da Vultr e um comando. Uns US$5 por mês rodam um servidor para dezenas de jogadores. Você precisa de uma conta na Vultr, uma chave SSH e alguns minutos.</p>
     <button class="cmd focusable" type="button"><code>curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash</code><span class="cmd__copy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5,3 H14 L19,8 V19.5 A1.5,1.5 0 0 1 17.5,21 H6.5 A1.5,1.5 0 0 1 5,19.5 V4.5 A1.5,1.5 0 0 1 6.5,3 Z M14,3 V8 H19"/></svg>Copiar</span></button>
   </section>
 
@@ -46,24 +46,23 @@
     <div class="section"><span>1. Uma chave SSH</span></div>
     <p>Você entra na VM com uma chave, não com senha. Se ainda não tem uma, crie no seu próprio computador (PowerShell no Windows, um terminal no macOS ou Linux) e aperte Enter em cada pergunta:</p>
     <button class="cmd focusable" type="button"><code>ssh-keygen -t ed25519 -C "mkwmp server"</code><span class="cmd__copy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5,3 H14 L19,8 V19.5 A1.5,1.5 0 0 1 17.5,21 H6.5 A1.5,1.5 0 0 1 5,19.5 V4.5 A1.5,1.5 0 0 1 6.5,3 Z M14,3 V8 H19"/></svg>Copiar</span></button>
-    <p class="rows-note">Sua chave pública agora está em <code>~/.ssh/id_ed25519.pub</code> (no Windows, <code>C:\Users\&lt;você&gt;\.ssh\id_ed25519.pub</code>). Adicione no seu provedor: <b>Vultr</b>: Account → SSH Keys → Add SSH Key. <b>DigitalOcean</b>: Settings → Security → SSH Keys → Add SSH Key. Nunca compartilhe o <code>id_ed25519</code> sem <code>.pub</code>: essa é a parte privada.</p>
+    <p class="rows-note">Sua chave pública agora está em <code>~/.ssh/id_ed25519.pub</code> (no Windows, <code>C:\Users\&lt;você&gt;\.ssh\id_ed25519.pub</code>). Adicione na Vultr: Account → SSH Keys → Add SSH Key. Nunca compartilhe o <code>id_ed25519</code> sem <code>.pub</code>: essa é a parte privada.</p>
   </section>
 
   <section class="wrap page" id="vm">
-    <div class="section"><span>2. A VM</span></div>
+    <div class="section"><span>2. A VM na Vultr</span></div>
     <p>Escolha uma região perto da maioria dos seus jogadores: o relay e o relay de voz e câmera rodam nesta VM. Quando ela estiver rodando, anote o endereço IPv4 público dela.</p>
     <table>
-      <tr><th></th><th>Vultr</th><th>DigitalOcean</th></tr>
-      <tr><th>Onde</th><td>Deploy → Cloud Compute, Shared CPU (Regular)</td><td>Create → Droplets, Basic, Regular</td></tr>
-      <tr><th>Tamanho</th><td>1 vCPU, 1 GB de RAM, uns US$5 por mês</td><td>1 vCPU, 1 GB de RAM, uns US$6 por mês</td></tr>
-      <tr><th>Imagem</th><td>Ubuntu 24.04 LTS x64</td><td>Ubuntu 24.04 (LTS) x64</td></tr>
-      <tr><th>Acesso</th><td>sua chave SSH</td><td>sua chave SSH</td></tr>
+            <tr><th>Onde</th><td>Deploy → Cloud Compute, Shared CPU (Regular)</td></tr>
+      <tr><th>Tamanho</th><td>1 vCPU, 1 GB de RAM, uns US$5 por mês</td></tr>
+      <tr><th>Imagem</th><td>Ubuntu 24.04 LTS x64</td></tr>
+      <tr><th>Acesso</th><td>sua chave SSH</td></tr>
     </table>
   </section>
 
   <section class="wrap page" id="firewall">
     <div class="section"><span>3. O firewall da nuvem</span></div>
-    <p>Os dois provedores filtram o tráfego antes de ele chegar à VM. Crie um firewall com estas regras de entrada e ligue-o à VM. O script abre as mesmas portas dentro da VM (ufw), para as duas camadas combinarem. Deixe o tráfego de saída liberado.</p>
+    <p>A Vultr filtra o tráfego antes de ele chegar à VM. Crie um grupo de firewall com estas regras de entrada e ligue-o à VM. O script abre as mesmas portas dentro da VM (ufw), para as duas camadas combinarem. Deixe o tráfego de saída liberado.</p>
     <table>
       <tr><th>Protocolo</th><th>Portas</th><th>De</th><th>O que passa por ela</th></tr>
       <tr><td>TCP</td><td>22</td><td>seu IP (ou qualquer lugar)</td><td>SSH</td></tr>
@@ -75,7 +74,7 @@
       <tr><td>UDP</td><td>8907</td><td>qualquer lugar</td><td>o relay de voz e câmera (salas de amigos)</td></tr>
       <tr><td>UDP</td><td>10025</td><td>qualquer lugar</td><td>o teste de NAT</td></tr>
     </table>
-    <p class="rows-note"><b>Vultr</b>: Network → Firewall → Add Firewall Group, adicione as regras e depois a sua VM na aba Linked Instances do grupo. <b>DigitalOcean</b>: Networking → Firewalls → Create Firewall, adicione as regras de entrada e, em Apply to Droplets, escolha a sua.</p>
+    <p class="rows-note">Na Vultr: Network → Firewall → Add Firewall Group, adicione as regras e depois a sua VM na aba Linked Instances do grupo.</p>
   </section>
 
   <section class="wrap page" id="run">

@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Host an MKWMP server: a cloud VM in one command</title>
-<meta name="description" content="Run your own MKWMP server on a small Vultr or DigitalOcean VM: SSH keys, the firewall, one command, HTTPS, updates and backups.">
+<meta name="description" content="Run your own MKWMP server on a small Vultr VM: SSH keys, the firewall, one command, HTTPS, updates and backups.">
 <meta property="og:title" content="Host an MKWMP server: a cloud VM in one command">
-<meta property="og:description" content="Run your own MKWMP server on a small Vultr or DigitalOcean VM: SSH keys, the firewall, one command, HTTPS, updates and backups.">
+<meta property="og:description" content="Run your own MKWMP server on a small Vultr VM: SSH keys, the firewall, one command, HTTPS, updates and backups.">
 <meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/launcher/home-dark.webp">
 <meta name="theme-color" content="#2A2A2D">
 <link rel="icon" href="assets/launcher/mkwmp-mark.svg" type="image/svg+xml">
@@ -38,7 +38,7 @@
 <main id="main">
   <section class="wrap page" style="padding-top: calc(80 * var(--u))">
     <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg><h2>Host an MKWMP server</h2><a class="btn btn--ghost focusable pill-btn" href="./"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15,5 L8,12 L15,19"/></svg>Back to MKWMP</a></div>
-    <p class="lead">A cloud VM and one command. About US$5 to 6 a month runs a server for dozens of players. You need an account at a cloud provider, an SSH key, and a few minutes.</p>
+    <p class="lead">A Vultr VM and one command. About US$5 a month runs a server for dozens of players. You need a Vultr account, an SSH key, and a few minutes.</p>
     <button class="cmd focusable" type="button"><code>curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash</code><span class="cmd__copy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5,3 H14 L19,8 V19.5 A1.5,1.5 0 0 1 17.5,21 H6.5 A1.5,1.5 0 0 1 5,19.5 V4.5 A1.5,1.5 0 0 1 6.5,3 Z M14,3 V8 H19"/></svg>Copy</span></button>
   </section>
 
@@ -46,24 +46,23 @@
     <div class="section"><span>1. An SSH key</span></div>
     <p>You log in to the VM with a key, not a password. If you don't have one, create it on your own computer (PowerShell on Windows, a terminal on macOS or Linux) and press Enter at each question:</p>
     <button class="cmd focusable" type="button"><code>ssh-keygen -t ed25519 -C "mkwmp server"</code><span class="cmd__copy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5,3 H14 L19,8 V19.5 A1.5,1.5 0 0 1 17.5,21 H6.5 A1.5,1.5 0 0 1 5,19.5 V4.5 A1.5,1.5 0 0 1 6.5,3 Z M14,3 V8 H19"/></svg>Copy</span></button>
-    <p class="rows-note">Your public key is now in <code>~/.ssh/id_ed25519.pub</code> (on Windows, <code>C:\Users\&lt;you&gt;\.ssh\id_ed25519.pub</code>). Add it at your provider: <b>Vultr</b>: Account → SSH Keys → Add SSH Key. <b>DigitalOcean</b>: Settings → Security → SSH Keys → Add SSH Key. Never share <code>id_ed25519</code> without <code>.pub</code>: that's the private half.</p>
+    <p class="rows-note">Your public key is now in <code>~/.ssh/id_ed25519.pub</code> (on Windows, <code>C:\Users\&lt;you&gt;\.ssh\id_ed25519.pub</code>). Add it at Vultr: Account → SSH Keys → Add SSH Key. Never share <code>id_ed25519</code> without <code>.pub</code>: that's the private half.</p>
   </section>
 
   <section class="wrap page" id="vm">
-    <div class="section"><span>2. The VM</span></div>
+    <div class="section"><span>2. The VM at Vultr</span></div>
     <p>Pick a region close to most of your players: the relay and the voice and camera relay run on this VM. When it's running, note its public IPv4 address.</p>
     <table>
-      <tr><th></th><th>Vultr</th><th>DigitalOcean</th></tr>
-      <tr><th>Where</th><td>Deploy → Cloud Compute, Shared CPU (Regular)</td><td>Create → Droplets, Basic, Regular</td></tr>
-      <tr><th>Size</th><td>1 vCPU, 1 GB RAM, about US$5 a month</td><td>1 vCPU, 1 GB RAM, about US$6 a month</td></tr>
-      <tr><th>Image</th><td>Ubuntu 24.04 LTS x64</td><td>Ubuntu 24.04 (LTS) x64</td></tr>
-      <tr><th>Login</th><td>your SSH key</td><td>your SSH key</td></tr>
+            <tr><th>Where</th><td>Deploy → Cloud Compute, Shared CPU (Regular)</td></tr>
+      <tr><th>Size</th><td>1 vCPU, 1 GB RAM, about US$5 a month</td></tr>
+      <tr><th>Image</th><td>Ubuntu 24.04 LTS x64</td></tr>
+      <tr><th>Login</th><td>your SSH key</td></tr>
     </table>
   </section>
 
   <section class="wrap page" id="firewall">
     <div class="section"><span>3. The cloud firewall</span></div>
-    <p>Both providers filter traffic before it reaches the VM. Create a firewall with these inbound rules and attach it to the VM. The script opens the same ports inside the VM (ufw), so the two layers agree. Leave outbound traffic open.</p>
+    <p>Vultr filters traffic before it reaches the VM. Create a firewall group with these inbound rules and attach it to the VM. The script opens the same ports inside the VM (ufw), so the two layers agree. Leave outbound traffic open.</p>
     <table>
       <tr><th>Protocol</th><th>Ports</th><th>From</th><th>What it carries</th></tr>
       <tr><td>TCP</td><td>22</td><td>your IP (or anywhere)</td><td>SSH</td></tr>
@@ -75,7 +74,7 @@
       <tr><td>UDP</td><td>8907</td><td>anywhere</td><td>voice chat and camera relay (friend rooms)</td></tr>
       <tr><td>UDP</td><td>10025</td><td>anywhere</td><td>the NAT check</td></tr>
     </table>
-    <p class="rows-note"><b>Vultr</b>: Network → Firewall → Add Firewall Group, add the rules, then add your VM on the group's Linked Instances tab. <b>DigitalOcean</b>: Networking → Firewalls → Create Firewall, add the inbound rules, and under Apply to Droplets pick yours.</p>
+    <p class="rows-note">In Vultr: Network → Firewall → Add Firewall Group, add the rules, then add your VM on the group's Linked Instances tab.</p>
   </section>
 
   <section class="wrap page" id="run">

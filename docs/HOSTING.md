@@ -13,9 +13,9 @@ Gamertags, hashed PINs and friendships are kept in one SQLite file. Seats and qu
 
 > **Needs rc.2 or later.** A server with its own lobby certificate (every server except the official one) needs players on the **rc.2** launcher and game patch. Those versions trust the certificate each server publishes; rc.1 can only reach the official server.
 
-## 1. A cloud VM in one command (Vultr, DigitalOcean)
+## 1. A cloud VM in one command (Vultr)
 
-About US$5–6 a month runs a server for dozens of players. You need an account at a cloud provider, an SSH key, and five minutes.
+About US$5 a month runs a server for dozens of players. You need a [Vultr](https://www.vultr.com) account, an SSH key, and five minutes.
 
 ### 1.1 An SSH key
 
@@ -23,10 +23,7 @@ You log in to the VM with a key, not a password. If you don't have one yet, on y
 
     ssh-keygen -t ed25519 -C "mkwmp server"
 
-Press Enter at each question to accept the defaults. Your public key is now in `~/.ssh/id_ed25519.pub` (Windows: `C:\Users\<you>\.ssh\id_ed25519.pub`). Add it at your provider:
-
-- **Vultr:** Account → SSH Keys → Add SSH Key, and paste the contents of `id_ed25519.pub`.
-- **DigitalOcean:** Settings → Security → SSH Keys → Add SSH Key.
+Press Enter at each question to accept the defaults. Your public key is now in `~/.ssh/id_ed25519.pub` (Windows: `C:\Users\<you>\.ssh\id_ed25519.pub`). Add it at Vultr: Account → SSH Keys → Add SSH Key, and paste the contents of `id_ed25519.pub`.
 
 Never share `id_ed25519` (without `.pub`): it is the private half.
 
@@ -34,19 +31,19 @@ Never share `id_ed25519` (without `.pub`): it is the private half.
 
 Pick a region close to most of your players: lag between players depends on their distance to each other, but the relay and the voice/camera relay run on this VM.
 
-| | Vultr | DigitalOcean |
-| --- | --- | --- |
-| Where | Deploy → Cloud Compute, **Shared CPU** (Regular) | Create → Droplets, **Basic**, Regular |
-| Size | 1 vCPU, 1 GB RAM (about US$5/month) | 1 vCPU, 1 GB RAM (about US$6/month) |
-| Image | Ubuntu 24.04 LTS x64 | Ubuntu 24.04 (LTS) x64 |
-| Login | your SSH key | your SSH key |
-| Extras | IPv6 and backups are optional | backups are optional |
+| | |
+| --- | --- |
+| Where | Deploy → Cloud Compute, **Shared CPU** (Regular) |
+| Size | 1 vCPU, 1 GB RAM (about US$5/month) |
+| Image | Ubuntu 24.04 LTS x64 |
+| Login | your SSH key |
+| Extras | IPv6 and automatic backups are optional |
 
 When it's running, note its **public IPv4** address.
 
 ### 1.3 The cloud firewall
 
-Both providers can filter traffic before it reaches the VM. Create a firewall with these **inbound** rules and attach it to the VM. The script opens the same ports in the VM's own firewall (ufw), so the two layers agree.
+Vultr can filter traffic before it reaches the VM. Create a firewall with these **inbound** rules and attach it to the VM. The script opens the same ports in the VM's own firewall (ufw), so the two layers agree.
 
 | Protocol | Port(s) | From | What |
 | --- | --- | --- | --- |
@@ -59,8 +56,7 @@ Both providers can filter traffic before it reaches the VM. Create a firewall wi
 | UDP | 8907 | anywhere | voice chat and camera relay (friend rooms) |
 | UDP | 10025 | anywhere | NAT check |
 
-- **Vultr:** Network → Firewall → Add Firewall Group, add the rules (IPv4, and IPv6 if you enabled it), then on the group's **Linked Instances** tab add your VM.
-- **DigitalOcean:** Networking → Firewalls → Create Firewall, add the inbound rules (leave the outbound defaults), and under **Apply to Droplets** pick yours.
+In Vultr: Network → Firewall → Add Firewall Group, add the rules (IPv4, and IPv6 if you enabled it), then on the group's **Linked Instances** tab add your VM.
 
 Outbound traffic must stay open: the VM downloads the release, and the server announces itself to the directory over HTTPS.
 
@@ -115,7 +111,7 @@ Players then use `https://mkw.example.net`. The game's own ports (8905, 8906 and
 ### 1.6 Updates, backups, logs
 
 - **Update:** run the script again (no options needed: it remembers them in `/var/lib/mkwmp/deploy.env`). It installs the latest release and keeps gamertags, friends and keys. Restarting the lobby doesn't end running games.
-- **Backup:** `/var/lib/mkwmp` is everything. `registry.db` holds gamertags, PIN hashes and friends; `keys/` is your server's identity (the ticket key, the lobby's certificate, the directory key). For a consistent copy: `systemctl stop mkwmp-seat && tar czf mkwmp-backup.tgz -C /var/lib mkwmp && systemctl start mkwmp-seat`. Keep backups private, and delete old ones: they hold your players' data. Many providers also offer automatic VM backups.
+- **Backup:** `/var/lib/mkwmp` is everything. `registry.db` holds gamertags, PIN hashes and friends; `keys/` is your server's identity (the ticket key, the lobby's certificate, the directory key). For a consistent copy: `systemctl stop mkwmp-seat && tar czf mkwmp-backup.tgz -C /var/lib mkwmp && systemctl start mkwmp-seat`. Keep backups private, and delete old ones: they hold your players' data. Vultr also offers automatic VM backups.
 - **Logs:** `journalctl -u mkwmp-seat -u mkwmp-lobby -f` (kept 7 days).
 - **Admin** (gamertags, reports): `sudo -u mkwmp /opt/mkwmp/bin/server admin list --config /var/lib/mkwmp/server.toml`, and the other `admin` commands in section 3.
 
