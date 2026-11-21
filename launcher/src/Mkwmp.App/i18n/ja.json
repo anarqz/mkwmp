@@ -1147,6 +1147,7 @@
   "whatsnew.caption": "MKWMPの各バージョンの変更点",
   "whatsnew.empty": "変更点の一覧はありません。",
   "whatsnew.details": "詳細",
+  "whatsnew.unreleased": "未リリース",
   "settings.updates.ready": "バージョン {version} をインストールして再起動",
   "core.update_ready": "バージョン {version} をダウンロード済み、インストールできます",
   "core.update_installing": "{version} をインストール中。MKWMPが再起動します…",

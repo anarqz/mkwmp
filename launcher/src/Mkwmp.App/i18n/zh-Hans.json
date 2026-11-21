@@ -1147,6 +1147,7 @@
   "whatsnew.caption": "MKWMP 每个版本的更改",
   "whatsnew.empty": "更改列表不可用。",
   "whatsnew.details": "详情",
+  "whatsnew.unreleased": "未发布",
   "settings.updates.ready": "安装版本 {version} 并重启",
   "core.update_ready": "版本 {version} 已下载，可以安装",
   "core.update_installing": "正在安装 {version}；MKWMP 即将重启…",

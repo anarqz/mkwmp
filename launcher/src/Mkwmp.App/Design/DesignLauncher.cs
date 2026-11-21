@@ -906,7 +906,31 @@ public sealed partial class DesignLauncher : ILauncher
 
     // ---- the game's own settings: a few pages with every kind of row --------------------------
 
-    private static readonly GameSettingsSchema DemoGameSettings = new(
+    /// <summary>The sample below in the language in use, through the catalogs the real schema uses (gs.*), as the game's own settings are.</summary>
+    private static GameSettingsSchema DemoGameSettings
+    {
+        get
+        {
+            var generation = CoreStrings.Generation;
+            if (_demoGameSettings is not { } cached || cached.Generation != generation)
+            {
+                var localized = Mkwmp.Core.Targets.MkwRecomp.RecompSettings.Localize(DemoGameSettingsEnglish) with { Note = Mkwmp.Core.Targets.MkwRecomp.RecompSettings.NextStart };
+                localized = localized with
+                {
+                    Categories = [.. localized.Categories.Select(c => c with
+                    {
+                        Settings = [.. c.Settings.Select(s => s.Locked is null ? s : s with { Locked = CoreStrings.GameSettingsLockedByEnv("MKW_" + s.Id.ToUpperInvariant()) })],
+                    })],
+                };
+                _demoGameSettings = cached = (generation, localized);
+            }
+            return cached.Schema;
+        }
+    }
+
+    private static (int Generation, GameSettingsSchema Schema)? _demoGameSettings;
+
+    private static readonly GameSettingsSchema DemoGameSettingsEnglish = new(
     [
         new("screen", "Screen", "Fullscreen",
         [
@@ -982,7 +1006,7 @@ public sealed partial class DesignLauncher : ILauncher
                     DemoGameSettings.Effective(_gameValues),
                     new HashSet<string>(_gameValues.Keys, StringComparer.OrdinalIgnoreCase),
                     !running,
-                    _gameSettingsNote ?? (running ? "Close the game to change its settings" : null),
+                    _gameSettingsNote ?? (running ? CoreStrings.GameSettingsRunning : null),
                     _gameSettingsNote is not null);
             }
         }

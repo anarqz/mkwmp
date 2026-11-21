@@ -1147,6 +1147,7 @@
   "whatsnew.caption": "MKWMP 각 버전의 변경 사항",
   "whatsnew.empty": "변경 사항 목록을 사용할 수 없습니다.",
   "whatsnew.details": "자세히",
+  "whatsnew.unreleased": "미출시",
   "settings.updates.ready": "버전 {version} 설치 후 다시 시작",
   "core.update_ready": "버전 {version} 다운로드 완료, 설치 준비됨",
   "core.update_installing": "{version} 설치 중. MKWMP가 다시 시작됩니다…",

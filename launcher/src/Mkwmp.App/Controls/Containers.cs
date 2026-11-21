@@ -147,6 +147,58 @@ public sealed class SmoothScrollViewer : ScrollViewer
         set => SetValue(CenteredProperty, value);
     }
 
+    public static readonly DependencyProperty FadeEdgesProperty = Dp.Register<SmoothScrollViewer, double>(nameof(FadeEdges), 0.0,
+        (d, _) => ((SmoothScrollViewer)d).UpdateFade());
+
+    /// <summary>
+    /// How far (in units) the content fades out at an edge it is scrolled past, so an entry cut by
+    /// the edge melts away instead of showing half; 0 for no fade. An edge with nothing beyond it stays sharp.
+    /// </summary>
+    public double FadeEdges
+    {
+        get => (double)GetValue(FadeEdgesProperty);
+        set => SetValue(FadeEdgesProperty, value);
+    }
+
+    protected override void OnScrollChanged(ScrollChangedEventArgs e)
+    {
+        base.OnScrollChanged(e);
+        UpdateFade();
+    }
+
+    private (bool Top, bool Bottom, double Height) _fade;
+
+    private void UpdateFade()
+    {
+        var height = ActualHeight;
+        var fade = FadeEdges;
+        var top = fade > 0 && VerticalOffset > 0.5;
+        var bottom = fade > 0 && VerticalOffset < ScrollableHeight - 0.5;
+        if (!top && !bottom || height <= 0)
+        {
+            _fade = default;
+            ClearValue(OpacityMaskProperty);
+            return;
+        }
+        if (_fade == (top, bottom, height) && OpacityMask is not null)
+        {
+            return;
+        }
+        _fade = (top, bottom, height);
+        var edge = Math.Min(0.45, fade / height);
+        var mask = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+        // the outer part of the fade is fully clear: a sliver of an entry at the very edge does not show at all
+        var clear = edge * 0.4;
+        mask.GradientStops.Add(new GradientStop(top ? Colors.Transparent : Colors.Black, 0));
+        mask.GradientStops.Add(new GradientStop(top ? Colors.Transparent : Colors.Black, top ? clear : 0));
+        mask.GradientStops.Add(new GradientStop(Colors.Black, top ? edge : 0));
+        mask.GradientStops.Add(new GradientStop(Colors.Black, bottom ? 1 - edge : 1));
+        mask.GradientStops.Add(new GradientStop(bottom ? Colors.Transparent : Colors.Black, bottom ? 1 - clear : 1));
+        mask.GradientStops.Add(new GradientStop(bottom ? Colors.Transparent : Colors.Black, 1));
+        mask.Freeze();
+        OpacityMask = mask;
+    }
+
     protected override void OnContentChanged(object oldContent, object newContent)
     {
         base.OnContentChanged(oldContent, newContent);

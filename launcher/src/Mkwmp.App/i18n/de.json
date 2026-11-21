@@ -1147,6 +1147,7 @@
   "whatsnew.caption": "Was sich in jeder Version von MKWMP geändert hat",
   "whatsnew.empty": "Die Liste der Änderungen ist nicht verfügbar.",
   "whatsnew.details": "Details",
+  "whatsnew.unreleased": "Unveröffentlicht",
   "settings.updates.ready": "Version {version} installieren und neu starten",
   "core.update_ready": "Version {version} ist heruntergeladen und bereit zur Installation",
   "core.update_installing": "{version} wird installiert; MKWMP startet neu…",

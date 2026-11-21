@@ -1147,6 +1147,7 @@
   "whatsnew.caption": "MKWMP 每個版本的變更",
   "whatsnew.empty": "無法取得變更清單。",
   "whatsnew.details": "詳細資料",
+  "whatsnew.unreleased": "未發布",
   "settings.updates.ready": "安裝版本 {version} 並重新啟動",
   "core.update_ready": "版本 {version} 已下載，可以安裝",
   "core.update_installing": "正在安裝 {version}；MKWMP 將重新啟動…",

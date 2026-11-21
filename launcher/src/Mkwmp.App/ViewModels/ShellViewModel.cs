@@ -138,7 +138,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     public static string AboutLicense => "GPL-3.0-or-later";
 
     /// <summary>Whose work the game's runtime is (mkw-recomp, MIT): the installed runtime's own credit, else the short line.</summary>
-    public string AboutRuntimeCredit => Launcher.Runtime.Credit?.Summary ?? S["setup.welcome.credit"];
+    public string AboutRuntimeCredit => Launcher.Runtime.Credit?.Localized().Summary ?? S["setup.welcome.credit"];
 
     /// <summary>The lines of the About box.</summary>
     public string AboutText => $"{AboutTitle}\n{AboutLicense}";

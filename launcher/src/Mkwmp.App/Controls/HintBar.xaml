@@ -9,13 +9,14 @@
     <Border Height="1.5" VerticalAlignment="Top" Margin="{StaticResource Metric.PageMargin}" Background="{DynamicResource Brush.Rule}"
             Visibility="{Binding ShowTopBar, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
     <Grid Margin="98,0,88,0">
-      <!-- what is in the player's hands: a generic gamepad (a green light when one is connected), else a keyboard -->
+      <!-- what is in the player's hands: a generic gamepad (with a green "connected" dot on its corner, as an
+           avatar's presence dot, when one is plugged in or paired), else a keyboard -->
       <Grid HorizontalAlignment="Left" VerticalAlignment="Center">
         <Grid x:Name="Pad" Visibility="{Binding InputKind, Converter={StaticResource Conv.Visible}, ConverterParameter='=Gamepad'}">
           <c:Icon Data="{StaticResource IconFill.Gamepad}" Filled="True" Width="66" Height="66" Foreground="{DynamicResource Brush.Glyph}" />
-          <Border Width="12" Height="12" CornerRadius="2.5" Background="{DynamicResource Brush.Good}" HorizontalAlignment="Left"
-                  VerticalAlignment="Top" Margin="4,-4,0,0"
-                  Visibility="{Binding GamepadConnected, Converter={StaticResource Conv.Visible}}" />
+          <Ellipse Width="22" Height="22" Fill="{DynamicResource Brush.Good}" Stroke="{DynamicResource Brush.Background}" StrokeThickness="4"
+                   HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-6,4"
+                   Visibility="{Binding GamepadConnected, Converter={StaticResource Conv.Visible}}" />
         </Grid>
         <c:Icon x:Name="Keys" Data="{StaticResource Icon.Keyboard}" Width="62" Height="62" StrokeThickness="1.8"
                 Foreground="{DynamicResource Brush.Glyph}" Visibility="{Binding InputKind, Converter={StaticResource Conv.Visible}, ConverterParameter='!=Gamepad'}" />

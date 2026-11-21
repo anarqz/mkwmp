@@ -96,7 +96,9 @@ public sealed class WhatsNewViewModel : PageViewModel
     {
         var running = Launcher.Version;
         var document = await Task.Run(() => Changelog.Load(running)).ConfigureAwait(true);
-        _releases = [.. document.Releases.Select(r => new WhatsNewRelease(r.Version, r.Date ?? "", r.Markdown, r.IsRunning))];
+        // the changelog is English; its "unreleased" in place of a date is the page's own word
+        _releases = [.. document.Releases.Select(r => new WhatsNewRelease(r.Version,
+            string.Equals(r.Date, "unreleased", StringComparison.OrdinalIgnoreCase) ? S["whatsnew.unreleased"] : r.Date ?? "", r.Markdown, r.IsRunning))];
         App.Log($"what's new: {_releases.Count} releases ({(document.Loose ? Changelog.FileName + " beside the exe" : "built in")})");
         RaiseAll();
     }

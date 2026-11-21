@@ -539,7 +539,8 @@
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="c:CategoryList">
-          <c:SmoothScrollViewer VerticalScrollBarVisibility="Hidden" Padding="20,14,20,14" EdgePadding="130">
+          <!-- scrolled, the entry cut at the top or bottom edge fades out rather than showing half of itself -->
+          <c:SmoothScrollViewer VerticalScrollBarVisibility="Hidden" Padding="20,14,20,14" EdgePadding="130" FadeEdges="120">
             <ItemsPresenter />
           </c:SmoothScrollViewer>
         </ControlTemplate>
@@ -591,13 +592,19 @@
                     </LinearGradientBrush>
                   </Border.Background>
                 </Border>
-                <StackPanel x:Name="Texts" VerticalAlignment="Bottom" Margin="32,0,28,34">
-                  <TextBlock Text="{TemplateBinding Title}" Foreground="White" FontSize="38" FontWeight="ExtraBold"
+                <!-- the subtitle has room for two lines whether it takes one or two (or none), so every tile's
+                     title sits at the same height in any language -->
+                <Grid x:Name="Texts" VerticalAlignment="Bottom" Margin="32,0,28,26">
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="68" />
+                  </Grid.RowDefinitions>
+                  <TextBlock Text="{TemplateBinding Title}" Foreground="White" FontSize="38" FontWeight="ExtraBold" VerticalAlignment="Bottom"
                              TextWrapping="Wrap" LineHeight="42" LineStackingStrategy="BlockLineHeight" MaxHeight="88" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Text="{TemplateBinding Subtitle}" Foreground="#E6FFFFFF" FontSize="23" FontWeight="SemiBold" Margin="0,6,0,0"
-                             TextTrimming="CharacterEllipsis" TextWrapping="Wrap" LineHeight="29" LineStackingStrategy="BlockLineHeight" MaxHeight="62"
+                  <TextBlock Grid.Row="1" Text="{TemplateBinding Subtitle}" Foreground="#E6FFFFFF" FontSize="23" FontWeight="SemiBold" Margin="0,6,0,0"
+                             VerticalAlignment="Top" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" LineHeight="29" LineStackingStrategy="BlockLineHeight" MaxHeight="62"
                              Visibility="{Binding Subtitle, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource Conv.Visible}}" />
-                </StackPanel>
+                </Grid>
                 <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,22,22,0" Height="44" CornerRadius="22"
                         Background="#F2FFFFFF" Padding="18,0"
                         Visibility="{Binding Badge, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource Conv.Visible}}">
@@ -736,9 +743,13 @@
               <Ellipse x:Name="Dot" Width="26" Height="26" Fill="{DynamicResource Brush.Good}"
                        Stroke="{DynamicResource Brush.Background}" StrokeThickness="4" />
             </Viewbox>
-            <TextBlock Text="{TemplateBinding Count}" Foreground="{DynamicResource Brush.Good}" FontSize="24" FontWeight="Bold"
-                       HorizontalAlignment="Center" VerticalAlignment="Top" Margin="-40,-38,-40,0"
-                       Visibility="{Binding Count, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource Conv.Visible}}" />
+            <!-- the count (the player's pending friend requests) as a notification badge on the disc's top right -->
+            <Border MinWidth="36" Height="36" CornerRadius="18" Padding="9,0" Margin="0,-6,-8,0" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Background="{DynamicResource Brush.Bad}" BorderBrush="{DynamicResource Brush.Background}" BorderThickness="3"
+                    Visibility="{Binding Count, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource Conv.Visible}}">
+              <TextBlock Text="{TemplateBinding Count}" Foreground="White" FontSize="19" FontWeight="Bold"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,1" />
+            </Border>
           </Grid>
           <ControlTemplate.Triggers>
             <DataTrigger Binding="{Binding Image, RelativeSource={RelativeSource Self}, Converter={StaticResource Conv.Visible}}" Value="Visible">

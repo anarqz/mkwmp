@@ -120,7 +120,7 @@ public sealed partial class SetupViewModel
     public string RuntimeName => Launcher.Runtime.PinnedLabel is { } version ? $"{Game.TargetName} {version}" : Game.TargetName;
 
     /// <summary>Whose work the runtime is, wherever it is named.</summary>
-    public string RuntimeCredit => Launcher.Runtime.Credit?.Summary ?? S["setup.welcome.credit"];
+    public string RuntimeCredit => Launcher.Runtime.Credit?.Localized().Summary ?? S["setup.welcome.credit"];
 
     public string GameHeading => Stage switch
     {

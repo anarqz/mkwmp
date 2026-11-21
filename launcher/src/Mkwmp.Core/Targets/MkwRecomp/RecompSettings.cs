@@ -385,8 +385,11 @@ public static partial class RecompSettings
 
     private static string OptionKey(GameSetting s, GameSettingOption o) => $"gs.{s.Id}.opt.{(o.Value.Length == 0 ? "auto" : o.Value)}";
 
-    /// <summary>The schema with its texts in the language in use (<see cref="Strings.T(string, string)"/>: English where the catalog has none).</summary>
-    private static GameSettingsSchema Localize(GameSettingsSchema schema) => schema with
+    /// <summary>
+    /// The schema with its texts in the language in use (<see cref="Strings.T(string, string)"/>: English where the catalog has none).
+    /// Public for the design-time launcher, whose sample of these settings goes through the same catalogs.
+    /// </summary>
+    public static GameSettingsSchema Localize(GameSettingsSchema schema) => schema with
     {
         Categories = [.. schema.Categories.Select(page => page with
         {

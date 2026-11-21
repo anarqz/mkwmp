@@ -1147,6 +1147,7 @@
   "whatsnew.caption": "MKWMP'nin her sürümünde neler değişti",
   "whatsnew.empty": "Değişiklik listesi kullanılamıyor.",
   "whatsnew.details": "Ayrıntılar",
+  "whatsnew.unreleased": "Yayımlanmadı",
   "settings.updates.ready": "{version} sürümünü yükle ve yeniden başlat",
   "core.update_ready": "{version} sürümü indirildi ve yüklenmeye hazır",
   "core.update_installing": "{version} yükleniyor; MKWMP yeniden başlatılıyor…",
