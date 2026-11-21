@@ -55,8 +55,22 @@ struct kart_snap {
     int kart_ok;
     int32_t kstate, idle, pidx;
     uint8_t kobj_flags, kflags;
-    float pos[2];
+    float pos[2];   // the left stick of pad pidx, as rule 1 reads it (the default pad's when pidx is out of range)
+    // the kart's own input (+k_btn, +k_stick, +k_mode)
+    uint32_t kbtn;
+    int32_t kmode;
+    float kstick[2];
+    // pad pidx (pad_ok 0: not read): held buttons, no-input frames, right stick, source / follows / connected
+    int pad_ok;
+    uint32_t pheld;
+    float pidle, prstick[2];
+    uint8_t pon, pconn, psrc;
 };
+
+// The pad table (rule 1's sticks): "n N def <pad> | 0 <pad> | 1 <pad> ..." for the first max pads, each
+// "@vt st x,y r x,y held H idle F on O conn C src S" (vt: the pad's vtable as a main offset). 0: table unreadable.
+size_t kart_pads(const struct kart_layout *L, uint64_t pos_g, struct kart_rd *rd, uint64_t now_ms, int max, char *out,
+                 size_t n);
 
 // Decode the controller at ctrl. Reads only what rd says is readable; `full` 0 reads the controller's own fields
 // (cheap: the per-tick change check), 1 adds the LapChecker, the player table and the kart lookup. 0: ctrl unreadable.

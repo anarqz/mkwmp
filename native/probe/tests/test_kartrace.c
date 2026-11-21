@@ -70,16 +70,21 @@ static void build(const struct kart_layout *L, struct world *w) {
     putf(path1 + L->p_scale, 2.0f);
     w->path_g = take(8);
     put64(w->path_g, paths);
-    // player table: G -> +0xc0 -> +8 -> [0] -> +8 = header; 4 entries, entry 3 local
-    uint8_t *g = take(0xc8), *a = take(0x10), *b = take(8), *c = take(0x10);
+    // player table: G -> +0xc0 -> +8 -> [0] -> +8 -> [0] = header (0xd92920); 4 entries, entry 3 local. The decoy
+    // one load short of the header holds what a reader stopping there would take for a table.
+    uint8_t *g = take(0xc8), *a = take(0x10), *b = take(8), *c = take(0x10), *d = take(0x20);
     w->hdr = take(0x20);
-    uint8_t *items = take(4u * L->t_size);
+    uint8_t *items = take(4u * L->t_size), *decoy = take(4u * L->t_size);
     w->ptable_g = take(8);
     put64(w->ptable_g, g);
     put64(g + 0xc0, a);
     put64(a + 8, b);
     put64(b, c);
-    put64(c + 8, w->hdr);
+    put64(c + 8, d);
+    put64(d, w->hdr);
+    put32(d + L->t_count, 4);
+    put64(d + L->t_items, decoy);
+    put32(decoy + 3u * L->t_size + L->t_local, 26);
     put32(w->hdr + L->t_count, 4);
     put64(w->hdr + L->t_items, items);
     put32(w->hdr + L->t_mode, 1);
@@ -117,16 +122,28 @@ static void build(const struct kart_layout *L, struct world *w) {
     put32(w->kart + L->k_idle, 12);
     put64(w->kart + L->k_posref, w->posref);
     put32(w->posref + L->r_idx, 2);
-    // position table: 3 entries, entry 2 at (1,2); default entry at (-1,-1)
-    uint8_t *t = take(0xc8), *list = take(24), *e2 = take(0x130), *def = take(0x130);
+    put32(w->kart + L->k_btn, 0x41);
+    put32(w->kart + L->k_mode, 3);
+    putf(w->kart + L->k_stick, 0.5f);
+    putf(w->kart + L->k_stick + 4, -0.25f);
+    // pad table: 3 pads, pad 2's left stick (1,2), held 0x8, idle 7, connected; the default pad's stick (-1,-1).
+    // Pad 0 is unreadable (outside the arena) and pad 1 is null.
+    uint8_t *t = take(0xc8), *list = take(24), *e2 = take(L->d_size), *def = take(L->d_size);
     w->pos_g = take(8);
     put64(w->pos_g, t);
     put32(t + L->q_count, 3);
     put64(t + L->q_items, list);
+    put64(list, (void *)(uintptr_t)0x100);
     put64(list + 16, e2);
     put64(t + L->q_default, def);
+    put64(e2, (void *)(uintptr_t)0x7003300000ull);
     putf(e2 + L->q_pos, 1.0f);
     putf(e2 + L->q_pos + 4, 2.0f);
+    put32(e2 + L->d_held, 8);
+    putf(e2 + L->d_idle, 7.0f);
+    put64(e2 + L->d_src, e2);
+    e2[L->d_on] = 1;
+    e2[L->d_conn] = 1;
     putf(def + L->q_pos, -1.0f);
     putf(def + L->q_pos + 4, -1.0f);
 }
@@ -162,8 +179,17 @@ static void test_read(const struct kart_layout *L) {
     CHECK(s.scale == 2.0f && s.p == 100.0f && s.best == 100.0f);   // the second path's scale
     CHECK(s.tbl_ok && s.t_local == 0 && s.t_a == 3 && s.t_b == 3 && s.t_flags == 1 && s.mode == 1);
     CHECK(s.kart_ok && s.kstate == 3 && s.idle == 12 && s.pidx == 2 && s.pos[0] == 1.0f && s.pos[1] == 2.0f);
+    CHECK(s.kbtn == 0x41 && s.kmode == 3 && s.kstick[0] == 0.5f && s.kstick[1] == -0.25f);
+    CHECK(s.pad_ok && s.pheld == 8 && s.pidle == 7.0f && s.pon == 1 && s.pconn == 1 && s.psrc == 1);
     CHECK(kart_watched(&s));
     CHECK(kart_rules(&s) == 0);
+    char pads[600];
+    CHECK(kart_pads(L, (uint64_t)(uintptr_t)w.pos_g, &r, 100000, 8, pads, sizeof pads) > 0);
+    CHECK(strstr(pads, "n 3 | def @0 st -1.00,-1.00") != NULL);
+    CHECK(strstr(pads, " | 0 ? | 1 ? | 2 @0x3300000 st 1.00,2.00 r 0.00,0.00 held 0x8 idle 7 on 1 conn 1 src 1") != NULL);
+    printf("example: kart pads: %s\n", pads);
+    CHECK(kart_pads(L, 0, &r, 100000, 8, pads, sizeof pads) == 0);
+    CHECK(kart_pads(L, (uint64_t)(uintptr_t)w.pos_g, &r, 100000, 8, pads, 10) == 9);   // truncated, terminated
 
     // the cheap read: the controller only
     struct kart_snap q;
@@ -214,7 +240,8 @@ static void test_rules(const struct kart_layout *L) {
     CHECK(strstr(line, "prog 100.00 tgt 175.00 best 100.00/106.00 lap 1/1 cp 4") != NULL);
     CHECK(strstr(line, "id 0x5382e895 strikes 37") != NULL);
     CHECK(strstr(line, "rules 1,2,3,5 wd on") != NULL);
-    CHECK(strstr(line, "pi 2") != NULL);
+    CHECK(strstr(line, "xy 10.50,-20.25 pos 1.00,2.00 pi 2") != NULL);
+    CHECK(strstr(line, " | pad held 0x8 idle 7 r 0.00,0.00 on1 conn1 src1 | kin m3 b0x41 s 0.50,-0.25") != NULL);
     printf("example: kart: %s\n", line);
     w.kobj[L->ko_flags] = 0x80;                                   // bit 7: input ignored, no rule 2
     put32(w.ctrl + L->w_grace, 1);                                // recovery grace: no rule 5

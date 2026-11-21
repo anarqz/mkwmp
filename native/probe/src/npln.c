@@ -1383,10 +1383,18 @@ static struct kart_slot *kart_slot_of(uint64_t ctrl, uint64_t now) {
 }
 
 static void kart_line(const char *what, const struct kart_snap *s, int tps, int important) {
-    char body[640];
+    char body[800];
     kart_format(s, tps, body, sizeof body);
     if (important) mlog("kart %s: %s", what, body);
     else mkwmp_log("kart %s: %s", what, body);   // the once-a-second lines: mkwmp.log only, not the crash record
+}
+
+// The pad table watchdog rule 1 reads its stick from (kart_pads), first 8 pads and the default one
+static void kart_pads_line(const char *what, uint64_t now, int important) {
+    char body[1400];
+    if (!kart_pads(&A.kl, A.kart_pos_g, &g_kart_rd, now, 8, body, sizeof body)) return;
+    if (important) mlog("kart %s: %s", what, body);
+    else mkwmp_log("kart %s: %s", what, body);
 }
 
 static int kart_full(uint64_t ctrl, uint64_t now, struct kart_snap *s) {
@@ -1463,6 +1471,7 @@ static void kart_after(uint64_t ctrl, uint64_t now) {
         double secs = (double)(now - g_kart_speed_ms) / 1000.0;
         mkwmp_log("kart speed %.2fx over %.1f s (%u race updates, 60/s = 1.00x; %d karts updating, %d local)",
                   most / (secs * 60.0), secs, most, karts, local);
+        kart_pads_line("pads", now, 0);
         g_kart_speed_ms = now;
     }
 }
@@ -1495,6 +1504,7 @@ static void kart_post_traced(uint64_t ctrl) {
         snprintf(what, sizeof what, "watchdog POSTS %#x for p%d, a %s kart", s.error, s.player,
                  !s.tbl_ok ? "?" : s.t_local >= 0 ? "LOCAL" : "REMOTE");
         kart_line(what, &s, k && k->tps ? (int)k->tps : -1, 1);
+        kart_pads_line("pads at the post", now, 1);
     } else {
         mlog("kart watchdog POSTS (controller %#llx unreadable)", (unsigned long long)ctrl);
     }

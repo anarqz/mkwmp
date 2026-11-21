@@ -127,11 +127,16 @@ struct game_addrs {
         // actor: state +a_state, -> +a_comp -> +a_comp2 -> kart +a_kart
         uint16_t o_comp, o_map, m_root, m_n1, m_n2, n_key, n_handle, h_ptr, h_gen, a_actor, a_gen, a_state, a_comp,
             a_comp2, a_kart;
-        // kart: kart object +k_obj (flags byte +ko_flags), no-input frames +k_idle, position ref +k_posref (index
-        // +r_idx), flags +k_flags
-        uint16_t k_obj, ko_flags, k_idle, k_posref, r_idx, k_flags;
-        // position table: count +q_count, items +q_items, default +q_default; position at entry +q_pos
+        // kart: kart object +k_obj (flags byte +ko_flags), no-input frames +k_idle, controller ref +k_posref (pad
+        // index +r_idx), flags +k_flags; the kart's own input: buttons u32 +k_btn, left stick float[2] +k_stick, input
+        // mode +k_mode (1, 2: steering animation reads the pad directly, else +k_stick; 0x1227ac)
+        uint16_t k_obj, ko_flags, k_idle, k_posref, r_idx, k_flags, k_btn, k_stick, k_mode;
+        // pad (controller) table: count +q_count, items +q_items (pointers), default pad +q_default; left stick float[2]
+        // at pad +q_pos (the XY of watchdog rule 1: a stick, not a kart position)
         uint16_t q_count, q_items, q_default, q_pos;
+        // pad: no-input frames (float) +d_idle, held buttons +d_held, right stick +d_rstick, source device +d_src,
+        // "follows its source" byte +d_on, connected byte +d_conn, bytes read +d_size (0x2940de0)
+        uint16_t d_idle, d_held, d_rstick, d_src, d_on, d_conn, d_size;
     } kl;
     // always-on logs of profile_dispatch
     uint64_t bulkget_lr, bulkget_fn;                // BulkGetDocuments result retrieval: return address, target

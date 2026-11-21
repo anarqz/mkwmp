@@ -144,12 +144,16 @@ static const struct game_addrs kRows[] = {
             .l_flags = 0x14, .l_p = 0x28, .l_best = 0x2c, .l_lap = 0x30, .l_cp = 0x32, .l_path = 0x307c,
             .g_paths = 0x70, .p_scale = 0x68,                                   // 0x298da00
             .t_count = 8, .t_items = 0x10, .t_mode = 0x1c, .t_size = 0xd8,      // 0xd92920, 0x5c1a00..0x5c1ad0
-            .t_local = 0xc4, .t_a = 0x50, .t_b = 0x54, .t_flags = 0xd0,
+            .t_local = 0xc4, .t_a = 0x50, .t_b = 0x54, .t_flags = 0xd0,        // +0xc4 / +0x54: pad indices (-1 remote)
             .o_comp = 0x248, .o_map = 0xc8, .m_root = 0x200, .m_n1 = 0x210, .m_n2 = 0x218,   // 0x9d5ce0
             .n_key = 0x18, .n_handle = 0x20, .h_ptr = 8, .h_gen = 0x10,
             .a_actor = 0x80, .a_gen = 0x88, .a_state = 0x2c, .a_comp = 0x248, .a_comp2 = 0x100, .a_kart = 0x48,
             .k_obj = 0x88, .ko_flags = 0x191, .k_idle = 0x5b8, .k_posref = 0x70, .r_idx = 0x18, .k_flags = 0x110,
-            .q_count = 0x70, .q_items = 0x78, .q_default = 0xc0, .q_pos = 0x120,   // 0x2528bc0
+            .k_btn = 0x120, .k_stick = 0x128, .k_mode = 0x518,                    // 0x1227ac
+            // the pad manager [main+0x37c7030]: 0x2528bc0 (rule 1's stick), 0x5c1804 (pad idle +0x110), 0x2940c20
+            .q_count = 0x70, .q_items = 0x78, .q_default = 0xc0, .q_pos = 0x120,
+            .d_idle = 0x110, .d_held = 0x114, .d_rstick = 0x128, .d_src = 0x158, .d_on = 0x170, .d_conn = 0x198,
+            .d_size = 0x1a0,                                                       // pad update 0x2940de0
         },
         .bulkget_lr = M(0x2107d48), .bulkget_fn = M(0x1593c30),
         .ctl_event_sink = M(0x20ffa60),

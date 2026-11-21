@@ -90,10 +90,11 @@ int kart_read(const struct kart_layout *L, uint64_t path_g, uint64_t ptable_g, u
         s->best = s->scale ? braw * s->scale : braw;
     }
 
-    // Player table (0xd92920: **(*(*G + 0xc0) + 8) + 8; an out-of-range index reads entry 0, as the game does)
+    // Player table (0xd92920 / 0x5c1790: header = [[[[[[G] + 0xc0] + 8]] + 8]]; six loads, the last at +0; an
+    // out-of-range index reads entry 0, as the game does)
     if (s->player >= 0) {
         x.ok = 1;
-        uint64_t hdr = ptr(&x, ptr(&x, ptr(&x, ptr(&x, ptr(&x, ptable_g) + 0xc0) + 8)) + 8);
+        uint64_t hdr = ptr(&x, ptr(&x, ptr(&x, ptr(&x, ptr(&x, ptr(&x, ptable_g) + 0xc0) + 8)) + 8));
         int32_t mode = i32(&x, hdr + L->t_mode);
         uint32_t count = (uint32_t)i32(&x, hdr + L->t_count);
         uint64_t items = ptr(&x, hdr + L->t_items);
@@ -135,6 +136,9 @@ int kart_read(const struct kart_layout *L, uint64_t path_g, uint64_t ptable_g, u
             int32_t idle = i32(&x, kart + L->k_idle);
             uint8_t kflags = u8(&x, kart + L->k_flags), oflags = u8(&x, kobj + L->ko_flags);
             int32_t pidx = i32(&x, ptr(&x, kart + L->k_posref) + L->r_idx);
+            uint32_t kbtn = (uint32_t)i32(&x, kart + L->k_btn);
+            int32_t kmode = i32(&x, kart + L->k_mode);
+            float kst[2] = {f32(&x, kart + L->k_stick), f32(&x, kart + L->k_stick + 4u)};
             if (x.ok) {
                 s->kart_ok = 1;
                 s->kstate = kstate;
@@ -142,13 +146,28 @@ int kart_read(const struct kart_layout *L, uint64_t path_g, uint64_t ptable_g, u
                 s->kflags = kflags;
                 s->kobj_flags = oflags;
                 s->pidx = pidx;
-                // 0x2528bc0: an index out of range reads the table's default entry
+                s->kbtn = kbtn;
+                s->kmode = kmode;
+                memcpy(s->kstick, kst, sizeof kst);
+                // 0x2528bc0: an index out of range reads the table's default pad
                 uint64_t t = ptr(&x, pos_g);
                 int32_t n = i32(&x, t + L->q_count);
                 uint64_t e = pidx >= 0 && pidx < n ? ptr(&x, ptr(&x, t + L->q_items) + 8u * (uint64_t)pidx)
                                                    : ptr(&x, t + L->q_default);
                 float pos[2] = {f32(&x, e + L->q_pos), f32(&x, e + L->q_pos + 4u)};
                 if (x.ok) memcpy(s->pos, pos, sizeof pos);
+                if (x.ok && e && L->d_size && kart_rd_ok(rd, (const void *)(uintptr_t)e, L->d_size, now_ms)) {
+                    const uint8_t *d = (const uint8_t *)(uintptr_t)e;
+                    uint64_t src;
+                    s->pad_ok = 1;
+                    memcpy(&s->pheld, d + L->d_held, 4);
+                    memcpy(&s->pidle, d + L->d_idle, 4);
+                    memcpy(s->prstick, d + L->d_rstick, 8);
+                    memcpy(&src, d + L->d_src, 8);
+                    s->psrc = src != 0;
+                    s->pon = d[L->d_on];
+                    s->pconn = d[L->d_conn];
+                }
             }
         }
     }
@@ -206,7 +225,7 @@ size_t kart_format(const struct kart_snap *s, int tps, char *out, size_t n) {
     const char *who = !s->tbl_ok ? "?" : s->t_local >= 0 ? "LOCAL" : "remote";
     int w = snprintf(out, n,
         "p%d %s st%u tps %d f %u | prog %.2f tgt %.2f best %.2f/%.2f lap %d/%d cp %d lc %#x | id %#x strikes %u "
-        "slow %u still %u idle %d moves %u behind %u grace %u resc %u/%u | rules %s wd %s | xy %.1f,%.1f pos %.1f,%.1f "
+        "slow %u still %u idle %d moves %u behind %u grace %u resc %u/%u | rules %s wd %s | xy %.2f,%.2f pos %.2f,%.2f "
         "pi %d k%d m%d t%d/%d/%d/%u g%u/%u o%#x",
         s->player, who, s->state, tps, s->frames, (double)s->p, (double)s->target, (double)s->best, (double)s->tbest,
         s->lap, s->maxlap, s->cp, s->lflags, s->error, s->strikes, s->slow, s->nomove, s->kart_ok ? s->idle : -1,
@@ -215,5 +234,57 @@ size_t kart_format(const struct kart_snap *s, int tps, char *out, size_t n) {
         s->kart_ok ? s->kstate : -1, s->mode, s->t_local, s->t_a, s->t_b, s->t_flags, s->off, s->skip,
         s->kobj_flags);
     if (w < 0) { if (n) out[0] = 0; return 0; }
-    return (size_t)w < n ? (size_t)w : (n ? n - 1 : 0);
+    size_t k = (size_t)w < n ? (size_t)w : (n ? n - 1 : 0);
+    if (s->kart_ok && k < n) {
+        // pad pidx (rule 1's stick): held buttons, no-input frames, right stick; the kart's own input
+        int v = s->pad_ok
+            ? snprintf(out + k, n - k, " | pad held %#x idle %.0f r %.2f,%.2f on%u conn%u src%u", s->pheld,
+                       (double)s->pidle, (double)s->prstick[0], (double)s->prstick[1], s->pon, s->pconn, s->psrc)
+            : snprintf(out + k, n - k, " | pad ?");
+        if (v > 0) k += (size_t)v < n - k ? (size_t)v : n - k - 1;
+        v = snprintf(out + k, n - k, " | kin m%d b%#x s %.2f,%.2f", s->kmode, s->kbtn, (double)s->kstick[0],
+                     (double)s->kstick[1]);
+        if (v > 0) k += (size_t)v < n - k ? (size_t)v : n - k - 1;
+    }
+    return k;
+}
+
+size_t kart_pads(const struct kart_layout *L, uint64_t pos_g, struct kart_rd *rd, uint64_t now_ms, int max, char *out,
+                 size_t n) {
+    if (!n) return 0;
+    out[0] = 0;
+    struct rd_ctx x = {rd, now_ms, 1};
+    uint64_t t = ptr(&x, pos_g);
+    int32_t count = i32(&x, t + L->q_count);
+    uint64_t items = ptr(&x, t + L->q_items), def = ptr(&x, t + L->q_default);
+    if (!x.ok || !L->d_size) return 0;
+    size_t k = 0;
+    int v = snprintf(out, n, "n %d", count);
+    if (v > 0) k = (size_t)v < n ? (size_t)v : n - 1;
+    for (int i = -1; i < count && i < max && k + 1 < n; i++) {
+        x.ok = 1;
+        uint64_t e = i < 0 ? def : ptr(&x, items + 8u * (uint64_t)i);
+        char who[8];
+        snprintf(who, sizeof who, i < 0 ? "def" : "%d", i);
+        if (!x.ok || !e || !kart_rd_ok(rd, (const void *)(uintptr_t)e, L->d_size, now_ms)) {
+            v = snprintf(out + k, n - k, " | %s ?", who);
+        } else {
+            const uint8_t *d = (const uint8_t *)(uintptr_t)e;
+            uint64_t vt, src;
+            uint32_t held;
+            float st[2], r[2], idle;
+            memcpy(&vt, d, 8);
+            memcpy(st, d + L->q_pos, 8);
+            memcpy(r, d + L->d_rstick, 8);
+            memcpy(&held, d + L->d_held, 4);
+            memcpy(&idle, d + L->d_idle, 4);
+            memcpy(&src, d + L->d_src, 8);
+            v = snprintf(out + k, n - k, " | %s @%#llx st %.2f,%.2f r %.2f,%.2f held %#x idle %.0f on %u conn %u src %u",
+                         who, (unsigned long long)(vt >= 0x7000000000ull ? vt - 0x7000000000ull : vt), (double)st[0],
+                         (double)st[1], (double)r[0], (double)r[1], held, (double)idle, d[L->d_on], d[L->d_conn],
+                         src != 0);
+        }
+        if (v > 0) k += (size_t)v < n - k ? (size_t)v : n - k - 1;
+    }
+    return k;
 }
