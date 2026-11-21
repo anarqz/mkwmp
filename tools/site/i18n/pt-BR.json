@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "MKWMP: jogue MKW online no seu PC",
-    "description": "O MKWMP configura o mkw-recomp a partir da sua própria cópia do jogo, joga offline na hora e leva você para servidores da comunidade, com amigos, chat de voz e mods. Grátis e de código aberto.",
+    "title": "MKWMP: servidores online para um jogo de corrida",
+    "description": "O MKWMP é uma reimplementação dos servidores online de um jogo de corrida, com um launcher que configura o jogo a partir da sua própria cópia, joga offline na hora e leva você para servidores da comunidade, com amigos, chat de voz e mods. Grátis e de código aberto.",
     "host_title": "Hospede um servidor MKWMP: uma VM na nuvem com um comando",
     "host_description": "Rode seu próprio servidor MKWMP em uma VM pequena da Vultr: chaves SSH, firewall, um comando, HTTPS, atualizações e backups."
   },
@@ -26,7 +26,7 @@
   },
   "hero": {
     "title": "Corra online. <em>Do seu jeito.</em>",
-    "lead": "O MKWMP é um launcher para o mkw-recomp, a versão de PC de MKW gerada a partir da sua própria cópia do jogo. Ele configura o jogo para você, joga offline assim que estiver pronto e leva você para servidores da comunidade, com amigos, chat de voz e mods.",
+    "lead": "O MKWMP é uma reimplementação dos servidores online de um jogo de corrida, com um launcher feito para ele. O launcher configura o jogo a partir da sua própria cópia, joga offline assim que estiver pronto e leva você para servidores da comunidade, com amigos, chat de voz e mods.",
     "download": "Baixar para Windows",
     "deck": "Steam Deck",
     "host": "Hospedar um servidor",
@@ -188,8 +188,8 @@
   },
   "faq": {
     "title": "Perguntas",
-    "q1": "O MKWMP é feito pela Nintendo?",
-    "a1": "Não. É um projeto de fãs, sem ligação com a Nintendo e sem o apoio dela. Ele não usa os servidores da Nintendo.",
+    "q1": "Quem faz o MKWMP?",
+    "a1": "Uma comunidade: o MKWMP é um projeto independente e de código aberto. Os servidores são mantidos pelos hosts, e qualquer pessoa pode hospedar um.",
     "q2": "Preciso do jogo?",
     "a2": "Sim: a sua própria cópia do jogo, versão 1.8.0. O MKWMP nunca baixa o jogo; ele gera o mkw-recomp a partir da sua cópia.",
     "q3": "Roda no Linux?",
@@ -206,7 +206,7 @@
     "changelog": "Mudanças",
     "hosting": "Guia de hospedagem",
     "bug": "Relatar um bug",
-    "legal": "O MKWMP é um projeto de fãs, sem ligação com a Nintendo e sem o apoio dela. Mario Kart é uma marca registrada da Nintendo. Você precisa da sua própria cópia do jogo. A arte daqui é do próprio MKWMP."
+    "legal": "O MKWMP é um projeto comunitário, independente e de código aberto. Você precisa da sua própria cópia do jogo. A arte daqui é do próprio MKWMP."
   },
   "hints": {
     "move": "Mover",

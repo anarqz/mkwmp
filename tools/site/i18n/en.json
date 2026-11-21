@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "MKWMP: play MKW online on your PC",
-    "description": "MKWMP sets up mkw-recomp from your own copy of the game, plays offline right away, and takes you online to community servers with friends, voice chat and mods. Free and open source.",
+    "title": "MKWMP: online servers for a racing game",
+    "description": "MKWMP is a reimplementation of the online servers of a racing game, with a launcher that sets the game up from your own copy, plays offline right away, and takes you online to community servers with friends, voice chat and mods. Free and open source.",
     "host_title": "Host an MKWMP server: a cloud VM in one command",
     "host_description": "Run your own MKWMP server on a small Vultr VM: SSH keys, the firewall, one command, HTTPS, updates and backups."
   },
@@ -26,7 +26,7 @@
   },
   "hero": {
     "title": "Race online. <em>On your terms.</em>",
-    "lead": "MKWMP is a launcher for mkw-recomp, the PC version of MKW built from your own copy of the game. It sets the game up for you, plays offline as soon as it's ready, and takes you online to community servers, with friends, voice chat and mods.",
+    "lead": "MKWMP is a reimplementation of the online servers of a racing game, with a launcher to match. The launcher sets the game up from your own copy, plays offline as soon as it's ready, and takes you online to community servers, with friends, voice chat and mods.",
     "download": "Download for Windows",
     "deck": "Steam Deck",
     "host": "Host a server",
@@ -188,8 +188,8 @@
   },
   "faq": {
     "title": "Questions",
-    "q1": "Is MKWMP made by Nintendo?",
-    "a1": "No. It's a fan project, not affiliated with or endorsed by Nintendo. It doesn't use Nintendo's servers.",
+    "q1": "Who makes MKWMP?",
+    "a1": "A community: MKWMP is an independent, open-source project. Its servers are run by their hosts, and anyone can host one.",
     "q2": "Do I need the game?",
     "a2": "Yes: your own copy of the game, version 1.8.0. MKWMP never downloads the game; it builds mkw-recomp from your copy.",
     "q3": "Does it run on Linux?",
@@ -206,7 +206,7 @@
     "changelog": "Changelog",
     "hosting": "Hosting guide",
     "bug": "Report a bug",
-    "legal": "MKWMP is a fan project, not affiliated with or endorsed by Nintendo. Mario Kart is a trademark of Nintendo. You need your own copy of the game. The art here is MKWMP's own."
+    "legal": "MKWMP is an independent, open-source community project. You need your own copy of the game. The art here is MKWMP's own."
   },
   "hints": {
     "move": "Move",

@@ -250,7 +250,7 @@ elif [ ! -s "$DATA/privacy.md" ]; then
   cat > "$DATA/privacy.md" <<EOF
 # Privacy policy of "$NAME"
 
-This MKWMP server is run by its host, not by Nintendo and not by the MKWMP project. Edit this file
+This MKWMP server is run by its host, not by the MKWMP project. Edit this file
 ($DATA/privacy.md) to describe your server, then run the deploy script again (or restart
 mkwmp-seat). Players are asked to accept it again whenever it changes.
 
