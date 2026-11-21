@@ -1,6 +1,6 @@
 # Hosting mkwmp
 
-An mkwmp server is one binary, `mkwmp`, with two parts. `mkwmp host` runs both in one process (sections 1 and 2); `mkwmp server` and `mkwmp lobby` run them separately (section 3):
+An mkwmp server is one binary, `mkwmp`, with two parts. The quickest way to run one on the internet is a small cloud VM and one command (section 1). `mkwmp host` runs both parts in one process (sections 2 and 3); `mkwmp server` and `mkwmp lobby` run them separately (sections 1 and 4):
 
 | Part | What it does | Reached by | Ports |
 | --- | --- | --- | --- |
@@ -13,7 +13,124 @@ Gamertags, hashed PINs and friendships are kept in one SQLite file. Seats and qu
 
 > **Needs rc.2 or later.** A server with its own lobby certificate (every server except the official one) needs players on the **rc.2** launcher and game patch. Those versions trust the certificate each server publishes; rc.1 can only reach the official server.
 
-## 1. On your PC: `mkwmp host`
+## 1. A cloud VM in one command (Vultr, DigitalOcean)
+
+About US$5–6 a month runs a server for dozens of players. You need an account at a cloud provider, an SSH key, and five minutes.
+
+### 1.1 An SSH key
+
+You log in to the VM with a key, not a password. If you don't have one yet, on your own computer (Windows: PowerShell; macOS/Linux: a terminal):
+
+    ssh-keygen -t ed25519 -C "mkwmp server"
+
+Press Enter at each question to accept the defaults. Your public key is now in `~/.ssh/id_ed25519.pub` (Windows: `C:\Users\<you>\.ssh\id_ed25519.pub`). Add it at your provider:
+
+- **Vultr:** Account → SSH Keys → Add SSH Key, and paste the contents of `id_ed25519.pub`.
+- **DigitalOcean:** Settings → Security → SSH Keys → Add SSH Key.
+
+Never share `id_ed25519` (without `.pub`): it is the private half.
+
+### 1.2 The VM
+
+Pick a region close to most of your players: lag between players depends on their distance to each other, but the relay and the voice/camera relay run on this VM.
+
+| | Vultr | DigitalOcean |
+| --- | --- | --- |
+| Where | Deploy → Cloud Compute, **Shared CPU** (Regular) | Create → Droplets, **Basic**, Regular |
+| Size | 1 vCPU, 1 GB RAM (about US$5/month) | 1 vCPU, 1 GB RAM (about US$6/month) |
+| Image | Ubuntu 24.04 LTS x64 | Ubuntu 24.04 (LTS) x64 |
+| Login | your SSH key | your SSH key |
+| Extras | IPv6 and backups are optional | backups are optional |
+
+When it's running, note its **public IPv4** address.
+
+### 1.3 The cloud firewall
+
+Both providers can filter traffic before it reaches the VM. Create a firewall with these **inbound** rules and attach it to the VM. The script opens the same ports in the VM's own firewall (ufw), so the two layers agree.
+
+| Protocol | Port(s) | From | What |
+| --- | --- | --- | --- |
+| TCP | 22 | your IP (or anywhere) | SSH |
+| TCP | 7000 | anywhere | the seat API: the launcher signs in, takes seats (use 80 and 443 instead with a domain, 1.5) |
+| TCP | 8905 | anywhere | the game's online services (NPLN, TLS) |
+| TCP | 8906 | anywhere | Gamesync (the game's match data) |
+| UDP | 3478 | anywhere | TURN relay, for players who can't connect to each other directly |
+| UDP | 49152–49407 | anywhere | the TURN relay's sockets |
+| UDP | 8907 | anywhere | voice chat and camera relay (friend rooms) |
+| UDP | 10025 | anywhere | NAT check |
+
+- **Vultr:** Network → Firewall → Add Firewall Group, add the rules (IPv4, and IPv6 if you enabled it), then on the group's **Linked Instances** tab add your VM.
+- **DigitalOcean:** Networking → Firewalls → Create Firewall, add the inbound rules (leave the outbound defaults), and under **Apply to Droplets** pick yours.
+
+Outbound traffic must stay open: the VM downloads the release, and the server announces itself to the directory over HTTPS.
+
+### 1.4 Run the script
+
+Log in and run it as root:
+
+    ssh root@<public IPv4>
+    curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash
+
+It asks for the server name and region, then:
+
+1. downloads `mkwmp-server-x86_64-linux` from the latest release and checks it against the release's `SHA256SUMS`, whose Ed25519 signature must verify with the MKWMP release key pinned in the script (it stops otherwise);
+2. creates the `mkwmp` user and `/var/lib/mkwmp` (keys, `registry.db`, `server.toml`, `privacy.md`);
+3. installs two services, `mkwmp-seat` (launchers) and `mkwmp-lobby` (the game), and keeps their logs 7 days;
+4. opens the ports above in ufw (SSH stays open);
+5. lists your server in the public server directory (`https://beholder.anarqz.dev`), so it shows in the launcher's server browser;
+6. checks that `/ping` answers from outside and that the directory lists it.
+
+At the end it prints the address players use: `http://<public IPv4>:7000`.
+
+Without questions (all optional):
+
+    curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash -s -- \
+      --name "Friday kart" --region eu-west --capacity 24 --yes
+
+| Option | |
+| --- | --- |
+| `--name` | the name in the launcher and the server list: up to 32 letters, digits, spaces and `_ . -` |
+| `--region` | a short tag for the server list, e.g. `sa-east`, `us-east`, `eu-west` |
+| `--capacity` | players seated at once (default 50); the rest wait in a queue |
+| `--public-ip` | the address players reach the VM at, if it isn't the VM's own (behind NAT) |
+| `--domain` | HTTPS with Caddy (1.5) |
+| `--privacy-file` | your own privacy policy (Markdown) |
+| `--no-announce` | stay out of the public server list (players type your address) |
+| `--version` | a given release, e.g. `v1.3.1` |
+| `--no-firewall` | leave ufw alone |
+| `--uninstall` | remove the services, the program and the ufw rules; keeps `/var/lib/mkwmp` (`--purge` deletes it too) |
+
+**Your privacy policy.** Players see `/var/lib/mkwmp/privacy.md` in the launcher and accept it. The script writes a template the first time: edit it so it's true for your server (who you are, how to reach you, how long you keep logs), then `systemctl restart mkwmp-seat`. Every edit is a new version, and players are asked to accept it again.
+
+### 1.5 A domain and HTTPS (optional, recommended)
+
+Over plain `http://`, PINs travel unencrypted. With a domain:
+
+1. Create a DNS **A** record, e.g. `mkw.example.net` → the VM's public IPv4. If your DNS is at Cloudflare, make it **DNS only** (grey cloud) at first, so the certificate can be issued.
+2. In the cloud firewall, open TCP 80 and 443 (and you can close 7000).
+3. Run the script again with `--domain mkw.example.net`. It installs Caddy, which gets and renews a Let's Encrypt certificate, binds the seat API to the VM only, and lists `https://mkw.example.net` in the directory.
+
+Players then use `https://mkw.example.net`. The game's own ports (8905, 8906 and the UDP ones) keep going straight to the VM's IP: they don't use the domain.
+
+### 1.6 Updates, backups, logs
+
+- **Update:** run the script again (no options needed: it remembers them in `/var/lib/mkwmp/deploy.env`). It installs the latest release and keeps gamertags, friends and keys. Restarting the lobby doesn't end running games.
+- **Backup:** `/var/lib/mkwmp` is everything. `registry.db` holds gamertags, PIN hashes and friends; `keys/` is your server's identity (the ticket key, the lobby's certificate, the directory key). For a consistent copy: `systemctl stop mkwmp-seat && tar czf mkwmp-backup.tgz -C /var/lib mkwmp && systemctl start mkwmp-seat`. Keep backups private, and delete old ones: they hold your players' data. Many providers also offer automatic VM backups.
+- **Logs:** `journalctl -u mkwmp-seat -u mkwmp-lobby -f` (kept 7 days).
+- **Admin** (gamertags, reports): `sudo -u mkwmp /opt/mkwmp/bin/mkwmp admin list --config /var/lib/mkwmp/server.toml`, and the other `admin` commands in section 3.
+
+### 1.7 Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| The script stops at "signature does NOT verify" | the download was altered or incomplete: run it again; don't install by hand |
+| `/ping did not answer from this VM` | the cloud firewall (TCP 7000, or 80/443 with a domain) isn't attached or lacks the rule; with `--domain`, the A record doesn't point at the VM yet |
+| Not listed in the directory | `journalctl -u mkwmp-seat \| grep announce`: `HTTP 400 ... endpoint` means a private address (use `--public-ip`), `connect` means outbound HTTPS is blocked |
+| Launchers connect, but the game stays offline or "can't connect" | TCP 8905/8906 closed in the cloud firewall; `systemctl status mkwmp-lobby` |
+| Players can't race or talk together | the UDP ports (3478, 49152–49407, 8907, 10025) closed in the cloud firewall |
+| Anything else | `journalctl -u mkwmp-seat -u mkwmp-lobby -n 200`, and open an issue with it (without PINs) |
+
+## 2. On your PC: `mkwmp host`
 
 Download `mkwmp-server-x86_64-windows.exe` or `mkwmp-server-x86_64-linux` from the [releases](https://github.com/anarqz/mkwmp/releases) (rc.2 onward), or build it yourself (see the README). Run it with no arguments; on Windows you can double-click it. It runs the same as `mkwmp host`:
 
@@ -34,15 +151,15 @@ When Windows asks whether to let it through the firewall, allow it. Players set 
 
 Ports: TCP 7000, 8905, 8906 and UDP 3478, 8907, 10025, 49152–49407.
 
-## 2. Linux server: Docker Compose
+## 3. Linux server: Docker Compose
 
-Docker runs the same `mkwmp host`. Use any Linux machine with Docker, for example a small VM (1 vCPU, 1 GB). Host networking is required, so the lobby sees each player's real address. Docker Desktop on macOS or Windows can't provide that; on those systems, use the program from section 1 instead.
+Docker runs the same `mkwmp host`. Use any Linux machine with Docker, for example a small VM (1 vCPU, 1 GB). Host networking is required, so the lobby sees each player's real address. Docker Desktop on macOS or Windows can't provide that; on those systems, use the program from section 2 instead.
     git clone https://github.com/anarqz/mkwmp && cd mkwmp
     cp .env.example .env              # set MKWMP_PUBLIC_IP (and the name / seat count)
     docker compose up -d --build
 
 - `MKWMP_PUBLIC_IP` is the IPv4 address players reach the machine at: your public IP, or the LAN address for a LAN party. The game takes an address, not a host name.
-- The first start creates the same files as section 1 in the `mkwmp-data` volume. Later starts keep them, and rewrite `server.toml` from `.env`.
+- The first start creates the same files as section 2 in the `mkwmp-data` volume. Later starts keep them, and rewrite `server.toml` from `.env`.
 - Open these ports in the firewall: TCP 7000, 8905, 8906 and UDP 3478, 8907, 10025, 49152–49407.
 - Players set the launcher's **SERVER** to `http://<MKWMP_PUBLIC_IP>:7000`, register a gamertag on your server, and press PLAY.
 - Plain `http://` is fine on a LAN. On the internet, PINs and the lobby certificate would travel unencrypted, so use HTTPS (below).
@@ -54,7 +171,7 @@ Docker runs the same `mkwmp host`. Use any Linux machine with Docker, for exampl
 2. Run `docker compose --profile https up -d`.
 3. Players use `https://<domain>`, and you can close TCP 7000.
 
-**Admin** (from the machine running the server; for section 1 use `--config mkwmp-data/server.toml`): gamertags can be listed, reserved, released and their PINs reset:
+**Admin** (from the machine running the server; for section 2 use `--config mkwmp-data/server.toml`; for section 1, `sudo -u mkwmp /opt/mkwmp/bin/mkwmp admin <...> --config /var/lib/mkwmp/server.toml`): gamertags can be listed, reserved, released and their PINs reset:
 
     docker compose exec server mkwmp admin list --config /data/server.toml
     docker compose exec server mkwmp admin register <name> --config /data/server.toml   # reserve + new PIN
@@ -81,7 +198,7 @@ To lock an abusive player out, `reset-pin` their gamertag (their launcher's PIN 
 
 **Update:** `git pull && docker compose up -d --build`.
 
-## 3. A Linux VM with systemd, by hand
+## 4. A Linux VM with systemd, by hand
 
 1. **Open the ports** listed above. Keep 7000 closed if a tunnel or proxy fronts it (step 6).
 2. **Create the user and folders:**
@@ -117,7 +234,7 @@ To lock an abusive player out, `reset-pin` their gamertag (their launcher's PIN 
    - `[announce] beholder_url` + `endpoint` (your public `https://` seat API URL) lists your server in a beholder's server browser. Set `key_file = "/var/lib/mkwmp/beholder-ed25519.key"`: the unit's `/opt/mkwmp/keys` is read-only and the key is made on first start. See BEHOLDER_API.md.
    - To run a beholder yourself: `config/beholder.toml` + `deploy/systemd/mkwmp-beholder.service`.
 
-## 4. For development
+## 5. For development
 
     tools/host/run_seat_local.sh          # seat server on 127.0.0.1:7000, config/server.toml
     rust/target/release/mkwmp lobby config/server.toml
