@@ -97,10 +97,47 @@ static void name_utf8(const uint16_t *name, size_t n, char *out, size_t cap) {
     out[k] = 0;
 }
 
+// The list is a count and a pointer to an array of entry pointers: the 1.8.0 plate-apply function (0x24cbc60) does
+// `ldrsw x8, [x19, #0x4628]` ... `ldr x8, [x19, #0x4630]; ldr x21, [x8, x24, lsl #3]` (1.0.0: 0x3d80 / 0x3d88;
+// VOICE-RE.md §6.1). Up to v1.4.2 the probe read the array INLINE at page + page_entries: entry i was then the page's
+// own word at +page_entries + 8*i. For i < 3 those words happened to be harmless, the 4th was not (a 4-member room
+// crashed the player whose pause menu frame ran: ACCESS_VIOLATION reading a garbage "name" pointer). Every pointer
+// is now also checked before it is read: the page is the game's, and a list being rebuilt must not take us down.
+static int readable(uint64_t p, size_t n) {
+    return p && plat_mem_readable((const void *)(uintptr_t)p) >= n;
+}
+
+int voice_ui_page_entries(uint64_t page, const struct game_addrs *row, uint64_t *entries, const uint16_t **names,
+                          size_t *lens) {
+    if (!row || !readable(page, (size_t)row->page_entries + 8)) return -1;
+    int count = *(const int32_t *)(uintptr_t)(page + row->page_count);
+    if (count < 0 || count > row->rows || count > GAME_ROWS_MAX) return -1;
+    if (count == 0) return 0;
+    uint64_t arr = *(const uint64_t *)(uintptr_t)(page + row->page_entries);
+    if (!readable(arr, (size_t)count * 8)) return -1;
+    size_t need = (size_t)(row->entry_me > row->entry_name + 8 ? row->entry_me + 1 : row->entry_name + 8);
+    for (int i = 0; i < count; i++) {
+        uint64_t e = ((const uint64_t *)(uintptr_t)arr)[i];
+        entries[i] = 0;
+        names[i] = NULL;
+        lens[i] = 0;
+        if (!readable(e, need)) continue;
+        uint64_t name = *(const uint64_t *)(uintptr_t)(e + row->entry_name);
+        size_t avail = name ? plat_mem_readable((const void *)(uintptr_t)name) : 0;
+        if (avail < 2) continue;
+        entries[i] = e;
+        names[i] = (const uint16_t *)(uintptr_t)name;
+        lens[i] = u16len(names[i], avail / 2 < 32 ? avail / 2 : 32);
+    }
+    return count;
+}
+
 static void apply(Cpu *c, uint64_t page) {
-    int count = *(int32_t *)(uintptr_t)(page + ga->page_count);
-    if (count < 0 || count > ga->rows) return;
-    uint64_t *entries = (uint64_t *)(uintptr_t)(page + ga->page_entries);
+    uint64_t entries[ROWS_MAX];
+    const uint16_t *names[ROWS_MAX];
+    size_t lens[ROWS_MAX];
+    int count = voice_ui_page_entries(page, ga, entries, names, lens);
+    if (count < 0) return;
     static int traced;
     if (g_trace && !traced) {
         traced = 1;
@@ -125,9 +162,8 @@ static void apply(Cpu *c, uint64_t page) {
     for (int i = 0; i < count; i++) {
         uint64_t e = entries[i];
         if (!e) continue;
-        const uint16_t *name = *(const uint16_t **)(uintptr_t)(e + ga->entry_name);
-        if (!name) continue;
-        size_t n = u16len(name, 32);
+        const uint16_t *name = names[i];
+        size_t n = lens[i];
         // strip a label we wrote earlier if the game hands our text back (it keeps its own copy, so normally not)
         char utf8[40];
         name_utf8(name, n, utf8, sizeof utf8);
@@ -190,7 +226,7 @@ static void hook_frame(Cpu *c) {
     g.last_frame = now;
     // the game refills the plates when its list changes (info+0xe12): our cache must not hide the new text
     static int last_count = -1;
-    int count = *(int32_t *)(uintptr_t)(page + ga->page_count);
+    int count = readable(page, (size_t)ga->page_count + 4) ? *(const int32_t *)(uintptr_t)(page + ga->page_count) : -1;
     if (count != last_count) { memset(g.shown_valid, 0, sizeof g.shown_valid); last_count = count; }
     apply(c, page);
     (void)saved;
