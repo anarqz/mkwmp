@@ -16,10 +16,10 @@ use std::time::SystemTime;
 use crate::update::sha256_hex;
 
 /// The runtimes the game patch supports (KNOWN names their mkw.exe).
-pub const SUPPORTED: &[&str] = &["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp"];
+pub const SUPPORTED: &[&str] = &["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"];
 /// What the window recommends installing.
-pub const RECOMMENDED: &str = "0.1.15-mkwmp";
-pub const DOWNLOAD: &str = "https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.15-mkwmp";
+pub const RECOMMENDED: &str = "0.1.16-mkwmp.1";
+pub const DOWNLOAD: &str = "https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp.1";
 
 /// mkw.exe SHA-256 per mkw-recomp release (mkw-recomp-<v>-windows-x64.zip).
 const KNOWN: &[(&str, &str)] = &[
@@ -33,6 +33,9 @@ const KNOWN: &[(&str, &str)] = &[
     ("0.1.16-mkwmp", "73997d10f8cca878e9654b174c194833053a529ec04ff3b03be587c1e592eb8f"),
     // The fork's build for CPUs without AVX2 (…-windows-x64-noavx2.zip): the same release.
     ("0.1.16-mkwmp", "0bceb91d6156af779f5fad48963908fc39e4bf0d477f826e0d7106ec4605a34f"),
+    // .1: the setup runs under Wine/Proton; no SDL x11 request under Proton. Same game id.
+    ("0.1.16-mkwmp.1", "d04dc49a14618dce8385cdb1c3e61ba1bd62a2e5938ddf7dd216c926517cc72d"),
+    ("0.1.16-mkwmp.1", "59af1fcc9c3a233e2d86c8437224f90a958e9ecb473118d71d92090379fbe3c0"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,7 +156,7 @@ pub fn data_dir(game: &Path) -> PathBuf {
 /// MKWMP's mod folder name, under mkw-recomp's `mods/`.
 pub const MOD: &str = "mkwmp";
 /// The supported releases that load mods (MKW_MODS, plugin API 3).
-pub const MOD_RUNTIMES: &[&str] = &["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp"];
+pub const MOD_RUNTIMES: &[&str] = &["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"];
 
 /// The MKWMP mod runs in this game: a runtime that loads mods, and the mod
 /// enabled there ([`mod_dir`]). A leftover `mods = mkwmp` on an older
@@ -260,6 +263,7 @@ const GAME_IDS: &[(&str, &str)] = &[
     ("0.1.15-mkwmp", "c0dd6cf12c07c23a"),
     ("0.1.16", "c9bbcb75a9ac9a49"),
     ("0.1.16-mkwmp", "c9bbcb75a9ac9a49"),
+    ("0.1.16-mkwmp.1", "c9bbcb75a9ac9a49"),
 ];
 
 /// The id the game in this folder was set up for: mkwgame.id, else the
@@ -330,7 +334,7 @@ mod tests {
     fn only_supported_releases_pass() {
         assert_eq!(identify_bytes(b"not mkw.exe"), Recomp::Unknown);
         assert!(!Recomp::Unknown.ok() && Recomp::Unknown.problem().unwrap().contains("0.1.13"));
-        assert!(Recomp::Other("0.1.11").problem().unwrap().contains("0.1.11: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp or 0.1.16 or 0.1.16-mkwmp"));
+        assert!(Recomp::Other("0.1.11").problem().unwrap().contains("0.1.11: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp or 0.1.16 or 0.1.16-mkwmp or 0.1.16-mkwmp.1"));
         assert_eq!(identify_bytes(&[]), Recomp::Unknown);
         assert!(Recomp::Supported("0.1.10").ok() && Recomp::Supported("0.1.10").problem().is_none());
         assert!(SUPPORTED.iter().all(|v| KNOWN.iter().any(|(k, _)| k == v)), "every supported release has a known hash");
