@@ -1,6 +1,6 @@
 # MKWMP art for the website
 
-Original art (made for MKWMP; no Nintendo IP). Made from the source pictures by `launcher/tools/make_art.py --site`
+Original art made for MKWMP. Made from the source pictures by `launcher/tools/make_art.py --site`
 (branch launcher-art). WebP at quality 85; PNG where a crawler or browser needs it. Sizes are on disk.
 
 | File | Pixels | Size | Suggested use |
