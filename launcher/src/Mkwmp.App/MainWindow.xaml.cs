@@ -47,8 +47,24 @@ public partial class MainWindow : Window
         PreviewMouseDown += (_, _) => _vm.InputKind = InputKind.Mouse;
         PreviewTouchDown += (_, _) => _vm.InputKind = InputKind.Mouse;
         PreviewMouseMove += OnPreviewMouseMove;
-        Activated += (_, _) => _gamepad.Enabled = true;
-        Deactivated += (_, _) => _gamepad.Enabled = false;
+        Activated += (_, _) =>
+        {
+            _gamepad.Enabled = true;
+            _vm.WindowActivated();
+        };
+        // Another program in front, the overlay given back to the game, the tray: a mic or camera test stops.
+        Deactivated += (_, _) =>
+        {
+            _gamepad.Enabled = false;
+            _vm.WindowDeactivated();
+        };
+        IsVisibleChanged += (_, e) =>
+        {
+            if (e.NewValue is false)
+            {
+                _vm.WindowDeactivated();
+            }
+        };
 
         // xml:lang: how bindings format, and which glyph variants the system's fallback fonts give
         Language = System.Windows.Markup.XmlLanguage.GetLanguage(shell.S.Culture.IetfLanguageTag);

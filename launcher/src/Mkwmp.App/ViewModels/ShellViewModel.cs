@@ -147,6 +147,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     public PageViewModel? Page => Nav.Current;
 
+    /// <summary>The window lost the focus or was hidden (MainWindow): the page stops its device tests.</summary>
+    public void WindowDeactivated() => Page?.OnWindowDeactivated();
+
+    public void WindowActivated() => Page?.OnWindowActivated();
+
     public bool ShowTopBar => Page?.ShowTopBar ?? false;
 
     public void Navigate(string route) => Nav.Navigate(route);

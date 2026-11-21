@@ -562,6 +562,11 @@ public sealed record VoiceSettings
     public int OutputGain { get; init; } = 100;
     /// <summary>Camera device id for the launcher's camera test ("" = first). The in-game camera on/off is the mod's setting.</summary>
     public string Camera { get; init; } = "";
+    /// <summary>
+    /// <see cref="Camera"/>'s name when it was last picked or tested (<c>camera_name</c>): Settings shows it without
+    /// listing the cameras on every visit. "" = not known yet.
+    /// </summary>
+    public string CameraName { get; init; } = "";
     public bool CameraMirror { get; init; } = true;
     /// <summary>Kept for old settings files (the launcher once had an introduction to its chat pages); nothing reads it.</summary>
     public bool ChatIntroDone { get; init; }

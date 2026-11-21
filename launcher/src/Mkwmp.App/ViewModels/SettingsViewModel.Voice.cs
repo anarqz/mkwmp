@@ -141,8 +141,17 @@ public sealed partial class SettingsViewModel
         }
     }
 
+    /// <summary>
+    /// Voice &amp; Camera is on screen. Nothing is opened here: the microphone only by its test switch, the camera
+    /// only by the Test Camera page. The audio devices are listed (names only, waveIn/waveOut capabilities) when the
+    /// game has not reported its own lists yet; the cameras only when the player picks one or tests it.
+    /// </summary>
     private void EnterVoice()
     {
+        if (CategoryLocked)
+        {
+            return;
+        }
         ReadMod(force: true);
         RelayCommand.Async(LoadDevicesAsync).Execute(null);
     }
@@ -162,11 +171,14 @@ public sealed partial class SettingsViewModel
 
     private async Task LoadDevicesAsync()
     {
+        if (Launcher.Voice.Inputs.Count > 0 || Launcher.Voice.Outputs.Count > 0 || _labInputs.Count > 0 || _labOutputs.Count > 0)
+        {
+            return; // the names the game reported (kept in client.toml), or the ones listed earlier: nothing to ask the system
+        }
         var lab = Launcher.Devices;
         var inputs = await lab.InputDevicesAsync().ConfigureAwait(true);
         var outputs = await lab.OutputDevicesAsync().ConfigureAwait(true);
-        IReadOnlyList<CameraDevice> cameras = CameraTestAvailable ? await lab.CameraDevicesAsync().ConfigureAwait(true) : [];
-        (_labInputs, _labOutputs, _cameras) = (inputs, outputs, cameras);
+        (_labInputs, _labOutputs) = (inputs, outputs);
         RaiseAll();
     }
 
@@ -328,10 +340,13 @@ public sealed partial class SettingsViewModel
     {
         get
         {
-            var selected = Launcher.Settings.Voice.Camera;
+            var voice = Launcher.Settings.Voice;
+            var selected = voice.Camera;
+            // the cameras are not listed just to show this: the name kept from the last pick or test, until they are
             return selected.Length == 0
                 ? S["settings.chat.camera_first"]
-                : _cameras.FirstOrDefault(c => c.Id == selected)?.Name ?? (_cameras.Count == 0 ? selected : S["settings.chat.not_connected"]);
+                : _cameras.FirstOrDefault(c => c.Id == selected)?.Name
+                    ?? (_cameras.Count == 0 ? (voice.CameraName.Length > 0 ? voice.CameraName : selected) : S["settings.chat.not_connected"]);
         }
     }
 
@@ -354,7 +369,8 @@ public sealed partial class SettingsViewModel
         var picked = await Choice.AskAsync(Shell, S["settings.chat.camera_device"], _cameras.Count == 0 ? S["settings.chat.camera_none"] : "", options, selected).ConfigureAwait(true);
         if (picked is not null && picked != selected)
         {
-            await Shell.UpdateSettingsAsync(s => s with { Voice = s.Voice with { Camera = picked } }).ConfigureAwait(true);
+            var name = _cameras.FirstOrDefault(c => c.Id == picked)?.Name ?? "";
+            await Shell.UpdateSettingsAsync(s => s with { Voice = s.Voice with { Camera = picked, CameraName = name } }).ConfigureAwait(true);
         }
         RaiseAll();
     }

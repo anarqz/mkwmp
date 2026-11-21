@@ -85,6 +85,10 @@ public sealed partial class SettingsViewModel : PageViewModel
                 {
                     Mic.Stop();
                 }
+                else
+                {
+                    EnterVoice(); // the devices are listed only once Voice & Camera is opened
+                }
                 SyncGameRows();
                 RaiseAll();
                 RefreshHints();
@@ -123,8 +127,18 @@ public sealed partial class SettingsViewModel : PageViewModel
     {
         Profile.Refresh();
         Game.Refresh();
-        EnterVoice();
+        if (_category.Key == "voice")
+        {
+            EnterVoice();
+        }
         FollowServers(true);
+    }
+
+    /// <summary>The window lost the focus, or the overlay went back to the game: the microphone test stops.</summary>
+    public override void OnWindowDeactivated()
+    {
+        Mic.Stop();
+        Raise(nameof(MicTesting));
     }
 
     public override void OnLeave()

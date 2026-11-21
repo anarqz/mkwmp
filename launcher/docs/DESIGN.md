@@ -491,6 +491,11 @@ locked pane come by themselves). A single row or button: keep it, swap its icon 
 Mario Kart World, in **private rooms**, with **friends added on the server** (never in public lobbies), with **up to
 4 friends** at a time, live and never recorded, the camera only for mutual friends. The launcher never opens a voice
 or camera session itself: the pane sets the switch, devices and volumes the game reads, and tests them locally.
+The microphone is opened only while "Test microphone" is on, the camera only while the Test Camera page shows; both
+stop when the page is left, the window loses the focus or the overlay goes back to the game
+(`PageViewModel.OnWindowDeactivated`). The audio devices are listed only when Voice & Camera is opened and the game
+has not reported its own lists; the cameras only when one is picked or tested (the name is kept as
+`[voice] camera_name`). The game's own rule is in docs/contracts/VOICE_API.md §6, "When the devices are open".
 
 Checking it: `--demo-offline` is the demo set up but with no server (`--demo-fresh`: a first start).
 

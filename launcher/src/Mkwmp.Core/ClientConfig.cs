@@ -193,6 +193,7 @@ internal sealed record ClientConfig
                 InputGain = Int(voice, "input_gain", 100, 0, 255),
                 OutputGain = Int(voice, "output_gain", 100, 0, 255),
                 Camera = Str(voice, "camera", ""),
+                CameraName = Str(voice, "camera_name", ""),
                 CameraMirror = Bool(voice, "camera_mirror", true),
                 ChatIntroDone = Bool(voice, "chat_intro_done", false),
             },
@@ -303,6 +304,7 @@ internal sealed record ClientConfig
         Line(b, "input_gain", s.Voice.InputGain);
         Line(b, "output_gain", s.Voice.OutputGain);
         Line(b, "camera", s.Voice.Camera);
+        Line(b, "camera_name", s.Voice.CameraName);
         Line(b, "camera_mirror", s.Voice.CameraMirror);
         Line(b, "chat_intro_done", s.Voice.ChatIntroDone);
         // Empty lists inline (what the Rust launcher's serializer writes and reads back); rows after.

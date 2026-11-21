@@ -71,12 +71,31 @@ public sealed class CameraTestViewModel : PageViewModel
         RelayCommand.Async(async () =>
         {
             var devices = await Launcher.Devices.CameraDevicesAsync().ConfigureAwait(true);
-            _deviceName = (id.Length == 0 ? (devices.Count > 0 ? devices[0] : null) : devices.FirstOrDefault(d => d.Id == id))?.Name ?? id;
+            var device = id.Length == 0 ? (devices.Count > 0 ? devices[0] : null) : devices.FirstOrDefault(d => d.Id == id);
+            _deviceName = device?.Name ?? id;
             Raise(nameof(DeviceLine));
+            // kept for Settings, which then shows the name without listing the cameras
+            if (id.Length > 0 && device is not null && device.Name != Launcher.Settings.Voice.CameraName)
+            {
+                await Shell.UpdateSettingsAsync(s => s.Voice.Camera == id ? s with { Voice = s.Voice with { CameraName = device.Name } } : s).ConfigureAwait(true);
+            }
         }).Execute(null);
     }
 
+    /// <summary>The camera is closed the moment the page is left.</summary>
     public override void OnLeave() => Preview.Stop();
+
+    /// <summary>Another program in front, or the overlay given back to the game: the camera is closed.</summary>
+    public override void OnWindowDeactivated() => Preview.Stop();
+
+    /// <summary>Back in front, still on this page: the test goes on.</summary>
+    public override void OnWindowActivated()
+    {
+        if (!Preview.Running && Unavailable is null)
+        {
+            Preview.Start(Launcher.Settings.Voice.Camera, Mirror);
+        }
+    }
 
     public override bool OnButton(PadButton button)
     {

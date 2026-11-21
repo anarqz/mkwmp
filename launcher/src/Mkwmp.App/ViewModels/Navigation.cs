@@ -66,6 +66,19 @@ public abstract class PageViewModel : ObservableObject
     {
     }
 
+    /// <summary>
+    /// The window lost the focus or was hidden (another program in front, the overlay given back to the game, the
+    /// tray): a microphone or camera test stops here, so no device stays open behind the player's back.
+    /// </summary>
+    public virtual void OnWindowDeactivated()
+    {
+    }
+
+    /// <summary>The window has the focus again, with this page on it.</summary>
+    public virtual void OnWindowActivated()
+    {
+    }
+
     /// <summary>The launcher's state changed (UI thread). The default re-reads every binding.</summary>
     public virtual void OnStateChanged() => RaiseAll();
 
