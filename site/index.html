@@ -1,186 +1,272 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" data-root="" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MKWMP: online play for mkw-recomp</title>
-<meta name="description" content="Community online play for the mkw-recomp PC runtime: gamertags, friends, race and battle lobbies. Install guides for Windows and SteamOS, the official server, and your own server with Docker Compose.">
-<link rel="preload" href="fonts/press-start-2p.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css">
+<title>MKWMP: play Mario Kart World online on your PC</title>
+<meta name="description" content="MKWMP sets up mkw-recomp from your own copy of the game, plays offline right away, and takes you online to community servers with friends, voice chat and mods. Free and open source.">
+<meta property="og:title" content="MKWMP: play Mario Kart World online on your PC">
+<meta property="og:description" content="MKWMP sets up mkw-recomp from your own copy of the game, plays offline right away, and takes you online to community servers with friends, voice chat and mods. Free and open source.">
+<meta property="og:image" content="https://anarqz.github.io/mkwmp/assets/launcher/home-dark.webp">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#2A2A2D">
+<link rel="icon" href="assets/launcher/mkwmp-mark.svg" type="image/svg+xml">
+<link rel="alternate" hreflang="en" href="https://anarqz.github.io/mkwmp/">
+<link rel="alternate" hreflang="pt-BR" href="https://anarqz.github.io/mkwmp/pt-br/">
+<link rel="preload" href="assets/launcher/fonts/Nunito-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/site.css">
+<script>window.I18N = {"themeLight": "Switch to light", "themeDark": "Switch to dark", "copied": "Copied", "copyFailed": "Couldn't copy: select the text instead", "loading": "Loading…", "serversError": "The server directory didn't answer. Try again in a moment.", "serversNone": "No servers are listed right now.", "serversCount": "{n} servers listed, {p} players seated right now.", "serversCount1": "1 server listed, {p} players seated right now.", "playing": "playing", "inQueue": "{n} in queue", "policyVersion": "Policy version {v}", "policyError": "The official server didn't answer. Its policy is also at:"};
+(function () { var t = (location.search.match(/[?&]theme=(light|dark)/) || [])[1] || null; if (!t) try { t = localStorage.getItem("mkwmp-theme"); } catch (e) {}
+  document.documentElement.dataset.theme = t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); })();</script>
+<script defer src="assets/site.js"></script>
 </head>
 <body>
+<a class="sr" href="#main">Skip to the content</a>
 
-<header class="sky">
-  <div class="clouds" aria-hidden="true"></div>
-  <div class="wrap hero">
-    <p class="badge"><span class="blink">●</span> IN DEVELOPMENT</p>
-    <h1>MKW<span class="r">M</span><span class="y">P</span></h1>
-    <p class="tag">Community online play for the <a href="https://github.com/adriadam10/mkw-recomp">mkw-recomp</a> PC runtime: gamertags, friends, and race and battle lobbies on servers anyone can host.</p>
-    <nav class="buttons">
-      <a class="btn red" href="#play">▶ Play online</a>
-      <a class="btn blue" href="#install">⬇ Install</a>
-      <a class="btn green" href="#steamos">◆ Steam Deck</a>
-      <a class="btn yellow" href="#host">★ Host a server</a>
+<header class="top">
+  <div class="wrap">
+    <a class="brand focusable" href="./"><img src="assets/launcher/mkwmp-mark.svg" alt="">MKWMP</a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#setup">Setup</a>
+      <a href="#servers">Servers</a>
+      <a href="#friends">Friends</a>
+      <a href="#mods">Mods</a>
+      <a href="#deck">Steam Deck</a>
+      <a href="#host">Host</a>
+      <a href="#privacy">Privacy</a>
     </nav>
-    <div class="server" id="server" aria-live="polite">
-      <span class="label">OFFICIAL SERVER</span>
-      <span class="value" id="server-status">checking…</span>
+    <div class="top__end">
+      <a class="icon-btn focusable" href="pt-br/" hreflang="pt-BR" title="Português (Brasil)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><span>PT</span></a>
+      <button class="icon-btn focusable" id="theme" type="button" aria-label="Light or dark"><span class="when-dark"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5,12 A4.5,4.5 0 1 0 16.5,12 A4.5,4.5 0 1 0 7.5,12 Z M12,2.5 V4.5 M12,19.5 V21.5 M2.5,12 H4.5 M19.5,12 H21.5 M5.3,5.3 L6.7,6.7 M17.3,17.3 L18.7,18.7 M5.3,18.7 L6.7,17.3 M17.3,6.7 L18.7,5.3"/></svg></span><span class="when-light"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,14.5 A8.5,8.5 0 1 1 9.5,4 A7,7 0 0 0 20,14.5 Z"/></svg></span></button>
+      <a class="icon-btn focusable" href="https://github.com/anarqz/mkwmp" title="GitHub"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4,4.5 H20 A1.5,1.5 0 0 1 21.5,6 V18 A1.5,1.5 0 0 1 20,19.5 H4 A1.5,1.5 0 0 1 2.5,18 V6 A1.5,1.5 0 0 1 4,4.5 Z M2.5,8.5 H21.5 M7,12 L10,14.25 L7,16.5 M12.5,16.5 H16.5"/></svg></a>
     </div>
   </div>
-  <div class="road" aria-hidden="true"></div>
 </header>
 
-<div class="flag" aria-hidden="true"></div>
-
-<main class="wrap">
-
-  <section class="panel note">
-    <h2><span class="coin">!</span> STATUS</h2>
-    <p><b>Version 1.0.0</b> (<a href="https://github.com/anarqz/mkwmp/releases/latest">download</a>). Matchmade <b>races and battles</b> start to finish, <b>friend rooms</b> (join from the friend card or by Room ID), <b>voice chat and camera</b> in friend rooms, and <b>self-hosted servers</b>. On a Steam Deck, one command installs it: <a href="#steamos">see below</a>.</p>
+<main id="main">
+  <section class="wrap hero">
+    <div>
+      <h1>Race online. <em>On your terms.</em></h1>
+      <p class="lead">MKWMP is a launcher for mkw-recomp, the PC version of Mario Kart World built from your own copy of the game. It sets the game up for you, plays offline from the first minute, and takes you online to community servers, with friends, voice chat and mods.</p>
+      <div class="btns">
+        <a class="btn btn--primary focusable" data-download="launcher" href="https://github.com/anarqz/mkwmp/releases/latest"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 V15 M7,10.5 L12,15.5 L17,10.5 M4,20 H20"/></svg>Download for Windows</a>
+        <a class="btn btn--secondary focusable" href="#deck"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,7 H17 A5,5 0 0 1 22,12 V15 A3,3 0 0 1 16.6,16.8 L15.4,15 H8.6 L7.4,16.8 A3,3 0 0 1 2,15 V12 A5,5 0 0 1 7,7 Z M7.5,10 V13 M6,11.5 H9 M15.5,10.6 L15.5,10.7 M17.8,12.6 L17.8,12.7"/></svg>Steam Deck</a>
+        <a class="btn btn--ghost focusable" href="#host"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg>Host a server</a>
+      </div>
+      <p class="status"><span><span class="dot"></span>Latest <span data-version>v1.4.0</span></span><span class="sep"></span><span>Windows · Steam Deck</span><span class="sep"></span><span>Free and open source</span></p>
+    </div>
+    <figure><img class="shot" data-shot="home" src="assets/launcher/home-dark.webp" alt="The MKWMP launcher's Home: Play Online, Friends, Game and What's New tiles, and the dock below." width="1920" height="1080"></figure>
   </section>
 
-  <section id="launcher" class="panel">
-    <h2><span class="coin blue">★</span> THE LAUNCHER</h2>
-    <p>One small app does everything: your gamertag, your friends, the server's free seats, voice chat, and installing, checking and updating the game patch. Close the window and it keeps running in the system tray, with a notification when a friend comes online, starts playing, or sends you a request.</p>
-    <figure class="shot">
-      <img src="img/launcher-main.png" width="1296" height="891" alt="The MKWMP launcher: the player card with gamertag, PIN, server, game folder and the line saying the game patch is installed; the friends card with a pending request and friends who are playing, online and offline; the PLAY button.">
-      <figcaption>Gamertag, PIN and the game patch check on the left; friends, requests and who's playing on the right.</figcaption>
-    </figure>
-    <figure class="shot">
-      <img src="img/launcher-settings.png" width="1296" height="891" loading="lazy" alt="The launcher's settings: keep running in the system tray, friend notifications, the game patch with INSTALL and UNINSTALL, and voice chat with microphone, output, volumes and muted players.">
-      <figcaption>Settings: background mode, notifications, the game patch, and voice chat devices and volumes.</figcaption>
-    </figure>
-  </section>
+  <div class="wrap tiles" role="list">
+    <a class="tile focusable" role="listitem" href="#offline" style="--art: var(--tile-0)"><span class="tile__art"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,15.5 L5,10.5 H12.5 L15.5,13.5 H19.5 A1.5,1.5 0 0 1 21,15 V16 M9.5,16.5 H14.5 M4.5,17 A2.5,2.5 0 1 0 9.5,17 A2.5,2.5 0 1 0 4.5,17 Z M14.5,17 A2.5,2.5 0 1 0 19.5,17 A2.5,2.5 0 1 0 14.5,17 Z M9,10.5 V7.5 H11.5"/></svg><span class="tile__title">Play</span><span class="tile__sub">Offline first</span></span></a>
+    <a class="tile focusable" role="listitem" href="#servers" style="--art: var(--tile-3)"><span class="tile__art"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><span class="tile__badge">Live</span><span class="tile__title">Servers</span><span class="tile__sub">Nearest first</span></span></a>
+    <a class="tile focusable" role="listitem" href="#friends" style="--art: var(--tile-1)"><span class="tile__art"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,7.5 A3.5,3.5 0 1 0 12.5,7.5 A3.5,3.5 0 1 0 5.5,7.5 Z M2.5,20 C2.5,16 5.5,14 9,14 C12.5,14 15.5,16 15.5,20 M15.5,4.3 A3.5,3.5 0 0 1 15.5,10.7 M17.5,14.3 C19.8,15 21.5,17 21.5,20"/></svg><span class="tile__title">Friends</span><span class="tile__sub">Voice and camera</span></span></a>
+    <a class="tile focusable" role="listitem" href="#mods" style="--art: var(--tile-2)"><span class="tile__art"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,2.5 L20.5,7 V17 L12,21.5 L3.5,17 V7 Z M3.5,7 L12,11.5 L20.5,7 M12,11.5 V21.5 M7.7,4.8 L16.3,9.3"/></svg><span class="tile__title">Mods</span><span class="tile__sub">GameBanana built in</span></span></a>
+    <a class="tile focusable" role="listitem" href="#deck" style="--art: var(--tile-5)"><span class="tile__art"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,7 H17 A5,5 0 0 1 22,12 V15 A3,3 0 0 1 16.6,16.8 L15.4,15 H8.6 L7.4,16.8 A3,3 0 0 1 2,15 V12 A5,5 0 0 1 7,7 Z M7.5,10 V13 M6,11.5 H9 M15.5,10.6 L15.5,10.7 M17.8,12.6 L17.8,12.7"/></svg><span class="tile__title">Steam Deck</span><span class="tile__sub">One command</span></span></a>
+    <a class="tile focusable" role="listitem" href="#host" style="--art: var(--tile-4)"><span class="tile__art"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg><span class="tile__title">Host</span><span class="tile__sub">Your own server</span></span></a>
+  </div>
 
-  <section id="play" class="panel">
-    <h2><span class="coin red">1</span> PLAY ON THE OFFICIAL SERVER</h2>
-    <p>The official server has <b>50 seats</b>. You only take a seat while you play; when it's full you wait in a queue and the launcher shows your place in line.</p>
-    <ol class="steps">
-      <li><b>Install</b> the game and the MKWMP patch: <a href="#install">Windows</a> or <a href="#steamos">Steam Deck / SteamOS</a>.</li>
-      <li><b>Open the launcher</b> and confirm you're <b>18 or older</b> and accept the <a href="#privacy">privacy policy</a>. Type a <b>gamertag</b> and press <b>REGISTER</b>: you get a 6-digit <b>PIN</b>. Keep it: it's how you use the same gamertag on another PC or your Deck. Pick the <b>game folder</b>. The server is already set to the official one (<code>https://mkw.anarqz.dev</code>).</li>
-      <li><b>Add friends</b> by gamertag. They accept (or decline) in their launcher, and then you see each other as <b>playing</b>, <b>online</b> or <b>offline</b>, and you're friends in the game too.</li>
-      <li><b>Press PLAY.</b> The launcher updates itself and the game patch, takes a seat (or queues), and starts the game. Your seat is held until you close the game or press <b>STOP</b>.</li>
-      <li><b>In the game</b>, choose <b>Online Play → Race</b> or <b>Online Play → Battle</b> (1P). Players who pick the same mode are matched together, and new lobbies open as more players arrive. Until you click Online Play, the game behaves exactly like the normal offline game.</li>
-    </ol>
-    <div class="cards">
-      <div class="card blue"><h3>FRIENDS</h3><p>Kept on the server with your gamertag: add by gamertag, they accept or decline. Up to 100 friends. Removing a friend, or deleting your gamertag, removes it on both sides.</p></div>
-      <div class="card green"><h3>GAMERTAGS</h3><p>3–16 characters: letters, digits, <code>-</code> and <code>_</code>; case doesn't count. Yours on that server, protected by your PIN (stored hashed). Unused for a month, it's deleted with its friends; if the name is still free, the launcher registers it again with your PIN.</p></div>
-      <div class="card yellow"><h3>SEATS &amp; QUEUE</h3><p>Having the launcher open doesn't take a seat; PLAY does. A full server queues you in order. If a launcher stops responding, its seat goes to the next player after a minute.</p></div>
+  <div class="wrap">
+    <div class="card card--warn" id="upgrade">
+      <h3><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 L22,20.5 H2 Z M12,10 V15 M12,17.7 L12,17.8"/></svg>Coming from 1.3?</h3>
+      <p>1.4 is a new launcher, and 1.3 can't update itself to it. Download 1.4 once, by hand (the button above, or the command for the Steam Deck). Your gamertag, friends and PIN live on the server: sign in again with your PIN.</p>
+    </div>
+  </div>
+
+  <section class="wrap page" id="setup">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5,6.5 A1.5,1.5 0 0 1 4,5 H9 L11.5,7.5 H20 A1.5,1.5 0 0 1 21.5,9 V18 A1.5,1.5 0 0 1 20,19.5 H4 A1.5,1.5 0 0 1 2.5,18 Z"/></svg><h2>Set up in one go</h2></div>
+    <div class="cols">
+      <div>
+        <p class="lead">Point MKWMP at your own copy of the game, version 1.8.0, as a .nup, an .nx or a folder. It does the rest.</p>
+        <div class="section"><span>What the launcher does</span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 V15 M7,10.5 L12,15.5 L17,10.5 M4,20 H20"/></svg><span class="row__body"><span class="row__label">Downloads mkw-recomp</span><span class="row__caption">MKWMP's build, 0.1.16-mkwmp.1, checked against its known hash. On a CPU without AVX2 it picks the build made for it.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4,13 H20 A1.5,1.5 0 0 1 21.5,14.5 V18.5 A1.5,1.5 0 0 1 20,20 H4 A1.5,1.5 0 0 1 2.5,18.5 V14.5 A1.5,1.5 0 0 1 4,13 Z M2.8,13.8 L5.6,5.1 A1.5,1.5 0 0 1 7,4 H17 A1.5,1.5 0 0 1 18.4,5.1 L21.2,13.8 M17.5,16.5 L17.5,16.6 M6,16.5 H11"/></svg><span class="row__body"><span class="row__label">Uses your copy</span><span class="row__caption">It reads your copy where it is, or copies it, as you choose. Nothing of the game is downloaded.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.66,2.49 L13.34,2.49 L13.86,5.05 L15.6,5.76 L17.78,4.33 L19.67,6.22 L18.24,8.4 L18.95,10.14 L21.51,10.66 L21.51,13.34 L18.95,13.86 L18.24,15.6 L19.67,17.78 L17.78,19.67 L15.6,18.24 L13.86,18.95 L13.34,21.51 L10.66,21.51 L10.14,18.95 L8.4,18.24 L6.22,19.67 L4.33,17.78 L5.76,15.6 L5.05,13.86 L2.49,13.34 L2.49,10.66 L5.05,10.14 L5.76,8.4 L4.33,6.22 L6.22,4.33 L8.4,5.76 L10.14,5.05 Z M8.8,12 A3.2,3.2 0 1 0 15.2,12 A3.2,3.2 0 1 0 8.8,12 Z"/></svg><span class="row__body"><span class="row__label">Builds the game</span><span class="row__caption">mkw-recomp's own setup: generate, compile (about 4 minutes), shaders (10 to 16 minutes on a Steam Deck), warm-up and clean-up.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,2.5 L20.5,7 V17 L12,21.5 L3.5,17 V7 Z M3.5,7 L12,11.5 L20.5,7 M12,11.5 V21.5 M7.7,4.8 L16.3,9.3"/></svg><span class="row__body"><span class="row__label">Installs the MKWMP mod</span><span class="row__caption">Online play, friends and the in-game overlay, inside the game.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5,6.5 A1.5,1.5 0 0 1 4,5 H9 L11.5,7.5 H20 A1.5,1.5 0 0 1 21.5,9 V18 A1.5,1.5 0 0 1 20,19.5 H4 A1.5,1.5 0 0 1 2.5,18 Z"/></svg><span class="row__body"><span class="row__label">Stays portable</span><span class="row__caption">Everything lives next to the launcher. "Use another copy" switches to a different one later.</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="game-setup-progress" src="assets/launcher/game-setup-progress-dark.webp" alt="The game setup in progress: a progress bar, the current step and the time left." width="1920" height="1080" loading="lazy"><figcaption>The first setup takes a while. After that the game starts in seconds.</figcaption></figure>
     </div>
   </section>
 
-  <section id="install" class="panel">
-    <h2><span class="coin blue">2</span> INSTALL ON WINDOWS</h2>
-    <ol class="steps">
-      <li><b>Set up mkw-recomp <a href="https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp.1">0.1.16-mkwmp.1</a></b> (MKWMP's build of mkw-recomp 0.1.16, with the camera; take the <code>-noavx2</code> zip if your CPU has no AVX2; 0.1.15-mkwmp still works too, and the official 0.1.16, 0.1.15, 0.1.13, 0.1.12 and 0.1.10 work without the camera) with <b>your own copy</b> of the game, as the <a href="https://github.com/adriadam10/mkw-recomp">mkw-recomp README</a> describes. MKWMP works with game version <b>1.0.0 or 1.8.0</b>; players only meet others on the same game version.</li>
-      <li><b>Get the launcher</b>: download <code>mkwmp-&lt;version&gt;-windows-x64.zip</code> from the <a href="https://github.com/anarqz/mkwmp/releases/latest">latest release</a> and unzip it anywhere, for example in Documents. The <code>mkwmp</code> folder keeps the launcher's settings (<code>client.toml</code>) and logs.</li>
-      <li><b>Open <code>mkwmp-launcher.exe</code></b>, register a gamertag and pick the game folder. The line under GAME FOLDER says whether the game patch is installed: press <b>INSTALL</b>. It copies <code>winmm.dll</code> (MKWMP) and <code>mkwmp-voice.dll</code> into the game folder, copies your system's <code>winmm.dll</code> there as <code>winmm_host.dll</code>, and saves any <code>winmm.dll</code> already there as <code>winmm.dll.bak</code>. The patch is checked against the release's signed checksums. <b>SETTINGS → GAME PATCH → UNINSTALL</b> removes every MKWMP file again.</li>
-      <li><b>Play.</b> The launcher keeps itself and the patch up to date. Without the launcher, the game stays offline as normal.</li>
-      <li><b>Optional: the MKWMP mod</b> (mkw-recomp 0.1.15 or newer, official or -mkwmp; the <b>camera</b> needs an -mkwmp build and game 1.8.0). Unzip <code>mkwmp-mod.zip</code> from the <a href="https://github.com/anarqz/mkwmp/releases/latest">latest release</a> into the <code>mods</code> folder of mkw-recomp's data folder (you get <code>mods/mkwmp/</code>). On mkw-recomp's start screen open <b>Mods</b>, tick <b>MKWMP</b>, and in its <b>Options</b> confirm you're 18 or older and sign in or register. With the mod enabled, the launcher takes its own <code>winmm.dll</code> out of the game folder (the mod wins); you can still use it for your gamertag, friends and PLAY, or start the game from mkw-recomp's start screen. The camera is off until you turn it on (Options → Camera, or the in-game settings' Camera tab) and say yes when the game asks; it shows only in friend rooms, between mutual friends.</li>
-    </ol>
-    <p class="hint">Game folder after setup: <code>mkw.exe</code>, <code>mkwgame.dll</code>, <code>SDL3.dll</code>, …, <code>winmm.dll</code> (MKWMP), <code>winmm_host.dll</code> (your system's copy), <code>mkwmp.toml</code> (written by the launcher for the server you play on). Updates to the patch wait until the game is closed.</p>
-  </section>
-
-  <section id="steamos" class="panel">
-    <h2><span class="coin green">3</span> STEAM DECK &amp; STEAMOS</h2>
-    <p>The game runs as the <b>Windows</b> build of mkw-recomp under <b>Proton</b>. The native Linux build can't load the patch. Do the setup in <b>Desktop Mode</b>.</p>
-    <p><b>One command</b> (Desktop Mode, in Konsole) installs the newest release to <code>~/mkwmp</code>, finds your game and Proton 10.0, and adds <b>Mario Kart World (MKWMP)</b> to Steam. Steam closes and opens again while it works:</p>
-<pre><code>curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash</code></pre>
-    <p>Then, in Game Mode, open <b>Mario Kart World (MKWMP)</b>: register your gamertag (or enter the PIN of the one you have), press <b>INSTALL</b> under GAME FOLDER if the patch isn't installed yet, and press <b>PLAY</b>. The launcher starts the game through Proton.</p>
-    <p class="hint">Before you run it: put the Windows mkw-recomp 0.1.16-mkwmp.1 build (or 0.1.15-mkwmp, or the official 0.1.16 / 0.1.15 / 0.1.13 / 0.1.12 / 0.1.10) with your own game files (version 1.0.0 or 1.8.0) in a folder (for example on the SD card), and install <b>Proton 10.0</b> from Steam. Proton 11 can't see the controller. The installer backs up <code>shortcuts.vdf</code> first and keeps your <code>client.toml</code>. Options: <code>curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash -s -- --game /path/to/game</code>.</p>
-    <p><b>By hand:</b> download <code>mkwmp-&lt;version&gt;-linux-x64.zip</code> from the <a href="https://github.com/anarqz/mkwmp/releases/latest">latest release</a>, unzip it to <code>~/mkwmp</code> and open <code>mkwmp-launcher</code>. Then add <code>mkw.exe</code> to Steam as a non-Steam game with <b>Proton 10.0</b> forced (Properties → Compatibility) and these launch options, and tick <b>"I start the game from Steam"</b> in the launcher:</p>
-<pre><code>WINEDLLOVERRIDES="winmm=n,b" GRPC_DNS_RESOLVER=native MKW_MESH_COMPUTE=1 MKW_ASSUME_FOCUS=1 %command% --play</code></pre>
-    <p class="hint">The controller wakes up 20–50 seconds after the game starts; MKWMP fixes up Steam Input under Proton by itself. Both a Steam Deck and a ROG Ally X running SteamOS have been tested.</p>
-  </section>
-
-  <section id="host" class="panel">
-    <h2><span class="coin yellow">4</span> HOST YOUR OWN SERVER</h2>
-    <p>Play with your friends on your own server. A PC is enough: download <code>mkwmp-server-x86_64-windows.exe</code> (or the Linux one) from the <a href="https://github.com/anarqz/mkwmp/releases">releases</a> and run it. On the first run it asks for the address your friends reach you at, then sets everything up by itself.</p>
-    <p>On a Linux server you can use Docker Compose instead:</p>
-<pre><code>git clone https://github.com/anarqz/mkwmp && cd mkwmp
-cp .env.example .env        # set MKWMP_PUBLIC_IP
-docker compose up -d --build</code></pre>
-    <p>Then everyone sets the launcher's <b>SERVER</b> to <code>http://&lt;your IP&gt;:7000</code>, registers a gamertag there and presses PLAY.</p>
-    <div class="cards">
-      <div class="card red"><h3>WHAT RUNS</h3><p>The seat server (gamertags, friends, seats and queue) and the lobby (matchmaking, Gamesync, TURN relay). All in one program; the first start creates every key and the lobby's certificate.</p></div>
-      <div class="card blue"><h3>PORTS</h3><p>Open TCP <code>7000</code>, <code>8905</code>, <code>8906</code> and UDP <code>3478</code>, <code>10025</code>, <code>49152–49407</code>. For friends over the internet, forward them on your router.</p></div>
-      <div class="card green"><h3>SQLITE</h3><p>Gamertags, hashed PINs and friends live in one SQLite file in the server's data folder. Seats are in memory: after a restart, launchers rejoin on their own.</p></div>
+  <section class="wrap page" id="offline">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,15.5 L5,10.5 H12.5 L15.5,13.5 H19.5 A1.5,1.5 0 0 1 21,15 V16 M9.5,16.5 H14.5 M4.5,17 A2.5,2.5 0 1 0 9.5,17 A2.5,2.5 0 1 0 4.5,17 Z M14.5,17 A2.5,2.5 0 1 0 19.5,17 A2.5,2.5 0 1 0 14.5,17 Z M9,10.5 V7.5 H11.5"/></svg><h2>Offline first, online when you want</h2></div>
+    <div class="cols flip">
+      <div>
+        <p class="lead">The game is yours from the first minute, with no account. Going online is one choice away: pick a server, register a gamertag, get a PIN.</p>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,15.5 L5,10.5 H12.5 L15.5,13.5 H19.5 A1.5,1.5 0 0 1 21,15 V16 M9.5,16.5 H14.5 M4.5,17 A2.5,2.5 0 1 0 9.5,17 A2.5,2.5 0 1 0 4.5,17 Z M14.5,17 A2.5,2.5 0 1 0 19.5,17 A2.5,2.5 0 1 0 14.5,17 Z M9,10.5 V7.5 H11.5"/></svg><span class="row__body"><span class="row__label">Play offline</span><span class="row__caption">No server and no sign-up.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><span class="row__body"><span class="row__label">Go online</span><span class="row__caption">Pick a server from the list, or type the address a host gave you.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6,10.5 H18 A1.5,1.5 0 0 1 19.5,12 V19.5 A1.5,1.5 0 0 1 18,21 H6 A1.5,1.5 0 0 1 4.5,19.5 V12 A1.5,1.5 0 0 1 6,10.5 Z M8,10.5 V7.5 A4,4 0 0 1 16,7.5 V10.5"/></svg><span class="row__body"><span class="row__label">Your PIN</span><span class="row__caption">Your gamertag, friends and PIN live on the server you choose. The PIN signs you in on another PC or a Steam Deck.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,12 A8,8 0 1 1 17.6,6.3 M18.5,2.8 V7 H14.3"/></svg><span class="row__body"><span class="row__label">Always up to date</span><span class="row__caption">The launcher updates itself and the MKWMP mod. What's New shows what changed.</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="welcome-play-online" src="assets/launcher/welcome-play-online-dark.webp" alt="The launcher asking "Want to go online?" with Play Offline and Go Online." width="1920" height="1080" loading="lazy"></figure>
     </div>
-    <p class="hint"><b>Needs rc.2 or later</b>, for the server and for every player: the rc.2 launcher and game patch trust each server's own certificate (rc.1 only reaches the official server). Launchers update themselves when you press PLAY. Over plain <code>http://</code>, PINs travel unencrypted: fine on a LAN; for a public server use HTTPS (see the hosting guide).</p>
-    <nav class="buttons small">
-      <a class="btn yellow" href="https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md">Full hosting guide</a>
-      <a class="btn blue" href="https://github.com/anarqz/mkwmp">Source code</a>
-    </nav>
   </section>
 
-  <section class="panel">
-    <h2><span class="coin">?</span> FAQ</h2>
-    <dl class="faq">
-      <dt>Is this official?</dt>
-      <dd>No. MKWMP is an unofficial community project, not affiliated with or endorsed by Nintendo. You need your own copy of the game.</dd>
-      <dt>Why a queue?</dt>
-      <dd>Each server has a fixed number of seats so its lobby stays responsive. A seat is yours from PLAY until you close the game or press STOP.</dd>
-      <dt>Can someone skip the queue?</dt>
-      <dd>No. The lobby only lets in games holding a ticket signed by the seat server, and checks that the ticket's seat is still held.</dd>
-      <dt>Where are my friends and gamertag stored?</dt>
-      <dd>On the server you play on, in its database: your gamertag, your PIN (hashed, never in plain text) and your friend list. <b>SETTINGS → PRIVACY → DELETE MY ACCOUNT</b> removes all of it. See the <a href="#privacy">privacy policy</a>.</dd>
-      <dt>Someone was abusive in voice chat.</dt>
-      <dd>Mute them from their menu in the game's lobby. To report them, open <b>SETTINGS → REPORT VOICE ABUSE</b> (or press REPORT next to the muted player), pick what happened and send. The server's host reviews reports. You can have one report waiting at a time.</dd>
-      <dt>I forgot my PIN.</dt>
-      <dd>The server's admin can reset it.</dd>
-    </dl>
+  <section class="wrap page" id="servers">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><h2>Servers</h2><button class="btn btn--ghost focusable pill-btn" id="servers-refresh" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,12 A8,8 0 1 1 17.6,6.3 M18.5,2.8 V7 H14.3"/></svg>Refresh</button></div>
+    <div class="cols">
+      <div>
+        <p class="lead">Anyone can host a server. Public ones list themselves in the server directory, and the launcher shows them nearest first. This list is live.</p>
+        <div class="section"><span>Right now</span></div>
+        <p class="rows-note" id="servers-count"></p>
+        <p class="rows-note">Your browser can only time servers that use HTTPS; the launcher times every one. Lower is better: green under 80 ms, yellow under 160 ms.</p>
+      </div>
+      <div class="servers" id="server-list" aria-live="polite"><noscript><p class="servers__empty">The live list needs JavaScript. The launcher shows the same list.</p></noscript></div>
+    </div>
   </section>
-  <section id="privacy" class="panel">
-    <h2><span class="coin blue">§</span> PRIVACY POLICY</h2>
-    <p>This policy is for the <b>official server</b> (<code>mkw.anarqz.dev</code>), run as a hobby by the MKWMP maintainer. It is not run by Nintendo. A server someone else hosts is run by that person, and their own rules apply. Last updated: 20 November 2026.</p>
-    <dl class="faq">
-      <dt>Who can use it</dt>
-      <dd>Only people <b>18 or older</b>. The launcher (or the MKWMP mod) asks you to confirm it before it registers a gamertag, signs in or plays. If you're under 18, please don't use the official server.</dd>
-      <dt>What the server keeps</dt>
-      <dd>In its database: your <b>gamertag</b>, a <b>hash of your PIN</b> (Argon2id; the PIN itself is never stored), when you registered and when you last used it, <b>which version of this policy you accepted and when</b>, your <b>friends and friend requests</b>, and any <b>voice-chat or camera report</b> you file (who you reported, the reason, what you wrote, when, and the host's note once it's reviewed). We don't ask for your email, real name, age or any payment details, and there are no ads, trackers or analytics.</dd>
-      <dt>What it only holds while it runs</dt>
-      <dd>Seats and the queue, who's online, the game lobbies, and rate-limit counters keyed by your IP address. These live in memory and are gone when the server restarts.</dd>
-      <dt>Logs</dt>
-      <dd>The server's logs can contain your gamertag, the game's user id and sometimes your IP address. They're used to fix problems and look into reports, and are deleted after <b>7 days</b>.</dd>
-      <dt>Voice chat</dt>
-      <dd>Voice chat works only in <b>friend rooms</b> (ONLINE → FRIENDS), not in matchmade lobbies. Your voice is relayed live to the players in your room, only while voice chat is on. The server forwards the audio packets without decoding them and <b>never records or stores</b> them. Your mute list stays on your computer.</dd>
-      <dt>Camera</dt>
-      <dd>The camera needs the MKWMP mod and is <b>off</b> until you turn it on in its settings and say yes when the game asks. It works only in a friend room: a small picture (256×144, up to 10 frames a second) is relayed live to the players in that room who are your <b>mutual friends</b> (each of you is on the other's friend list) and who chose to see cameras; each player sees at most 4. Muting a player hides their camera and stops yours going to them. The server forwards the pictures without decoding them and <b>never records or stores</b> them.</dd>
-      <dt>Who sees what</dt>
-      <dd>Your friends see whether you're playing, online or offline. Players in your lobby see your gamertag. In a friend room they hear you, and your mutual friends there can see your camera if it's on. The game connects the players in a lobby to each other, directly or through the server's relay, so they may also see your IP address, as in any online game. Players can look up whether a gamertag is registered. Only the server's host sees reports.</dd>
-      <dt>The server list</dt>
-      <dd>The official server lists itself in the MKWMP server directory (<code>beholder.anarqz.dev</code>) with its name, address and how many seats are taken. The directory holds no player data: no gamertags, no IP addresses of players.</dd>
-      <dt>How long it's kept</dt>
-      <dd>A gamertag unused for <b>30 days</b> is deleted, with its friends, requests and policy acceptance. Reports are deleted <b>90 days</b> after they're filed, reviewed or not. Logs are kept 7 days. The copy of the database made when the server is updated (a backup) is deleted after 7 days.</dd>
-      <dt>Your choices</dt>
-      <dd><b>SETTINGS → PRIVACY → DELETE MY ACCOUNT</b> (or the X next to your PIN) deletes your gamertag, PIN, friends and the reports you filed, right away (a backup copy may hold them for up to 7 more days). It needs your PIN, so nobody else can do it for you. You can withdraw a report while it waits for review. In the new launcher you can <b>withdraw your acceptance of this policy</b>; the server may then stop giving you a seat until you accept again. You can also untick the 18+ box to stop the launcher signing in or contacting the server. Reports other players filed about you are kept until they expire, so the host can review them.</dd>
-      <dt>Who else is involved</dt>
-      <dd>The server is a virtual machine at <b>Vultr</b> in São Paulo, Brazil. The launcher reaches it through <b>Cloudflare</b>, which handles that connection. Game lobbies, voice and camera connect to the machine directly. Updates, this website and bug reports are on <b>GitHub</b>. Each of these companies has its own privacy policy.</dd>
-      <dt>Bug reports</dt>
-      <dd>SAVE LOGS FOR A BUG REPORT makes a zip on your computer (your PIN and tickets are left out). It's only shared if you attach it to a GitHub issue yourself, and issues are public.</dd>
-      <dt>Changes and questions</dt>
-      <dd>When this policy changes, the launcher asks you to accept it again. Changes to this policy are dated here and kept in the project's history on GitHub. For questions, open an <a href="https://github.com/anarqz/mkwmp/issues/new/choose">issue</a>, without personal details in it.</dd>
-    </dl>
+
+  <section class="wrap page" id="friends">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,7.5 A3.5,3.5 0 1 0 12.5,7.5 A3.5,3.5 0 1 0 5.5,7.5 Z M2.5,20 C2.5,16 5.5,14 9,14 C12.5,14 15.5,16 15.5,20 M15.5,4.3 A3.5,3.5 0 0 1 15.5,10.7 M17.5,14.3 C19.8,15 21.5,17 21.5,20"/></svg><h2>Friends, voice and camera</h2></div>
+    <div class="cols flip">
+      <div>
+        <p class="lead">Add friends by gamertag and see who's playing. Voice chat and the camera work only in private friend rooms, never with strangers in matchmaking.</p>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,7.5 A3.5,3.5 0 1 0 12.5,7.5 A3.5,3.5 0 1 0 5.5,7.5 Z M2.5,20 C2.5,16 5.5,14 9,14 C12.5,14 15.5,16 15.5,20 M15.5,4.3 A3.5,3.5 0 0 1 15.5,10.7 M17.5,14.3 C19.8,15 21.5,17 21.5,20"/></svg><span class="row__body"><span class="row__label">Friends</span><span class="row__caption">Requests, who's online and who's racing, and their rooms to join.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 A3,3 0 0 1 15,6 V11 A3,3 0 0 1 9,11 V6 A3,3 0 0 1 12,3 Z M5.5,11 A6.5,6.5 0 0 0 18.5,11 M12,17.5 V21 M8.5,21 H15.5"/></svg><span class="row__body"><span class="row__label">Voice chat</span><span class="row__caption">In friend rooms, for everyone in the room. Mute anyone. Relayed live and never recorded.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5,6.5 H14 A1.5,1.5 0 0 1 15.5,8 V16 A1.5,1.5 0 0 1 14,17.5 H3.5 A1.5,1.5 0 0 1 2,16 V8 A1.5,1.5 0 0 1 3.5,6.5 Z M15.5,10.5 L22,7 V17 L15.5,13.5"/></svg><span class="row__body"><span class="row__label">Camera</span><span class="row__caption">Off until you turn it on. Only mutual friends in your room see it, up to 4 faces each.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 L20,6 V11.5 C20,16.5 16.5,19.8 12,21.5 C7.5,19.8 4,16.5 4,11.5 V6 Z"/></svg><span class="row__body"><span class="row__label">Reports</span><span class="row__caption">Report voice or camera abuse from the launcher. The server's host reviews it.</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="home-friends" src="assets/launcher/home-friends-dark.webp" alt="Home with the friends panel open: requests and friends with their status." width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="overlay">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,4 V9 H4 M20,9 H15 V4 M15,20 V15 H20 M4,15 H9 V20"/></svg><h2>The in-game overlay</h2></div>
+    <div class="cols">
+      <div>
+        <p class="lead">In the game, press Guide (Home) or Select + Start. The game pauses and shrinks into the launcher's Home, with your friends, settings and Quit game right there.</p>
+        <div class="row"><span class="glyph">B</span><span class="row__body"><span class="row__label">Back to the race</span><span class="row__caption">B or Guide returns to the game where you left it.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,7.5 A3.5,3.5 0 1 0 12.5,7.5 A3.5,3.5 0 1 0 5.5,7.5 Z M2.5,20 C2.5,16 5.5,14 9,14 C12.5,14 15.5,16 15.5,20 M15.5,4.3 A3.5,3.5 0 0 1 15.5,10.7 M17.5,14.3 C19.8,15 21.5,17 21.5,20"/></svg><span class="row__body"><span class="row__label">Friends without leaving</span><span class="row__caption">See who's online and answer requests from the overlay.</span></span></div>
+        <p class="rows-note">The overlay needs mkw-recomp 0.1.16-mkwmp(.1) with the MKWMP mod: the launcher sets up both.</p>
+      </div>
+      <figure><img class="shot" data-shot="overlay" src="assets/launcher/overlay-dark.webp" alt="The overlay: the paused game shrunk into the Home screen's Play tile." width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="mods">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,2.5 L20.5,7 V17 L12,21.5 L3.5,17 V7 Z M3.5,7 L12,11.5 L20.5,7 M12,11.5 V21.5 M7.7,4.8 L16.3,9.3"/></svg><h2>Mods</h2></div>
+    <div class="cols flip">
+      <div>
+        <p class="lead">Browse GameBanana from the launcher, install with one button, and switch mods on and off.</p>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4,10.5 A6.5,6.5 0 1 0 17,10.5 A6.5,6.5 0 1 0 4,10.5 Z M15.5,15.5 L21,21"/></svg><span class="row__body"><span class="row__label">Get Mods</span><span class="row__caption">Search and sort GameBanana. Previews of mature mods stay blurred unless you choose otherwise.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 V15 M7,10.5 L12,15.5 L17,10.5 M4,20 H20"/></svg><span class="row__body"><span class="row__label">From a link or a file</span><span class="row__caption">Install a .zip, .7z or .rar from a link or from your disk.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.66,2.49 L13.34,2.49 L13.86,5.05 L15.6,5.76 L17.78,4.33 L19.67,6.22 L18.24,8.4 L18.95,10.14 L21.51,10.66 L21.51,13.34 L18.95,13.86 L18.24,15.6 L19.67,17.78 L17.78,19.67 L15.6,18.24 L13.86,18.95 L13.34,21.51 L10.66,21.51 L10.14,18.95 L8.4,18.24 L6.22,19.67 L4.33,17.78 L5.76,15.6 L5.05,13.86 L2.49,13.34 L2.49,10.66 L5.05,10.14 L5.76,8.4 L4.33,6.22 L6.22,4.33 L8.4,5.76 L10.14,5.05 Z M8.8,12 A3.2,3.2 0 1 0 15.2,12 A3.2,3.2 0 1 0 8.8,12 Z"/></svg><span class="row__body"><span class="row__label">Options</span><span class="row__caption">Mods that ship options get their own page in the launcher.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 L20,6 V11.5 C20,16.5 16.5,19.8 12,21.5 C7.5,19.8 4,16.5 4,11.5 V6 Z"/></svg><span class="row__body"><span class="row__label">Safety first</span><span class="row__caption">Mods that run their own code ask first. Mods that change the game's code are listed but locked. Your save is backed up before you play with a new set of mods.</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="mods-gamebanana" src="assets/launcher/mods-gamebanana-dark.webp" alt="Get Mods: a grid of GameBanana mods with search and sorting." width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="languages">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><h2>15 languages, light and dark</h2></div>
+    <div class="cols">
+      <div>
+        <p class="lead">The launcher follows your system's language and theme, or the ones you pick.</p>
+        <div class="pills">
+          <span class="pill">English</span><span class="pill">Português (Brasil)</span><span class="pill">Português (Portugal)</span>
+          <span class="pill">Español</span><span class="pill">Français</span><span class="pill">Deutsch</span><span class="pill">Italiano</span>
+          <span class="pill">Nederlands</span><span class="pill">Polski</span><span class="pill">Русский</span><span class="pill">Türkçe</span>
+          <span class="pill">日本語</span><span class="pill">한국어</span><span class="pill">简体中文</span><span class="pill">繁體中文</span>
+        </div>
+        <div class="section"><span>Made for the couch and the desk</span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,7 H17 A5,5 0 0 1 22,12 V15 A3,3 0 0 1 16.6,16.8 L15.4,15 H8.6 L7.4,16.8 A3,3 0 0 1 2,15 V12 A5,5 0 0 1 7,7 Z M7.5,10 V13 M6,11.5 H9 M15.5,10.6 L15.5,10.7 M17.8,12.6 L17.8,12.7"/></svg><span class="row__body"><span class="row__label">Controller, keyboard or mouse</span><span class="row__caption">Every screen works with a controller, like a console menu, and with a keyboard or a mouse.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,14.5 A8.5,8.5 0 1 1 9.5,4 A7,7 0 0 0 20,14.5 Z"/></svg><span class="row__body"><span class="row__label">Light and dark</span><span class="row__caption">The same look in both. This site switches too (the button at the top, or Y on a controller).</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,12 A8,8 0 1 1 17.6,6.3 M18.5,2.8 V7 H14.3"/></svg><span class="row__body"><span class="row__label">Full screen or a window</span><span class="row__caption">On a TV, a monitor or a Steam Deck.</span></span></div>
+      </div>
+      <figure><img class="shot" data-shot="settings-appearance" src="assets/launcher/settings-appearance-dark.webp" alt="Settings, Appearance: theme, full screen and language." width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="deck">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,7 H17 A5,5 0 0 1 22,12 V15 A3,3 0 0 1 16.6,16.8 L15.4,15 H8.6 L7.4,16.8 A3,3 0 0 1 2,15 V12 A5,5 0 0 1 7,7 Z M7.5,10 V13 M6,11.5 H9 M15.5,10.6 L15.5,10.7 M17.8,12.6 L17.8,12.7"/></svg><h2>Steam Deck and SteamOS</h2></div>
+    <div class="cols flip">
+      <div>
+        <p class="lead">One command in Desktop Mode (Konsole) installs MKWMP, adds it to Steam with artwork and the controller layout, and runs it under Proton.</p>
+        <button class="cmd focusable" type="button"><code>curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash</code><span class="cmd__copy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5,3 H14 L19,8 V19.5 A1.5,1.5 0 0 1 17.5,21 H6.5 A1.5,1.5 0 0 1 5,19.5 V4.5 A1.5,1.5 0 0 1 6.5,3 Z M14,3 V8 H19"/></svg>Copy</span></button>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 L22,20.5 H2 Z M12,10 V15 M12,17.7 L12,17.8"/></svg><span class="row__body"><span class="row__label">Close Steam first</span><span class="row__caption">The installer edits Steam's shortcuts, which needs Steam closed.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5,6.5 A1.5,1.5 0 0 1 4,5 H9 L11.5,7.5 H20 A1.5,1.5 0 0 1 21.5,9 V18 A1.5,1.5 0 0 1 20,19.5 H4 A1.5,1.5 0 0 1 2.5,18 Z"/></svg><span class="row__body"><span class="row__label">Where it goes</span><span class="row__caption">~/Games/MKWMP, with a Steam shortcut called MKWMP that runs under Proton 11.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20,12 A8,8 0 1 1 17.6,6.3 M18.5,2.8 V7 H14.3"/></svg><span class="row__body"><span class="row__label">Coming from 1.3</span><span class="row__caption">It brings over the 1.3 launcher's settings and removes the old MKWMP shortcuts.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.66,2.49 L13.34,2.49 L13.86,5.05 L15.6,5.76 L17.78,4.33 L19.67,6.22 L18.24,8.4 L18.95,10.14 L21.51,10.66 L21.51,13.34 L18.95,13.86 L18.24,15.6 L19.67,17.78 L17.78,19.67 L15.6,18.24 L13.86,18.95 L13.34,21.51 L10.66,21.51 L10.14,18.95 L8.4,18.24 L6.22,19.67 L4.33,17.78 L5.76,15.6 L5.05,13.86 L2.49,13.34 L2.49,10.66 L5.05,10.14 L5.76,8.4 L4.33,6.22 L6.22,4.33 L8.4,5.76 L10.14,5.05 Z M8.8,12 A3.2,3.2 0 1 0 15.2,12 A3.2,3.2 0 1 0 8.8,12 Z"/></svg><span class="row__body"><span class="row__label">Options</span><span class="row__caption">--dir, --proton, --dry-run and --uninstall, among others. Add them after <code>bash -s --</code>.</span></span></div>
+      </div>
+      <figure><img class="shot deck" data-shot="deck-home" src="assets/launcher/deck-home-dark.webp" alt="The launcher's Home on a Steam Deck." width="1280" height="800" loading="lazy"><figcaption>Home at the Steam Deck's 1280 × 800.</figcaption></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="host">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg><h2>Host your own server</h2></div>
+    <div class="cols">
+      <div>
+        <p class="lead">A small cloud VM, about US$5 a month, runs a server for dozens of players. One command installs it, opens the firewall and lists it in the server directory, so it shows up in everyone's launcher.</p>
+        <button class="cmd focusable" type="button"><code>curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash</code><span class="cmd__copy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5,3 H14 L19,8 V19.5 A1.5,1.5 0 0 1 17.5,21 H6.5 A1.5,1.5 0 0 1 5,19.5 V4.5 A1.5,1.5 0 0 1 6.5,3 Z M14,3 V8 H19"/></svg>Copy</span></button>
+        <div class="btns">
+          <a class="btn btn--primary focusable" href="host.html"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg>Step-by-step guide</a>
+          <a class="btn btn--secondary focusable" data-download="server" href="https://github.com/anarqz/mkwmp/releases/latest"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3.5 V15 M7,10.5 L12,15.5 L17,10.5 M4,20 H20"/></svg>Server download</a>
+        </div>
+      </div>
+      <div>
+        <div class="section"><span>Ways to host</span></div>
+        <a class="row" href="host.html#vm"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M3,12 H21 M12,3 C8.5,6 8.5,18 12,21 M12,3 C15.5,6 15.5,18 12,21"/></svg><span class="row__body"><span class="row__label">A cloud VM</span><span class="row__caption">Vultr or DigitalOcean, Ubuntu 24.04, one command. Optional HTTPS with your domain.</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></a>
+        <a class="row" href="host.html#pc"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5,5 H18.5 A1.5,1.5 0 0 1 20,6.5 V15.5 H4 V6.5 A1.5,1.5 0 0 1 5.5,5 Z M2,19 H22 M4,15.5 L2,19 M20,15.5 L22,19"/></svg><span class="row__body"><span class="row__label">Your own PC</span><span class="row__caption">server.exe from the server download, double-click: for friends or a LAN party.</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></a>
+        <a class="row" href="https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,2.5 L20.5,7 V17 L12,21.5 L3.5,17 V7 Z M3.5,7 L12,11.5 L20.5,7 M12,11.5 V21.5 M7.7,4.8 L16.3,9.3"/></svg><span class="row__body"><span class="row__label">Docker, or by hand</span><span class="row__caption">The full hosting guide on GitHub.</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap page" id="privacy">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 L20,6 V11.5 C20,16.5 16.5,19.8 12,21.5 C7.5,19.8 4,16.5 4,11.5 V6 Z"/></svg><h2>Privacy</h2></div>
+    <div class="cols flip">
+      <div>
+        <p class="lead">Each server has its own privacy policy. The launcher shows it after you sign in, and the server records which version you accepted. When the policy changes, you're asked again.</p>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M8,8 A4,4 0 1 0 16,8 A4,4 0 1 0 8,8 Z M4,21 C4,16.5 7.5,14.5 12,14.5 C16.5,14.5 20,16.5 20,21"/></svg><span class="row__body"><span class="row__label">For people 18 or older</span><span class="row__caption">The launcher asks before it signs you in or plays online.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6,10.5 H18 A1.5,1.5 0 0 1 19.5,12 V19.5 A1.5,1.5 0 0 1 18,21 H6 A1.5,1.5 0 0 1 4.5,19.5 V12 A1.5,1.5 0 0 1 6,10.5 Z M8,10.5 V7.5 A4,4 0 0 1 16,7.5 V10.5"/></svg><span class="row__body"><span class="row__label">What a server keeps</span><span class="row__caption">Your gamertag, a hash of your PIN (never the PIN), your friends, the policy you accepted and the reports you file. No email and no real name.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 A3,3 0 0 1 15,6 V11 A3,3 0 0 1 9,11 V6 A3,3 0 0 1 12,3 Z M5.5,11 A6.5,6.5 0 0 0 18.5,11 M12,17.5 V21 M8.5,21 H15.5 M4,3.5 L20,20.5"/></svg><span class="row__body"><span class="row__label">Voice and camera aren't recorded</span><span class="row__caption">They're relayed live inside friend rooms, never stored.</span></span></div>
+        <div class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4,6.5 H20 M9,6.5 V4 H15 V6.5 M6,6.5 L7,20.5 H17 L18,6.5 M10,10.5 V16.5 M14,10.5 V16.5"/></svg><span class="row__body"><span class="row__label">Delete your account</span><span class="row__caption">From the launcher, at any time.</span></span></div>
+        <div class="btns"><button class="btn btn--primary focusable" type="button" data-policy><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12,3 L20,6 V11.5 C20,16.5 16.5,19.8 12,21.5 C7.5,19.8 4,16.5 4,11.5 V6 Z"/></svg>Read the official server's policy</button></div>
+        <p class="rows-note">Shown live from mkw.anarqz.dev/privacy. Other servers have their own.</p>
+      </div>
+      <figure><img class="shot" data-shot="welcome-privacy" src="assets/launcher/welcome-privacy-dark.webp" alt="Before you play online: the 18+ confirmation and the server's privacy policy." width="1920" height="1080" loading="lazy"></figure>
+    </div>
+  </section>
+
+  <section class="wrap page" id="faq">
+    <div class="page__head"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><h2>Questions</h2></div>
+    <details><summary class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><span class="row__body"><span class="row__label">Is MKWMP made by Nintendo?</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></summary><div>No. It's a fan project, not affiliated with or endorsed by Nintendo. It doesn't use Nintendo's servers.</div></details>
+    <details><summary class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><span class="row__body"><span class="row__label">Do I need the game?</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></summary><div>Yes: your own copy of the game, version 1.8.0. MKWMP never downloads the game; it builds mkw-recomp from your copy.</div></details>
+    <details><summary class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><span class="row__body"><span class="row__label">Does it run on Linux?</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></summary><div>On the Steam Deck and SteamOS, through Proton: use the command above. Other Linux desktops with Steam and Proton work the same way.</div></details>
+    <details><summary class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><span class="row__body"><span class="row__label">Is it free?</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></summary><div>Yes. MKWMP is open source (GPL-3.0). Servers are run by their hosts; the official one is free to play on.</div></details>
+    <details><summary class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><span class="row__body"><span class="row__label">I'm on 1.3. How do I update?</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></summary><div>Download 1.4 by hand once: 1.3 can't update itself to the new launcher. Then sign in with your PIN.</div></details>
+    <details><summary class="row"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3,12 A9,9 0 1 0 21,12 A9,9 0 1 0 3,12 Z M12,11 V17 M12,7.4 L12,7.5"/></svg><span class="row__body"><span class="row__label">The game crashed. Where do I report it?</span></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9,5 L16,12 L9,19"/></svg></summary><div>The launcher shows a crash report after a crash: it saves a zip on your Desktop (no PIN or keys in it) and opens a new GitHub issue with the details filled in. "Found a bug?" in the launcher does the same any time.</div></details>
   </section>
 </main>
 
-<footer>
-  <div class="flag" aria-hidden="true"></div>
+<footer class="foot">
   <div class="wrap">
-    <p>MKWMP is free software under the <a href="https://github.com/anarqz/mkwmp/blob/main/LICENSE">GNU GPL, version 3 or later</a>. Made by players, for players. <a href="#privacy">Privacy policy</a> · <a href="https://github.com/anarqz/mkwmp/blob/main/docs/LEGAL.md">Legal notes</a></p>
+    <nav>
+      <a href="https://github.com/anarqz/mkwmp">GitHub</a>
+      <a href="https://github.com/anarqz/mkwmp/releases">Releases</a>
+      <a href="https://github.com/anarqz/mkwmp/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="host.html">Hosting guide</a>
+      <a href="https://github.com/anarqz/mkwmp/issues/new/choose">Report a bug</a>
+      <a href="https://github.com/anarqz/mkwmp/blob/main/LICENSE">GPL-3.0</a>
+    </nav>
+    <p>MKWMP is a fan project, not affiliated with or endorsed by Nintendo. Mario Kart is a trademark of Nintendo. You need your own copy of the game. The art here is MKWMP's own.</p>
   </div>
 </footer>
 
-<script>
-  // Live seat count from the official server (public, read-only).
-  fetch("https://mkw.anarqz.dev/seat/v1/status", { cache: "no-store" })
-    .then(r => r.ok ? r.json() : Promise.reject())
-    .then(s => {
-      const q = s.queued ? ` · ${s.queued} in queue` : "";
-      document.getElementById("server-status").textContent = `ONLINE · ${s.seated}/${s.seatsTotal} seats${q}`;
-      document.getElementById("server").classList.add("up");
-    })
-    .catch(() => { document.getElementById("server-status").textContent = "OFFLINE"; });
-</script>
+<div class="modal" id="policy" role="dialog" aria-modal="true" aria-hidden="true" aria-label="Read the official server's policy">
+  <div class="modal__card"><div class="modal__body"></div><button class="modal__foot focusable" type="button">Close</button></div>
+</div>
+<div class="toast" id="toast" role="status"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5,12.5 L10,18 L19.5,6.5"/></svg><span></span></div>
+
+<div class="hintbar" aria-hidden="true">
+  <div class="wrap">
+    <span class="hintbar__device"><svg class="i fill" viewBox="0 0 24 24" aria-hidden="true"><path d="M7,5.5 H17 C20,5.5 21.6,8 22.1,11.5 L22.9,16.8 C23.2,19.4 20.4,20.6 18.9,18.7 L16.7,16 H7.3 L5.1,18.7 C3.6,20.6 0.8,19.4 1.1,16.8 L1.9,11.5 C2.4,8 4,5.5 7,5.5 Z M6.6,8.4 H8.4 V9.8 H9.8 V11.6 H8.4 V13 H6.6 V11.6 H5.2 V9.8 H6.6 Z M15.6,9.2 A0.95,0.95 0 1 0 17.5,9.2 A0.95,0.95 0 1 0 15.6,9.2 Z M17.5,10.7 A0.95,0.95 0 1 0 19.4,10.7 A0.95,0.95 0 1 0 17.5,10.7 Z M13.7,10.7 A0.95,0.95 0 1 0 15.6,10.7 A0.95,0.95 0 1 0 13.7,10.7 Z M15.6,12.2 A0.95,0.95 0 1 0 17.5,12.2 A0.95,0.95 0 1 0 15.6,12.2 Z" fill-rule="evenodd"/></svg></span>
+    <button class="hint" type="button" data-hint="move" tabindex="-1"><b class="glyph glyph--key key-only">↑↓</b><b class="glyph pad-only">✚</b><span class="hint__label">Move</span></button>
+    <button class="hint" type="button" data-hint="theme" tabindex="-1"><b class="glyph glyph--key key-only">T</b><b class="glyph pad-only">Y</b><span class="hint__label">Theme</span></button>
+    <button class="hint" type="button" data-hint="back" tabindex="-1"><b class="glyph glyph--key key-only">Esc</b><b class="glyph pad-only">B</b><span class="hint__label">Top</span></button>
+    <span class="hint"><b class="glyph glyph--key key-only">Enter</b><b class="glyph pad-only">A</b><span class="hint__label">OK</span></span>
+  </div>
+</div>
 </body>
 </html>
