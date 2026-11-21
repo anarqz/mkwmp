@@ -106,6 +106,13 @@
             <c:SettingsRow Label="{Binding S[settings.game.copy_row]}" Kind="Chevron" Icon="{StaticResource Icon.Package}"
                            Command="{Binding Game.ChangeCopyCommand}" Caption="{Binding Game.CopyCaption}"
                            Visibility="{Binding Game.HasCopyRow, Converter={StaticResource Conv.Visible}}" />
+            <!-- every step that builds the game, again, from the same copy (it asks first: as long as the first setup) -->
+            <c:SettingsRow Label="{Binding S[settings.game.rebuild_row]}" Kind="Chevron" Icon="{StaticResource Icon.Refresh}"
+                           Command="{Binding Game.RebuildCommand}" Caption="{Binding S[settings.game.rebuild_caption]}"
+                           Visibility="{Binding Game.HasCopyRow, Converter={StaticResource Conv.Visible}}" />
+            <!-- the play checklist: everything PLAY needs, its state, a button to fix each -->
+            <c:SettingsRow Label="{Binding S[settings.game.check_row]}" Kind="Chevron" Icon="{StaticResource Icon.Check}"
+                           Value="{Binding Game.ChecklistState}" Command="{Binding Game.ChecklistCommand}" Caption="{Binding S[settings.game.check_caption]}" />
 
             <c:SectionHeader Text="{Binding Game.FilesTitle}" />
             <TextBlock Text="{Binding Game.FilesCaption}" Style="{StaticResource Note}" />

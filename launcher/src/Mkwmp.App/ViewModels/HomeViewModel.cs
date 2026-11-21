@@ -135,11 +135,12 @@ public sealed class HomeViewModel : PageViewModel
         QuitGameCommand = RelayCommand.Async(() => Shell.QuitGameAsync());
         StatusCommand = new RelayCommand(() =>
         {
-            if (Problem is { } problem)
+            if (Problem is not null)
             {
-                ExplainProblem(problem);
+                Shell.Navigate(Routes.Checklist);
             }
         });
+        ChecklistCommand = new RelayCommand(() => Shell.Navigate(Routes.Checklist));
 
         _play = new HomeTile("play", "Icon.Kart", "#0", () => PlayCommand.Execute(null));
         _friends = new HomeTile("friends", "Icon.Friends", "#3", () => FriendsCommand.Execute(null));
@@ -264,8 +265,17 @@ public sealed class HomeViewModel : PageViewModel
 
     public ICommand PowerCommand { get; }
 
-    /// <summary>A click on the status line: explains what blocks PLAY.</summary>
+    /// <summary>A click on the status line: the checklist, when something blocks PLAY.</summary>
     public ICommand StatusCommand { get; }
+
+    /// <summary>"Checklist" in the dock: the play checklist ("Ready to Play").</summary>
+    public ICommand ChecklistCommand { get; }
+
+    /// <summary>The dock's checklist button: not over a running game.</summary>
+    public bool ShowChecklist => !Overlay;
+
+    /// <summary>Its dot: something blocks PLAY.</summary>
+    public bool ChecklistNeeds => !Launcher.Checklist.Ready;
 
     public override IReadOnlyList<Hint> Hints => Overlay
         ?
@@ -436,65 +446,13 @@ public sealed class HomeViewModel : PageViewModel
         {
             return Launcher.StopAsync();
         }
-        if (Launcher.PlayProblem is { } problem)
+        if (Launcher.PlayProblem is not null)
         {
-            ExplainProblem(problem);
+            // what blocks it, every other thing PLAY needs, and the button that fixes each: the checklist
+            Shell.Navigate(Routes.Checklist);
             return Task.CompletedTask;
         }
         return Launcher.PlayAsync();
-    }
-
-    /// <summary>Says what blocks PLAY; its first button goes to the place that fixes it.</summary>
-    private void ExplainProblem(string problem)
-    {
-        if (Shell.GameWorkExplains(problem))
-        {
-            Shell.ShowGameWork(); // the step, the bar and the time left, live, with what can be done about it
-            return;
-        }
-        var check = Launcher.Game.Check is { } found && found.Problem == problem ? found : null;
-        var body = check?.Explain is { Length: > 0 } explain ? problem + "\n\n" + explain : problem;
-        var modal = new ModalViewModel { Title = S["home.blocked.title"], Body = body };
-        if (FixFor(problem, check) is ({ } label, { } go))
-        {
-            modal.Actions.Add(new ModalAction(label, () =>
-            {
-                Shell.CloseModal(modal);
-                go();
-            }, Controls.ButtonKind.Outline, isDefault: true));
-        }
-        modal.Bottom = new ModalAction(S["common.close"], () => Shell.CloseModal(modal));
-        Shell.ShowModal(modal);
-    }
-
-    /// <summary>Where a problem is fixed: the profile (or the first-run setup), the game's settings, or a page in the browser.</summary>
-    private (string Label, Action Go)? FixFor(string problem, TargetCheck? check)
-    {
-        // the core's texts are in the player's language: compared as they are now, not as constants
-        if (problem == CoreStrings.NoConsent || problem == CoreStrings.PickGamertag || problem == CoreStrings.NeedPin || problem == CoreStrings.SetServer)
-        {
-            if (!Launcher.Settings.Ui.SetupDone)
-            {
-                return (S["home.fix.setup"], () => Shell.Navigate(Routes.Setup));
-            }
-            // the age confirmation, the gamertag and its PIN all belong to the server: Settings › Online has the three
-            return (problem == CoreStrings.NoConsent ? S["home.fix.settings"] : S["home.fix.profile"], Shell.ConfigureOnline);
-        }
-        if (check?.FixUrl is { } url)
-        {
-            return (check.FixLabel is { Length: > 0 } text ? text : S["home.fix.browser"], () =>
-            {
-                if (!Links.Open(url))
-                {
-                    Shell.ShowToast(S["home.fix.browser_failed"], url.AbsoluteUri);
-                }
-            });
-        }
-        if (problem == CoreStrings.AnotherLauncher(Launcher.Settings.LocalPort))
-        {
-            return null; // nothing to open: the other launcher has to be closed
-        }
-        return (S["home.fix.game"], () => Shell.OpenSettings("game"));
     }
 
     // ── power ──

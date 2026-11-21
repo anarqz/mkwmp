@@ -232,6 +232,9 @@ public static class Routes
     public const string Setup = "setup";
     public const string Gallery = "gallery";
 
+    /// <summary>"Ready to Play": the play checklist (Home's dock, PLAY when something blocks it, Settings › Game).</summary>
+    public const string Checklist = "checklist";
+
     /// <summary>The game's mods (the Home dock); GameBanana's list; "Install from a link".</summary>
     public const string Mods = "mods";
     public const string ModsBrowse = "mods/browse";
@@ -255,6 +258,7 @@ public static class Routes
         shell.Nav.Register(SettingsOnline, () => new SettingsViewModel(shell).At(OnlineCategory));
         shell.Nav.Register(Setup, () => new SetupViewModel(shell));
         shell.Nav.Register(Gallery, () => new GalleryViewModel(shell));
+        shell.Nav.Register(Checklist, () => new ChecklistViewModel(shell));
         shell.Nav.Register(Mods, () => new ModsViewModel(shell));
         shell.Nav.Register(ModsBrowse, () => new ModBrowserViewModel(shell));
         shell.Nav.Register(ModsLink, () => new ModLinkViewModel(shell));

@@ -26,6 +26,9 @@
   <DataTemplate DataType="{x:Type vm:PrivacyViewModel}">
     <settings:PrivacyPage />
   </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:ChecklistViewModel}">
+    <v:ChecklistPage />
+  </DataTemplate>
   <DataTemplate DataType="{x:Type vm:WhatsNewViewModel}">
     <v:WhatsNewPage />
   </DataTemplate>

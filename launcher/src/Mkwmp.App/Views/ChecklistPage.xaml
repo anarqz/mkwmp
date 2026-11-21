@@ -1,0 +1,131 @@
+<UserControl x:Class="Mkwmp.App.Views.ChecklistPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             Focusable="False">
+  <!-- DataContext: ChecklistViewModel. "Ready to Play": the summary, then a row per thing PLAY needs: its icon, title and
+       status, a badge (a check, "!", a spinner), and its button (A on the row, or Right then A), like the server rows. -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <c:PageHeader Title="{Binding S[checklist.title]}" Icon="{StaticResource Icon.Check}" />
+    <c:SmoothScrollViewer Grid.Row="1" Padding="16,22,24,60" EdgePadding="110" input:FocusNav.IsGroup="True" HorizontalAlignment="Center" Width="1400">
+      <StackPanel>
+        <!-- the summary: ready, or how many things are left -->
+        <Border Style="{StaticResource Card}" Margin="0,0,0,24" Padding="32,24">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid Width="64" Height="64" Margin="0,0,26,0" VerticalAlignment="Center">
+              <Ellipse x:Name="SummaryDisc">
+                <Ellipse.Style>
+                  <Style TargetType="Ellipse">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Good}" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding SummaryState}" Value="needed">
+                        <Setter Property="Fill" Value="{DynamicResource Brush.Bad}" />
+                      </DataTrigger>
+                      <DataTrigger Binding="{Binding SummaryState}" Value="working">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </Ellipse.Style>
+              </Ellipse>
+              <c:Icon Data="{StaticResource Icon.Check}" Width="38" Height="38" StrokeThickness="3" Foreground="{DynamicResource Brush.OnAccent}"
+                      Visibility="{Binding SummaryState, Converter={StaticResource Conv.Visible}, ConverterParameter='=ok'}" />
+              <TextBlock Text="!" FontSize="40" FontWeight="Bold" Foreground="{DynamicResource Brush.OnAccent}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         FontFamily="{DynamicResource Font.Ui}" Visibility="{Binding SummaryState, Converter={StaticResource Conv.Visible}, ConverterParameter='=needed'}" />
+              <c:Spinner Width="56" Height="56" Visibility="{Binding SummaryState, Converter={StaticResource Conv.Visible}, ConverterParameter='=working'}" />
+            </Grid>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Summary}" Style="{StaticResource Text.Heading}" TextWrapping="Wrap" />
+              <TextBlock Text="{Binding SummaryCaption}" Style="{StaticResource Text.Caption}" Margin="0,6,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <ItemsControl ItemsSource="{Binding Rows}" Focusable="False">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Grid Margin="0,0,0,12">
+                <!-- the buttons' column keeps its width on every row, so the badges line up -->
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="364" />
+                </Grid.ColumnDefinitions>
+                <Button Style="{StaticResource CardButton}" Padding="26,16,22,16" Command="{Binding ActionCommand}" AutomationProperties.Name="{Binding Title}">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <c:Icon Data="{Binding IconKey, Converter={StaticResource Conv.Icon}}" Width="40" Height="40" Margin="0,0,24,0" VerticalAlignment="Center"
+                            StrokeThickness="2.2" Foreground="{DynamicResource Brush.Accent}" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,18,0">
+                      <TextBlock Text="{Binding Title}" Style="{StaticResource Text.Base}" FontSize="29" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                      <TextBlock x:Name="StatusText" Text="{Binding Status}" Style="{StaticResource Text.Small}" FontSize="22" TextWrapping="Wrap" Margin="0,2,0,0" />
+                      <ProgressBar Value="{Binding Progress, Mode=OneWay}" Height="8" Margin="0,10,0,2" MaxWidth="560" HorizontalAlignment="Left" Width="560"
+                                   Visibility="{Binding HasProgress, Converter={StaticResource Conv.Visible}}" />
+                    </StackPanel>
+                    <!-- the badge: a check, "!", a spinner, or a dash for "not now" -->
+                    <Grid Grid.Column="2" Width="46" Height="46" VerticalAlignment="Center">
+                      <Ellipse x:Name="Disc" Fill="{DynamicResource Brush.Track}" />
+                      <c:Icon x:Name="Tick" Data="{StaticResource Icon.Check}" Width="28" Height="28" StrokeThickness="3"
+                              Foreground="{DynamicResource Brush.OnAccent}" Visibility="Collapsed" />
+                      <TextBlock x:Name="Bang" Text="!" FontSize="30" FontWeight="Bold" FontFamily="{DynamicResource Font.Ui}" Foreground="{DynamicResource Brush.OnAccent}"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                      <TextBlock x:Name="Dash" Text="–" FontSize="28" FontWeight="Bold" FontFamily="{DynamicResource Font.Ui}" Foreground="{DynamicResource Brush.TextMuted}"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <c:Spinner x:Name="Busy" Width="40" Height="40" Visibility="Collapsed" />
+                    </Grid>
+                  </Grid>
+                </Button>
+                <!-- the fix (accent), or a row's quieter second action when there is nothing to fix (the setup's "Set Up Again") -->
+                <c:ConsoleButton Grid.Column="1" Kind="Outline" Margin="12,0,0,0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                 Height="NaN" MinWidth="0" Padding="12,0" FontSize="25" Command="{Binding ActionCommand}" AutomationProperties.Name="{Binding ActionLabel}"
+                                 Visibility="{Binding HasAction, Converter={StaticResource Conv.Visible}}">
+                  <TextBlock Text="{Binding ActionLabel}" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="320" />
+                </c:ConsoleButton>
+                <c:ConsoleButton Grid.Column="1" Kind="Secondary" Margin="12,0,0,0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                 Height="NaN" MinWidth="0" Padding="12,0" FontSize="25" Command="{Binding MoreCommand}" AutomationProperties.Name="{Binding MoreLabel}"
+                                 Visibility="{Binding ShowMore, Converter={StaticResource Conv.Visible}}">
+                  <TextBlock Text="{Binding MoreLabel}" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="320" />
+                </c:ConsoleButton>
+              </Grid>
+              <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="ok">
+                  <Setter TargetName="Disc" Property="Fill" Value="{DynamicResource Brush.Good}" />
+                  <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
+                  <Setter TargetName="Dash" Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="needed">
+                  <Setter TargetName="Disc" Property="Fill" Value="{DynamicResource Brush.Bad}" />
+                  <Setter TargetName="Bang" Property="Visibility" Value="Visible" />
+                  <Setter TargetName="Dash" Property="Visibility" Value="Collapsed" />
+                  <Setter TargetName="StatusText" Property="Foreground" Value="{DynamicResource Brush.Text}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="warning">
+                  <Setter TargetName="Disc" Property="Fill" Value="{DynamicResource Brush.Warn}" />
+                  <Setter TargetName="Bang" Property="Visibility" Value="Visible" />
+                  <Setter TargetName="Dash" Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="working">
+                  <Setter TargetName="Disc" Property="Visibility" Value="Collapsed" />
+                  <Setter TargetName="Busy" Property="Visibility" Value="Visible" />
+                  <Setter TargetName="Dash" Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+              </DataTemplate.Triggers>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </c:SmoothScrollViewer>
+  </Grid>
+</UserControl>

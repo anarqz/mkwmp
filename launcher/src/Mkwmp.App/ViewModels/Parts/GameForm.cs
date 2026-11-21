@@ -35,7 +35,18 @@ public sealed class GameForm : ObservableObject
         SetupCommand = new RelayCommand(() => _shell.ShowGameWork());
         ChangeCopyCommand = RelayCommand.Async(() => GameCopy.ChangeAsync(_shell), () => GameCopy.CanChange(_shell));
         UninstallCommand = RelayCommand.Async(UninstallAsync, () => CanUninstall);
+        RebuildCommand = RelayCommand.Async(() => GameRebuild.AskAsync(_shell), () => GameRebuild.CanRun(_shell));
+        ChecklistCommand = new RelayCommand(() => _shell.Navigate(Routes.Checklist));
     }
+
+    /// <summary>"Set up the game again" (asks first).</summary>
+    public ICommand RebuildCommand { get; }
+
+    /// <summary>"Check if the game is ready": the play checklist.</summary>
+    public ICommand ChecklistCommand { get; }
+
+    /// <summary>"Ready to play", or "Needed", for the checklist's row.</summary>
+    public string ChecklistState => Launcher.Checklist.Ready ? S["checklist.ready"] : S["gamework.state.needed"];
 
     public Strings S => _shell.S;
 

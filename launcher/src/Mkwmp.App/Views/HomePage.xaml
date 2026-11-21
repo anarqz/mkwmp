@@ -131,6 +131,10 @@
         <!-- over a game that can open its own menu when told to (plugin API 4) -->
         <c:DockButton Icon="{StaticResource Icon.Menu}" Label="{Binding GameMenuLabel}" Tint="#FF5B5BD6" Command="{Binding GameMenuCommand}"
                       Visibility="{Binding ShowGameMenu, Converter={StaticResource Conv.Visible}}" />
+        <!-- "Ready to Play": the play checklist; its dot while something blocks PLAY -->
+        <c:DockButton Icon="{StaticResource Icon.Check}" Label="{Binding S[home.checklist]}" Tint="#FF2F80ED"
+                      HasDot="{Binding ChecklistNeeds}" Command="{Binding ChecklistCommand}"
+                      Visibility="{Binding ShowChecklist, Converter={StaticResource Conv.Visible}}" />
         <!-- Friends; without a server: the same button with a lock, to Settings › Online -->
         <c:DockButton Icon="{Binding FriendsIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding FriendsLabel}" Tint="#FFF08A1A"
                       HasDot="{Binding HasRequests}" Command="{Binding FriendsCommand}" />
