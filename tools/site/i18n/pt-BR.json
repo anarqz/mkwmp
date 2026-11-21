@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "MKWMP: jogue Mario Kart World online no seu PC",
+    "title": "MKWMP: jogue MKW online no seu PC",
     "description": "O MKWMP configura o mkw-recomp a partir da sua própria cópia do jogo, joga offline na hora e leva você para servidores da comunidade, com amigos, chat de voz e mods. Grátis e de código aberto.",
     "host_title": "Hospede um servidor MKWMP: uma VM na nuvem com um comando",
     "host_description": "Rode seu próprio servidor MKWMP em uma VM pequena da Vultr: chaves SSH, firewall, um comando, HTTPS, atualizações e backups."
@@ -26,7 +26,7 @@
   },
   "hero": {
     "title": "Corra online. <em>Do seu jeito.</em>",
-    "lead": "O MKWMP é um launcher para o mkw-recomp, a versão de PC de Mario Kart World gerada a partir da sua própria cópia do jogo. Ele configura o jogo para você, joga offline assim que estiver pronto e leva você para servidores da comunidade, com amigos, chat de voz e mods.",
+    "lead": "O MKWMP é um launcher para o mkw-recomp, a versão de PC de MKW gerada a partir da sua própria cópia do jogo. Ele configura o jogo para você, joga offline assim que estiver pronto e leva você para servidores da comunidade, com amigos, chat de voz e mods.",
     "download": "Baixar para Windows",
     "deck": "Steam Deck",
     "host": "Hospedar um servidor",
