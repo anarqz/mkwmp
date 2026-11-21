@@ -9,7 +9,7 @@ the game's own menus.
 
 Owners:
 
-- voice relay (UDP, inside `mkwmp lobby` / `mkwmp host`), launcher settings and the local API
+- voice relay (UDP, inside `server lobby` / `server host`), launcher settings and the local API
   endpoints below: MACBOOK-MKWMP (`rust/gateway`, `rust/mkwmp`, `rust/client`);
 - room membership (`lobby::Core::voice_room`), the probe and the voice engine
   (`native/voice`, `mkwmp-voice.dll`; on Linux `libmkwmp-voice.so`): WINDOWS-MKWMP.

@@ -1,5 +1,5 @@
 # Your own mkwmp server: gamertags, friends, seats and the game lobby, in one
-# container (`mkwmp host`).
+# container (`server host`).
 #
 #   cp .env.example .env      # set MKWMP_PUBLIC_IP
 #   docker compose up -d --build

@@ -5,7 +5,8 @@ edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "mkwmp"
+# Released as `server` (Linux) and `server.exe` (Windows), in mkwmp-server-<v>.zip.
+name = "server"
 path = "src/main.rs"
 
 [dependencies]

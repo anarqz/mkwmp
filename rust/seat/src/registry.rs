@@ -18,7 +18,7 @@
 //! friendships and requests with it.
 //!
 //! Voice-chat abuse reports live here too, for the server host to review
-//! (`mkwmp admin reports`). A profile has at most one open report (a partial
+//! (`server admin reports`). A profile has at most one open report (a partial
 //! unique index). Reports are not tied to the profiles by foreign keys: one
 //! about a player stays when that player goes away, for review. Both sides are
 //! a name key plus that profile's `created`, so a later owner of the same

@@ -76,7 +76,7 @@ pub struct AnnounceCfg {
     pub key_file: Option<PathBuf>,
 }
 
-/// `mkwmp beholder [config/beholder.toml]`: the public server directory.
+/// `server beholder [config/beholder.toml]`: the public server directory.
 #[derive(Debug, Deserialize)]
 pub struct BeholderConfig {
     #[serde(default = "d_beholder_bind")]
@@ -138,13 +138,13 @@ pub struct RegistryCfg {
     /// SQLite database of profiles (hashed PINs); an old .json is imported once. Absent: in memory only.
     #[serde(default)]
     pub file: Option<PathBuf>,
-    /// Names only the admin can register (`mkwmp admin register <name>`).
+    /// Names only the admin can register (`server admin register <name>`).
     #[serde(default)]
     pub reserved_names: Vec<String>,
     /// Unused names become free after this many days (0 = never).
     #[serde(default = "d_expire")]
     pub expire_days: u64,
-    /// File with the token `mkwmp admin` sends (loopback only).
+    /// File with the token `server admin` sends (loopback only).
     #[serde(default)]
     pub admin_token_file: Option<PathBuf>,
 }
@@ -178,7 +178,7 @@ impl Default for Ticket {
     }
 }
 
-/// The game-facing lobby (`mkwmp lobby`). Lobbies themselves are unlimited:
+/// The game-facing lobby (`server lobby`). Lobbies themselves are unlimited:
 /// they open and close with the players.
 #[derive(Debug, Deserialize)]
 pub struct Lobby {

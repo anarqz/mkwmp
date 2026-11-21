@@ -1,4 +1,4 @@
-//! `mkwmp server`: load the key, build the roster, serve the seat API.
+//! `server seat`: load the key, build the roster, serve the seat API.
 
 use std::time::Duration;
 

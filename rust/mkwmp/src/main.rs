@@ -1,20 +1,21 @@
-//! The mkwmp server binary. One VM can run both parts:
+//! The MKWMP server binary, `server` (`server.exe` on Windows). One VM can run both parts:
 //!
-//!   mkwmp server [config/server.toml]   seats, queue and signed tickets (HTTP)
-//!   mkwmp lobby  [config/server.toml]   the game-facing lobby (matches)
-//!   mkwmp host [--public-ip IP] ...     both parts in one process, set up
+//!   server seat  [config/server.toml]   seats, queue and signed tickets (HTTP); `server server`
+//!                                       is the same (older units and docs)
+//!   server lobby [config/server.toml]   the game-facing lobby (matches)
+//!   server host [--public-ip IP] ...    both parts in one process, set up
 //!                                       on first run (also: no arguments)
-//!   mkwmp beholder [config/beholder.toml] the public server directory
-//!   mkwmp keygen [kid]                  print a new ticket signing key
-//!   mkwmp admin <list|register|reset-pin|release> [name] [--config config.toml]
-//!   mkwmp admin reports [open|closed|all] | close-report <id> [outcome...] | delete-report <id>
+//!   server beholder [config/beholder.toml] the public server directory
+//!   server keygen [kid]                 print a new ticket signing key
+//!   server admin <list|register|reset-pin|release> [name] [--config config.toml]
+//!   server admin reports [open|closed|all] | close-report <id> [outcome...] | delete-report <id>
 //!                                       manage registered profiles on the
 //!                                       running server (same machine)
 
 mod host;
 mod lobby;
 
-const USAGE: &str = "usage: mkwmp host [options] (see mkwmp host --help) | mkwmp <server|lobby> [config.toml] | mkwmp beholder [beholder.toml] | mkwmp keygen [kid] | mkwmp admin <list|register|reset-pin|release> [name] [--config file] | mkwmp admin <reports [open|closed|all]|close-report <id> [outcome...]|delete-report <id>> [--config file]";
+const USAGE: &str = "usage: server host [options] (see server host --help) | server <seat|lobby> [config.toml] | server beholder [beholder.toml] | server keygen [kid] | server admin <list|register|reset-pin|release> [name] [--config file] | server admin <reports [open|closed|all]|close-report <id> [outcome...]|delete-report <id>> [--config file]";
 
 #[tokio::main]
 async fn main() {
@@ -34,8 +35,8 @@ async fn main() {
             Ok(b) => beholder::http::serve(&b.bind, b.trust_cf_connecting_ip).await,
             Err(e) => Err(e.into()),
         },
-        Some("server") | Some("lobby") => match config::ServerConfig::load(arg.unwrap_or("config/server.toml")) {
-            Ok(cfg) if cmd == Some("server") => seat::serve(&cfg).await,
+        Some("seat") | Some("server") | Some("lobby") => match config::ServerConfig::load(arg.unwrap_or("config/server.toml")) {
+            Ok(cfg) if cmd != Some("lobby") => seat::serve(&cfg).await,
             Ok(cfg) => {
                 logging();
                 lobby::serve(&cfg).await
@@ -48,7 +49,7 @@ async fn main() {
         }
     };
     if let Err(e) = result {
-        eprintln!("mkwmp: {e}");
+        eprintln!("server: {e}");
         // Double-clicked (no arguments): keep the window open to read it.
         if cmd.is_none() && std::io::IsTerminal::is_terminal(&std::io::stdin()) {
             eprintln!("press Enter to close");
