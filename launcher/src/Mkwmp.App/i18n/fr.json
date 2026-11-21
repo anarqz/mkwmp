@@ -646,6 +646,7 @@
   "core.gs.owned_update_check": "Maintenu désactivé par MKWMP : il installe et met à jour mkw-recomp lui-même, une version testée à la fois",
   "core.gs.owned_start_screen": "Maintenu sur Passer par MKWMP : le launcher prépare le jeu et le lance",
   "core.gs.owned_logic_hz": "Verrouillé à 60 en ligne : tous les joueurs d'une course doivent faire tourner le jeu à la même fréquence.",
+  "core.gs.owned_fullscreen": "Maintenu activé par MKWMP sous SteamOS : le jeu y occupe toujours tout l'écran",
   "core.gs.folder_gone": "Le dossier du jeu a disparu : {folder}",
   "core.gs.read_only": "{file} est en lecture seule : les paramètres du jeu sont verrouillés",
   "core.gs.save_failed": "enregistrement des paramètres du jeu : {why}",

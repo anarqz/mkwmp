@@ -662,6 +662,7 @@
   "core.gs.owned_update_check": "Kept off by MKWMP: it installs and updates mkw-recomp itself, one tested version at a time",
   "core.gs.owned_start_screen": "Kept on Skip by MKWMP: the launcher sets the game up and starts it",
   "core.gs.owned_logic_hz": "Locked to 60 while online: every player in a race must run the game at the same rate.",
+  "core.gs.owned_fullscreen": "Kept on by MKWMP on SteamOS: the game always fills the screen there",
   "core.gs.folder_gone": "The game's folder is gone: {folder}",
   "core.gs.read_only": "{file} is read-only: the game's settings are locked",
   "core.gs.save_failed": "saving the game's settings: {why}",

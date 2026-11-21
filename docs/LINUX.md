@@ -171,6 +171,45 @@ from Steam" and started nothing. Now:
   had switched it on before this change could not be told apart: they switch it on once more.
 - On Windows `launch = false` is kept as it is.
 
+### Full screen and the controller
+
+**Play in Game Mode.** That is the supported way on SteamOS. Checked 2026-11-21 on the ROG Xbox Ally X (SteamOS,
+Proton 11.0), started from the MKWMP shortcut in Game Mode, PLAY in the launcher: the game full screen (1920x1080) and
+the built-in controller as player 1 (`input: gamepad "Asus Rog Ally Controller" (rumble)` in mkw.log). A plugin
+dropped into the mod for that one run confirmed it from inside mkw.exe: the game's SDL3 sees one gamepad, Steam Input's
+virtual pad (28de:12fd; Proton names it after the device), and has it open from the first poll on. No extra setup.
+
+**Full screen.** mkw-recomp's Windows build starts full screen on its own only on a Steam Deck (`SteamDeck=1` or
+Valve's board) or when Big Picture or gamescope is in its environment (cfg.c `DECK`, `CONSOLE`). Game Mode is
+gamescope, so it was full screen there already. In Desktop Mode the Ally X is neither, and the game opened in a
+1920x1002 window. The launcher now starts mkw.exe under Wine with `MKW_FULLSCREEN=1` in its environment
+(`RecompLaunchEnv`; the environment wins over mkw.ini):
+
+- on SteamOS (`SteamOS=1`, `SteamDeck=1`) or in gamescope, always. Settings > Game shows Fullscreen locked
+  ("Kept on by MKWMP on SteamOS"); the game's own menu shows it as set by the environment.
+- elsewhere under Wine (Proton on another Linux desktop), only while mkw.ini has no `fullscreen` line: the default,
+  which the player can change in the game or in the launcher.
+- `MKW_FULLSCREEN` set by the player (launch options) wins over both. On Windows nothing changes.
+
+Checked in Desktop Mode with `MKW_FULLSCREEN=1` in the game's environment: a 1920x1080 full-screen window.
+
+**The controller.** Steam gives the shortcut's process tree `SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD=1` and an
+`SDL_GAMECONTROLLER_IGNORE_DEVICES` list that names the virtual pad's id (0x28de/0x12fd) next to the physical one
+(0x0b05/0x1b4c). The launcher passes both to the game unchanged: SDL 3.4 skips the list under Wine when the first is
+set (SDL_gamepad.c `SDL_ShouldIgnoreGamepad`), so the virtual pad is used and the physical one is not counted a second
+time. Clearing the list, or setting `SDL_JOYSTICK_RAWINPUT`, `_HIDAPI`, `_WGI`, `_THREAD` to 0, changed nothing in
+any test. The launcher only adds `SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD=1` when it was started from Steam
+(`SteamGameId`) and the variable is missing. The removed Proton fix of the old winmm probe (clearing the list,
+rescanning SDL) is not needed with mkw-recomp 0.1.16-mkwmp.1. mkw.exe runs in the shortcut's
+`app-steam-app<id>` scope with `SteamGameId`, and Steam applies the shortcut's gamepad layout to it (controller.txt:
+"activation for controller ... app: <shortcut id>").
+
+**Known issue: the controller in Desktop Mode.** Started from the same shortcut in Desktop Mode (KDE, Wayland), the
+game logged `input: no gamepad` in every run (three of three) and never found one later, although a separate SDL3
+program started by the launcher in that same session, with the same environment and the game's SDL3.dll, saw the
+virtual pad at once. The cause was not found: the player decided to support Game Mode only. In Desktop Mode use
+Game Mode for the controller, or keyboard and mouse.
+
 ## 3. Artwork
 
 No picture is in this repository or in a release. `tools/linux/artwork.json` holds links only: five
@@ -395,7 +434,8 @@ started from a shell with Proton 11.0 inside Steam Linux Runtime 4 with the shor
 
 - The live install on a machine's real Steam files and a start from Steam (the script was run for
   real only with `--no-steam`, and with `--dry-run` against the real files).
-- Game Mode: the shortcut in the library with its artwork, the layout, the focus between the
-  launcher and the game, the overlay, Xalia.
+- Game Mode: the shortcut in the library with its artwork, the overlay, Xalia. (PLAY, the game full
+  screen and the controller were checked there on 2026-11-21: section 2, "Full screen and the controller".)
+- The controller in Desktop Mode (section 2, "Known issue").
 - The setup to its end, the game, and any performance figure.
 - Flatpak and snap Steam, other distributions, Proton 9, 10, Experimental and GE (only 11.0 ran).

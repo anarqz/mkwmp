@@ -646,6 +646,7 @@
   "core.gs.owned_update_check": "MKWMP tarafından kapalı tutulur: mkw-recomp yüklemesini ve güncellemesini MKWMP kendisi yapar, her seferinde test edilmiş tek bir sürümle",
   "core.gs.owned_start_screen": "MKWMP tarafından Atla'da tutulur: oyunu başlatıcı kurar ve başlatır",
   "core.gs.owned_logic_hz": "Çevrimiçiyken 60'a kilitlenir: bir yarıştaki her oyuncu oyunu aynı hızda çalıştırmalıdır.",
+  "core.gs.owned_fullscreen": "SteamOS'ta MKWMP tarafından açık tutulur: oyun orada her zaman tüm ekranı kaplar",
   "core.gs.folder_gone": "Oyunun klasörü yok: {folder}",
   "core.gs.read_only": "{file} salt okunur: oyunun ayarları kilitli",
   "core.gs.save_failed": "oyun ayarları kaydedilemedi: {why}",

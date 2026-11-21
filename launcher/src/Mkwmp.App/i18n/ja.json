@@ -646,6 +646,7 @@
   "core.gs.owned_update_check": "MKWMPがオフに固定しています：mkw-recompのインストールと更新は、MKWMPがテスト済みのバージョンを1つずつ行います",
   "core.gs.owned_start_screen": "MKWMPが「スキップ」に固定しています：ゲームのセットアップと起動はランチャーが行います",
   "core.gs.owned_logic_hz": "オンライン中は60に固定されます。レースに参加する全員が、同じ頻度でゲームを動かす必要があります。",
+  "core.gs.owned_fullscreen": "SteamOSではMKWMPがオンに固定しています：ゲームは常に画面全体に表示されます",
   "core.gs.folder_gone": "ゲームのフォルダーがなくなっています：{folder}",
   "core.gs.read_only": "{file} は読み取り専用です：ゲームの設定はロックされています",
   "core.gs.save_failed": "ゲーム設定の保存に失敗：{why}",

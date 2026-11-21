@@ -646,6 +646,7 @@
   "core.gs.owned_update_check": "MKWMP lo mantiene desactivado: él mismo instala y actualiza mkw-recomp, una versión probada cada vez",
   "core.gs.owned_start_screen": "MKWMP lo mantiene en Omitir: el launcher prepara el juego y lo inicia",
   "core.gs.owned_logic_hz": "Bloqueado en 60 mientras juegas en línea: todos los jugadores de una carrera deben ejecutar el juego a la misma frecuencia.",
+  "core.gs.owned_fullscreen": "MKWMP lo mantiene activado en SteamOS: allí el juego siempre ocupa toda la pantalla",
   "core.gs.folder_gone": "La carpeta del juego ya no está: {folder}",
   "core.gs.read_only": "{file} es de solo lectura: los ajustes del juego están bloqueados",
   "core.gs.save_failed": "guardar los ajustes del juego: {why}",

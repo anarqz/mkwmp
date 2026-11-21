@@ -126,11 +126,16 @@ public static partial class RecompSettings
         }
     }
 
+    /// <summary>What this install's mkw.ini sets (the game's key names, upper case); empty when the launcher does not know its settings.</summary>
+    public static IReadOnlyDictionary<string, string> IniValues(GameInstall install) =>
+        PathFor(install, RealEnv) is { } path ? FileValues(path) : new Dictionary<string, string>(StringComparer.Ordinal);
+
     /// <summary>The schema for this install (the same object while nothing it depends on changed); null when it has none.</summary>
     public static GameSettingsSchema? Schema(GameInstall install) => Schema(install, RealEnv);
 
-    internal static GameSettingsSchema? Schema(GameInstall install, Func<string, string?> env)
+    internal static GameSettingsSchema? Schema(GameInstall install, Func<string, string?> env, bool? underWine = null)
     {
+        var wine = underWine ?? Platform.WineHost.Detected;
         if (PathFor(install, env) is not { } path)
         {
             return null;
@@ -141,7 +146,9 @@ public static partial class RecompSettings
         // game's: the game it starts inherits it.
         var profile = env("MKW_DEVICE_PROFILE") ?? file.GetValueOrDefault("DEVICE_PROFILE") ?? "";
         var deck = profile == "deck" || (profile is "" or "auto" && env("SteamDeck") == "1");
-        var console = !deck && (env("SteamGamepadUI") == "1" || env("SteamTenfoot") == "1" || env("GAMESCOPE_WAYLAND_DISPLAY") is { Length: > 0 });
+        // Under Wine the launcher starts the game full screen (RecompLaunchEnv): the default there, kept on SteamOS and in gamescope.
+        var console = !deck && (wine || env("SteamGamepadUI") == "1" || env("SteamTenfoot") == "1" || env("GAMESCOPE_WAYLAND_DISPLAY") is { Length: > 0 });
+        var keptFullscreen = RecompLaunchEnv.ForcesFullscreen(wine, env);
         var size = file.GetValueOrDefault("WINDOW_SIZE") is { } s && WindowSize().IsMatch(s) ? s : "";
         var locked = Sections.Keys.Where(key => env("MKW_" + key) is not null).Select(key => key.ToLowerInvariant()).Order(StringComparer.Ordinal).ToArray();
         var owned = RecompSetup.Drives(install);
@@ -149,15 +156,16 @@ public static partial class RecompSettings
         // cfg.c reads MKW_SPIRV too (a developer's other shader folder); the launcher only knows the install's own.
         var noTonemap = Has016Rows(version) && !Directory.Exists(Path.Combine(Path.GetDirectoryName(path)!, TonemapFolder));
         // the texts are in the language in use: another language, another schema
-        return Schemas.GetOrAdd($"{Strings.Generation}|{version}|{deck}|{console}|{size}|{string.Join(',', locked)}|{owned}|{noTonemap}", _ =>
+        return Schemas.GetOrAdd($"{Strings.Generation}|{version}|{deck}|{console}|{size}|{string.Join(',', locked)}|{owned}|{noTonemap}|{keptFullscreen}", _ =>
         {
             var all = Localize(Build(version, deck, console, size));
-            return locked.Length == 0 && !owned && !noTonemap ? all : all with
+            return locked.Length == 0 && !owned && !noTonemap && !keptFullscreen ? all : all with
             {
                 Categories = [.. all.Categories.Select(c => c with
                 {
                     Settings = [.. c.Settings.Select(x =>
                         locked.Contains(x.Id) ? x with { Locked = Strings.GameSettingsLockedByEnv("MKW_" + x.Id.ToUpperInvariant()) }
+                        : keptFullscreen && x.Id == "fullscreen" ? x with { Locked = Strings.GameSettingsOwnedFullscreen, Default = "1" }
                         : owned && Owned.FirstOrDefault(o => o.Id == x.Id).Why is { } why ? x with { Locked = why }
                         : noTonemap && x.Id == "hdr_tonemap" ? x with { Locked = TonemapMissing }
                         : x)],

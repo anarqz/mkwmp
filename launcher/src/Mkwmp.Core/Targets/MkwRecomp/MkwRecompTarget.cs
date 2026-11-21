@@ -483,6 +483,18 @@ public sealed class MkwRecompTarget : IGameTarget
             : new ProcessStartInfo(Environment.GetEnvironmentVariable("ComSpec") is { Length: > 0 } cmd ? cmd : "cmd.exe", $"/S /C \"{command}\"") { CreateNoWindow = true };
         start.WorkingDirectory = install.Root;
         start.UseShellExecute = false;
+        foreach (var (name, value, why) in RecompLaunchEnv.For(Platform.WineHost.Detected, Environment.GetEnvironmentVariable, RecompSettings.IniValues(install)))
+        {
+            if (value is null)
+            {
+                start.Environment.Remove(name);
+            }
+            else
+            {
+                start.Environment[name] = value;
+            }
+            _note($"game environment: {name}={value ?? "(removed)"} ({why})");
+        }
         try
         {
             return System.Diagnostics.Process.Start(start) is { } process ? new GameProcess(process) : throw new LauncherException(Strings.RecompStartFailed(Strings.RecompStartNoProcess));

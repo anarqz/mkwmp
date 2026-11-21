@@ -646,6 +646,7 @@
   "core.gs.owned_update_check": "Door MKWMP uit gehouden: het installeert en werkt mkw-recomp zelf bij, één geteste versie tegelijk",
   "core.gs.owned_start_screen": "Door MKWMP op Overslaan gehouden: de launcher verzorgt de setup van het spel en start het",
   "core.gs.owned_logic_hz": "Online vergrendeld op 60: elke speler in een race moet het spel op dezelfde frequentie draaien.",
+  "core.gs.owned_fullscreen": "Door MKWMP aan gehouden op SteamOS: het spel vult daar altijd het hele scherm",
   "core.gs.folder_gone": "De map van het spel is verdwenen: {folder}",
   "core.gs.read_only": "{file} is alleen-lezen: de instellingen van het spel zijn vergrendeld",
   "core.gs.save_failed": "opslaan van de instellingen van het spel: {why}",

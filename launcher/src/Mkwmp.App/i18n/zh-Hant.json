@@ -646,6 +646,7 @@
   "core.gs.owned_update_check": "由 MKWMP 保持關閉：MKWMP 會自行安裝和更新 mkw-recomp，每次只使用一個測試過的版本",
   "core.gs.owned_start_screen": "由 MKWMP 保持為「略過」：啟動器會負責遊戲的初始設定並啟動遊戲",
   "core.gs.owned_logic_hz": "線上時鎖定為 60：同一場比賽中的每位玩家都必須以相同的頻率執行遊戲。",
+  "core.gs.owned_fullscreen": "在 SteamOS 上由 MKWMP 保持開啟：遊戲在那裡一律以全螢幕顯示",
   "core.gs.folder_gone": "遊戲的資料夾不見了：{folder}",
   "core.gs.read_only": "{file} 是唯讀的：遊戲的設定已鎖定",
   "core.gs.save_failed": "儲存遊戲設定：{why}",

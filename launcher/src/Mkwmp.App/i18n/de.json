@@ -646,6 +646,7 @@
   "core.gs.owned_update_check": "Von MKWMP ausgeschaltet: Es installiert und aktualisiert mkw-recomp selbst, immer genau eine getestete Version",
   "core.gs.owned_start_screen": "Von MKWMP auf Überspringen gehalten: Der Launcher richtet das Spiel ein und startet es",
   "core.gs.owned_logic_hz": "Online auf 60 festgelegt: Alle Spieler eines Rennens müssen das Spiel mit derselben Rate ausführen.",
+  "core.gs.owned_fullscreen": "Von MKWMP unter SteamOS eingeschaltet gehalten: Das Spiel füllt dort immer den Bildschirm",
   "core.gs.folder_gone": "Der Ordner des Spiels ist weg: {folder}",
   "core.gs.read_only": "{file} ist schreibgeschützt: Die Einstellungen des Spiels sind gesperrt",
   "core.gs.save_failed": "Speichern der Spieleinstellungen: {why}",

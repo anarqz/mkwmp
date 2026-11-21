@@ -646,6 +646,7 @@
   "core.gs.owned_update_check": "MKWMP가 꺼 둡니다: mkw-recomp는 MKWMP가 직접, 테스트를 마친 버전 하나씩 설치하고 업데이트합니다",
   "core.gs.owned_start_screen": "MKWMP가 「건너뛰기」로 고정합니다: 런처가 게임을 준비하고 시작합니다",
   "core.gs.owned_logic_hz": "온라인에서는 60으로 고정됩니다. 레이스의 모든 플레이어가 같은 빈도로 게임을 실행해야 합니다.",
+  "core.gs.owned_fullscreen": "SteamOS에서는 MKWMP가 켜짐으로 고정합니다: 게임이 항상 화면 전체에 표시됩니다",
   "core.gs.folder_gone": "게임 폴더가 없어졌습니다: {folder}",
   "core.gs.read_only": "{file}: 읽기 전용이라 게임 설정이 잠겨 있습니다",
   "core.gs.save_failed": "게임 설정 저장: {why}",

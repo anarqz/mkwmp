@@ -362,6 +362,7 @@ public static class Strings
     public static string GameSettingsOwnedUpdateCheck => T("core.gs.owned_update_check");
     public static string GameSettingsOwnedStartScreen => T("core.gs.owned_start_screen");
     public static string GameSettingsOwnedLogicHz => T("core.gs.owned_logic_hz");
+    public static string GameSettingsOwnedFullscreen => T("core.gs.owned_fullscreen");
     public static string GameSettingRefusedToggle => T("core.gs.refused_toggle");
     public static string GameSettingRefusedNumber => T("core.gs.refused_number");
     public static string GameSettingRefusedLine => T("core.gs.refused_line");
