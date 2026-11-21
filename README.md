@@ -29,13 +29,13 @@ Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-rec
 
 ## Play
 
-1. Set up **mkw-recomp [0.1.15-mkwmp](https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.15-mkwmp)** (MKWMP's build of mkw-recomp 0.1.15, with the camera; the official 0.1.15, 0.1.13, 0.1.12 and 0.1.10 also work, without the camera) with your own copy of the game, version **1.0.0 or 1.8.0**. Players only meet others on the same game version. On a Steam Deck, run it through Proton 10.0.
+1. Set up **mkw-recomp [0.1.16-mkwmp.1](https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp.1)** (MKWMP's build of mkw-recomp 0.1.16, with the camera; take the `-noavx2` zip if your CPU has no AVX2; 0.1.15-mkwmp still works too, and the official 0.1.16, 0.1.15, 0.1.13, 0.1.12 and 0.1.10 work without the camera) with your own copy of the game, version **1.0.0 or 1.8.0**. Players only meet others on the same game version. On a Steam Deck, run it through Proton 10.0.
 2. Download the zip for your system from the [latest release](https://github.com/anarqz/mkwmp/releases/latest) and unzip it anywhere:
    - `mkwmp-<version>-windows-x64.zip` for Windows;
    - `mkwmp-<version>-linux-x64.zip` for SteamOS and Linux. On a Steam Deck, one command in Desktop Mode (Konsole) installs it to `~/mkwmp` and adds it to Steam:
      `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`
 3. Open `mkwmp-launcher`, register a gamertag and pick the game folder. The line under GAME FOLDER says whether the game patch is installed; press **INSTALL** if it isn't, then **PLAY**. SETTINGS → GAME PATCH → UNINSTALL removes every mkwmp file from the game folder.
-4. **Optional, the MKWMP mod** (mkw-recomp 0.1.15 or 0.1.15-mkwmp; needed for the camera, with game 1.8.0): unzip `mkwmp-mod.zip` from the release into mkw-recomp's data folder's `mods/` (you get `mods/mkwmp/`), then on mkw-recomp's start screen open **Mods**, tick **MKWMP**, and in its **Options** confirm you're 18+ and sign in or register. With the mod enabled, the launcher takes its own game patch out of the game folder (the mod wins) and still works for your gamertag, friends and PLAY.
+4. **Optional, the MKWMP mod** (mkw-recomp 0.1.15 or newer, official or -mkwmp; the camera needs an -mkwmp build and game 1.8.0): unzip `mkwmp-mod.zip` from the release into mkw-recomp's data folder's `mods/` (you get `mods/mkwmp/`), then on mkw-recomp's start screen open **Mods**, tick **MKWMP**, and in its **Options** confirm you're 18+ and sign in or register. With the mod enabled, the launcher takes its own game patch out of the game folder (the mod wins) and still works for your gamertag, friends and PLAY.
 
 Step-by-step guides for Windows and the Steam Deck: <https://anarqz.github.io/mkwmp/>.
 
