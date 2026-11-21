@@ -1,4 +1,4 @@
-## `mkwmp beholder`: the public directory of mkwmp servers (docs/contracts/BEHOLDER_API.md).
+## `server beholder`: the public directory of mkwmp servers (docs/contracts/BEHOLDER_API.md).
 ## Seat servers announce themselves here every 30 s; launchers list them. In memory only:
 ## a restart empties the list until the next announces (30 s).
 

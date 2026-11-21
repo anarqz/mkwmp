@@ -3,7 +3,7 @@
 ## (else the player queues) -> the game presents the ticket to the lobby,
 ## which checks the signature and, over the roster call, that the seat is live.
 ## Gamertags, PINs (hashed) and friends persist in [registry] file (SQLite);
-## seats and the queue are in memory. `mkwmp host` (and Docker) write their
+## seats and the queue are in memory. `server host` (and Docker) write their
 ## own copy of this file in the data folder. Guide: docs/HOSTING.md.
 
 [server]
@@ -25,9 +25,9 @@ lobby_endpoint = "127.0.0.1:8905"   # NPLN host:port handed to seated players
 # Registered profiles: a name + its 6-digit PIN. The only state kept across
 # restarts; PINs are stored hashed. Players register in the launcher.
 file = "../scratch/registry.db"
-reserved_names = []            # names only `mkwmp admin register <name>` can take
+reserved_names = []            # names only `server admin register <name>` can take
 expire_days = 30               # unused gamertags (and their friends) are deleted after this (0 = never)
-# admin_token_file = "../scratch/keys/admin-token.txt"  # enables `mkwmp admin` (loopback only)
+# admin_token_file = "../scratch/keys/admin-token.txt"  # enables `server admin` (loopback only)
 
 [ticket]
 kid = "dev1"
@@ -36,7 +36,7 @@ public_keys = []               # "kid:base64url" entries a lobby trusts
 ttl_secs = 43200               # 12 h; liveness is the roster's job
 
 [lobby]
-# `mkwmp lobby`: NPLN + Gamesync + TURN + Pia NAT. Lobbies are unlimited:
+# `server lobby`: NPLN + Gamesync + TURN + Pia NAT. Lobbies are unlimited:
 # they open as players arrive and close when empty.
 host = "127.0.0.1"             # 0.0.0.0 on a server
 public_host = "127.0.0.1"      # IPv4 players reach this server at

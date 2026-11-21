@@ -1,4 +1,4 @@
-//! The beholder's HTTP API (BEHOLDER_API.md §2-§4) and `mkwmp beholder`.
+//! The beholder's HTTP API (BEHOLDER_API.md §2-§4) and `server beholder`.
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -123,7 +123,7 @@ async fn servers(State(s): State<AppState>, ConnectInfo(peer): ConnectInfo<Socke
         .into_response()
 }
 
-/// `mkwmp beholder`: serve until Ctrl-C.
+/// `server beholder`: serve until Ctrl-C.
 pub async fn serve(bind: &str, trust_cf: bool) -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState::new(trust_cf, system_clock());
     let sweeper = state.clone();

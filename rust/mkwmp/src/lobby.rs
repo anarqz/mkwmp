@@ -1,4 +1,4 @@
-//! `mkwmp lobby`: the gateway (TLS/h2, gRPC framing, TURN, Pia NAT) in front
+//! `server lobby`: the gateway (TLS/h2, gRPC framing, TURN, Pia NAT) in front
 //! of the lobby Core (the game protocol), plus the lobby-count report to the
 //! seat server.
 

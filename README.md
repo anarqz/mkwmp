@@ -157,7 +157,7 @@ A launcher you build yourself still updates itself from GitHub releases. To keep
 
 ```sh
 cargo build --release --manifest-path rust/Cargo.toml -p mkwmp
-# -> rust/target/release/mkwmp   (mkwmp host | server | lobby | keygen | admin)
+# -> rust/target/release/server   (server host | seat | lobby | beholder | keygen | admin)
 
 # Static Linux binary for a VM:
 cargo zigbuild --release --manifest-path rust/Cargo.toml -p mkwmp --target x86_64-unknown-linux-musl
@@ -190,7 +190,7 @@ Two tests start the real `mkwmp` binary. One plays two clients from sign-in to a
 | `rust/seat` | seat server: gamertags and PINs (SQLite), friends, presence, seats, queue, signed tickets |
 | `rust/lobby` | the game-facing lobby logic: matchmaking, sessions, referee, friend rooms |
 | `rust/gateway` | gRPC over HTTP/2 + TLS, TURN relay, NAT responder, rate limits |
-| `rust/mkwmp` | the server binary: `mkwmp host` (everything, set up on first run), `server`, `lobby`, `keygen`, `admin` |
+| `rust/mkwmp` | the server binary: `server host` (everything, set up on first run), `server`, `lobby`, `keygen`, `admin` |
 | `rust/{config,contracts,ticket}` | server config, NPLN protobuf types, seat ticket signing |
 | `native/probe` | the game patch (`winmm.dll`): redirects the game's online services to an mkwmp server |
 | `contracts/` | the game's NPLN service definitions (`.proto`) |

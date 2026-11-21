@@ -1,4 +1,27 @@
-**mkwmp 1.3.1**: mkw-recomp 0.1.16, and the server side of what's coming next.
+**mkwmp 1.4.0**: a new launcher. It sets the game up for you, plays offline first, and has a server browser, mods and an in-game overlay.
+
+**Coming from 1.3: download this one by hand.** 1.3 can't update itself to the new launcher. Unzip `mkwmp-1.4.0-windows-x64.zip` into the same folder as your 1.3: it keeps your gamertag, PIN, server and choices. Then delete the old `mkwmp-launcher.exe`. On a Steam Deck, run `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash` in Desktop Mode (Konsole) with Steam closed: it does all of this and keeps your 1.3 settings.
+
+- **Game setup built in.** Point the launcher at your own copy of the game (1.8.0: a .nup, an .nx or a folder). It downloads mkw-recomp 0.1.16-mkwmp.1 (checked by its hash; the no-AVX2 build on CPUs that need it), builds the game (about 4 minutes of compiling, then shaders), installs the MKWMP mod and keeps everything next to itself (portable: nothing in AppData). Settings › Game can switch to another copy of yours later, usually in seconds.
+- **Offline first.** Once it's set up, the game plays without an account. Online is one choice away.
+- **Server browser.** Public servers list themselves in the server directory; the launcher shows them nearest first, with latency and free seats. Or type the address a host gave you.
+- **Friends, voice and camera** in private friend rooms only, as in 1.3.
+- **In-game overlay** (mkw-recomp 0.1.16-mkwmp with the mod): Guide (Home) or Select + Start pauses the game and opens the launcher over it: friends, settings, Quit game.
+- **Mods:** browse and install from GameBanana, or from a .zip, .7z or .rar; switch mods on and off; mods with options get their own page. Plugin mods ask before they run code; mods that change the game's code stay on mkw-recomp's own Mods page. Every player's save is backed up before you play with a new set of mods.
+- **Privacy on the server.** After you sign in, the launcher shows the server's own privacy policy, and the server records which version you accepted. You're asked again when it changes.
+- **Made for a controller**, a keyboard or a mouse, in 15 languages, light or dark, full screen or in a window. The launcher (`mkwmp.exe`) updates itself with `updater.exe`.
+- **Crash reports.** After a crash the launcher offers a report: a zip on your Desktop (no PIN or keys) and a prefilled GitHub issue.
+
+**This release has two downloads:** `mkwmp-1.4.0-windows-x64.zip` (the launcher, also for the Steam Deck through Proton) and the server, `mkwmp-server-1.4.0.zip` (`server` for Linux, `server.exe` for Windows). `SHA256SUMS` and `SHA256SUMS.sig` sign both.
+
+For people hosting a server:
+- The program is now called `server` (`server.exe`): `server host`, `server seat` (the seat API, was `mkwmp server`; `server server` still works), `server lobby`, `server beholder`, `server admin`.
+- **One command sets up a Vultr or DigitalOcean VM:** `curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash` installs the signed server, the services, the firewall and your privacy policy, and lists the server in the directory. Re-run it to update. Guide: https://anarqz.github.io/mkwmp/host.html
+- `[privacy] enforce = true` now makes sense: 1.4.0 launchers accept the policy on the server. Leave it off until your players have 1.4.0.
+
+---
+
+**From 1.3.1** (**mkwmp 1.3.1**: mkw-recomp 0.1.16, and the server side of what's coming next.)
 
 - **mkw-recomp [0.1.16-mkwmp.1](https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp.1)** is the recommended version: MKWMP's build of mkw-recomp 0.1.16, with the camera. Its setup now also runs under Wine/Proton. If your CPU has no AVX2, take the `-noavx2` zip. The official **0.1.16** is supported too, as well as 0.1.15-mkwmp, 0.1.15, 0.1.13, 0.1.12 and 0.1.10. The MKWMP mod works with 0.1.15 and newer. Coming from 0.1.15-mkwmp, open mkw-recomp once and let it finish its setup: the launcher tells you when that's needed.
 - The launcher passes the server's room details (which lobby, who's in it) to the game, so crash reports can say which room a crash happened in.
@@ -7,7 +30,6 @@ For people hosting a server:
 - `GET /privacy` serves your privacy policy (`[privacy] file`; a generic default otherwise), and the server records which version each player accepted. The next launcher (1.4.0) asks players to accept it; `[privacy] enforce = true` then refuses seats to players who haven't. Leave it off while your players are on 1.3.x.
 - `[announce]` lists your server in a server directory (a "beholder"), which the next launcher shows as a server browser. `mkwmp beholder` runs a directory yourself. See [HOSTING](https://github.com/anarqz/mkwmp/blob/main/docs/HOSTING.md).
 - `GET /ping` for the launcher's latency check.
-
 ---
 
 **From 1.3.0** (**mkwmp 1.3.0**: camera and voice chat in friend rooms, the MKWMP mod for mkw-recomp, and mkw-recomp 0.1.15.)
