@@ -1,0 +1,340 @@
+// Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
+using System.Xml.Linq;
+using Mkwmp.App.Input;
+using Mkwmp.App.Themes;
+
+namespace Mkwmp.Core.Tests;
+
+/// <summary>
+/// The window's pure math, linked from Mkwmp.App (no WPF): the button layout, the scroll motion,
+/// the contrast steps of the palette.
+/// </summary>
+public class ShellMathTests
+{
+    // ── the button layout ──
+
+    [Fact]
+    public void XboxLayoutKeepsXInputNames()
+    {
+        foreach (var button in Enum.GetValues<PadButton>())
+        {
+            Assert.Equal(button, PadLayout.ToRole(button, FaceLayout.Xbox));
+        }
+    }
+
+    [Fact]
+    public void NintendoLayoutConfirmsWithTheRightButton()
+    {
+        // XInput's B is the east (right) button: with Nintendo it is A, confirm; the south one goes back
+        Assert.Equal(PadButton.A, PadLayout.ToRole(PadLayout.FromPosition("east")!.Value, FaceLayout.Nintendo));
+        Assert.Equal(PadButton.B, PadLayout.ToRole(PadLayout.FromPosition("south")!.Value, FaceLayout.Nintendo));
+        Assert.Equal(PadButton.X, PadLayout.ToRole(PadLayout.FromPosition("north")!.Value, FaceLayout.Nintendo));
+        Assert.Equal(PadButton.Y, PadLayout.ToRole(PadLayout.FromPosition("west")!.Value, FaceLayout.Nintendo));
+        // the rest is the same
+        foreach (var button in new[] { PadButton.LB, PadButton.RB, PadButton.Start, PadButton.Back, PadButton.Up, PadButton.Down, PadButton.Left, PadButton.Right })
+        {
+            Assert.Equal(button, PadLayout.ToRole(button, FaceLayout.Nintendo));
+        }
+    }
+
+    [Theory]
+    [InlineData("nintendo", FaceLayout.Nintendo)]
+    [InlineData("Nintendo", FaceLayout.Nintendo)]
+    [InlineData("xbox", FaceLayout.Xbox)]
+    [InlineData("auto", FaceLayout.Xbox)]
+    [InlineData("", FaceLayout.Xbox)]
+    [InlineData(null, FaceLayout.Xbox)]
+    public void LayoutFromTheGameSetting(string? value, FaceLayout expected) => Assert.Equal(expected, PadLayout.FromSetting(value));
+
+
+    // ── the scroll motion ──
+
+    [Fact]
+    public void WheelNotchGoesAThirdFurtherThanWpf()
+    {
+        // WPF: 3 lines of 16 units a notch = 48; now 64 (+33%)
+        Assert.Equal(64, ScrollMotion.WheelDistance(-120, 3, 800), 6);
+        Assert.Equal(-64, ScrollMotion.WheelDistance(120, 3, 800), 6);
+        Assert.True(ScrollMotion.WheelDistance(-120, 3, 800) / 48.0 >= 1.2);
+        // Settings' category list: 1000 units to scroll. A full flick of the wheel is ~5 notches:
+        // before 48 × 5 = 240 a flick, 4.2 flicks; now 320 a flick, 3.1 flicks
+        Assert.True(1000 / (5 * 48.0) > 4);
+        Assert.True(1000 / (5 * ScrollMotion.WheelDistance(-120, 3, 800)) < 3.2);
+    }
+
+    [Fact]
+    public void PrecisionTouchpadStepsAreNotRoundedToNotches()
+    {
+        // a touchpad sends many small deltas: ten of 12 are one notch, not ten
+        var total = Enumerable.Range(0, 10).Sum(_ => ScrollMotion.WheelDistance(-12, 3, 800));
+        Assert.Equal(ScrollMotion.WheelDistance(-120, 3, 800), total, 6);
+    }
+
+    [Fact]
+    public void WheelPageMode()
+    {
+        // "one screen at a time" (lines = -1): most of the viewport
+        Assert.Equal(680, ScrollMotion.WheelDistance(-120, -1, 800), 6);
+    }
+
+    [Fact]
+    public void GlideEasesOutAndArrives()
+    {
+        var m = new ScrollMotion();
+        m.Jump(0);
+        m.GlideBy(100, 1000);
+        var positions = new List<double>();
+        for (var i = 0; i < 30; i++)
+        {
+            positions.Add(m.Step(1.0 / 60, 1000));
+        }
+        // moving at once, never back, never past the target; each step smaller (eased out)
+        Assert.True(positions[0] > 10);
+        for (var i = 1; i < positions.Count; i++)
+        {
+            Assert.True(positions[i] >= positions[i - 1]);
+            Assert.True(positions[i] <= 100);
+            Assert.True(positions[i] - positions[i - 1] <= positions[Math.Max(0, i - 1)] - (i >= 2 ? positions[i - 2] : 0) + 0.3); // the last step snaps the last quarter unit
+        }
+        Assert.Equal(100, positions[^1]);
+        Assert.False(m.Moving);
+    }
+
+    [Fact]
+    public void GlideIsTheSameAtAnyFrameRate()
+    {
+        double At(int fps, double seconds)
+        {
+            var m = new ScrollMotion();
+            m.Jump(0);
+            m.GlideBy(500, 1000);
+            var p = 0.0;
+            for (var i = 0; i < (int)Math.Round(seconds * fps); i++)
+            {
+                p = m.Step(1.0 / fps, 1000);
+            }
+            return p;
+        }
+        Assert.Equal(At(60, 1.0 / 6), At(144, 1.0 / 6), 0); // 10, 24 and 5 frames
+        Assert.Equal(At(60, 1.0 / 6), At(30, 1.0 / 6), 0);
+        // ~ 95% of the way after 3 time constants
+        Assert.InRange(At(60, 3 * ScrollMotion.GlideTime), 470, 480);
+    }
+
+    [Fact]
+    public void FastWheelSpinsChain()
+    {
+        var m = new ScrollMotion();
+        m.Jump(0);
+        var notch = ScrollMotion.WheelDistance(-120, 3, 800);
+        // five notches 20 ms apart: the target is five notches away, wherever the glide was
+        for (var i = 0; i < 5; i++)
+        {
+            m.GlideBy(notch, 10000);
+            m.Step(0.02, 10000);
+        }
+        Assert.Equal(5 * notch, m.Target, 6);
+        Assert.True(m.Position < m.Target);
+        for (var i = 0; i < 60; i++)
+        {
+            m.Step(1.0 / 60, 10000);
+        }
+        Assert.Equal(5 * notch, m.Position, 6);
+    }
+
+    [Fact]
+    public void GlideStopsAtTheEnds()
+    {
+        var m = new ScrollMotion();
+        m.Jump(950);
+        m.GlideBy(500, 1000);
+        Assert.Equal(1000, m.Target);
+        m.GlideBy(-5000, 1000);
+        Assert.Equal(0, m.Target);
+    }
+
+    [Fact]
+    public void ContentThatShrinksMidGlideOnlyClamps()
+    {
+        var m = new ScrollMotion();
+        m.Jump(0);
+        m.GlideTo(900, 1000);
+        m.Step(1.0 / 60, 1000);
+        var p = m.Step(1.0 / 60, 400); // the list got shorter
+        Assert.InRange(p, 0, 400);
+        for (var i = 0; i < 60; i++)
+        {
+            p = m.Step(1.0 / 60, 400);
+        }
+        Assert.Equal(400, p);
+        Assert.False(m.Moving);
+    }
+
+    [Fact]
+    public void FlickCoastsAndSlowsDown()
+    {
+        var m = new ScrollMotion();
+        m.Jump(1000);
+        m.Fling(2000);
+        var last = 1000.0;
+        var lastStep = double.MaxValue;
+        while (m.Moving)
+        {
+            var p = m.Step(1.0 / 60, 100000);
+            Assert.True(p > last);
+            Assert.True(p - last < lastStep + 1e-9);
+            lastStep = p - last;
+            last = p;
+        }
+        // comes to rest near velocity × friction time
+        Assert.InRange(last - 1000, ScrollMotion.CoastDistance(2000) * 0.95, ScrollMotion.CoastDistance(2000) * 1.01);
+    }
+
+    [Fact]
+    public void FlickIsTheSameAtAnyFrameRate()
+    {
+        double Rest(int fps)
+        {
+            var m = new ScrollMotion();
+            m.Jump(0);
+            m.Fling(1500);
+            var p = 0.0;
+            while (m.Moving)
+            {
+                p = m.Step(1.0 / fps, 100000);
+            }
+            return p;
+        }
+        Assert.Equal(Rest(60), Rest(144), 0);
+        Assert.Equal(Rest(60), Rest(30), 0);
+    }
+
+    [Fact]
+    public void FlickStopsAtTheEnd()
+    {
+        var m = new ScrollMotion();
+        m.Jump(900);
+        m.Fling(5000);
+        while (m.Moving)
+        {
+            m.Step(1.0 / 60, 1000);
+        }
+        Assert.Equal(1000, m.Position);
+    }
+
+    [Fact]
+    public void SlowReleaseDoesNotCoast()
+    {
+        var m = new ScrollMotion();
+        m.Jump(10);
+        m.Fling(5);
+        Assert.False(m.Moving);
+    }
+
+    [Fact]
+    public void StickScrollsFasterWhenHeld()
+    {
+        Assert.Equal(0, ScrollMotion.StickVelocity(0.15, 0));
+        // down (negative Y in XInput) scrolls down (positive offset)
+        Assert.True(ScrollMotion.StickVelocity(-1, 0) > 0);
+        Assert.True(ScrollMotion.StickVelocity(1, 0) < 0);
+        var start = ScrollMotion.StickVelocity(-1, 0);
+        var held = ScrollMotion.StickVelocity(-1, ScrollMotion.StickRampTime);
+        Assert.Equal(ScrollMotion.StickBoost, held / start, 6);
+        // a full tilt goes at least as fast as a fast wheel (a notch every 50 ms) at once
+        Assert.True(start >= ScrollMotion.WheelDistance(-120, 3, 800) * 20);
+        // fine control near the middle
+        Assert.True(ScrollMotion.StickVelocity(-0.4, 0) < start * 0.1);
+    }
+
+    [Fact]
+    public void HeldDirectionRepeatsFaster()
+    {
+        Assert.Equal(ScrollMotion.SlowRepeat, ScrollMotion.RepeatInterval(TimeSpan.Zero));
+        Assert.Equal(ScrollMotion.FastRepeat, ScrollMotion.RepeatInterval(TimeSpan.FromSeconds(3)));
+        Assert.True(ScrollMotion.RepeatInterval(TimeSpan.FromSeconds(0.75)) < ScrollMotion.SlowRepeat);
+    }
+
+    // ── contrast ──
+
+    private static Dictionary<string, Rgba> PaletteFile(string theme)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Themes", $"Colors.{theme}.xaml");
+        XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        return XDocument.Load(path).Root!.Elements()
+            .Where(e => e.Name.LocalName == "SolidColorBrush")
+            .ToDictionary(e => (string)e.Attribute(x + "Key")!, e => Rgba.Parse((string)e.Attribute("Color")!));
+    }
+
+    private static Rgba After(Dictionary<string, Rgba> palette, Dictionary<string, Rgba> derived, string key) =>
+        derived.TryGetValue(key, out var c) ? c : palette[key];
+
+    [Theory]
+    [InlineData("Dark")]
+    [InlineData("Light")]
+    public void ContrastStepsSpreadTheSurfaces(string theme)
+    {
+        var palette = PaletteFile(theme);
+        double Gap(string step)
+        {
+            var d = Palette.Derive(palette, Palette.Factor(step));
+            return Palette.ContrastRatio(After(palette, d, "Brush.SurfaceAlt"), After(palette, d, Palette.Background));
+        }
+        var gaps = Palette.Steps.Select(Gap).ToList();
+        for (var i = 1; i < gaps.Count; i++)
+        {
+            Assert.True(gaps[i] > gaps[i - 1], $"{theme}: {Palette.Steps[i]} {gaps[i]:0.00} after {gaps[i - 1]:0.00}");
+        }
+        // the normal step is the file itself
+        var normal = Palette.Derive(palette, 1.0);
+        foreach (var key in Palette.Surfaces.Concat(Palette.Lines).Append(Palette.Background))
+        {
+            Assert.Equal(palette[key], After(palette, normal, key));
+        }
+    }
+
+    [Fact]
+    public void DarkDockStandsOutFromThePage()
+    {
+        // the player's screenshot: the dock (SurfaceAlt) was barely there on the dark background (1.13:1)
+        var dark = PaletteFile("Dark");
+        Assert.True(Palette.ContrastRatio(dark["Brush.SurfaceAlt"], dark[Palette.Background]) >= 1.25);
+        Assert.True(Palette.ContrastRatio(dark["Brush.Surface"], dark[Palette.Background]) >= 1.4);
+    }
+
+    [Theory]
+    [InlineData("Dark")]
+    [InlineData("Light")]
+    public void TextStaysReadableAtEveryStep(string theme)
+    {
+        var palette = PaletteFile(theme);
+        foreach (var step in Palette.Steps)
+        {
+            var d = Palette.Derive(palette, Palette.Factor(step));
+            var grounds = Palette.Surfaces.Append(Palette.Background).Select(k => After(palette, d, k)).ToList();
+            foreach (var text in Palette.Texts)
+            {
+                foreach (var ground in grounds)
+                {
+                    Assert.True(Palette.ContrastRatio(After(palette, d, text), ground) >= Palette.MinTextContrast,
+                        $"{theme} {step}: {text} {After(palette, d, text)} on {ground}");
+                }
+            }
+            // the accent (links, the selected category, a fill too): AA for large text on the page and its cards
+            foreach (var key in new[] { Palette.Background, "Brush.Surface", "Brush.SurfaceAlt", "Brush.Modal" })
+            {
+                Assert.True(Palette.ContrastRatio(palette["Brush.Accent"], After(palette, d, key)) >= 3,
+                    $"{theme} {step}: accent on {key} {After(palette, d, key)}");
+            }
+            // the letter on a hint's disc is the page's own colour
+            Assert.Equal(After(palette, d, Palette.Background), After(palette, d, "Brush.OnGlyph"));
+        }
+    }
+
+    [Theory]
+    [InlineData("higher", "higher")]
+    [InlineData("HIGH", "high")]
+    [InlineData("loud", "normal")]
+    [InlineData(null, "normal")]
+    public void ContrastSettingIsNormalized(string? value, string expected) => Assert.Equal(expected, Palette.Normalize(value));
+}
