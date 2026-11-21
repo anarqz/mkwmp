@@ -138,6 +138,12 @@ public sealed class ServerPicker : ObservableObject
                 : S["servers.none"],
         };
 
+    /// <summary>The picture over <see cref="Empty"/>: offline when the list could not be read, an empty sky when nobody is
+    /// listed; none while it loads or with rows.</summary>
+    public string? EmptyArt => Rows.Count > 0 || Busy || Launcher.Servers.State == ServerListState.Loading ? null
+        : Launcher.Servers.State == ServerListState.Failed ? "pack://application:,,,/Assets/Art/empty-offline.png"
+        : "pack://application:,,,/Assets/Art/empty-servers.png";
+
     /// <summary>"The list could not be read right now" over a cached list.</summary>
     public string Note => Rows.Count > 0 ? Launcher.Servers.Note ?? "" : "";
 

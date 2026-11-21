@@ -30,7 +30,10 @@
     </Grid>
 
     <c:SmoothScrollViewer x:Name="Carousel" Grid.Row="1" Style="{StaticResource Carousel}" ScrollChanged="OnCarouselScrolled">
-      <ItemsControl x:Name="TilesHost" ItemsSource="{Binding Tiles}" Focusable="False" Margin="134,26,134,26">
+      <!-- centred; scaled down a little when the row is wider than the stage (a 16:10 screen, the wide Play tile
+           of overlay mode): HomePage.FitTiles. The room for the focus ring above and below is padding, inside the
+           scaled element: a layout transform clips what overflows it. -->
+      <ItemsControl x:Name="TilesHost" ItemsSource="{Binding Tiles}" Focusable="False" Margin="110,0" Padding="10,26" HorizontalAlignment="Center">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
             <StackPanel Orientation="Horizontal" />

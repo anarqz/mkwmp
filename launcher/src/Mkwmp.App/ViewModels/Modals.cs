@@ -65,6 +65,11 @@ public class ModalViewModel : LayerViewModel
         set => Set(ref _body, value);
     }
 
+    /// <summary>A picture beside the title (a pack URI of Assets/Art, such as the crash screen's); null: none.</summary>
+    public string? Art { get; init; }
+
+    public bool HasArt => Art is not null;
+
     public object? Content
     {
         get => _content;

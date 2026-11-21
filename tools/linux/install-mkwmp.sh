@@ -16,8 +16,8 @@
 #   3. adds the Steam shortcut "MKWMP" (or updates the one it added before), forces a Proton version on it,
 #      and gives it a gamepad layout on the Steam Deck. A shortcut an older MKWMP installer made
 #      ("Mario Kart World (MKWMP)", the old Linux launcher) is removed; no other shortcut is touched;
-#   4. downloads the library artwork (capsules, hero, logo, icon) from SteamGridDB: the links are in
-#      artwork.json; no picture is shipped with MKWMP.
+#   4. downloads MKWMP's own library artwork (capsules, hero, logo, icon) from the repository: the links are in
+#      artwork.json (tools/linux/art/); SteamGridDB's public search is the fallback when a link is gone.
 #
 # Steam must be closed while its files are edited. This script never closes Steam: it stops and asks you to.
 # Every Steam file it changes is backed up beside the original first (*.bak-mkwmp-<time>).
@@ -69,7 +69,7 @@ Steam
   --steam-root <folder>   Steam's folder, when it is not found by itself
   --no-steam              install the files only; touch nothing of Steam
 
-Artwork (downloaded from SteamGridDB to this machine; no key is needed)
+Artwork (MKWMP's own, downloaded from the repository; SteamGridDB as the fallback, no key needed)
   --artwork <file>        another list of links (the form of tools/linux/artwork.json)
   --art-only              only (re)download the artwork of the installed shortcut
   --no-art                no artwork: the shortcut gets MKWMP's own icon

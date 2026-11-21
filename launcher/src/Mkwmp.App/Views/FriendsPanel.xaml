@@ -148,7 +148,8 @@
       </StackPanel>
       <StackPanel Grid.Row="2" VerticalAlignment="Center" Margin="70,0,70,60"
                   Visibility="{Binding IsEmpty, Converter={StaticResource Conv.Visible}}">
-        <c:Icon Data="{StaticResource Icon.Friends}" Width="96" Height="96" StrokeThickness="1.4" Foreground="{DynamicResource Brush.TextFaint}" />
+        <Image Source="pack://application:,,,/Assets/Art/empty-friends.png" Width="460" HorizontalAlignment="Center"
+               RenderOptions.BitmapScalingMode="HighQuality" IsHitTestVisible="False" />
         <TextBlock Text="{Binding S[friends.empty]}" Style="{StaticResource Text.Caption}" TextAlignment="Center" Margin="0,18,0,0" />
       </StackPanel>
 

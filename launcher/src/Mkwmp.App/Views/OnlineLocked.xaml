@@ -3,14 +3,13 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              x:Name="Self" Focusable="False">
-  <!-- The locked state of anything that needs a server (docs/DESIGN.md, section 12): a lock, what
+  <!-- The locked state of anything that needs a server (docs/DESIGN.md, section 12): a picture, what
        lives there, one line, and the "Configure online" button. The same in the friends panel and in
        a settings pane. DataContext: anything with S and ConfigureOnlineCommand. -->
   <StackPanel HorizontalAlignment="Center" MaxWidth="760">
-    <Grid Width="132" Height="132" HorizontalAlignment="Center">
-      <Ellipse Fill="{DynamicResource Brush.SurfaceAlt}" />
-      <c:Icon Data="{StaticResource Icon.Lock}" Width="64" Height="64" StrokeThickness="1.7" Foreground="{DynamicResource Brush.TextMuted}" />
-    </Grid>
+    <!-- online is off: the offline picture (Assets/Art) -->
+    <Image Source="pack://application:,,,/Assets/Art/empty-offline.png" Height="210" HorizontalAlignment="Center"
+           RenderOptions.BitmapScalingMode="HighQuality" IsHitTestVisible="False" />
     <TextBlock Text="{Binding Title, ElementName=Self}" Style="{StaticResource Text.Heading}" TextWrapping="Wrap" TextAlignment="Center"
                HorizontalAlignment="Center" Margin="0,30,0,0" />
     <TextBlock Text="{Binding Text, ElementName=Self}" Style="{StaticResource Text.Caption}" FontSize="26" LineHeight="38" TextAlignment="Center"

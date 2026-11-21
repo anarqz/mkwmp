@@ -27,6 +27,13 @@
       <Setter Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
       <Setter Property="HorizontalAlignment" Value="Center" />
     </Style>
+    <!-- a page's illustration (Assets/Art/step-*.png, made for 250 px at most) -->
+    <Style x:Key="StepArt" TargetType="Image">
+      <Setter Property="Height" Value="210" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="RenderOptions.BitmapScalingMode" Value="HighQuality" />
+      <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
     <!-- one thing online gives: a small disc, a title, a line -->
     <Style x:Key="FeatureDisc" TargetType="Border">
       <Setter Property="Width" Value="84" />
@@ -49,27 +56,43 @@
     </c:PageHeader>
 
     <!-- ═════════ Welcome ═════════ -->
-    <StackPanel Grid.Row="1" MaxWidth="1100" Margin="72,0" VerticalAlignment="Center"
-                Visibility="{Binding StepName, Converter={StaticResource Conv.Visible}, ConverterParameter='=welcome'}">
-      <!-- MKWMP's own picture: a chequered flag over a kart, plain shapes -->
-      <Canvas Width="300" Height="200" HorizontalAlignment="Center">
-        <Ellipse Canvas.Left="40" Canvas.Top="20" Width="220" Height="170" Fill="{DynamicResource Brush.AccentSoft}" />
-        <c:Icon Canvas.Left="62" Canvas.Top="24" Data="{StaticResource Icon.Kart}" Width="176" Height="176" StrokeThickness="1.4"
-                Foreground="{DynamicResource Brush.Accent}" />
-        <c:Icon Canvas.Left="204" Canvas.Top="0" Data="{StaticResource Icon.Flag}" Width="84" Height="84" StrokeThickness="1.8"
-                Foreground="{DynamicResource Brush.Text}" />
-      </Canvas>
-      <TextBlock Text="{Binding S[setup.welcome.heading]}" Style="{StaticResource Text.Display}" HorizontalAlignment="Center" Margin="0,10,0,0" />
-      <TextBlock Text="{Binding S[setup.welcome.text]}" Style="{StaticResource Lead}" Margin="0,16,0,0" />
-      <TextBlock Text="{Binding S[setup.welcome.note]}" Style="{StaticResource Small}" Margin="0,16,0,0" />
-      <TextBlock Text="{Binding S[setup.welcome.credit]}" Style="{StaticResource Text.Small}" FontSize="23" HorizontalAlignment="Center" Margin="0,30,0,0" />
-    </StackPanel>
+    <!-- the hero (Assets/Art/welcome-hero.jpg): a kart out of a portal on the right, the words on its open sky on the
+         left. The picture is light in both themes, so the words over it keep their own dark ink. -->
+    <Border Grid.Row="1" Margin="72,26,72,0" CornerRadius="28"
+            Visibility="{Binding StepName, Converter={StaticResource Conv.Visible}, ConverterParameter='=welcome'}">
+      <!-- the picture's own sky (its left edge, top to bottom) continues under the words -->
+      <Border.Background>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+          <GradientStop Offset="0" Color="#FFE2E4FB" />
+          <GradientStop Offset="0.6" Color="#FFD3DEFC" />
+          <GradientStop Offset="1" Color="#FFCBC9F8" />
+        </LinearGradientBrush>
+      </Border.Background>
+      <Grid>
+        <!-- the whole picture, as high as the card, on the right; its left third is already faded into this sky
+             (launcher/tools/make_art.py, HERO_SKY: the same three colours) -->
+        <Border CornerRadius="28">
+          <Border.Background>
+            <ImageBrush ImageSource="pack://application:,,,/Assets/Art/welcome-hero.jpg" Stretch="Uniform" AlignmentX="Right"
+                        RenderOptions.BitmapScalingMode="HighQuality" />
+          </Border.Background>
+        </Border>
+        <StackPanel HorizontalAlignment="Left" VerticalAlignment="Center" Width="740" Margin="80,0,0,0">
+          <Image Source="pack://application:,,,/Assets/Art/logo.png" Width="520" HorizontalAlignment="Left" Margin="-18,0,0,0"
+                 RenderOptions.BitmapScalingMode="HighQuality" AutomationProperties.Name="{Binding S[setup.welcome.heading]}" />
+          <TextBlock Text="{Binding S[setup.welcome.text]}" Style="{StaticResource Lead}" FontSize="30" LineHeight="44" TextAlignment="Left"
+                     Foreground="#FF1C2150" Margin="0,22,0,0" />
+          <TextBlock Text="{Binding S[setup.welcome.note]}" Style="{StaticResource Small}" FontSize="25" TextAlignment="Left" Foreground="#FF3A4170" Margin="0,18,0,0" />
+          <TextBlock Text="{Binding S[setup.welcome.credit]}" Style="{StaticResource Text.Small}" FontSize="22" Foreground="#FF505782" TextWrapping="Wrap" Margin="0,26,0,0" />
+        </StackPanel>
+      </Grid>
+    </Border>
 
     <!-- ═════════ Your name ═════════ -->
     <StackPanel Grid.Row="1" Width="980" VerticalAlignment="Center"
                 Visibility="{Binding StepName, Converter={StaticResource Conv.Visible}, ConverterParameter='=name'}">
-      <c:Avatar DisplayName="{Binding NameText}" Width="132" Height="132" HorizontalAlignment="Center" />
-      <TextBlock Text="{Binding S[setup.name.text]}" Style="{StaticResource Lead}" Margin="0,28,0,0" />
+      <Image Source="pack://application:,,,/Assets/Art/step-name.png" Style="{StaticResource StepArt}" />
+      <TextBlock Text="{Binding S[setup.name.text]}" Style="{StaticResource Lead}" Margin="0,22,0,0" />
       <Grid Margin="0,34,0,0">
         <TextBox x:Name="NameBox" Text="{Binding NameText, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" TextAlignment="Center" FontSize="36"
                  input:TextEntry.Title="{Binding S[setup.name.title]}" input:TextEntry.Charset="Gamertag" input:TextEntry.Submitted="OnSubmitted" />
@@ -96,23 +119,33 @@
           Visibility="{Binding StepName, Converter={StaticResource Conv.Visible}, ConverterParameter='=game'}">
       <StackPanel>
         <!-- the picture: a tick when ready, a spinner while something runs, else what is needed -->
-        <Grid HorizontalAlignment="Center" Width="132" Height="132">
+        <Grid HorizontalAlignment="Center" Height="170">
           <Border Style="{StaticResource Disc}" Background="{DynamicResource Brush.Accent}"
                   Visibility="{Binding StageName, Converter={StaticResource Conv.Visible}, ConverterParameter='=ready'}">
             <c:Icon Data="{StaticResource Icon.Check}" Width="74" Height="74" StrokeThickness="2.6" Foreground="{DynamicResource Brush.OnAccent}" />
           </Border>
-          <Border Style="{StaticResource Disc}" Visibility="{Binding StageName, Converter={StaticResource Conv.Visible}, ConverterParameter='=needruntime'}">
-            <c:Icon Data="{StaticResource Icon.Download}" Width="70" Height="70" StrokeThickness="1.8" Foreground="{DynamicResource Brush.Accent}" />
-          </Border>
-          <Border Style="{StaticResource Disc}" Visibility="{Binding StageName, Converter={StaticResource Conv.Visible}, ConverterParameter='=needdump'}">
-            <c:Icon Data="{StaticResource Icon.Folder}" Width="70" Height="70" StrokeThickness="1.8" Foreground="{DynamicResource Brush.Accent}" />
-          </Border>
-          <Border Style="{StaticResource Disc}" Visibility="{Binding StageName, Converter={StaticResource Conv.Visible}, ConverterParameter='=needsetup'}">
-            <c:Icon Data="{StaticResource Icon.Refresh}" Width="70" Height="70" StrokeThickness="1.8" Foreground="{DynamicResource Brush.Accent}" />
-          </Border>
-          <Border Style="{StaticResource Disc}" Visibility="{Binding StageName, Converter={StaticResource Conv.Visible}, ConverterParameter='=needintegration'}">
-            <c:Icon Data="{StaticResource Icon.Kart}" Width="76" Height="76" StrokeThickness="1.6" Foreground="{DynamicResource Brush.Accent}" />
-          </Border>
+          <!-- something is needed (mkw-recomp, the game's files, its setup, the MKWMP mod): the game setup's picture -->
+          <Image Source="pack://application:,,,/Assets/Art/step-game.png" Height="170">
+            <Image.Style>
+              <Style TargetType="Image" BasedOn="{StaticResource StepArt}">
+                <Setter Property="Visibility" Value="Collapsed" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding StageName}" Value="needruntime">
+                    <Setter Property="Visibility" Value="Visible" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding StageName}" Value="needdump">
+                    <Setter Property="Visibility" Value="Visible" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding StageName}" Value="needsetup">
+                    <Setter Property="Visibility" Value="Visible" />
+                  </DataTrigger>
+                  <DataTrigger Binding="{Binding StageName}" Value="needintegration">
+                    <Setter Property="Visibility" Value="Visible" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Image.Style>
+          </Image>
           <Border Style="{StaticResource Disc}" Background="{DynamicResource Brush.SurfaceAlt}"
                   Visibility="{Binding StageName, Converter={StaticResource Conv.Visible}, ConverterParameter='=setupfailed'}">
             <c:Icon Data="{StaticResource Icon.Warning}" Width="70" Height="70" StrokeThickness="1.8" Foreground="{DynamicResource Brush.Bad}" />
@@ -206,9 +239,18 @@
     <!-- ═════════ Want to go online? ═════════ -->
     <StackPanel Grid.Row="1" Width="1120" VerticalAlignment="Center"
                 Visibility="{Binding StepName, Converter={StaticResource Conv.Visible}, ConverterParameter='=online'}">
-      <TextBlock Text="{Binding S[setup.online.heading]}" Style="{StaticResource Text.Display}" FontSize="48" HorizontalAlignment="Center" />
-      <TextBlock Text="{Binding S[setup.online.text]}" Style="{StaticResource Lead}" FontSize="30" LineHeight="44" Margin="0,14,0,0" />
-      <Border Style="{StaticResource Card}" Margin="0,30,0,0" Padding="34,28">
+      <Grid HorizontalAlignment="Center">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <Image Source="pack://application:,,,/Assets/Art/step-online.png" Style="{StaticResource StepArt}" Height="150" Margin="0,0,30,0" />
+        <StackPanel Grid.Column="1" VerticalAlignment="Center" MaxWidth="900">
+          <TextBlock Text="{Binding S[setup.online.heading]}" Style="{StaticResource Text.Display}" FontSize="48" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding S[setup.online.text]}" Style="{StaticResource Lead}" FontSize="30" LineHeight="44" TextAlignment="Left" Margin="0,8,0,0" />
+        </StackPanel>
+      </Grid>
+      <Border Style="{StaticResource Card}" Margin="0,24,0,0" Padding="34,24">
         <StackPanel>
           <Grid>
             <Grid.ColumnDefinitions>
@@ -255,8 +297,15 @@
     </StackPanel>
 
     <!-- ═════════ Before you play online (the consent: nothing reaches a server before it) ═════════ -->
-    <StackPanel Grid.Row="1" MaxWidth="1240" Margin="72,0" VerticalAlignment="Center"
-                Visibility="{Binding StepName, Converter={StaticResource Conv.Visible}, ConverterParameter='=consent'}">
+    <Grid Grid.Row="1" MaxWidth="1560" Margin="72,0" VerticalAlignment="Center"
+          Visibility="{Binding StepName, Converter={StaticResource Conv.Visible}, ConverterParameter='=consent'}">
+     <Grid.ColumnDefinitions>
+       <ColumnDefinition Width="Auto" />
+       <ColumnDefinition Width="*" />
+     </Grid.ColumnDefinitions>
+     <Image Source="pack://application:,,,/Assets/Art/step-consent.png" Style="{StaticResource StepArt}" Height="230" VerticalAlignment="Top"
+            Margin="0,40,50,0" />
+     <StackPanel Grid.Column="1">
       <TextBlock Text="{Binding ConsentText}" Style="{StaticResource Text.Caption}" FontSize="24" Margin="0,0,0,14" />
       <TextBlock Text="{Binding S[setup.consent.p1]}" Style="{StaticResource Text.Body}" FontSize="32" LineHeight="46" />
       <TextBlock Text="{Binding S[setup.consent.p2]}" Style="{StaticResource Text.Caption}" FontSize="26" LineHeight="38" Margin="0,18,0,0" />
@@ -268,7 +317,8 @@
                       IsChecked="{Binding Adult}" />
       <TextBlock Text="{Binding ConsentNote}" Style="{StaticResource Small}" Foreground="{DynamicResource Brush.Bad}" Margin="0,10,0,0"
                  Visibility="{Binding ConsentNote, Converter={StaticResource Conv.Visible}}" />
-    </StackPanel>
+     </StackPanel>
+    </Grid>
 
     <!-- ═════════ Choose a server ═════════ -->
     <Grid Grid.Row="1" Width="1180" Margin="0,18,0,0"
@@ -284,7 +334,10 @@
          <ColumnDefinition Width="*" />
          <ColumnDefinition Width="Auto" />
        </Grid.ColumnDefinitions>
-       <TextBlock Text="{Binding S[setup.server.pick]}" Style="{StaticResource Text.Body}" FontSize="30" VerticalAlignment="Center" Margin="6,0,0,0" />
+       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+         <Image Source="pack://application:,,,/Assets/Art/step-server.png" Style="{StaticResource StepArt}" Height="84" Margin="0,0,18,0" />
+         <TextBlock Text="{Binding S[setup.server.pick]}" Style="{StaticResource Text.Body}" FontSize="30" VerticalAlignment="Center" />
+       </StackPanel>
        <c:ConsoleButton Grid.Column="1" Kind="Ghost" Height="68" MinWidth="0" Padding="22,0" Icon="{StaticResource Icon.Refresh}" Content="{Binding S[servers.refresh]}"
                         Command="{Binding Servers.RefreshCommand}" />
      </Grid>
@@ -293,10 +346,8 @@
        <settings:ServerList DataContext="{Binding Servers}" />
      </c:SmoothScrollViewer>
      <StackPanel Grid.Row="1" VerticalAlignment="Center" Visibility="{Binding Servers.HasList, Converter={StaticResource Conv.Visible}, ConverterParameter=!}">
-       <Border Style="{StaticResource Disc}">
-         <c:Icon Data="{StaticResource Icon.Globe}" Width="72" Height="72" StrokeThickness="1.7" Foreground="{DynamicResource Brush.Accent}" />
-       </Border>
-       <TextBlock Text="{Binding S[setup.server.text]}" Style="{StaticResource Lead}" Margin="0,26,0,0" />
+       <Image Source="pack://application:,,,/Assets/Art/step-server.png" Style="{StaticResource StepArt}" />
+       <TextBlock Text="{Binding S[setup.server.text]}" Style="{StaticResource Lead}" Margin="0,22,0,0" />
      </StackPanel>
      <StackPanel Grid.Row="2">
       <TextBlock Text="{Binding S[setup.server.or_type]}" Style="{StaticResource Text.Caption}" FontSize="24" Margin="6,8,0,0"
@@ -354,14 +405,15 @@
     <!-- ═════════ Your PIN (dots until the eye, or X) ═════════ -->
     <StackPanel Grid.Row="1" Width="1080" VerticalAlignment="Center"
                 Visibility="{Binding StepName, Converter={StaticResource Conv.Visible}, ConverterParameter='=pin'}">
+      <Image Source="pack://application:,,,/Assets/Art/step-pin.png" Style="{StaticResource StepArt}" Height="150" Margin="0,0,0,14" />
       <TextBlock Text="{Binding PinText}" Style="{StaticResource Lead}" />
-      <Border Background="{DynamicResource Brush.Surface}" CornerRadius="14" Padding="40,30,40,34" Margin="0,30,0,0" HorizontalAlignment="Center" MinWidth="820">
+      <Border Background="{DynamicResource Brush.Surface}" CornerRadius="14" Padding="40,30,40,34" Margin="0,24,0,0" HorizontalAlignment="Center" MinWidth="820">
         <StackPanel HorizontalAlignment="Center">
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
             <c:Icon Data="{StaticResource Icon.Lock}" Width="34" Height="34" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,12,0" />
             <TextBlock Text="{Binding SavedName}" Style="{StaticResource Text.Caption}" FontSize="27" />
           </StackPanel>
-          <settings:PinField Pin="{Binding SavedPin}" IsRevealed="{Binding PinRevealed}" DigitSize="104" Margin="114,6,0,0" />
+          <settings:PinField Pin="{Binding SavedPin}" IsRevealed="{Binding PinRevealed}" DigitSize="104" Margin="0,6,0,0" />
         </StackPanel>
       </Border>
       <TextBlock Text="{Binding S[setup.pin.note]}" Style="{StaticResource Small}" Margin="0,26,0,0" />
@@ -370,10 +422,8 @@
     <!-- ═════════ Done ═════════ -->
     <StackPanel Grid.Row="1" Width="1100" VerticalAlignment="Center"
                 Visibility="{Binding StepName, Converter={StaticResource Conv.Visible}, ConverterParameter='=done'}">
-      <Border Style="{StaticResource Disc}" Width="120" Height="120" CornerRadius="60" Background="{DynamicResource Brush.Accent}">
-        <c:Icon Data="{StaticResource Icon.Check}" Width="70" Height="70" StrokeThickness="2.6" Foreground="{DynamicResource Brush.OnAccent}" />
-      </Border>
-      <TextBlock Text="{Binding DoneText}" Style="{StaticResource Lead}" Margin="0,24,0,8" />
+      <Image Source="pack://application:,,,/Assets/Art/step-done.png" Style="{StaticResource StepArt}" />
+      <TextBlock Text="{Binding DoneText}" Style="{StaticResource Lead}" Margin="0,18,0,8" />
       <Border Style="{StaticResource Card}" Padding="20,6,20,24" Margin="0,18,0,0">
         <settings:StatusLines DataContext="{Binding Summary}" />
       </Border>

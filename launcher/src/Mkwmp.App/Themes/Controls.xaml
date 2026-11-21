@@ -349,6 +349,8 @@
             <Trigger Property="IsFocused" Value="True">
               <Setter Property="Panel.ZIndex" Value="1" />
               <Setter TargetName="Hover" Property="Visibility" Value="Collapsed" />
+              <!-- the ring covers the row's own rule: it moves just under the ring, so the separator stays -->
+              <Setter TargetName="Rule" Property="Margin" Value="0,0,0,-11" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Foreground" Value="{DynamicResource Brush.TextFaint}" />

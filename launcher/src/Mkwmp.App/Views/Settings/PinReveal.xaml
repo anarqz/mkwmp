@@ -12,7 +12,7 @@
         <c:Icon Data="{StaticResource Icon.Lock}" Width="34" Height="34" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,0,12,0" />
         <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Caption}" FontSize="27" />
       </StackPanel>
-      <settings:PinField Pin="{Binding Pin}" IsRevealed="{Binding IsRevealed}" DigitSize="96" Margin="114,6,0,0" />
+      <settings:PinField Pin="{Binding Pin}" IsRevealed="{Binding IsRevealed}" DigitSize="96" Margin="0,6,0,0" />
     </StackPanel>
   </Border>
 </UserControl>
