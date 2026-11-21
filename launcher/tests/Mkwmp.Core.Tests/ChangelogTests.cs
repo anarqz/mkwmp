@@ -64,7 +64,9 @@ public sealed class ChangelogTests
         var nowhere = Path.Combine(Path.GetTempPath(), "mkwmp-no-such-folder-" + Guid.NewGuid().ToString("N"));
         var doc = Changelog.Load("1.4.0", nowhere);
         Assert.False(doc.Loose);
-        Assert.Equal("1.4.0", doc.Releases[0].Version);
+        // the top entry is the release being made (it moves); 1.4.0 stays below it
+        Assert.Matches(@"^\d+\.\d+\.\d+", doc.Releases[0].Version);
+        Assert.Contains(doc.Releases, r => r.Version == "1.4.0");
         Assert.False(Changelog.Read(null).Loose);
         Assert.Equal(Changelog.BuiltIn(), Changelog.Read(null).Markdown);
     }

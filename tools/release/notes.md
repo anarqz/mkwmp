@@ -1,3 +1,16 @@
+**mkwmp 1.4.1**: privacy fixes for the new launcher and the mod.
+
+The 1.4.0 launcher updates itself to 1.4.1: accept the update when it offers it. Coming from 1.3, follow the 1.4.0 instructions below.
+
+- **No more "location in use".** Windows no longer shows the location icon for the launcher. The Wi-Fi bars in the top bar used to read the network's name, which Windows counts as location; they now use Windows' signal bars.
+- **"Show closest to me"** over the server list (Settings › Online and the first setup). On, the launcher measures the delay to each listed server while the list is on screen and shows the nearest first. Off, no server is measured and the list keeps the directory's order. Your location is never used.
+- **Microphone and camera only during friend-room races.** The mod opens your microphone and camera only in a friend room with voice or camera on, and closes them when you leave the room or the game. Before, the camera could open for the game's "Use the camera?" question in the menus. The launcher's own microphone and camera tests stop when you leave the page or switch to another window.
+- **The server line counts players.** Home shows the players out of the seats, 0/50, not the free seats.
+
+---
+
+**From 1.4.0**
+
 **mkwmp 1.4.0**: a new launcher. It sets the game up for you, plays offline first, and has a server browser, mods and an in-game overlay.
 
 **Coming from 1.3: download this one by hand.** 1.3 can't update itself to the new launcher. Unzip `mkwmp-1.4.0-windows-x64.zip` into the same folder as your 1.3: it keeps your gamertag, PIN, server and choices. Then delete the old `mkwmp-launcher.exe`. On a Steam Deck, run `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash` in Desktop Mode (Konsole) with Steam closed: it does all of this and keeps your 1.3 settings.

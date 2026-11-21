@@ -2,6 +2,13 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
+## 1.4.1 — unreleased
+
+- **No more "location in use".** Windows no longer shows the location icon for the launcher. The Wi-Fi bars no longer read the network's name; they use Windows' signal bars instead.
+- **"Show closest to me".** A new switch over the server list, in Settings › Online and in the first setup. On, the launcher measures the delay to each listed server while the list is on screen and shows the nearest first. Off, no server is measured and the list keeps the directory's order. Your location is never used.
+- **Microphone and camera only in friend rooms.** The game opens your microphone and camera only in a friend room with voice or camera on, and closes them when you leave. Before, the camera could open for the game's "Use the camera?" question in the menus. The launcher's microphone and camera tests stop when you leave the page or switch to another window.
+- **The server line counts players.** Home now shows the players on the server out of its seats, "ONLINE · 0/50 PLAYERS", instead of the free seats.
+
 ## 1.4.0 — 2026-11-21
 
 **A new launcher.** MKWMP 1.4.0 replaces the launcher with a full-screen app made to be used from the couch, and it sets the game up for you.
