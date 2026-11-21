@@ -82,6 +82,14 @@ public partial class MainWindow : Window
             OnButton(button);
         };
         _gamepad.ConnectedChanged += (_, _) => _vm.GamepadConnected = _gamepad.Connected;
+        _gamepad.Scrolled += (_, step) =>
+        {
+            _vm.InputKind = InputKind.Gamepad;
+            ScrollWithStick(step);
+        };
+        // A / B follow the game's button layout (MainWindow.Pad.cs); the first read off this thread (it reads the game's files)
+        shell.Launcher.Changed += OnLauncherChangedForPad;
+        Task.Run(FollowPadLayout);
 
         // the focus is never lost: whatever happened to the focused control, a stop of the top layer has it again
         _focusGuard = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
@@ -90,6 +98,7 @@ public partial class MainWindow : Window
         Closed += (_, _) =>
         {
             _focusGuard.Stop();
+            _vm.Launcher.Changed -= OnLauncherChangedForPad;
             _gamepad.Dispose();
             _vm.Dispose();
         };
