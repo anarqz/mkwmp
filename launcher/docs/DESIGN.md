@@ -34,8 +34,8 @@ Shell regions (all in `MainWindow.xaml`):
 | --- | --- | --- |
 | `c:TopBar` | avatars, clock, server connection, battery. Only when the page's `ShowTopBar` is true (home) | 188 high |
 | `c:PageHost` | the current page | the rest |
-| `c:HintBar` | input picture at the left, button hints at the right. Always there, above panel and sheet | 112 high |
-| friends panel | `Views/FriendsPanel.xaml` in a `c:SlideHost`, from the right, 700 wide, any page (Y / RB / F) | |
+| `c:HintBar` | input picture at the left, button hints at the right. The page's own: a layer that covers it brings its own (below) | 112 high |
+| friends panel | `Views/FriendsPanel.xaml` in a `c:SlideHost`, from the right, 700 wide, any page (Y / RB / F). Over the whole height, **above** the page's hint bar, with its own `c:HintBar InPanel="True"` at its bottom (so has the file picker, section 14). Meanwhile the page's bar, dimmed with the page, keeps only its input picture (`ShowHints`) | |
 | bottom sheet | `c:BottomSheet` showing `Shell.Sheet` | content height |
 | `c:ModalHost` | dimmed page and the card of `Shell.Modal` | card 1080 wide |
 | `c:OnScreenKeyboard` | the on-screen keyboard of `Shell.Keyboard`, above the modal (section 5) | content height |
@@ -120,12 +120,12 @@ Styles are implicit: just use the element.
 
 | Control | What it is | Main properties |
 | --- | --- | --- |
-| `c:ConsoleButton` | the button | `Kind` = `Outline` (default: accent outline) / `Primary` (filled) / `Secondary` (grey outline) / `Ghost` / `Bottom` (full-width modal bottom); `Icon`; `Content`; `Command` |
-| `c:SettingsRow` | a line of a settings pane; it is a Button | `Label`, `Kind` = `Plain` / `Value` / `Toggle` / `Chevron`, `Value`, `IsOn` (two-way; activating a Toggle row flips it), `Caption` (under the rule), `Icon`, `ShowRule`, `Command`; its content sits before the value |
+| `c:ConsoleButton` | the button | `Kind` = `Outline` (default: accent outline) / `Primary` (filled) / `Secondary` (grey outline) / `Ghost` / `Bottom` (full-width modal bottom) / `Danger` (takes something away: red outline and text); `Icon`; `Content`; `Command` |
+| `c:SettingsRow` | a line of a settings pane; it is a Button | `Label`, `Kind` = `Plain` / `Value` / `Toggle` / `Chevron`, `Value`, `IsOn` (two-way; activating a Toggle row flips it), `Caption` (under the rule), `Icon`, `ShowRule`, `IsDestructive` (red label and icon), `Command`; its content sits before the value |
 | `c:ConsoleSlider` | a slider row; left / right change it while focused | `Label`, `Value`, `Minimum`, `Maximum` (default 100), `SmallChange` (default 5), `Unit` (default `%`) |
 | `c:ToggleSwitch` | the pill switch alone | `IsChecked` |
 | `c:ConsoleCheck` | tick box with text | `IsChecked`, `Content` |
-| `TextBox`, `PasswordBox` | text entry (implicit styles) | |
+| `TextBox`, `PasswordBox` | text entry (implicit styles) | `input:TextEntry.Placeholder` (what the empty box says: drawn by the box itself exactly where its text starts; never lay a TextBlock over a box). The text sits at `Padding` (26) from the edge; a leading icon is an `c:Icon` over the box and a larger left `Padding` |
 | `c:SectionHeader` | "▍Title" and the rule under it | `Text`, `ShowRule` |
 | `c:PageHeader` | icon, title, rule; content at the right | `Title`, `Icon`, content (e.g. `c:PageDots`) |
 | `c:CategoryList` | the left navigation of settings (a ListBox) | `ItemsSource` of `CategoryEntry(Key, Title, SeparatorBefore, Heading, Icon, Locked)` (`Locked`: a small lock after the title, section 12), `SelectedItem` two-way. Focus selects |
@@ -135,7 +135,8 @@ Styles are implicit: just use the element.
 | `c:PageDots` | dots of a paged flow | `Count`, `Index`, `Accent`, `Foreground` |
 | `ProgressBar` | implicit style; `Maximum` is 1 | `Value` 0..1 |
 | `c:Spinner` | busy ring (44) | |
-| `c:SmoothScrollViewer` | scrolls the focused control into view with a glide | `Padding` (becomes the content's margin: room for the focus card), `EdgePadding`, `Centered`; style `Carousel` for a horizontal one |
+| `c:SmoothScrollViewer` | every list: keeps the focus in view, and scrolls by wheel, right stick, finger or mouse drag, all on the render clock (section 5, "The pointer" and "Scrolling") | `Padding` (becomes the content's margin: room for the focus card), `EdgePadding`, `Centered`, `FadeEdges`; style `Carousel` for a horizontal one |
+| `c:HintBar` | the hint bar | `InPanel` (the bar of a side panel), `ShowHints`. Hints that do not fit shrink together |
 | `c:SlideHost`, `c:BottomSheet` | slide in from an edge while `IsOpen` | `IsOpen`, `Edge`, content |
 | `c:FocusRing` | the focus card (already in every style) | `IsActive`, `CornerRadius`, `Thickness`, `Fill` |
 | `c:Icon`, `c:BatteryIcon`, `c:HintGlyph` | pictures | |
@@ -239,6 +240,33 @@ nothing changed) instead of replacing a list on every `OnStateChanged`, or the f
 
 Chrome that must not take the focus: `Focusable="False"` (or the `ChromeButton` style).
 
+### The pointer: a tap acts when it is let go, a drag never clicks
+
+Touch is the mouse here (WPF promotes it; under Wine and gamescope it already is the mouse), so one rule covers both,
+kept in one place (`Input/Tap.cs`, attached to the window; its decision is `Input/TapTracker.cs`, tested):
+
+- A press that stays within the **touch slop (10 DIP of the window, not stage units)** is a tap and acts **when it is let
+  go**. One that leaves it is a drag for the rest of that press: the button under it lets go without a click (its
+  pressed look ends there), the focus goes back to where it was, and the `SmoothScrollViewer` under it scrolls.
+- That holds for every control with no code of its own: `ButtonBase` (WPF clicks on release; `Tap` takes the capture
+  away at the drag), `ListBoxItem` (focused and selected when the tap ends: WPF's own selects on the press).
+- Anything else that reacts to the pointer handles **`MouseLeftButtonUp`** and asks `Tap.IsTap(sender)` (a scrim that
+  closes its layer) or `Tap.Dragged` (text boxes opening the keyboard). Never act on `MouseLeftButtonDown`, never set
+  `ClickMode="Press"`.
+- A drag stays with what it is for: a slider's track, a scroll bar, text (`Tap.OwnsDrag`).
+
+### Scrolling
+
+`Input/ScrollMotion.cs` (plain math, tested) moves each axis; `SmoothScrollViewer` steps it once per rendered frame
+(`CompositionTarget.Rendering`, with the frame's own time). The rule: **the velocity never jumps**. The glide is a
+critically damped spring that keeps its speed when its target moves (a held D-pad, a spun wheel: one movement, not a
+push per row); a flick coasts with friction; the right stick gives a *speed* (`ScrollAt`), integrated every frame
+(never add a distance per timer tick: the gamepad timer is 60 Hz at best and uneven). The offset moves in fractions
+of a unit while it glides (a render transform carries what the rounded layout cannot) and rests on whole units, so
+text is sharp at rest. Speeds: 80 units a wheel notch, 1600 to 3520 units a second on the stick, a flick travels its
+speed times 0.4 s. What WPF does not give: the scrolled content is laid out and drawn by the UI thread (no
+compositor-side scrolling as in a browser), so a frame the UI thread misses is a frame the list does not move.
+
 ### Text entry and the on-screen keyboard
 
 A player with a controller (the Steam Deck, a TV) has no keyboard, so **every `TextBox` and `PasswordBox`
@@ -260,6 +288,7 @@ Optional attached properties on the box:
 | --- | --- |
 | `input:TextEntry.Title` | what is being typed, shown above the keyboard's text ("Your gamertag") |
 | `input:TextEntry.Charset` | `Any` (default) / `Gamertag` (A-Z a-z 0-9 _ -) / `Digits` (a PIN): the other keys are greyed out |
+| `input:TextEntry.Placeholder` | what the empty box says; the box draws it where its text starts (a centred box hides it while it has the keyboard focus) |
 | `MaxLength` (the box's own) | the keyboard's limit, with a counter |
 
 ```xml
@@ -382,14 +411,14 @@ another set of placeholders or an empty text); prefix them with your area (`home
 | --- | --- |
 | Home | `ViewModels/HomeViewModel.cs`, `Views/HomePage.xaml(.cs)` |
 | Friends panel | `ViewModels/FriendsPanelViewModel.cs`, `Views/FriendsPanel.xaml(.cs)` |
-| Welcome flow, Settings › Online (section 13) | `ViewModels/SetupViewModel*.cs`, `Views/Setup/*`, `ViewModels/SettingsViewModel.Online.cs`, `Views/Settings/OnlinePane.xaml`, `Parts/ProfileForm.cs`, `Parts/ServerPicker.cs`, `ViewModels/PrivacyViewModel.cs`, `Views/Settings/{PinField,PinEntry,PinReveal,ServerList,LatencyBars,MarkdownView,PrivacyPage}*` |
+| Welcome flow, Settings › Online (section 13) | `ViewModels/SetupViewModel*.cs`, `Views/Setup/*`, `ViewModels/SettingsViewModel.Online.cs`, `Views/Settings/OnlinePane.xaml`, `ViewModels/ReportViewModel.cs`, `Views/Settings/ReportPage.xaml` (Report Abuse), `Parts/ProfileForm.cs`, `Parts/ServerPicker.cs`, `ViewModels/PrivacyViewModel.cs`, `Views/Settings/{PinField,PinEntry,PinReveal,ServerList,LatencyBars,MarkdownView,PrivacyPage}*` |
 | Settings | `ViewModels/SettingsViewModel.cs`, `Views/Settings/*` |
 | Voice & Camera (a settings pane) | `ViewModels/SettingsViewModel.Voice.cs`, `Views/Settings/VoicePane.xaml`, `ViewModels/CameraTestViewModel.cs`, `Views/Settings/CameraTestPage.xaml`, `ViewModels/Parts/DeviceTests.cs` |
 | Locked online (section 12) | `Views/OnlineLocked.xaml(.cs)`, `Shell.ConfigureOnline()` (`ShellViewModel.Desktop.cs`), `OnlineOnly` (`SettingsViewModel.Voice.cs`) |
 | Shared (small, additive edits only) | `Views/ViewMap.xaml`, `ViewModels/Navigation.cs` (`Routes`), `i18n/*.json`, `Themes/Icons.xaml` |
 | On-screen keyboard | `Controls/OnScreenKeyboard.xaml(.cs)`, `ViewModels/KeyboardViewModel.cs`, `Input/TextEntry.cs` |
 | Desktop (tray, close-to-tray, notifications) | `Desktop/*`, `ViewModels/ShellViewModel.Desktop.cs` |
-| Design system and shell | `Themes/*`, `Controls/*`, `Input/*`, `MainWindow.*`, `App.xaml*`, `ViewModels/ShellViewModel*.cs`, `ViewModels/Modals.cs`, `Design/*`, `Views/Dev/*` |
+| Design system and shell | `Themes/*`, `Controls/*`, `Input/*` (`Tap`, `ScrollMotion`, `FocusNav`, `TextEntry`), `MainWindow.*`, `App.xaml*`, `ViewModels/ShellViewModel*.cs`, `ViewModels/Modals.cs`, `Design/*`, `Views/Dev/*` |
 | The overlay (section 11) | `Overlay/*`, `MainWindow.Overlay.cs`, `ViewModels/ShellViewModel.Overlay.cs` |
 
 The stub pages already use the design system and work in the demo; replace their content freely.
@@ -410,7 +439,7 @@ If a control lacks something, add a property to it rather than restyling it in a
 settle and writes the PNG. Options: `--page home|settings|settings/online|setup|connect|privacy|whatsnew|gallery` (section 13 for connect and privacy; whatsnew: the changelog, `CHANGELOG.md` built in, with the update banner), `--category <key>`
 (settings), `--press a,b,x,y,up,down,left,right,start` (pressed in order before the shot: the way to
 put the focus somewhere or to walk into a sub-step), `--size WxH`, `--theme dark`, `--battery 93`,
-`--input keyboard`, `--locale pt-BR`, `-NoBuild`; `--then a,down,…` presses after the panel / modal is open
+`--input keyboard`, `--locale pt-BR`, `-NoBuild`; `--mod camera=0,camera_view=1` (the game's camera switches as its file has them, for Voice & Camera); `--then a,down,…` presses after the panel / modal is open
 (`--friends --then a`: the on-screen keyboard on the friend field); `--state blocked|offline|signedout|nofriends|uptodate|queued|seated`
 puts the demo in another situation; `--with-tray` shows what Windows with a tray shows ("Hide to Tray"); `--overlay` is overlay mode
 (section 11). Look at every state at 1920x1080 and 1280x800, light and dark.
@@ -529,6 +558,13 @@ locked pane come by themselves). A single row or button: keep it, swap its icon 
 Mario Kart World, in **private rooms**, with **friends added on the server** (never in public lobbies), with **up to
 4 friends** at a time, live and never recorded, the camera only for mutual friends. The launcher never opens a voice
 or camera session itself: the pane sets the switch, devices and volumes the game reads, and tests them locally.
+The pane is two sections built the same way (section 15, "A feature that can be off"): **Voice**: "Use voice in
+private rooms", then the microphone, its volume, its test, then the output, its volume, its test. **Camera**: "Use
+camera in private rooms" (one switch for the mod's two settings, `camera` and `camera_view`: on when either is, so an
+older launcher's file reads as it was meant; turning it on sets both, off clears both), "Show My Camera" under it
+while it is on (the one finer choice: see friends without being seen), then the camera and its test. Mirroring is
+on the Test Camera page (X), where it can be seen. Then the muted players; reporting one is Settings › Online ›
+Report Abuse.
 The microphone is opened only while "Test microphone" is on, the camera only while the Test Camera page shows; both
 stop when the page is left, the window loses the focus or the overlay goes back to the game
 (`PageViewModel.OnWindowDeactivated`). The audio devices are listed only when Voice & Camera is opened and the game
@@ -558,7 +594,7 @@ Core marks a working online profile as done so an existing player never meets it
 | `Name` | the local name (gamertag rules), saved locally; nothing is asked of a server |
 | `Game` | `GameStage`: download mkw-recomp (`RuntimeModal`: bytes, speed, time left, Cancel) or "I already have it"; the player's own copy (file, folder, or a typed path; the legal line); the setup (step, bar, time left, Stop; Try Again and Open Log when it failed); MKWMP's files (by itself). "Later" always works |
 | `Online` | "Want to go online?": **Not Now** → `Done` → home, locked; **Go Online** → the next four |
-| `Server` | the beholder's list (`ServerPicker` / `ServerList`: latency bars and ms measured to each server, name, region, version, players, queue; the five nearest first and five more with each "Show More"; Refresh; re-measured every 15 s while shown; Y on a row, or its "…", hides that server on this PC and the next takes its place, Settings › Online › Hidden Servers shows it again) and a typed address; Connect asks the server who it is ("MKWMP server · 12/32 players", or why not) |
+| `Server` | two columns: the list at the left, scrolling by itself; at the right the address (typed, or put there by a row), the server's answer and the page's button (Connect, then Next: the focus goes to it when the server answered), and "Show closest to me" under them. The beholder's list (`ServerPicker` / `ServerList`: latency bars and ms measured to each server, name, region, version, players, queue; the five nearest first and five more with each "Show More"; Refresh; re-measured every 15 s while shown; Y on a row, or its "…", hides that server on this PC and the next takes its place, Settings › Online › Hidden Servers shows it again) and a typed address; Connect asks the server who it is ("MKWMP server · 12/32 players", or why not) |
 | `Register` | sign in: register the name (a new PIN), or, for a name that exists, "It's Mine" with its PIN (masked) |
 | `Consent` | only **after** signing in (the server keeps the consent): the three paragraphs, "Read the Privacy Policy" (`PrivacyViewModel`: the server's Markdown rendered by `MarkdownView`, never a browser; a server without `/privacy` gets "This server doesn't publish a privacy policy", never another page), the 18+ box; skipped when the sign-in said the server already has it |
 | `Pin` | the PIN, masked, with its eye (and X) |
@@ -644,3 +680,18 @@ and Linux dot files only with Y; names keep the disk's letter case, a typed path
 .\shot.ps1 out.png --picker game --fake-wine --picker-at /home/deck/Games --then down,a
 .\shot.ps1 out.png --picker copy-folder --picker-at D:\Dumps --then y         # this PC's real places; Y: every file
 ```
+
+## 15. Layout and behaviour: the same thing looks and acts the same everywhere
+
+| Rule | |
+| --- | --- |
+| A switch switches | `SettingsRow Kind="Toggle"`: A / tap flips it at once, nothing else happens. Its caption says what **off** means |
+| A chevron navigates | `Kind="Chevron"` only for a row that opens something (a page, a list to choose from). An action that happens in place (play a test sound, check for updates) is `Kind="Plain"` with an icon |
+| What takes something away looks it | `ConsoleButton Kind="Danger"` (Disconnect), `SettingsRow IsDestructive="True"` (delete a profile, uninstall); and it asks first (`Shell.ConfirmAsync`) |
+| A status is not a button | What only informs (the server row of Settings › Online: address, light, players) is a `Card`, not a row that acts when pressed. The action beside it is a button that says what it does ("Disconnect"), and the other action is its own row ("Connect to Another Server") |
+| A feature that can be off | Its section starts with its switch ("Use voice in private rooms", "Use camera in private rooms"); under it, in this order, the device and then its test. What depends on the switch is greyed out or absent while it is off. Two features of one pane are built in parallel, row for row |
+| Rarely needed | Not a row of the pane: on the page where its effect shows (the camera''s mirror on Test Camera), or as the caption of the list it explains (where the device names come from) |
+| One list, one column | A list that can grow (servers) gets a column that scrolls by itself (`SmoothScrollViewer`, `FocusNav.IsColumn`); what acts on one entry (an address, its answer, the button) is the other column, a `Card`, 640 wide; the list''s column is the `*` one. Use two columns when a page would otherwise put a form under a list; a plain run of settings rows stays one column (Settings already is two) |
+| The page''s button | Under the page (the welcome flow), or, on a two-column page, in the column of what it acts on. Never both |
+| Hints belong to the layer | The page''s hint bar is the page''s; a layer over it shows its own inside itself (section 2) |
+| Text boxes | Placeholder by `input:TextEntry.Placeholder` only; the label is beside or above the box, never only the placeholder |
