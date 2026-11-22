@@ -2,7 +2,7 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
-## 1.4.5 — unreleased
+## 1.4.5 — 2026-11-22
 
 - **After a failed update, play offline.** When an update can't be downloaded or installed, the card now offers Try Again, Continue Offline and Quit. Continue Offline lets you play offline until you close the launcher; going online (signing in, friends, reports, the server list, and the game asking for a seat) waits for the update and says "Update MKWMP to play online". Try the Update Again is on Home, in the friends panel and in Settings, and the launcher asks again at its next start. Your server, PIN and choices are kept.
 
