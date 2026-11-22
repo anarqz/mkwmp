@@ -1,3 +1,11 @@
+**mkwmp 1.4.5**: after a failed update you can still play, offline.
+
+The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.
+
+- **After a failed update, play offline.** If an update can't be downloaded or installed, the card offers Try Again, Continue Offline and Quit. Continue Offline lets you play offline until you close the launcher; online play waits for the update ("Update MKWMP to play online"), and Try the Update Again is on Home, in the friends panel and in Settings. The launcher asks again the next time it opens. Your server, PIN and choices are kept.
+
+---
+
 **mkwmp 1.4.4**: touch that works, smoother scrolling, tidier Online and Voice & Camera settings, and updates that install themselves.
 
 The launcher updates itself from 1.4.x: accept the update when it offers it. From this version on you won't be asked again: a new version is downloaded and installed by itself.
