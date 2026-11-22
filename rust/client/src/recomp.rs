@@ -5,6 +5,7 @@
 //! taken from the release zips: the official ones (0.1.13+ also carry their
 //! version string, older ones none) and MKWMP's fork, 0.1.15-mkwmp
 //! (github.com/anarqz/mkw-recomp), which adds the camera to the plugin API.
+//! Since 0.1.17 the official release carries what MKWMP needs, and is the one recommended.
 //!
 //! The game patch also hooks one game version (guest addresses): GAMES lists
 //! the ones it has tables for, read from mkw-recomp's setup-state.json.
@@ -16,10 +17,10 @@ use std::time::SystemTime;
 use crate::update::sha256_hex;
 
 /// The runtimes the game patch supports (KNOWN names their mkw.exe).
-pub const SUPPORTED: &[&str] = &["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"];
+pub const SUPPORTED: &[&str] = &["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17"];
 /// What the window recommends installing.
-pub const RECOMMENDED: &str = "0.1.16-mkwmp.1";
-pub const DOWNLOAD: &str = "https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp.1";
+pub const RECOMMENDED: &str = "0.1.17";
+pub const DOWNLOAD: &str = "https://github.com/adriadam10/mkw-recomp/releases/tag/v0.1.17";
 
 /// mkw.exe SHA-256 per mkw-recomp release (mkw-recomp-<v>-windows-x64.zip).
 const KNOWN: &[(&str, &str)] = &[
@@ -36,6 +37,9 @@ const KNOWN: &[(&str, &str)] = &[
     // .1: the setup runs under Wine/Proton; no SDL x11 request under Proton. Same game id.
     ("0.1.16-mkwmp.1", "d04dc49a14618dce8385cdb1c3e61ba1bd62a2e5938ddf7dd216c926517cc72d"),
     ("0.1.16-mkwmp.1", "59af1fcc9c3a233e2d86c8437224f90a958e9ecb473118d71d92090379fbe3c0"),
+    // The official release with the fork's fixes upstream; the noavx2 build is the same release.
+    ("0.1.17", "48ede546a7da356d2319260b6f8ec1814c009bc8421c1b5b3c847d82b6be09ce"),
+    ("0.1.17", "e67d12344bab5bb4d2411e85265aa71cdaf814045d1adb7ae4b51f4fec871211"),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,7 +160,7 @@ pub fn data_dir(game: &Path) -> PathBuf {
 /// MKWMP's mod folder name, under mkw-recomp's `mods/`.
 pub const MOD: &str = "mkwmp";
 /// The supported releases that load mods (MKW_MODS, plugin API 3).
-pub const MOD_RUNTIMES: &[&str] = &["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"];
+pub const MOD_RUNTIMES: &[&str] = &["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17"];
 
 /// The MKWMP mod runs in this game: a runtime that loads mods, and the mod
 /// enabled there ([`mod_dir`]). A leftover `mods = mkwmp` on an older
@@ -264,6 +268,7 @@ const GAME_IDS: &[(&str, &str)] = &[
     ("0.1.16", "c9bbcb75a9ac9a49"),
     ("0.1.16-mkwmp", "c9bbcb75a9ac9a49"),
     ("0.1.16-mkwmp.1", "c9bbcb75a9ac9a49"),
+    ("0.1.17", "c9bbcb75a9ac9a49"),
 ];
 
 /// The id the game in this folder was set up for: mkwgame.id, else the
@@ -334,7 +339,7 @@ mod tests {
     fn only_supported_releases_pass() {
         assert_eq!(identify_bytes(b"not mkw.exe"), Recomp::Unknown);
         assert!(!Recomp::Unknown.ok() && Recomp::Unknown.problem().unwrap().contains("0.1.13"));
-        assert!(Recomp::Other("0.1.11").problem().unwrap().contains("0.1.11: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp or 0.1.16 or 0.1.16-mkwmp or 0.1.16-mkwmp.1"));
+        assert!(Recomp::Other("0.1.11").problem().unwrap().contains("0.1.11: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp or 0.1.16 or 0.1.16-mkwmp or 0.1.16-mkwmp.1 or 0.1.17"));
         assert_eq!(identify_bytes(&[]), Recomp::Unknown);
         assert!(Recomp::Supported("0.1.10").ok() && Recomp::Supported("0.1.10").problem().is_none());
         assert!(SUPPORTED.iter().all(|v| KNOWN.iter().any(|(k, _)| k == v)), "every supported release has a known hash");
