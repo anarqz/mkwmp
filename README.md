@@ -1,210 +1,375 @@
-# MKWMP
+<div align="center">
 
-Community online play for the [mkw-recomp](https://github.com/adriadam10/mkw-recomp) PC runtime: gamertags, friends, and race and battle lobbies on servers anyone can host.
+<a href="https://anarqz.github.io/mkwmp/"><img src="site/assets/art/hero-wide.webp" alt="" width="100%"></a>
 
-**Website and setup guides: <https://anarqz.github.io/mkwmp/>**
+<br>
 
-> MKWMP is an unofficial community project, not affiliated with or endorsed by Nintendo. You need your own copy of the game. MKWMP ships none of the game's code or assets and doesn't help obtain games: see [Interoperability and legal notes](docs/LEGAL.md).
->
-> **Version 1.0.0** ([download](https://github.com/anarqz/mkwmp/releases/latest)): matchmade races and battles, friend rooms with voice chat and camera, and self-hosted servers.
+<a href="https://anarqz.github.io/mkwmp/"><img src="site/assets/art/logo.png" alt="MKWMP" width="420"></a>
 
-![The MKWMP launcher: gamertag and PIN, server, game folder with the game patch check, friends with requests and who is playing, and the PLAY button](site/img/launcher-main.png)
+### Race online. On your terms.
 
-## What it does
+**Mario Kart World online on your PC.** Community online servers for [mkw-recomp](https://github.com/adriadam10/mkw-recomp),<br>
+with a launcher to match: it sets the game up from your own copy of the Nintendo Switch 2 game,<br>
+plays offline right away, and takes you online with friends, voice chat and mods.
 
-- **Gamertags.** Register one in the launcher and get a 6-digit PIN, which lets you use the same gamertag on another PC or a Steam Deck.
-- **Friends, kept on the server.** Add friends by gamertag; they accept or decline. You see who is playing, online or offline, and they're your friends in the game too.
-- **Matchmaking with any number of lobbies.** Races and battles open new lobbies as players arrive and close them when they empty. After a match you go back into your lobby.
-- **Friend rooms.** Create a room; friends join from their friend card, or by Room ID with the game's on-screen keypad.
-- **Voice chat in friend rooms**, with echo cancelling and noise suppression. Pick your microphone and output in SETTINGS. Report abusive players from SETTINGS; the server's host reviews reports. Matchmade lobbies have no voice chat.
-- **Camera in friend rooms** (the MKWMP mod, game 1.8.0): turn it on and mutual friends in the room see you above your kart, at most 4 faces each. Off by default.
-- **Privacy.** For adults (18+). The server keeps only your gamertag, a PIN hash, your friends and any report you file; voice and camera are never recorded. Unused gamertags are deleted after a month, and DELETE MY ACCOUNT removes yours at once. See the [privacy policy](https://anarqz.github.io/mkwmp/#privacy).
-- **Seats and a queue.** Each server has a fixed number of seats. PLAY takes one, or puts you in line. Having the launcher open doesn't take a seat.
-- **Background mode.** Close the launcher and it stays in the system tray, with notifications when a friend comes online, starts playing or sends you a request.
-- **Game patch check.** The line under GAME FOLDER says whether the patch is installed and is this version, checked by content against signed checksums. SETTINGS → GAME PATCH installs or removes it.
-- **Signed updates.** The launcher updates itself and the game patch from GitHub releases, and checks each download against the release signature.
-- **Host your own** on a PC with one program, or on a Linux server with Docker Compose.
+<br>
 
-![Launcher settings: background mode, notifications, game patch, and voice chat devices, volumes and muted players](site/img/launcher-settings.png)
+[![Latest release](https://img.shields.io/github/v/release/anarqz/mkwmp?style=for-the-badge&logo=github&label=release&color=1553FA)](https://github.com/anarqz/mkwmp/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/anarqz/mkwmp/total?style=for-the-badge&color=00B4D8)](https://github.com/anarqz/mkwmp/releases)
+[![License: GPL-3.0](https://img.shields.io/github/license/anarqz/mkwmp?style=for-the-badge&color=7B61FF)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/anarqz/mkwmp?style=for-the-badge&color=F5A623)](https://github.com/anarqz/mkwmp/stargazers)
 
-## Play
+[![Website](https://img.shields.io/badge/website-anarqz.github.io%2Fmkwmp-1553FA?style=flat-square&logo=googlechrome&logoColor=white)](https://anarqz.github.io/mkwmp/)
+![Windows](https://img.shields.io/badge/Windows-x64-0078D4?style=flat-square&logo=windows&logoColor=white)
+![Steam Deck](https://img.shields.io/badge/Steam%20Deck-Proton-1A9FFF?style=flat-square&logo=steamdeck&logoColor=white)
+![Rust](https://img.shields.io/badge/server-Rust-B7410E?style=flat-square&logo=rust&logoColor=white)
+![.NET](https://img.shields.io/badge/launcher-.NET%2010-512BD4?style=flat-square&logo=dotnet&logoColor=white)
 
-1. Have your own copy of the game, version **1.0.0 or 1.8.0**. Players only meet others on the same game version.
-2. Download `mkwmp-<version>-windows-x64.zip` from the [latest release](https://github.com/anarqz/mkwmp/releases/latest) and unzip it anywhere. On SteamOS and Linux (Steam Deck included) the same launcher runs under Proton: one command in Desktop Mode (Konsole) installs it to `~/Games/MKWMP` and adds it to Steam:
-   `curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash`
-3. Open `mkwmp.exe` (on Linux, the MKWMP shortcut in Steam). The welcome asks for a name and your own copy of the game, sets up mkw-recomp and installs the MKWMP mod into it; then press **PLAY**.
-4. Coming from 1.3: the old launcher does not update itself to 1.4.0. Unzip the new zip over your old `mkwmp` folder (your name, PIN and server stay), delete the old `mkwmp-launcher.exe` and open `mkwmp.exe`; on Linux run the command above once.
+**[Download](https://github.com/anarqz/mkwmp/releases/latest)** ·
+**[Website](https://anarqz.github.io/mkwmp/)** ·
+**[Host a server](https://anarqz.github.io/mkwmp/host.html)** ·
+**[What's new](CHANGELOG.md)** ·
+**[Report a bug](https://github.com/anarqz/mkwmp/issues/new/choose)**
 
-Step-by-step guides for Windows and the Steam Deck: <https://anarqz.github.io/mkwmp/>.
+</div>
+
+> [!NOTE]
+> MKWMP is an independent, open-source community project, **not affiliated with or endorsed by Nintendo**, and it doesn't use Nintendo's servers. You need your **own copy of Mario Kart World** for Nintendo Switch 2. MKWMP ships none of the game's code or assets and never downloads the game. Mario Kart World, Nintendo and Nintendo Switch 2 are trademarks of Nintendo. See [Interoperability and legal notes](docs/LEGAL.md).
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="site/assets/launcher/home-dark.webp">
+    <source media="(prefers-color-scheme: light)" srcset="site/assets/launcher/home-light.webp">
+    <img src="site/assets/launcher/home-dark.webp" alt="The MKWMP launcher's Home: Play Online, Friends, Game and What's New tiles, with the dock below" width="90%">
+  </picture>
+</p>
+
+## Contents
+
+- [Highlights](#highlights)
+- [Get started](#get-started)
+- [A tour of the launcher](#a-tour-of-the-launcher)
+- [Host your own server](#host-your-own-server)
+- [How it works](#how-it-works)
+- [Build it yourself](#build-it-yourself)
+- [Repository layout](#repository-layout)
+- [Documentation](#documentation)
+- [Reporting a bug](#reporting-a-bug)
+- [Credits and license](#credits-and-license)
+
+## Highlights
+
+<table>
+<tr>
+<td width="33%" valign="top">
+<img src="site/assets/art/step-game.webp" width="72" alt=""><br>
+<b>Set up in one go</b><br>
+Point it at your copy of Mario Kart World (.nup, .nx or a folder). The launcher downloads the official <a href="https://github.com/adriadam10/mkw-recomp">mkw-recomp</a>, builds the game from your copy and installs the MKWMP mod.
+</td>
+<td width="33%" valign="top">
+<img src="site/assets/art/step-online.webp" width="72" alt=""><br>
+<b>Offline first, online when you want</b><br>
+Play right away with no account. To go online, pick a server, register a gamertag and keep your 6-digit PIN for other devices.
+</td>
+<td width="33%" valign="top">
+<img src="site/assets/art/step-server.webp" width="72" alt=""><br>
+<b>Community servers</b><br>
+Anyone can host. Public servers list themselves in a live directory, and the launcher shows the nearest first.
+</td>
+</tr>
+<tr>
+<td valign="top">
+<img src="site/assets/art/empty-friends.webp" width="72" alt=""><br>
+<b>Friends, voice and camera</b><br>
+Friend requests, who's online and who's racing. Voice chat and camera work only in private friend rooms, never with strangers in matchmaking.
+</td>
+<td valign="top">
+<img src="site/assets/art/empty-mods.webp" width="72" alt=""><br>
+<b>Mods, built in</b><br>
+Browse GameBanana from the launcher, install with one button, and switch mods on and off. Saves are backed up before a new set of mods.
+</td>
+<td valign="top">
+<img src="site/assets/art/step-done.webp" width="72" alt=""><br>
+<b>Made for the couch</b><br>
+A full-screen, console-style launcher for controller, keyboard or mouse, with an in-game overlay, light and dark themes, and 15 languages.
+</td>
+</tr>
+<tr>
+<td valign="top">
+<img src="site/assets/art/step-consent.webp" width="72" alt=""><br>
+<b>Private by design</b><br>
+18+ only. A server keeps your gamertag, a PIN hash, your friends and any reports you file. Voice and camera are relayed live and never recorded.
+</td>
+<td valign="top">
+<img src="site/assets/art/step-pin.webp" width="72" alt=""><br>
+<b>Signed updates</b><br>
+The launcher and the mod update themselves from GitHub releases. Each download is checked against a signed <code>SHA256SUMS</code>.
+</td>
+<td valign="top">
+<img src="site/assets/art/empty-crash.webp" width="72" alt=""><br>
+<b>Crash reports that help</b><br>
+After a crash, the launcher saves the logs (no PIN or keys) and opens a prefilled GitHub issue. Nothing is sent without you.
+</td>
+</tr>
+</table>
+
+## Get started
+
+You need your own copy of **Mario Kart World** for Nintendo Switch 2, **version 1.8.0**, as a `.nup`, an `.nx` or a folder.
+
+### Windows
+
+1. Download **`mkwmp-<version>-windows-x64.zip`** from the [latest release](https://github.com/anarqz/mkwmp/releases/latest) and unzip it anywhere. It's portable: everything stays in that folder.
+2. Open **`mkwmp.exe`**. The welcome asks for your language, a name and your copy of the game. It then sets up mkw-recomp (the first build takes a few minutes) and installs the MKWMP mod.
+3. Press **Play**. Play offline, or choose **Go Online**, pick a server and register a gamertag.
+
+### Steam Deck and SteamOS
+
+In Desktop Mode, **close Steam**, open Konsole and run:
+
+```sh
+curl -fsSL https://anarqz.github.io/mkwmp/install.sh | bash
+```
+
+It installs MKWMP to `~/Games/MKWMP` and adds an **MKWMP** shortcut to Steam that runs under Proton, with artwork and a controller layout. Options such as `--dir`, `--proton`, `--dry-run` and `--uninstall` go after `bash -s --`. Details: [docs/LINUX.md](docs/LINUX.md).
+
+<details>
+<summary><b>Coming from 1.3?</b></summary>
+
+1.4 is a new launcher (`mkwmp.exe`), and the 1.3 launcher can't update itself to it. Download 1.4 by hand once and unzip it over your 1.3 `mkwmp` folder. Your gamertag, PIN, server and game folder stay. Then delete the old `mkwmp-launcher.exe`. On a Steam Deck, run the install command above: it brings your 1.3 settings over and replaces the old shortcuts.
+</details>
+
+Step-by-step guides with pictures: **<https://anarqz.github.io/mkwmp/>**
+
+## A tour of the launcher
+
+<table>
+<tr>
+<td width="50%">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="site/assets/launcher/welcome-play-online-light.webp">
+  <img src="site/assets/launcher/welcome-play-online-dark.webp" alt="The welcome asking whether to go online, with Play Offline and Go Online">
+</picture>
+<p align="center"><b>Offline first.</b> Going online is one choice away.</p>
+</td>
+<td width="50%">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="site/assets/launcher/settings-online-light.webp">
+  <img src="site/assets/launcher/settings-online-dark.webp" alt="Settings, Online: the chosen server and the server list">
+</picture>
+<p align="center"><b>Servers.</b> A live list with region, players and latency.</p>
+</td>
+</tr>
+<tr>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="site/assets/launcher/home-friends-light.webp">
+  <img src="site/assets/launcher/home-friends-dark.webp" alt="Home with the friends panel open: requests and friends with their status">
+</picture>
+<p align="center"><b>Friends.</b> Requests, who's online and who's racing.</p>
+</td>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="site/assets/launcher/overlay-light.webp">
+  <img src="site/assets/launcher/overlay-dark.webp" alt="The in-game overlay: the paused game shrunk into Home's Play tile">
+</picture>
+<p align="center"><b>In-game overlay.</b> Guide or Select + Start pauses the game into Home.</p>
+</td>
+</tr>
+<tr>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="site/assets/launcher/mods-gamebanana-light.webp">
+  <img src="site/assets/launcher/mods-gamebanana-dark.webp" alt="Get Mods: a grid of GameBanana mods with search and sorting">
+</picture>
+<p align="center"><b>Mods.</b> Search GameBanana, or install from a link or a file.</p>
+</td>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="site/assets/launcher/settings-voice-light.webp">
+  <img src="site/assets/launcher/settings-voice-dark.webp" alt="Settings, Voice and Camera: microphone, speakers and camera with tests">
+</picture>
+<p align="center"><b>Voice and camera.</b> Pick and test your devices.</p>
+</td>
+</tr>
+<tr>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="site/assets/launcher/game-setup-progress-light.webp">
+  <img src="site/assets/launcher/game-setup-progress-dark.webp" alt="The game setup in progress: a progress bar, the current step and the time left">
+</picture>
+<p align="center"><b>Game setup.</b> Built from your own copy, once.</p>
+</td>
+<td>
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="site/assets/launcher/deck-home-light.webp">
+  <img src="site/assets/launcher/deck-home-dark.webp" alt="The launcher's Home on a Steam Deck at 1280 by 800">
+</picture>
+<p align="center"><b>Steam Deck.</b> The same launcher at 1280 × 800.</p>
+</td>
+</tr>
+</table>
 
 ## Host your own server
 
-> **Needs rc.2 or later**, for the server and for every player. The rc.2 launcher and game patch trust each server's own certificate; rc.1 can only reach the official server. Launchers update themselves when you press PLAY. Self-hosted servers have been tested end to end without the real game; the first real-game runs are coming.
+<p align="center"><img src="site/assets/art/banner-server-3x1.webp" alt="" width="90%"></p>
 
-The whole server is one program, `server` (`server.exe` on Windows), in the release's `mkwmp-server-<version>.zip`. It runs gamertags, friends, seats and the game lobby, and it sets itself up on the first run. A normal PC is enough to host your friends.
+The whole server is one program, **`server`** (`server.exe` on Windows), in the release's `mkwmp-server-<version>.zip`. It runs gamertags, friends, seats and the game lobby, and it sets itself up on the first run.
 
-### What you need
+| Where | How | Good for |
+| --- | --- | --- |
+| **A cloud VM** (Vultr, Ubuntu 24.04, about US$5 a month) | `curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh \| sudo bash` | a public server for dozens of players, listed in everyone's launcher; optional HTTPS with `--domain` |
+| **Your own PC** (Windows or Linux) | unzip `mkwmp-server-<version>.zip`, run `server.exe` (or `./server`) | friends and LAN parties |
+| **Docker Compose** (any Linux host) | `cp .env.example .env` (set `MKWMP_PUBLIC_IP`), then `docker compose up -d --build` | your own VM or home server |
 
-- **A computer that stays on while you play.** Windows or Linux; 1 CPU core and 1 GB of memory are plenty. It can be one of the players' own PCs.
-- **For a LAN party:** nothing else.
-- **For friends over the internet:**
-  - a router where you can set up **port forwarding**;
-  - a **public IPv4 address**. Some internet providers share one address between customers (CGNAT). If the WAN address in your router's status page differs from the one "what is my IP" shows, you're behind CGNAT and can't host from home. Rent a small Linux VM instead, as in [Docker](#on-a-linux-server-with-docker) below.
+The cloud script checks the download against the release's signed checksums, installs two systemd services (`mkwmp-seat` and `mkwmp-lobby`), opens the firewall, writes a privacy policy template for you to edit, and lists the server in the public directory (`--no-announce` keeps it out). Follow the **[step-by-step guide](https://anarqz.github.io/mkwmp/host.html)**.
 
-### 1. Start the server
-
-- **Windows:** download `mkwmp-server-<version>.zip` from the [releases](https://github.com/anarqz/mkwmp/releases) and unzip it into a folder of its own. Double-click `server.exe`.
-- **Linux:** the same zip; unzip it and run `./server` (or, on a Linux server, `curl -fsSL https://anarqz.github.io/mkwmp/deploy-mkwmp-server.sh | sudo bash` downloads, checks and sets it up; see [HOSTING](docs/HOSTING.md)).
-
-On the first run it asks one question: **which address do players reach this machine at?**
-- **LAN party:** press Enter to accept the suggested LAN address, e.g. `192.168.1.20`.
-- **Over the internet:** type your public IP (search "what is my IP").
-
-It then creates a `mkwmp-data` folder next to itself and starts:
-
-```
-created the ticket signing key
-created the lobby certificate
-data folder: C:\Games\mkwmp-server\mkwmp-data
-players set the launcher's SERVER to: http://203.0.113.7:7000
-open (and on a home router, forward to this machine): TCP 7000, 8905, 8906; UDP 3478, 8907, 10025, 49152-49407
-running; stop with Ctrl-C or by closing this window (players' seats are freed, gamertags are kept)
-```
-
-Keep that window open while you play. Next time, just start it again: it remembers its settings.
-
-### 2. Open the ports
+**Ports to open:**
 
 | Port | Protocol | Used by |
 | --- | --- | --- |
-| 7000 | TCP | the launcher: gamertags, friends, seats |
-| 8905, 8906 | TCP | the game: sign-in, matchmaking, sessions |
-| 3478, 10025 | UDP | the game: relay and connection check |
-| 8907 | UDP | the game: voice chat |
-| 49152–49407 | UDP | the game: relayed race traffic |
+| 7000 | TCP | the launcher: gamertags, friends, seats (80/443 instead with a domain) |
+| 8905, 8906 | TCP | the game: sign-in, matchmaking, sessions, Gamesync |
+| 3478, 10025 | UDP | the game: TURN relay and NAT check |
+| 8907 | UDP | voice chat and camera relay (friend rooms) |
+| 49152–49407 | UDP | relayed race traffic |
 
-- **Windows firewall:** when Windows asks whether to allow `server.exe`, allow it. If you missed the prompt, run this in an administrator terminal:
-  `netsh advfirewall firewall add rule name="mkwmp-server" dir=in action=allow program="<full path to server.exe>"`
-- **Linux firewall** (ufw): `sudo ufw allow 7000,8905,8906/tcp && sudo ufw allow 3478,8907,10025/udp && sudo ufw allow 49152:49407/udp`.
-- **Router (internet only):** forward every port in the table to the hosting PC's LAN address. Give that PC a fixed LAN address (a DHCP reservation) so the forwarding keeps working.
-
-### 3. Players join
-
-Each player, including you, does three things in the launcher:
-1. Set **SERVER** to `http://<the address you entered>:7000`. The status bar shows your server's seats once it's reachable.
-2. Register a gamertag. Gamertags and friends belong to each server, so everyone registers again on yours, and friends are added again too.
-3. Press **PLAY**, and in the game pick Online Play → Race or Battle.
-
-### Day to day
-
-- **Change settings:** start it from a terminal with flags; they're saved for next time:
-  `server host --public-ip 203.0.113.7 --name "Friday kart" --capacity 12`
-  Other options: `--turn-port`, `--seat-bind`, `--data`. Run `server host --help` for the list.
-- **Forgotten PIN, reserved names:** run these on the hosting machine while the server runs:
-  `server admin reset-pin <gamertag> --config mkwmp-data/server.toml`. The other commands are `list`, `register <name>` (reserve it and get its PIN) and `release <name>`.
-- **Back up** the `mkwmp-data` folder while the server is stopped. Keep it private: it holds your server's keys.
-- **Update:** replace the program with the newer release and start it again. `mkwmp-data` stays.
-
-### If something doesn't work
-
-- **The launcher shows the server as offline:** check that the address is right, that TCP 7000 is open (and forwarded), and that the server window is running.
-- **The game says it can't connect after PLAY:** TCP 8905/8906 are blocked, or the player is still on rc.1.
-- **Players reach the lobby but races fail to start:** the UDP ports (3478, 10025, 49152–49407) are blocked or not forwarded.
-- **Your public IP changed:** start once with `--public-ip <new address>`. Players update SERVER in their launcher, unless it uses a dynamic-DNS name (`http://myname.ddns.net:7000` works there). The server itself always needs the raw IP, because that is what it hands to the game.
-
-### On a Linux server with Docker
-
-The same server runs in Docker, which suits a VM:
+<details>
+<summary><b>Day-to-day admin</b></summary>
 
 ```sh
-git clone https://github.com/anarqz/mkwmp && cd mkwmp
-cp .env.example .env              # set MKWMP_PUBLIC_IP (name, seats and ports are optional)
-docker compose up -d --build
+server host --public-ip 203.0.113.7 --name "Friday kart" --capacity 12   # change settings (they're saved)
+server admin list            --config mkwmp-data/server.toml             # gamertags
+server admin register <name> --config mkwmp-data/server.toml             # reserve a name and get its PIN
+server admin reset-pin <name> --config mkwmp-data/server.toml            # forgotten PIN: a new one (old PINs can't be recovered)
+server admin reports         --config mkwmp-data/server.toml             # voice and camera abuse reports
 ```
 
-It needs a Linux host: on Docker Desktop for Windows or macOS, the lobby can't see players' real addresses, so use the program above there. With a domain, `docker compose --profile https up -d` adds HTTPS, and players then use `https://<domain>`.
+- **Back up** `mkwmp-data` while the server is stopped, and keep it private: it holds your server's keys.
+- **Update** by replacing the program with the newer release and starting it again.
+- For an internet-facing server, put HTTPS in front of port 7000 (the script's `--domain`, the Docker `https` profile, or your own proxy): over plain `http://`, PINs cross the network unencrypted.
+</details>
 
-### Security
+Everything else, including running the two parts separately under systemd and troubleshooting, is in **[docs/HOSTING.md](docs/HOSTING.md)**.
 
-- The launcher talks to your server over plain `http://`, so gamertag PINs cross the network unencrypted. That's fine on a LAN. For a server open to the internet, put HTTPS in front of port 7000, with the Docker `https` profile or your own reverse proxy.
-- Never share `mkwmp-data`: anyone with its keys can impersonate your server.
+## How it works
 
-More detail, including running the two parts separately under systemd: [docs/HOSTING.md](docs/HOSTING.md).
+```
+ player PC                                         MKWMP server (anyone can host one)
+┌───────────────────────────────┐   seat API (HTTP/S)   ┌──────────────────────────────────────┐
+│ mkwmp.exe   the launcher      │ ────────────────────► │ server seat                          │
+│  gamertag + PIN, friends,     │ ◄── queue / ticket ── │  gamertags, PIN hashes, friends,     │
+│  server list, mods, updates   │                       │  seats + queue, signed tickets       │
+│                               │                       │  (SQLite registry)                   │
+│ mkw-recomp + the MKWMP mod    │                       │        ▲ roster (localhost)          │
+│  game services ───────────────┼── gRPC over TLS ─────►│ server lobby                         │
+│  race traffic ◄───────────────┼── Pia UDP / TURN ────►│  matchmaking, sessions, referee,     │
+│  voice + camera ◄─────────────┼── relay (UDP) ───────►│  friend rooms, TURN, voice relay     │
+└───────────────────────────────┘                       └──────────────────────────────────────┘
+                                                               │ announce
+                                                               ▼
+                                                  server directory (beholder): the live list
+```
+
+- The **launcher** takes a seat on the server you picked (or waits in its queue) and hands the game a ticket signed with the server's Ed25519 key.
+- The **MKWMP mod**, loaded by mkw-recomp, points the game's online services at that server's lobby and trusts the lobby's own certificate. It doesn't modify the game's files.
+- The **lobby** is a from-scratch reimplementation of the online services Mario Kart World expects (MKWMP never connects to Nintendo's servers): sign-in, matchmaking across any number of lobbies, sessions, match results, friend rooms, and a TURN relay for players who can't reach each other directly.
+- **Beholder** is the server directory: public servers announce themselves, and the launcher and the website list them.
+
+The full picture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Build it yourself
 
-Everything builds from this repository. Releases are built by hand from the same sources; nothing is built by CI.
+Everything builds from this repository. Releases are built by hand from the same sources and signed; no release is built by CI.
 
-### Requirements
+| Part | Needs |
+| --- | --- |
+| Server (`rust/`) | [Rust](https://rustup.rs) stable. The protobuf compiler is vendored. [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) for cross builds |
+| Launcher (`launcher/`) | Windows with the [.NET 10 SDK](https://dotnet.microsoft.com/download) (10.0.401+); Visual Studio's C++ x64 tools for the Native AOT update helper |
+| MKWMP mod (`native/`) | [Zig](https://ziglang.org) 0.15 and Python 3 |
 
-- **Rust** (stable): <https://rustup.rs>. The protobuf compiler is vendored, so there's nothing else to install.
-- **Game patch:** [zig](https://ziglang.org) 0.15 and Python 3.
-- **Cross-building** (optional): [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) builds the Windows launcher and a static Linux server from macOS or Linux.
-
-### Launcher
-
-```sh
-cargo build --release --manifest-path rust/Cargo.toml -p client
-# -> rust/target/release/mkwmp-launcher(.exe)
-
-# Windows build from macOS/Linux:
-cargo zigbuild --release --manifest-path rust/Cargo.toml -p client --target x86_64-pc-windows-gnu
-```
-
-A launcher you build yourself still updates itself from GitHub releases. To keep your build, turn updates off by setting `update = false` in its `client.toml`.
-
-### Server
+**Server**
 
 ```sh
 cargo build --release --manifest-path rust/Cargo.toml -p mkwmp
-# -> rust/target/release/server   (server host | seat | lobby | beholder | keygen | admin)
+# -> rust/target/release/server   (host | seat | lobby | beholder | keygen | admin)
 
-# Static Linux binary for a VM:
+# static Linux binary for a VM, from macOS or Linux:
 cargo zigbuild --release --manifest-path rust/Cargo.toml -p mkwmp --target x86_64-unknown-linux-musl
+
+# or the Docker image:
+docker compose build
 ```
 
-The Docker image builds the same binary: `docker compose build`.
+**Launcher** (PowerShell, on Windows)
 
-### Game patch (`winmm.dll`)
+```powershell
+.\launcher\run.ps1 --demo                              # build and run with demo data
+.\launcher\publish.ps1 -Out C:\tmp\mkwmp -Dev          # the release layout, with an unsigned dev build of the mod
+.\launcher\publish.ps1 -Out C:\tmp\mkwmp -NoGame       # the launcher only (no Zig or Python needed)
+```
+
+A `-Dev` build is for testing only: the launcher accepts its unsigned `game\` folder and says so in Settings › Game.
+
+**MKWMP mod**
 
 ```sh
-python native/probe/build.py --version dev                         # -> native/probe/build/winmm.dll
-python native/probe/build.py --install "C:\Games\mkw-recomp"       # build and copy into the game folder
+python native/probe/build_plugin.py --target all --package   # -> native/probe/build/plugin/mkwmp-mod.zip
 ```
 
-`--zig PATH` selects the zig binary; the default is `zig` on your PATH.
+`--zig PATH` picks the Zig binary. `native/voice` and `native/camera` build the voice and camera libraries the mod packs when they're present.
 
-### Tests
+**Tests**
 
 ```sh
-cargo test --manifest-path rust/Cargo.toml --workspace
+cargo test --manifest-path rust/Cargo.toml --workspace   # server: includes end-to-end runs of the real binary
+dotnet test launcher/tests/Mkwmp.Core.Tests              # launcher core
 ```
-
-Two tests start the real `mkwmp` binary. One plays two clients from sign-in to a shared session (TLS, Gamesync, NAT, TURN); the other covers seat expiry through the roster.
 
 ## Repository layout
 
 | Path | What's there |
 | --- | --- |
-| `rust/client` | the launcher (egui): gamertag, friends, seats, tray, self-update |
-| `rust/seat` | seat server: gamertags and PINs (SQLite), friends, presence, seats, queue, signed tickets |
-| `rust/lobby` | the game-facing lobby logic: matchmaking, sessions, referee, friend rooms |
-| `rust/gateway` | gRPC over HTTP/2 + TLS, TURN relay, NAT responder, rate limits |
-| `rust/mkwmp` | the server binary: `server host` (everything, set up on first run), `server`, `lobby`, `keygen`, `admin` |
-| `rust/{config,contracts,ticket}` | server config, NPLN protobuf types, seat ticket signing |
-| `native/probe` | the game patch (`winmm.dll`): redirects the game's online services to an mkwmp server |
-| `contracts/` | the game's NPLN service definitions (`.proto`) |
-| `config/` | example configs: `server.toml` (the server), `client.toml` (the launcher) |
-| `compose.yaml`, `deploy/` | Docker Compose stack, Dockerfile, systemd units |
-| `docs/` | [HOSTING](docs/HOSTING.md), [ARCHITECTURE](docs/ARCHITECTURE.md), [seat API](docs/contracts/SEAT_API.md), [launcher API](docs/contracts/LAUNCHER_API.md) |
-| `site/` | the website (GitHub Pages) |
-| `tools/` | release script (`tools/release`) and a local seat server helper (`tools/host`) |
-| `resources/` | the original Python reference lobby, the first Rust seat prototype, ticket test vectors and test scripts |
+| [`launcher/`](launcher) | the launcher (C#, WPF, .NET 10): `Mkwmp.App` (UI), `Mkwmp.Core`, `Mkwmp.Update` and `Mkwmp.Updater` (signed self-update) |
+| [`rust/mkwmp`](rust/mkwmp) | the server binary `server`: `host`, `seat`, `lobby`, `beholder`, `keygen`, `admin` |
+| [`rust/seat`](rust/seat) | seat server: gamertags and PINs (SQLite), friends, presence, seats, queue, signed tickets, reports |
+| [`rust/lobby`](rust/lobby) | game-facing lobby logic: matchmaking, sessions, referee, friend rooms |
+| [`rust/gateway`](rust/gateway) | gRPC over HTTP/2 + TLS, TURN relay, NAT responder, voice and camera relay, rate limits |
+| [`rust/beholder`](rust/beholder) | the public server directory |
+| `rust/{config,contracts,ticket}` | server config, generated protocol types, ticket signing |
+| `rust/client` | the earlier Rust launcher (1.3 and before) |
+| [`native/`](native) | the MKWMP mod for mkw-recomp (`probe`), and the voice and camera libraries |
+| [`contracts/`](contracts) | the protocol definitions (`.proto`) MKWMP's server speaks |
+| [`config/`](config) | example `server.toml` and `client.toml` |
+| `compose.yaml`, [`deploy/`](deploy) | Docker Compose stack, Dockerfile, Caddy, systemd units |
+| [`site/`](site) | the website, published with GitHub Pages; built by `tools/site/build.py` |
+| [`tools/`](tools) | release scripts, the Steam Deck installer, mkw-recomp checks, site builder |
+| [`docs/`](docs) | guides and API contracts (below) |
+| `resources/` | the original Python reference lobby and older prototypes |
+
+## Documentation
+
+| Guide | |
+| --- | --- |
+| [HOSTING.md](docs/HOSTING.md) | every way to run a server: cloud VM, your PC, Docker, systemd by hand |
+| [LINUX.md](docs/LINUX.md) | SteamOS and Linux: the installer, Proton, launch options |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | how the launcher, the mod, the seat server and the lobby fit together |
+| [LEGAL.md](docs/LEGAL.md) | interoperability notes: what MKWMP contains and doesn't do |
+| [contracts/](docs/contracts) | [seat API](docs/contracts/SEAT_API.md), [launcher API](docs/contracts/LAUNCHER_API.md), [voice](docs/contracts/VOICE_API.md), [video](docs/contracts/VIDEO_API.md), [beholder](docs/contracts/BEHOLDER_API.md) |
+| [launcher/docs/](launcher/docs) | launcher design, overlay, mods, updates, mkw-recomp integration |
+| [CHANGELOG.md](CHANGELOG.md) | what changed in each release (also the launcher's What's New page) |
 
 ## Reporting a bug
 
-Open an [issue](https://github.com/anarqz/mkwmp/issues/new/choose) and fill in the form. The most useful thing you can add is the logs: in the launcher, open **SETTINGS** and press **SAVE LOGS FOR A BUG REPORT** (or run `mkwmp.exe --save-logs`), then drag the zip into the issue. It holds the launcher log, the game patch and mkw-recomp logs, with your PIN and tickets left out.
+Open an [issue](https://github.com/anarqz/mkwmp/issues/new/choose) and fill in the form. After a crash, the launcher offers **Report**: it saves a zip of the details and logs on your Desktop (your PIN and keys are left out) and opens a prefilled issue. **Found a bug?** in the launcher does the same at any time. Drag the zip into the issue.
 
-## License
+Requests that help obtain or copy games, keys or firmware, unlock paid content or cheat against other players are out of scope ([LEGAL.md](docs/LEGAL.md#out-of-scope)).
 
-mkwmp is free software under the GNU General Public License, version 3 or later (`LICENSE`). Third-party components and their licenses are listed in `NOTICE.md`.
+## Credits and license
+
+- Built on **[mkw-recomp](https://github.com/adriadam10/mkw-recomp)**, a static recompilation of Mario Kart World by [Adrià](https://github.com/adriadam10), released under the MIT License. MKWMP installs the official release.
+- Third-party components and their licenses: [NOTICE.md](NOTICE.md). The art in this repository is MKWMP's own.
+
+MKWMP is free software under the **GNU General Public License, version 3 or later**. See [LICENSE](LICENSE).
+
+<p align="center"><a href="https://anarqz.github.io/mkwmp/"><img src="site/assets/art/glyph.png" alt="MKWMP" width="56"></a></p>

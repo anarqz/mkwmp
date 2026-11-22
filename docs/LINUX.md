@@ -1,6 +1,6 @@
 # MKWMP on SteamOS and Linux
 
-MKWMP on Linux is the Windows launcher run by Proton, as one Steam shortcut. The launcher installs
+MKWMP (online play for Mario Kart World under mkw-recomp) on Linux is the Windows launcher run by Proton, as one Steam shortcut. The launcher installs
 mkw-recomp's Windows build in its own folder and starts the game as its child, so the launcher, the
 game and the overlay are one Steam app in one Proton prefix. `tools/linux/install-mkwmp.sh` sets all
 of it up.

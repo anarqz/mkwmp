@@ -1,6 +1,6 @@
 # Hosting mkwmp
 
-An MKWMP server is one program, `server` (`server.exe` on Windows), with two parts. The quickest way to run one on the internet is a small cloud VM and one command (section 1). `server host` runs both parts in one process (sections 2 and 3); `server seat` and `server lobby` run them separately (sections 1 and 4):
+An MKWMP server runs the online services that Mario Kart World (under mkw-recomp) connects to, in place of Nintendo's. It is one program, `server` (`server.exe` on Windows), with two parts. The quickest way to run one on the internet is a small cloud VM and one command (section 1). `server host` runs both parts in one process (sections 2 and 3); `server seat` and `server lobby` run them separately (sections 1 and 4):
 
 | Part | What it does | Reached by | Ports |
 | --- | --- | --- | --- |

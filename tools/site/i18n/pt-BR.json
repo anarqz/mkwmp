@@ -1,7 +1,7 @@
 {
   "meta": {
-    "title": "MKWMP: servidores online para um jogo de corrida",
-    "description": "O MKWMP é uma reimplementação dos servidores online de um jogo de corrida, com um launcher que configura o jogo a partir da sua própria cópia, joga offline na hora e leva você para servidores da comunidade, com amigos, chat de voz e mods. Grátis e de código aberto.",
+    "title": "MKWMP: jogue Mario Kart World online no seu PC",
+    "description": "O MKWMP leva o Mario Kart World para o online no PC: uma reimplementação dos servidores online do jogo para o mkw-recomp, com um launcher que configura o jogo a partir da sua própria cópia, joga offline na hora e leva você para servidores da comunidade, com amigos, chat de voz e mods. Grátis e de código aberto.",
     "host_title": "Hospede um servidor MKWMP: uma VM na nuvem com um comando",
     "host_description": "Rode seu próprio servidor MKWMP em uma VM pequena da Vultr: chaves SSH, firewall, um comando, HTTPS, atualizações e backups."
   },
@@ -26,7 +26,7 @@
   },
   "hero": {
     "title": "Corra online. <em>Do seu jeito.</em>",
-    "lead": "O MKWMP é uma reimplementação dos servidores online de um jogo de corrida, com um launcher feito para ele. O launcher configura o jogo a partir da sua própria cópia, joga offline assim que estiver pronto e leva você para servidores da comunidade, com amigos, chat de voz e mods.",
+    "lead": "O MKWMP leva o Mario Kart World para o online no seu PC. Ele reimplementa os servidores online do jogo para o mkw-recomp, a versão de PC gerada a partir da sua própria cópia do jogo de Nintendo Switch 2, com um launcher feito para ele: configura o jogo, joga offline assim que estiver pronto e leva você para servidores da comunidade, com amigos, chat de voz e mods.",
     "download": "Baixar para Windows",
     "deck": "Steam Deck",
     "host": "Hospedar um servidor",
@@ -57,7 +57,7 @@
   },
   "setup": {
     "title": "Configuração de uma vez",
-    "lead": "Aponte o MKWMP para a sua própria cópia do jogo, versão 1.8.0, como .nup, .nx ou pasta. Ele faz o resto.",
+    "lead": "Aponte o MKWMP para a sua própria cópia de Mario Kart World para Nintendo Switch 2, versão 1.8.0, como .nup, .nx ou pasta. Ele faz o resto.",
     "section": "O que o launcher faz",
     "s1": "Baixa o mkw-recomp",
     "s1c": "O mkw-recomp 0.1.17, a versão oficial, conferido pelo hash conhecido. Em um processador sem AVX2, ele escolhe a versão feita para isso.",
@@ -72,7 +72,7 @@
     "shot_alt": "A configuração do jogo em andamento: uma barra de progresso, a etapa atual e o tempo restante.",
     "shot_cap": "A primeira configuração demora um pouco. Depois, o jogo abre em segundos.",
     "credit": "Obrigado ao mkw-recomp",
-    "creditc": "O <a href=\"https://github.com/adriadam10/mkw-recomp\">mkw-recomp</a>, uma recompilação estática do jogo, é feito por <a href=\"https://github.com/adriadam10\">Adrià</a> e distribuído sob a Licença MIT. O MKWMP instala a versão oficial e é construído sobre ela nos termos dessa licença."
+    "creditc": "O <a href=\"https://github.com/adriadam10/mkw-recomp\">mkw-recomp</a>, uma recompilação estática de Mario Kart World, é feito por <a href=\"https://github.com/adriadam10\">Adrià</a> e distribuído sob a Licença MIT. O MKWMP instala a versão oficial e é construído sobre ela nos termos dessa licença."
   },
   "offline": {
     "title": "Offline primeiro, online quando quiser",
@@ -190,10 +190,10 @@
   },
   "faq": {
     "title": "Perguntas",
-    "q1": "Quem faz o MKWMP?",
-    "a1": "Uma comunidade: o MKWMP é um projeto independente e de código aberto. Os servidores são mantidos pelos hosts, e qualquer pessoa pode hospedar um.",
-    "q2": "Preciso do jogo?",
-    "a2": "Sim: a sua própria cópia do jogo, versão 1.8.0. O MKWMP nunca baixa o jogo; ele gera o mkw-recomp a partir da sua cópia.",
+    "q1": "O MKWMP é feito pela Nintendo?",
+    "a1": "Não. O MKWMP é um projeto comunitário, independente e de código aberto, sem ligação com a Nintendo e sem o apoio dela, e não usa os servidores da Nintendo. Os servidores são mantidos pelos hosts, e qualquer pessoa pode hospedar um.",
+    "q2": "Preciso ter o Mario Kart World?",
+    "a2": "Sim: a sua própria cópia de Mario Kart World para Nintendo Switch 2, versão 1.8.0. O MKWMP nunca baixa o jogo; ele gera o mkw-recomp a partir da sua cópia.",
     "q3": "Roda no Linux?",
     "a3": "No Steam Deck e no SteamOS, pelo Proton: use o comando acima. Outros Linux com Steam e Proton funcionam do mesmo jeito.",
     "q4": "É grátis?",
@@ -208,8 +208,8 @@
     "changelog": "Mudanças",
     "hosting": "Guia de hospedagem",
     "bug": "Relatar um bug",
-    "legal": "O MKWMP é um projeto comunitário, independente e de código aberto. Você precisa da sua própria cópia do jogo. A arte daqui é do próprio MKWMP.",
-    "credits": "Feito sobre o <a href=\"https://github.com/adriadam10/mkw-recomp\">mkw-recomp</a>, uma recompilação estática do jogo, de <a href=\"https://github.com/adriadam10\">Adrià</a> (Licença MIT). O MKWMP instala a versão oficial."
+    "legal": "O MKWMP é um projeto comunitário, independente e de código aberto, sem ligação com a Nintendo e sem o apoio dela. Mario Kart World, Nintendo e Nintendo Switch 2 são marcas registradas da Nintendo. Você precisa da sua própria cópia do jogo. A arte daqui é do próprio MKWMP.",
+    "credits": "Feito sobre o <a href=\"https://github.com/adriadam10/mkw-recomp\">mkw-recomp</a>, uma recompilação estática de Mario Kart World, de <a href=\"https://github.com/adriadam10\">Adrià</a> (Licença MIT). O MKWMP instala a versão oficial."
   },
   "hints": {
     "move": "Mover",

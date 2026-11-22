@@ -1,6 +1,8 @@
 # Architecture
 
-There is **one server binary, `mkwmp`, with two parts**. Both run on one machine by default, and anyone can host one. The source of truth for each interface:
+MKWMP reimplements the online servers of Mario Kart World for mkw-recomp, the PC version built from the player's own copy of the Nintendo Switch 2 game. It never talks to Nintendo's servers.
+
+There is **one server binary, `server`, with two parts**. Both run on one machine by default, and anyone can host one. The source of truth for each interface:
 
 - `contracts/*.proto`: NPLN, the game-facing protocol.
 - `docs/contracts/SEAT_API.md`: the seat API (ours).
