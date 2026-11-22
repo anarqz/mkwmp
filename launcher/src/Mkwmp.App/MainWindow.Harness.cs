@@ -185,6 +185,11 @@ public partial class MainWindow
                 await Task.Delay(900).ConfigureAwait(true); // a server asked answers
             }
         }
+        // --mod camera=1,camera_view=0: the mod's camera switches as the game's file has them (Settings › Voice & Camera)
+        if (App.Option(args, "--mod") is { } mod && _vm.Page is SettingsViewModel voice)
+        {
+            voice.PretendMod(mod);
+        }
         _vm.TrayAvailable = args.Contains("--with-tray");
         // --overlay [--overlay-frame <png>|none] [--overlay-no-menu]: overlay mode, as after a request of the game
         ImageSource? overlayPicture = null;

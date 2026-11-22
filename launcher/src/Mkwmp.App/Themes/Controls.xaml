@@ -170,6 +170,10 @@
             <Trigger Property="Kind" Value="Ghost">
               <Setter TargetName="Bd" Property="BorderThickness" Value="0" />
             </Trigger>
+            <Trigger Property="Kind" Value="Danger">
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.Bad}" />
+              <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
+            </Trigger>
             <Trigger Property="Kind" Value="Bottom">
               <Setter TargetName="Bd" Property="BorderThickness" Value="0" />
               <Setter TargetName="Bd" Property="CornerRadius" Value="0,0,14,14" />
@@ -352,6 +356,9 @@
               <Setter TargetName="Hover" Property="Visibility" Value="Collapsed" />
               <!-- the ring covers the row's own rule: it moves just under the ring, so the separator stays -->
               <Setter TargetName="Rule" Property="Margin" Value="0,0,0,-11" />
+            </Trigger>
+            <Trigger Property="IsDestructive" Value="True">
+              <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Foreground" Value="{DynamicResource Brush.TextFaint}" />

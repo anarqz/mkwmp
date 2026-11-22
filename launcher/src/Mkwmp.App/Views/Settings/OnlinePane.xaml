@@ -6,8 +6,10 @@
              Focusable="False">
   <!-- DataContext: SettingsViewModel (SettingsViewModel.Online.cs). Settings › Online, where "Configure
        Online" leads from every locked place. Without a server: "Online is off" and Connect to a Server (the
-       welcome flow's online pages). With one: the server and its status, the profile on it with its PIN
-       (dots until the eye, or X), Disconnect, privacy, and deleting the profile on that server. -->
+       welcome flow's online pages). With one: the profile on it with its PIN (dots until the eye, or X); the server
+       on ONE row (its address, its status in small text, Disconnect), and right below it what else is about that
+       server: its privacy policy, reporting a player to its host, and Connect to Another Server (the way to swap:
+       the server row itself is not a button); then the profile, the consent, and deleting the profile there. -->
   <UserControl.Resources>
     <Style x:Key="Note" TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
       <Setter Property="Margin" Value="20,16,20,0" />
@@ -100,15 +102,55 @@
         </Grid>
       </Border>
 
-      <c:SectionHeader Text="{Binding S[settings.online.server]}" />
-      <c:SettingsRow Label="{Binding S[settings.server.url]}" Kind="Chevron" Icon="{StaticResource Icon.Globe}" Value="{Binding ServerShort}"
+      <c:SectionHeader Text="{Binding S[settings.online.server]}" ShowRule="False" />
+      <Border Style="{StaticResource Card}" Padding="28,22,22,22" Margin="0,4,0,6">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <c:Icon Data="{StaticResource Icon.Globe}" Width="48" Height="48" StrokeThickness="1.8" VerticalAlignment="Center" Margin="0,0,24,0" />
+          <StackPanel Grid.Column="1" VerticalAlignment="Center">
+            <TextBlock Text="{Binding ServerShort}" Style="{StaticResource Text.Base}" FontSize="34" FontWeight="SemiBold" />
+            <Grid Margin="0,4,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Grid Width="30" Height="32" VerticalAlignment="Top" Margin="0,0,6,0">
+                <c:Spinner Width="24" Height="24" HorizontalAlignment="Left"
+                           Visibility="{Binding ServerTone, Converter={StaticResource Conv.Visible}, ConverterParameter='=busy'}" />
+                <Ellipse Width="16" Height="16" HorizontalAlignment="Left" Margin="2,0,0,0"
+                         Visibility="{Binding ServerTone, Converter={StaticResource Conv.Visible}, ConverterParameter='!=busy'}">
+                  <Ellipse.Style>
+                    <Style TargetType="Ellipse">
+                      <Setter Property="Fill" Value="{DynamicResource Brush.TextFaint}" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding ServerTone}" Value="good">
+                          <Setter Property="Fill" Value="{DynamicResource Brush.Good}" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ServerTone}" Value="bad">
+                          <Setter Property="Fill" Value="{DynamicResource Brush.Bad}" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </Ellipse.Style>
+                </Ellipse>
+              </Grid>
+              <TextBlock Grid.Column="1" Text="{Binding ServerSummary}" Style="{StaticResource Text.Caption}" FontSize="23" LineHeight="32" />
+            </Grid>
+          </StackPanel>
+          <c:ConsoleButton Grid.Column="2" Kind="Danger" Height="72" MinWidth="0" Padding="28,0" FontSize="26" Margin="20,0,0,0" VerticalAlignment="Center"
+                           Icon="{StaticResource Icon.SignalOff}" Content="{Binding S[settings.online.disconnect]}" Command="{Binding DisconnectCommand}" />
+        </Grid>
+      </Border>
+      <c:SettingsRow Label="{Binding S[settings.privacy.policy]}" Kind="Chevron" Icon="{StaticResource Icon.Shield}"
+                     Command="{Binding PrivacyCommand}" Caption="{Binding S[settings.privacy.policy_caption]}" />
+      <c:SettingsRow Label="{Binding S[settings.report.title]}" Kind="Chevron" Icon="{StaticResource Icon.Flag}"
+                     Command="{Binding ReportCommand}" Caption="{Binding ReportCaption}" />
+      <c:SettingsRow Label="{Binding S[settings.online.connect_other]}" Kind="Chevron" Icon="{StaticResource Icon.Signal}"
                      Command="{Binding ConnectCommand}" Caption="{Binding S[settings.online.change_caption]}" />
-      <settings:StatusLines DataContext="{Binding ServerLines}" />
-      <TextBlock Text="{Binding SeatsText}" Style="{StaticResource Note}" Margin="66,2,20,0"
-                 Visibility="{Binding SeatsText, Converter={StaticResource Conv.Visible}}" />
-      <c:SettingsRow Label="{Binding S[settings.online.disconnect]}" Icon="{StaticResource Icon.SignalOff}" Margin="0,14,0,0"
-                     Command="{Binding DisconnectCommand}" Caption="{Binding DisconnectCaption}" />
-
       <!-- no profile on this server yet (or another gamertag is being entered) -->
       <StackPanel DataContext="{Binding Profile}" Visibility="{Binding ShowEntry, Converter={StaticResource Conv.Visible}}">
         <c:SectionHeader Text="{Binding S[settings.online.register]}" />
@@ -139,12 +181,10 @@
       <c:SettingsRow Label="{Binding S[setup.consent.adult]}" Kind="Toggle" IsOn="{Binding Adult}" IsEnabled="{Binding NotBusy}"
                      Caption="{Binding S[settings.privacy.adult_caption]}"
                      Visibility="{Binding ConsentGiven, Converter={StaticResource Conv.Visible}}" />
-      <c:SettingsRow Label="{Binding S[settings.privacy.policy]}" Kind="Chevron" Icon="{StaticResource Icon.Shield}"
-                     Command="{Binding PrivacyCommand}" Caption="{Binding S[settings.privacy.policy_caption]}" />
 
       <StackPanel DataContext="{Binding Profile}" Visibility="{Binding SignedIn, Converter={StaticResource Conv.Visible}}">
         <c:SectionHeader Text="{Binding S[settings.profile.delete_section]}" />
-        <c:SettingsRow Label="{Binding S[settings.profile.delete]}" Icon="{StaticResource Icon.Trash}"
+        <c:SettingsRow Label="{Binding S[settings.profile.delete]}" Icon="{StaticResource Icon.Trash}" IsDestructive="True"
                        Command="{Binding DeleteCommand}" Caption="{Binding S[settings.privacy.delete_caption]}" />
       </StackPanel>
       <TextBlock Text="{Binding BusyNote}" Style="{StaticResource Note}" Visibility="{Binding BusyNote, Converter={StaticResource Conv.Visible}}" />

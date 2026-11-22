@@ -32,6 +32,9 @@
   <DataTemplate DataType="{x:Type vm:WhatsNewViewModel}">
     <v:WhatsNewPage />
   </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:ReportViewModel}">
+    <settings:ReportPage />
+  </DataTemplate>
   <DataTemplate DataType="{x:Type vm:HiddenServersViewModel}">
     <settings:HiddenServersPage />
   </DataTemplate>

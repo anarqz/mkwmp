@@ -3,61 +3,53 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              Focusable="False">
-  <!-- DataContext: SettingsViewModel (SettingsViewModel.Voice.cs). Settings › Voice & Camera: what voice
-       and camera are (they exist only inside the game), then the voice switch, the devices and volumes,
-       the launcher's own tests, the camera, muted players, the report form. Nothing here talks to anyone:
-       the launcher only configures and tests. -->
+  <!-- DataContext: SettingsViewModel (SettingsViewModel.Voice.cs). Settings › Voice & Camera: what voice and
+       camera are (they exist only inside the game), then two sections built the same way:
+         Voice:  the switch; the microphone, its volume, its test; the output, its volume, its test
+         Camera: the switch; my own camera on or off; the camera, its test
+       and the muted players. Each switch is the first row of its section and says what "off" means; what is
+       under it follows it (greyed out, or gone, while it is off). Nothing here talks to anyone: the launcher
+       only configures and tests. Reporting a player is in Settings › Online (Report Abuse). -->
   <UserControl.Resources>
     <Style x:Key="Field" TargetType="Border">
       <Setter Property="BorderBrush" Value="{DynamicResource Brush.Rule}" />
       <Setter Property="BorderThickness" Value="0,0,0,1.5" />
       <Setter Property="Padding" Value="20,14,20,14" />
     </Style>
-    <Style x:Key="FieldLabel" TargetType="TextBlock" BasedOn="{StaticResource Text.Base}">
-      <Setter Property="FontSize" Value="32" />
-      <Setter Property="Margin" Value="0,0,28,0" />
-    </Style>
-    <Style x:Key="Hint" TargetType="TextBlock" BasedOn="{StaticResource Text.Base}">
-      <Setter Property="Foreground" Value="{DynamicResource Brush.TextFaint}" />
-      <Setter Property="Margin" Value="28,0" />
-      <Setter Property="IsHitTestVisible" Value="False" />
-    </Style>
     <Style x:Key="Note" TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
       <Setter Property="Margin" Value="20,16,20,0" />
     </Style>
     <!-- a line of the card at the top: an icon and what it says -->
     <Style x:Key="FactIcon" TargetType="c:Icon">
-      <Setter Property="Width" Value="36" />
-      <Setter Property="Height" Value="36" />
+      <Setter Property="Width" Value="34" />
+      <Setter Property="Height" Value="34" />
       <Setter Property="StrokeThickness" Value="1.9" />
       <Setter Property="VerticalAlignment" Value="Top" />
-      <Setter Property="Margin" Value="0,2,22,0" />
+      <Setter Property="Margin" Value="0,2,20,0" />
       <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
     </Style>
     <Style x:Key="Fact" TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
-      <Setter Property="FontSize" Value="26" />
-      <Setter Property="LineHeight" Value="37" />
+      <Setter Property="FontSize" Value="25" />
+      <Setter Property="LineHeight" Value="35" />
       <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
     </Style>
   </UserControl.Resources>
 
   <StackPanel>
     <!-- what this is, before anything can be set -->
-    <Border Style="{StaticResource Card}" Margin="0,38,0,0">
+    <Border Style="{StaticResource Card}" Margin="0,38,0,0" Padding="30,22,30,24">
       <StackPanel>
-        <TextBlock Text="{Binding S[settings.voice.info.title]}" Style="{StaticResource Text.Heading}" TextWrapping="Wrap" />
-        <Grid Margin="0,20,0,0">
+        <TextBlock Text="{Binding S[settings.voice.info.title]}" Style="{StaticResource Text.Base}" FontSize="30" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <Grid Margin="0,14,0,0">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="14" />
+            <RowDefinition Height="10" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="14" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="14" />
+            <RowDefinition Height="10" />
             <RowDefinition Height="Auto" />
           </Grid.RowDefinitions>
           <c:Icon Data="{StaticResource Icon.Lock}" Style="{StaticResource FactIcon}" />
@@ -66,26 +58,18 @@
           <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding S[settings.voice.info.limit]}" Style="{StaticResource Fact}" />
           <c:Icon Grid.Row="4" Data="{StaticResource Icon.Shield}" Style="{StaticResource FactIcon}" />
           <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding S[settings.voice.info.live]}" Style="{StaticResource Fact}" />
-          <c:Icon Grid.Row="6" Data="{StaticResource Icon.Refresh}" Style="{StaticResource FactIcon}" Foreground="{DynamicResource Brush.TextMuted}" />
-          <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding S[settings.voice.info.apply]}" Style="{StaticResource Fact}"
-                     Foreground="{DynamicResource Brush.TextMuted}" />
         </Grid>
       </StackPanel>
     </Border>
 
+    <!-- ═════════ Voice: the switch; the microphone, its volume, its test; the output, its volume, its test ═════════ -->
     <c:SectionHeader Text="{Binding S[settings.chat.voice]}" />
     <c:SettingsRow Label="{Binding S[settings.chat.enabled]}" Kind="Toggle" IsOn="{Binding VoiceEnabled}"
                    Caption="{Binding S[settings.chat.enabled_caption]}" />
     <c:SettingsRow Label="{Binding S[settings.chat.input]}" Kind="Chevron" Icon="{StaticResource Icon.Mic}"
                    Value="{Binding InputName}" Command="{Binding InputCommand}" />
-    <c:SettingsRow Label="{Binding S[settings.chat.output]}" Kind="Chevron" Icon="{StaticResource Icon.Headset}"
-                   Value="{Binding OutputName}" Command="{Binding OutputCommand}" Caption="{Binding DevicesCaption}" />
     <c:ConsoleSlider Label="{Binding S[settings.chat.mic_volume]}" Value="{Binding InputGain, Mode=TwoWay}" Minimum="1" Maximum="100"
                      IsEnabled="{Binding VoiceEnabled}" />
-    <c:ConsoleSlider Label="{Binding S[settings.chat.volume]}" Value="{Binding OutputGain, Mode=TwoWay}" Minimum="1" Maximum="100"
-                     IsEnabled="{Binding VoiceEnabled}" />
-
-    <c:SectionHeader Text="{Binding S[settings.chat.tests]}" />
     <c:SettingsRow Label="{Binding S[settings.chat.mic_test]}" Kind="Toggle" IsOn="{Binding MicTesting}"
                    Caption="{Binding S[settings.chat.mic_test_caption]}">
       <Grid Width="300" Height="16" Margin="0,0,30,0" Visibility="{Binding MicTesting, Converter={StaticResource Conv.Visible}}">
@@ -103,39 +87,42 @@
     <c:SettingsRow Label="{Binding S[settings.chat.hear]}" Kind="Toggle" IsOn="{Binding HearMyself}"
                    Caption="{Binding S[settings.chat.hear_caption]}"
                    Visibility="{Binding MicTesting, Converter={StaticResource Conv.Visible}}" />
+    <c:SettingsRow Label="{Binding S[settings.chat.output]}" Kind="Chevron" Icon="{StaticResource Icon.Headset}"
+                   Value="{Binding OutputName}" Command="{Binding OutputCommand}" />
+    <c:ConsoleSlider Label="{Binding S[settings.chat.volume]}" Value="{Binding OutputGain, Mode=TwoWay}" Minimum="1" Maximum="100"
+                     IsEnabled="{Binding VoiceEnabled}" />
     <c:SettingsRow Label="{Binding S[settings.chat.output_test]}" Icon="{StaticResource Icon.Volume}" Command="{Binding TestOutputCommand}"
                    Caption="{Binding S[settings.chat.output_test_caption]}" />
 
+    <!-- ═════════ Camera: the switch; my own camera on or off; the camera, its test ═════════ -->
     <c:SectionHeader Text="{Binding S[settings.chat.camera]}" />
-    <c:SettingsRow Label="{Binding S[settings.chat.camera_device]}" Kind="Chevron" Icon="{StaticResource Icon.Camera}"
-                   Value="{Binding CameraName}" Command="{Binding CameraCommand}" />
-    <c:SettingsRow Label="{Binding S[settings.chat.mirror]}" Kind="Toggle" IsOn="{Binding CameraMirror}"
-                   IsEnabled="{Binding CameraTestAvailable}" />
-    <c:SettingsRow Label="{Binding S[settings.chat.camera_test]}" Kind="Chevron" Command="{Binding TestCameraCommand}"
-                   Caption="{Binding S[settings.chat.camera_test_caption]}" />
-    <!-- no capture on this system (Wine / Proton), or mkwmp-camera.dll is missing -->
-    <Border Style="{StaticResource Card}" Margin="0,18,0,0" Visibility="{Binding CameraNote, Converter={StaticResource Conv.Visible}}">
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <c:Icon Data="{StaticResource Icon.Info}" Width="40" Height="40" VerticalAlignment="Top" Margin="0,2,20,0"
-                Foreground="{DynamicResource Brush.TextMuted}" />
-        <TextBlock Grid.Column="1" Text="{Binding CameraNote}" Style="{StaticResource Text.Caption}" />
-      </Grid>
-    </Border>
-
-    <!-- the mod's own switches, in the game's settings file -->
-    <StackPanel Visibility="{Binding HasGameCamera, Converter={StaticResource Conv.Visible}}">
-      <c:SectionHeader Text="{Binding S[settings.chat.game_camera]}" />
-      <c:SettingsRow Label="{Binding S[settings.chat.show_mine]}" Kind="Toggle" IsOn="{Binding ShowMyCamera}"
-                     IsEnabled="{Binding CanShowMyCamera}" />
-      <c:SettingsRow Label="{Binding S[settings.chat.see_friends]}" Kind="Toggle" IsOn="{Binding SeeFriendsCameras}"
-                     IsEnabled="{Binding CanChangeGameCamera}" />
-      <TextBlock Text="{Binding GameCameraCaption}" Style="{StaticResource Note}" />
+    <c:SettingsRow Label="{Binding S[settings.chat.camera_enabled]}" Kind="Toggle" IsOn="{Binding CameraEnabled}"
+                   IsEnabled="{Binding CanChangeGameCamera}" Caption="{Binding CameraCaption}" />
+    <!-- the one finer choice, while the camera is in use: see friends without being seen -->
+    <c:SettingsRow Label="{Binding S[settings.chat.show_mine]}" Kind="Toggle" IsOn="{Binding ShowMyCamera}"
+                   IsEnabled="{Binding CanShowMyCamera}" Caption="{Binding ShowMineCaption}"
+                   Visibility="{Binding ShowMyCameraRow, Converter={StaticResource Conv.Visible}}" />
+    <!-- the device and its test: where this system can capture a camera at all -->
+    <StackPanel Visibility="{Binding CanTestCamera, Converter={StaticResource Conv.Visible}}">
+      <c:SettingsRow Label="{Binding S[settings.chat.camera_device]}" Kind="Chevron" Icon="{StaticResource Icon.Camera}"
+                     Value="{Binding CameraName}" Command="{Binding CameraCommand}" />
+      <c:SettingsRow Label="{Binding S[settings.chat.camera_test]}" Kind="Chevron" Command="{Binding TestCameraCommand}"
+                     Caption="{Binding S[settings.chat.camera_test_caption]}" />
+      <!-- mkwmp-camera.dll is missing or broken: why the two rows above are greyed out -->
+      <Border Style="{StaticResource Card}" Margin="0,18,0,0" Visibility="{Binding CameraDeviceNote, Converter={StaticResource Conv.Visible}}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <c:Icon Data="{StaticResource Icon.Info}" Width="40" Height="40" VerticalAlignment="Top" Margin="0,2,20,0"
+                  Foreground="{DynamicResource Brush.TextMuted}" />
+          <TextBlock Grid.Column="1" Text="{Binding CameraDeviceNote}" Style="{StaticResource Text.Caption}" />
+        </Grid>
+      </Border>
     </StackPanel>
 
+    <!-- ═════════ Muted players ═════════ -->
     <c:SectionHeader Text="{Binding S[settings.chat.muted]}" />
     <TextBlock Text="{Binding S[settings.chat.muted_none]}" Style="{StaticResource Note}"
                Visibility="{Binding NoMutes, Converter={StaticResource Conv.Visible}}" />
@@ -163,51 +150,5 @@
         </DataTemplate>
       </ItemsControl.ItemTemplate>
     </ItemsControl>
-
-    <c:SectionHeader Text="{Binding S[settings.report.title]}" />
-    <TextBlock Text="{Binding S[settings.report.gate]}" Style="{StaticResource Note}"
-               Visibility="{Binding ReportState, Converter={StaticResource Conv.Visible}, ConverterParameter='=gate'}" />
-    <TextBlock Text="{Binding ReportChecking}" Style="{StaticResource Note}"
-               Visibility="{Binding ReportState, Converter={StaticResource Conv.Visible}, ConverterParameter='=checking'}" />
-    <StackPanel Visibility="{Binding ReportState, Converter={StaticResource Conv.Visible}, ConverterParameter='=open'}">
-      <TextBlock Text="{Binding OpenReportText}" Style="{StaticResource Text.Body}" Margin="20,18,20,0" />
-      <c:SettingsRow Label="{Binding S[settings.report.withdraw]}" Icon="{StaticResource Icon.Close}" Command="{Binding WithdrawReportCommand}"
-                     Caption="{Binding S[settings.report.one]}" Margin="0,6,0,0" />
-    </StackPanel>
-    <StackPanel Visibility="{Binding ReportState, Converter={StaticResource Conv.Visible}, ConverterParameter='=form'}">
-      <Border Style="{StaticResource Field}">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-          </Grid.ColumnDefinitions>
-          <TextBlock Text="{Binding S[settings.profile.gamertag]}" Style="{StaticResource FieldLabel}" />
-          <Grid Grid.Column="1">
-            <TextBox x:Name="ReportNameBox" Text="{Binding ReportName, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" />
-          </Grid>
-        </Grid>
-      </Border>
-      <c:SettingsRow Label="{Binding S[settings.report.what]}" Kind="Chevron" Value="{Binding ReportReasonName}" Command="{Binding ReasonCommand}" />
-      <Border Style="{StaticResource Field}">
-        <Grid>
-          <TextBox x:Name="ReportDetailsBox" Text="{Binding ReportDetails, UpdateSourceTrigger=PropertyChanged}" Height="170"
-                   MaxLength="{Binding ReportDetailsMax, Mode=OneTime}" TextWrapping="Wrap" />
-        </Grid>
-      </Border>
-      <c:SettingsRow Label="{Binding S[settings.report.send]}" Icon="{StaticResource Icon.Flag}" Command="{Binding SendReportCommand}"
-                     Caption="{Binding S[settings.report.caption]}" />
-    </StackPanel>
-    <TextBlock Text="{Binding ReportNote}" Margin="20,10,20,0" Visibility="{Binding ReportNote, Converter={StaticResource Conv.Visible}}">
-      <TextBlock.Style>
-        <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
-          <Setter Property="Foreground" Value="{DynamicResource Brush.Good}" />
-          <Style.Triggers>
-            <DataTrigger Binding="{Binding ReportNoteIsError}" Value="True">
-              <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
-            </DataTrigger>
-          </Style.Triggers>
-        </Style>
-      </TextBlock.Style>
-    </TextBlock>
   </StackPanel>
 </UserControl>
