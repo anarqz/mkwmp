@@ -7,8 +7,8 @@
        camera are (they exist only inside the game), then two sections built the same way:
          Voice:  the switch; the microphone, its volume, its test; the output, its volume, its test
          Camera: the switch; my own camera on or off; the camera, its test
-       and the muted players. Each switch is the first row of its section and says what "off" means; what is
-       under it follows it (greyed out, or gone, while it is off). Nothing here talks to anyone: the launcher
+       and the muted players. Each switch is the first row of its section and says what "off" means; what
+       depends on it is in a c:Dependents right under it: gone while it is off (never greyed out). Nothing here talks to anyone: the launcher
        only configures and tests. Reporting a player is in Settings › Online (Report Abuse). -->
   <UserControl.Resources>
     <Style x:Key="Field" TargetType="Border">
@@ -66,10 +66,10 @@
     <c:SectionHeader Text="{Binding S[settings.chat.voice]}" />
     <c:SettingsRow Label="{Binding S[settings.chat.enabled]}" Kind="Toggle" IsOn="{Binding VoiceEnabled}"
                    Caption="{Binding S[settings.chat.enabled_caption]}" />
+    <c:Dependents Of="{Binding VoiceEnabled}">
     <c:SettingsRow Label="{Binding S[settings.chat.input]}" Kind="Chevron" Icon="{StaticResource Icon.Mic}"
                    Value="{Binding InputName}" Command="{Binding InputCommand}" />
-    <c:ConsoleSlider Label="{Binding S[settings.chat.mic_volume]}" Value="{Binding InputGain, Mode=TwoWay}" Minimum="1" Maximum="100"
-                     IsEnabled="{Binding VoiceEnabled}" />
+    <c:ConsoleSlider Label="{Binding S[settings.chat.mic_volume]}" Value="{Binding InputGain, Mode=TwoWay}" Minimum="1" Maximum="100" />
     <c:SettingsRow Label="{Binding S[settings.chat.mic_test]}" Kind="Toggle" IsOn="{Binding MicTesting}"
                    Caption="{Binding S[settings.chat.mic_test_caption]}">
       <Grid Width="300" Height="16" Margin="0,0,30,0" Visibility="{Binding MicTesting, Converter={StaticResource Conv.Visible}}">
@@ -84,24 +84,25 @@
         </Border>
       </Grid>
     </c:SettingsRow>
-    <c:SettingsRow Label="{Binding S[settings.chat.hear]}" Kind="Toggle" IsOn="{Binding HearMyself}"
-                   Caption="{Binding S[settings.chat.hear_caption]}"
-                   Visibility="{Binding MicTesting, Converter={StaticResource Conv.Visible}}" />
+    <c:Dependents Of="{Binding MicTesting}">
+      <c:SettingsRow Label="{Binding S[settings.chat.hear]}" Kind="Toggle" IsOn="{Binding HearMyself}"
+                     Caption="{Binding S[settings.chat.hear_caption]}" />
+    </c:Dependents>
     <c:SettingsRow Label="{Binding S[settings.chat.output]}" Kind="Chevron" Icon="{StaticResource Icon.Headset}"
                    Value="{Binding OutputName}" Command="{Binding OutputCommand}" />
-    <c:ConsoleSlider Label="{Binding S[settings.chat.volume]}" Value="{Binding OutputGain, Mode=TwoWay}" Minimum="1" Maximum="100"
-                     IsEnabled="{Binding VoiceEnabled}" />
+    <c:ConsoleSlider Label="{Binding S[settings.chat.volume]}" Value="{Binding OutputGain, Mode=TwoWay}" Minimum="1" Maximum="100" />
     <c:SettingsRow Label="{Binding S[settings.chat.output_test]}" Icon="{StaticResource Icon.Volume}" Command="{Binding TestOutputCommand}"
                    Caption="{Binding S[settings.chat.output_test_caption]}" />
+    </c:Dependents>
 
     <!-- ═════════ Camera: the switch; my own camera on or off; the camera, its test ═════════ -->
     <c:SectionHeader Text="{Binding S[settings.chat.camera]}" />
     <c:SettingsRow Label="{Binding S[settings.chat.camera_enabled]}" Kind="Toggle" IsOn="{Binding CameraEnabled}"
                    IsEnabled="{Binding CanChangeGameCamera}" Caption="{Binding CameraCaption}" />
+    <c:Dependents Of="{Binding CameraEnabled}">
     <!-- the one finer choice, while the camera is in use: see friends without being seen -->
     <c:SettingsRow Label="{Binding S[settings.chat.show_mine]}" Kind="Toggle" IsOn="{Binding ShowMyCamera}"
-                   IsEnabled="{Binding CanShowMyCamera}" Caption="{Binding ShowMineCaption}"
-                   Visibility="{Binding ShowMyCameraRow, Converter={StaticResource Conv.Visible}}" />
+                   IsEnabled="{Binding CanShowMyCamera}" Caption="{Binding ShowMineCaption}" />
     <!-- the device and its test: where this system can capture a camera at all -->
     <StackPanel Visibility="{Binding CanTestCamera, Converter={StaticResource Conv.Visible}}">
       <c:SettingsRow Label="{Binding S[settings.chat.camera_device]}" Kind="Chevron" Icon="{StaticResource Icon.Camera}"
@@ -121,6 +122,7 @@
         </Grid>
       </Border>
     </StackPanel>
+    </c:Dependents>
 
     <!-- ═════════ Muted players ═════════ -->
     <c:SectionHeader Text="{Binding S[settings.chat.muted]}" />

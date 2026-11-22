@@ -90,8 +90,8 @@ public sealed partial class SettingsViewModel
 
     private void InitVoice()
     {
-        InputCommand = RelayCommand.Async(() => PickAudioAsync(input: true), () => VoiceEnabled);
-        OutputCommand = RelayCommand.Async(() => PickAudioAsync(input: false), () => VoiceEnabled);
+        InputCommand = RelayCommand.Async(() => PickAudioAsync(input: true));
+        OutputCommand = RelayCommand.Async(() => PickAudioAsync(input: false));
         TestOutputCommand = RelayCommand.Async(TestOutputAsync, () => !_playingSound);
         CameraCommand = RelayCommand.Async(PickCameraAsync, () => CameraTestAvailable);
         TestCameraCommand = new RelayCommand(() => Shell.Navigate(new CameraTestViewModel(Shell)), () => CameraTestAvailable);
@@ -192,7 +192,15 @@ public sealed partial class SettingsViewModel
     public bool VoiceEnabled
     {
         get => Launcher.Settings.Voice.Enabled;
-        set => Save(s => s with { Voice = s.Voice with { Enabled = value } });
+        set
+        {
+            if (!value)
+            {
+                Mic.Stop(); // its test goes with the rows that are no longer there
+                FlushGains();
+            }
+            Save(s => s with { Voice = s.Voice with { Enabled = value } });
+        }
     }
 
     /// <summary>What the game reported is authoritative; until it has run, what this launcher lists itself.</summary>
@@ -462,9 +470,6 @@ public sealed partial class SettingsViewModel
         get => ModOn(ModSettings.Camera) || ModOn(ModSettings.CameraView);
         set => WriteMod((ModSettings.CameraView, value), (ModSettings.Camera, value && CanCapture));
     }
-
-    /// <summary>The row under the switch, while it is on: my own camera on or off (off: I still see my friends').</summary>
-    public bool ShowMyCameraRow => CameraEnabled;
 
     public bool CanShowMyCamera => CanChangeGameCamera && CanCapture;
 
