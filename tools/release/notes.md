@@ -1,3 +1,20 @@
+**mkwmp 1.4.4**: touch that works, smoother scrolling, tidier Online and Voice & Camera settings, and updates that install themselves.
+
+The launcher updates itself from 1.4.x: accept the update when it offers it. From this version on you won't be asked again: a new version is downloaded and installed by itself.
+
+- **Updates install themselves.** When a new MKWMP is out, the launcher downloads it at once and installs it before you play: Install and Restart, or it does it by itself after a few seconds. It never restarts under a running game (it installs when the game closes), and without a connection you play as before. If an install fails you can try again or carry on for now. "Update Automatically" is gone from Settings.
+- **Touch: a drag scrolls, a tap taps.** Buttons and list entries act when you lift your finger, and only if you didn't drag: starting a drag on a button now scrolls the list instead of pressing it. The file picker's list can be dragged on a Steam Deck too.
+- **Smoother, faster scrolling.** Holding a direction, spinning the wheel or using the right stick moves a list in one even motion instead of small jumps, and everything scrolls a bit faster.
+- **Choose a Server in two columns.** The server list scrolls on its own at the left; the address, the server's answer and Connect are at the right. With a controller: A on a server, A again to go on.
+- **Settings › Online, reorganized.** The server is one row with its status and Disconnect; right below it are Privacy Policy, Report Abuse and a new Connect to Another Server.
+- **Report Abuse** (it was "Report Voice Abuse" under Voice & Camera) is now a page of its own under Settings › Online.
+- **One privacy page.** The Privacy Policy row shows whether you accepted it (a mark and "Accepted" or "Not accepted") and opens the same page as the first setup: what the server keeps, its policy, and under them the switch to accept or withdraw.
+- **Settings › Voice & Camera, reorganized.** Voice and camera each start with one switch ("Use voice in private rooms", "Use camera in private rooms") with the device and its test under it. "See Friends' Cameras" is part of the camera switch; "Show My Camera" stays for seeing friends without being seen; mirroring your picture is on the Test Camera page.
+- **What a switch turns off is hidden**, not greyed out: with voice or camera off, their devices and tests are not shown.
+- **Text boxes**: the grey hint is exactly where your typing starts.
+- **Friends panel and file picker** no longer sit behind the bottom bar; each shows its own button hints.
+
+---
 **mkwmp 1.4.3**: the official mkw-recomp 0.1.17, new graphics options, and the fix for the crash when a 4th player joins.
 
 The launcher updates itself from 1.4.x: accept the update when it offers it, then accept the mkw-recomp update and the quick Set Up Again (the game code is not rebuilt).
