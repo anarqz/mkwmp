@@ -29,7 +29,7 @@ public sealed partial class SettingsViewModel
         });
         Servers.HintsChanged += (_, _) => RefreshHints(); // a row has the focus: Y hides it
         HiddenServersCommand = new RelayCommand(() => Shell.Navigate(new HiddenServersViewModel(Shell)), () => HasHiddenServers);
-        PrivacyCommand = new RelayCommand(() => Shell.Navigate(new PrivacyViewModel(Shell)));
+        PrivacyCommand = new RelayCommand(() => Shell.Navigate(SetupViewModel.PrivacyPolicy(Shell)));
         DisconnectCommand = RelayCommand.Async(DisconnectAsync, () => !Busy && OnlineEnabled);
         ReportCommand = new RelayCommand(() => Shell.Navigate(new ReportViewModel(Shell)), () => ReportViewModel.Allowed(Launcher));
         OnlineCommand = new RelayCommand(Shell.ConfigureOnline);
@@ -74,7 +74,7 @@ public sealed partial class SettingsViewModel
     /// <summary>The page that lists them, each with "Show again".</summary>
     public ICommand HiddenServersCommand { get; private set; } = null!;
 
-    /// <summary>The privacy policy of the server in use, rendered in the launcher.</summary>
+    /// <summary>The privacy page (the welcome flow's own, alone): the policy of the server in use and its acceptance.</summary>
     public ICommand PrivacyCommand { get; private set; } = null!;
 
     /// <summary>
@@ -113,8 +113,11 @@ public sealed partial class SettingsViewModel
     /// <summary>Signed in, and the server holds no consent for its current policy.</summary>
     public bool ConsentNeeded => Registered && !Launcher.Settings.AdultConsent;
 
-    /// <summary>Under the consent switch: what turning it off does; or that this server has none yet.</summary>
-    public string AdultCaption => S[ConsentNeeded ? "settings.privacy.review_caption" : "settings.privacy.adult_caption"];
+    /// <summary>The Privacy Policy row's mark: this server holds the profile's consent.</summary>
+    public bool PrivacyAccepted => PrivacyViewModel.IsAccepted(Launcher);
+
+    /// <summary>Under the row: what it opens; or that this server waits for the consent (given on that page).</summary>
+    public string PrivacyCaption => S[ConsentNeeded ? "settings.privacy.review_caption" : "settings.privacy.policy_caption"];
 
     // ── Online ──
 

@@ -299,6 +299,8 @@
   "settings.background.autostart_linux": "En Linux (Steam Deck, Proton) el launcher no puede iniciarse solo con el sistema: inícialo desde Steam o añádelo al inicio automático de tu escritorio.",
   "settings.privacy.adult_caption": "Lo guarda este servidor junto con tu perfil. Desactívalo para retirarlo: los amigos, la voz y las plazas se detienen entonces hasta que vuelvas a aceptar.",
   "settings.privacy.policy": "Política de privacidad",
+  "settings.privacy.accepted": "Aceptada",
+  "settings.privacy.not_accepted": "No aceptada",
   "settings.privacy.delete_caption": "Elimina de este servidor tu gamertag, tu PIN, tus amigos y las denuncias que presentaste. Tu nombre se queda en este dispositivo.",
   "settings.language.caption": "El idioma de este launcher.",
   "settings.updates.version": "Versión",

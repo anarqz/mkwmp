@@ -126,7 +126,7 @@ public partial class MainWindow
             // the privacy policy as the launcher renders it (the server's Markdown), over Settings › Online
             _vm.Nav.ResetTo(Routes.Home);
             _vm.Navigate(Routes.SettingsOnline);
-            _vm.Navigate(new PrivacyViewModel(_vm));
+            _vm.Navigate(SetupViewModel.PrivacyPolicy(_vm));
         }
         else if (page == "whatsnew")
         {

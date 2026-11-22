@@ -8,7 +8,7 @@
        Online" leads from every locked place. Without a server: "Online is off" and Connect to a Server (the
        welcome flow's online pages). With one: the profile on it with its PIN (dots until the eye, or X); the server
        on ONE row (its address, its status in small text, Disconnect), and right below it what else is about that
-       server: privacy (settings:PrivacyConsent: the age confirmation and the policy, one card), reporting a player to its host, and Connect to Another Server (the way to swap:
+       server: the Privacy Policy row (accepted or not; the page it opens has the policy and its acceptance), reporting a player to its host, and Connect to Another Server (the way to swap:
        the server row itself is not a button); then the profile, the consent, and deleting the profile there. -->
   <UserControl.Resources>
     <Style x:Key="Note" TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
@@ -145,9 +145,21 @@
                            Icon="{StaticResource Icon.SignalOff}" Content="{Binding S[settings.online.disconnect]}" Command="{Binding DisconnectCommand}" />
         </Grid>
       </Border>
-      <!-- privacy, in one place, right under the server it is about: the age confirmation and the policy it accepts -->
-      <settings:PrivacyConsent Margin="0,8,0,8" Accepted="{Binding Adult}" ShowAccept="{Binding Registered}" CanChange="{Binding NotBusy}"
-                               AcceptCaption="{Binding AdultCaption}" PolicyCommand="{Binding PrivacyCommand}" />
+      <!-- privacy, one row right under the server it is about: whether its policy is accepted (an icon and the word),
+           and the way to the policy page, where it is read and accepted or withdrawn -->
+      <c:SettingsRow Label="{Binding S[settings.privacy.policy]}" Kind="Chevron" Icon="{StaticResource Icon.Shield}"
+                     Command="{Binding PrivacyCommand}" Caption="{Binding PrivacyCaption}">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Visibility="{Binding PrivacyAccepted, Converter={StaticResource Conv.Visible}}">
+            <c:Icon Data="{StaticResource Icon.Check}" Width="34" Height="34" StrokeThickness="2.6" Foreground="{DynamicResource Brush.Good}" Margin="0,0,10,0" />
+            <TextBlock Text="{Binding S[settings.privacy.accepted]}" Foreground="{DynamicResource Brush.Good}" FontSize="28" VerticalAlignment="Center" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Visibility="{Binding PrivacyAccepted, Converter={StaticResource Conv.Visible}, ConverterParameter=!}">
+            <c:Icon Data="{StaticResource Icon.Warning}" Width="34" Height="34" StrokeThickness="2.2" Foreground="{DynamicResource Brush.Warn}" Margin="0,0,10,0" />
+            <TextBlock Text="{Binding S[settings.privacy.not_accepted]}" Foreground="{DynamicResource Brush.Warn}" FontSize="28" VerticalAlignment="Center" />
+          </StackPanel>
+        </StackPanel>
+      </c:SettingsRow>
       <c:SettingsRow Label="{Binding S[settings.report.title]}" Kind="Chevron" Icon="{StaticResource Icon.Flag}"
                      Command="{Binding ReportCommand}" Caption="{Binding ReportCaption}" />
       <c:SettingsRow Label="{Binding S[settings.online.connect_other]}" Kind="Chevron" Icon="{StaticResource Icon.Signal}"

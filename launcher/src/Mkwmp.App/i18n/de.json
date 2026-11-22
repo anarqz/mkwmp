@@ -299,6 +299,8 @@
   "settings.background.autostart_linux": "Unter Linux (Steam Deck, Proton) kann der Launcher nicht von selbst mit dem System starten: Starte ihn über Steam oder füge ihn dem Autostart deines Desktops hinzu.",
   "settings.privacy.adult_caption": "Wird von diesem Server zusammen mit deinem Profil gespeichert. Schalte es aus, um zu widerrufen: Freunde, Sprachchat und Plätze ruhen dann, bis du wieder zustimmst.",
   "settings.privacy.policy": "Datenschutzerklärung",
+  "settings.privacy.accepted": "Akzeptiert",
+  "settings.privacy.not_accepted": "Nicht akzeptiert",
   "settings.privacy.delete_caption": "Löscht deinen Gamertag, deine PIN, deine Freunde und die von dir eingereichten Meldungen von diesem Server. Dein Name bleibt auf diesem Gerät.",
   "settings.language.caption": "Die Sprache dieses Launchers.",
   "settings.updates.version": "Version",

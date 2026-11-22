@@ -299,6 +299,8 @@
   "settings.background.autostart_linux": "Linux（Steam Deck、Proton）では、ランチャーはシステムの起動時に自動で開始できません。Steamから起動するか、デスクトップの自動起動に追加してください。",
   "settings.privacy.adult_caption": "このサーバーがあなたのプロフィールとともに保存します。オフにすると同意を撤回します。その場合、もう一度同意するまでフレンド、ボイス、席は使えなくなります。",
   "settings.privacy.policy": "プライバシーポリシー",
+  "settings.privacy.accepted": "同意済み",
+  "settings.privacy.not_accepted": "未同意",
   "settings.privacy.delete_caption": "あなたのゲーマータグ、PIN、フレンド、提出した通報をこのサーバーから削除します。名前はこのデバイスに残ります。",
   "settings.language.caption": "このランチャーの言語です。",
   "settings.updates.version": "バージョン",

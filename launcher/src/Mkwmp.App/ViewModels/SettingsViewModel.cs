@@ -258,34 +258,6 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     public ICommand TestToastCommand { get; }
 
-    // ── privacy ──
-
-    /// <summary>"I'm 18 or older and I accept the privacy policy": without it nothing reaches the server.</summary>
-    /// <remarks>
-    /// Off withdraws it at once. On is given on the consent page (what the server keeps, its policy, then the
-    /// switch): the switch here leads there and shows on once that page stored it.
-    /// </remarks>
-    public bool Adult
-    {
-        get => Launcher.Settings.AdultConsent;
-        set
-        {
-            if (value == Launcher.Settings.AdultConsent)
-            {
-                return;
-            }
-            if (value)
-            {
-                Shell.Navigate(SetupViewModel.ConsentOnly(Shell));
-                Raise(); // still off: the page decides
-            }
-            else
-            {
-                RelayCommand.Async(() => Launcher.SetConsentAsync(false)).Execute(null);
-            }
-        }
-    }
-
     // ── server (its address is chosen in the connect flow: SettingsViewModel.Online.cs) ──
 
     public string ServerStatus => CoreStrings.ServerPill(Launcher.Server);

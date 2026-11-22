@@ -299,6 +299,8 @@
   "settings.background.autostart_linux": "В Linux (Steam Deck, Proton) лаунчер не может сам запускаться вместе с системой: запускай его из Steam или добавь в автозапуск рабочего стола.",
   "settings.privacy.adult_caption": "Хранится на этом сервере вместе с твоим профилем. Выключи, чтобы отозвать согласие: тогда друзья, голос и места перестанут работать, пока ты не примешь снова.",
   "settings.privacy.policy": "Политика конфиденциальности",
+  "settings.privacy.accepted": "Принята",
+  "settings.privacy.not_accepted": "Не принята",
   "settings.privacy.delete_caption": "Удаляет с этого сервера твой ник, PIN-код, друзей и поданные тобой жалобы. Твоё имя остаётся на этом устройстве.",
   "settings.language.caption": "Язык этого лаунчера.",
   "settings.updates.version": "Версия",

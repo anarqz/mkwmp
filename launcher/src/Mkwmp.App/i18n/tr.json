@@ -299,6 +299,8 @@
   "settings.background.autostart_linux": "Linux'ta (Steam Deck, Proton) başlatıcı sistemle birlikte kendiliğinden başlayamaz: onu Steam'den başlat ya da masaüstünün otomatik başlatma listesine ekle.",
   "settings.privacy.adult_caption": "Bu sunucu tarafından profilinle birlikte saklanır. Onayını geri çekmek için kapat: o zaman arkadaşlar, ses ve yerler, yeniden kabul edene kadar durur.",
   "settings.privacy.policy": "Gizlilik politikası",
+  "settings.privacy.accepted": "Kabul edildi",
+  "settings.privacy.not_accepted": "Kabul edilmedi",
   "settings.privacy.delete_caption": "Oyuncu etiketini, PIN'ini, arkadaşlarını ve yaptığın şikâyetleri bu sunucudan siler. Adın bu cihazda kalır.",
   "settings.language.caption": "Bu başlatıcının dili.",
   "settings.updates.version": "Sürüm",

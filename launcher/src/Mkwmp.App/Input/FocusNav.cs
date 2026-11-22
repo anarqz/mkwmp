@@ -175,7 +175,43 @@ public static class FocusNav
                 return Focus(Preferred(best, current, root, direction));
             }
         }
-        return false;
+
+        // Nothing lies wholly that way. A stop taller than the list it scrolls in (a section of a long text) reaches
+        // past a row fixed under that list, so it is never "above" that row: what shows of it counts instead.
+        UIElement? shown = null;
+        var shownScore = double.MaxValue;
+        foreach (var (stop, box) in stops)
+        {
+            var part = Shown(stop, box, root);
+            if (part.IsEmpty || part.Height <= 0 || part.Width <= 0 || part == box)
+            {
+                continue;
+            }
+            var score = Score(from, part, direction, strict: false);
+            if (score < shownScore)
+            {
+                shownScore = score;
+                shown = stop;
+            }
+        }
+        return shown is not null && Focus(shown);
+    }
+
+    /// <summary>The part of a stop's box that its scrolling list shows.</summary>
+    private static Rect Shown(UIElement stop, Rect box, FrameworkElement root)
+    {
+        for (DependencyObject? at = Parent(stop); at is not null && !ReferenceEquals(at, root); at = Parent(at))
+        {
+            if (at is ScrollViewer viewer)
+            {
+                box.Intersect(Bounds(viewer, root));
+                if (box.IsEmpty)
+                {
+                    break;
+                }
+            }
+        }
+        return box;
     }
 
     private static double Score(Rect from, Rect to, NavDirection direction, bool strict)

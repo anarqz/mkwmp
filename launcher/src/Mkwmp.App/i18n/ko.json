@@ -299,6 +299,8 @@
   "settings.background.autostart_linux": "Linux(Steam Deck, Proton)에서는 런처가 시스템과 함께 자동으로 시작될 수 없습니다. Steam에서 시작하거나 데스크톱의 자동 시작에 추가하세요.",
   "settings.privacy.adult_caption": "이 서버가 내 프로필과 함께 보관합니다. 철회하려면 끄세요. 그러면 다시 동의할 때까지 친구, 음성, 자리가 중단됩니다.",
   "settings.privacy.policy": "개인정보 처리방침",
+  "settings.privacy.accepted": "동의함",
+  "settings.privacy.not_accepted": "동의하지 않음",
   "settings.privacy.delete_caption": "이 서버에서 내 게이머태그, PIN, 친구, 내가 제출한 신고를 삭제합니다. 내 이름은 이 기기에 남습니다.",
   "settings.language.caption": "이 런처의 언어입니다.",
   "settings.updates.version": "버전",

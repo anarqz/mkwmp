@@ -299,6 +299,8 @@
   "settings.background.autostart_linux": "在 Linux（Steam Deck、Proton）上，啟動器無法自行隨系統啟動：請從 Steam 啟動，或把它加入桌面環境的自動啟動項目。",
   "settings.privacy.adult_caption": "由這個伺服器與你的個人檔案一起保存。關閉即表示撤回：在你再次接受之前，好友、語音和席位都會停止。",
   "settings.privacy.policy": "隱私權政策",
+  "settings.privacy.accepted": "已接受",
+  "settings.privacy.not_accepted": "未接受",
   "settings.privacy.delete_caption": "從這個伺服器刪除你的玩家代號、PIN、好友，以及你提出的檢舉。你的名稱會保留在這台裝置上。",
   "settings.language.caption": "這個啟動器的語言。",
   "settings.updates.version": "版本",

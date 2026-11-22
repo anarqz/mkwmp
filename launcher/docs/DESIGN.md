@@ -233,6 +233,9 @@ same line. Attached properties (`xmlns:input="clr-namespace:Mkwmp.App.Input"`):
 - `input:FocusNav.IsStop="True"`: makes any other focusable element a stop. `input:FocusNav.Skip="True"`:
   nothing inside is a stop.
 
+- **A stop taller than its list.** Up and down look for a stop that lies wholly that way; when there is none, what a
+  scrolling list *shows* of a stop counts (`FocusNav.Shown`). So from a row fixed under a list (the acceptance under
+  the privacy policy) Up reaches the section of text above it, however far that section runs on under the row.
 The focus is never lost: when the focused control disappears, a stop of the top layer takes it within a
 quarter of a second; a closing modal / sheet / panel gives the focus back to where it was; going back
 to a page restores its focus and scroll position (views are kept while their page is on the stack).
@@ -437,7 +440,7 @@ If a control lacks something, add a property to it rather than restyling it in a
 ```
 
 `shot.ps1` builds, runs `mkwmp --demo --shot <png> …`, waits about 2 s for animations to
-settle and writes the PNG. Options: `--page home|settings|settings/online|setup|connect|privacy|whatsnew|gallery` (section 13 for connect and privacy; whatsnew: the changelog, `CHANGELOG.md` built in, with the update banner), `--category <key>`
+settle and writes the PNG. Options: `--page home|settings|settings/online|setup|connect|privacy|whatsnew|gallery` (section 13 for connect and privacy, the privacy page as Settings opens it; whatsnew: the changelog, `CHANGELOG.md` built in, with the update banner), `--category <key>`
 (settings), `--press a,b,x,y,up,down,left,right,start` (pressed in order before the shot: the way to
 put the focus somewhere or to walk into a sub-step), `--size WxH`, `--theme dark`, `--battery 93`,
 `--input keyboard`, `--locale pt-BR`, `-NoBuild`; `--mod camera=0,camera_view=1` (the game's camera switches as its file has them, for Voice & Camera); `--then a,down,…` presses after the panel / modal is open
@@ -598,12 +601,12 @@ Core marks a working online profile as done so an existing player never meets it
 | `Online` | "Want to go online?": **Not Now** → `Done` → home, locked; **Go Online** → the next four |
 | `Server` | two columns: the list at the left, scrolling by itself; at the right the address (typed, or put there by a row), the server's answer and the page's button (Connect, then Next: the focus goes to it when the server answered), and "Show closest to me" under them. The beholder's list (`ServerPicker` / `ServerList`: latency bars and ms measured to each server, name, region, version, players, queue; the five nearest first and five more with each "Show More"; Refresh; re-measured every 15 s while shown; Y on a row, or its "…", hides that server on this PC and the next takes its place, Settings › Online › Hidden Servers shows it again) and a typed address; Connect asks the server who it is ("MKWMP server · 12/32 players", or why not) |
 | `Register` | sign in: register the name (a new PIN), or, for a name that exists, "It's Mine" with its PIN (masked) |
-| `Consent` | only **after** signing in (the server keeps the consent): the three paragraphs, then `settings:PrivacyConsent` (the 18+ switch and "Privacy Policy" in one card; `PrivacyViewModel`: the server's Markdown rendered by `MarkdownView`, never a browser; a server without `/privacy` gets "This server doesn't publish a privacy policy", never another page); skipped when the sign-in said the server already has it |
+| `Consent` | only **after** signing in (the server keeps the consent): the privacy component, `settings:PrivacyPolicyPanel` over a `PrivacyViewModel`: the three paragraphs (what every server keeps), the server's own policy (its Markdown rendered by `MarkdownView`, never a browser; a server without `/privacy` gets "This server doesn't publish a privacy policy", never another page), and under them, always on screen, the switch "I'm 18 or older and I accept the privacy policy" (given or withdrawn at once; the focus starts on it). Next works once it is given; skipped when the sign-in said the server already has it |
 | `Pin` | the PIN, masked, with its eye (and X) |
 | `Done` | what is ready and what waits |
 
 The same class with only the online steps is Settings › Online's connect pages: `SetupViewModel.Connect(shell, address?)`
-(pushed over Settings, ends back there) and `SetupViewModel.ConsentOnly(shell)`.
+(pushed over Settings, ends back there) and `SetupViewModel.PrivacyPolicy(shell)`: the consent page alone, titled "Privacy Policy", with Close instead of Next and no dots. It is what Settings › Online's Privacy Policy row opens: there is no other policy viewer.
 
 **A PIN is never bound to text.** Use `settings:PinField` (`Pin`, `IsRevealed` two-way, `DigitSize`): dots drawn as
 shapes, an eye button, hidden again whenever it leaves the screen. Typing one is `settings:PinEntry` (a password box,
@@ -693,7 +696,7 @@ and Linux dot files only with Y; names keep the disk's letter case, a typed path
 | A status is not a button | What only informs (the server row of Settings › Online: address, light, players) is a `Card`, not a row that acts when pressed. The action beside it is a button that says what it does ("Disconnect"), and the other action is its own row ("Connect to Another Server") |
 | A feature that can be off | Its section starts with its switch ("Use voice in private rooms", "Use camera in private rooms"); under it, in this order, the device and then its test. Two features of one pane are built in parallel, row for row |
 | What depends on a switch is hidden while it is off | Never greyed out. Put the rows right after the switch's row in `<c:Dependents Of="{Binding TheSwitch}">` (a StackPanel that is collapsed while `Of` is false: no room, no focus stop). Their values are kept and come back with the switch; a file with the switch off and its sub-settings set loads as it is. The focus stays on the switch when it is turned off. Voice (microphone, volumes, tests, output), "Test Microphone" (Hear Myself), camera (Show My Camera, device, test). The game's own settings and mod options do the same from their schema (`GameSetting.VisibleWhen`); "Show closest to me" has no rows under it (it hides the latency of each server row). `IsEnabled="False"` is for what cannot be changed *now* for a reason said in the caption (the game is running), not for what a switch turned off |
-| Privacy is one card | `settings:PrivacyConsent`: "I'm 18 or older and I accept the privacy policy" and, under it in the same card, "Privacy Policy". The only place either appears: Settings › Online (right under the server row) and the consent page. In Settings, turning it off withdraws; turning it on opens the consent page (what the server keeps is read before it is accepted) |
+| Privacy is one page | The welcome flow's consent page (`settings:PrivacyPolicyPanel`): what is kept, the server's policy, and the acceptance switch under them (fixed at the bottom, so nobody scrolls a policy to reach it). Settings › Online shows one row for it, right under the server row: "Privacy Policy", with a mark and a word for its state (green check "Accepted", amber warning "Not accepted": never colour alone), which opens that same page alone (`SetupViewModel.PrivacyPolicy`); Close or B comes back to Online. No profile on the server yet: the mark says not accepted and the page says to register first |
 | Rarely needed | Not a row of the pane: on the page where its effect shows (the camera''s mirror on Test Camera), or as the caption of the list it explains (where the device names come from) |
 | One list, one column | A list that can grow (servers) gets a column that scrolls by itself (`SmoothScrollViewer`, `FocusNav.IsColumn`); what acts on one entry (an address, its answer, the button) is the other column, a `Card`, 640 wide; the list''s column is the `*` one. Use two columns when a page would otherwise put a form under a list; a plain run of settings rows stays one column (Settings already is two) |
 | The page''s button | Under the page (the welcome flow), or, on a two-column page, in the column of what it acts on. Never both |
