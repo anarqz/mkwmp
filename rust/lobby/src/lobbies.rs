@@ -396,7 +396,8 @@ impl Matchmaker {
 
     /// A TrackMatchmakingTicket stream opened: place the ticket (first tracker) and return
     /// what can be assigned now.
-    pub fn track(&mut self, ticket_id: TicketId, stream: StreamKey, ussid: u32, now: f64) -> Option<Assignment> {
+    /// `prefer`: a lobby to join when it can take the ticket (its group's).
+    pub fn track(&mut self, ticket_id: TicketId, stream: StreamKey, ussid: u32, now: f64, prefer: Option<LobbyId>) -> Option<Assignment> {
         let ticket = self.tickets.get_mut(&ticket_id)?;
         ticket.trackers.insert(stream);
         if let Some(lobby_id) = ticket.lobby {
@@ -406,7 +407,7 @@ impl Matchmaker {
                 .then(|| Assignment { lobby: lobby_id, recipients: vec![ticket_id], late: false });
         }
         let ticket = ticket.clone();
-        let lobby_id = self.place(&ticket, now);
+        let lobby_id = self.place(&ticket, now, prefer);
         let lobby = self.lobbies.get_mut(&lobby_id).expect("placed");
         lobby.add_seat(&ticket, ussid);
         self.tickets.get_mut(&ticket_id).expect("exists").lobby = Some(lobby_id);
@@ -422,7 +423,12 @@ impl Matchmaker {
         Some(Assignment { lobby: lobby_id, recipients: vec![ticket_id], late: true })
     }
 
-    fn place(&mut self, ticket: &Ticket, now: f64) -> LobbyId {
+    fn place(&mut self, ticket: &Ticket, now: f64, prefer: Option<LobbyId>) -> LobbyId {
+        if let Some(l) = prefer.and_then(|id| self.lobbies.get(&id)) {
+            if l.mode == ticket.mode && l.game == ticket.game && l.joinable(&self.policy, ticket.players, now) {
+                return l.id;
+            }
+        }
         let best = self
             .lobbies
             .values()
@@ -596,8 +602,36 @@ mod tests {
 
     fn join(m: &mut Matchmaker, name: &str, mode: &str, n: u64, now: f64) -> (TicketId, Option<Assignment>) {
         let t = m.create(&format!("tenants/t/users/{}", crate::users::ticket_user_id(name)), mode, vec![], 1);
-        let a = m.track(t, (n, 1), n as u32, now);
+        let a = m.track(t, (n, 1), n as u32, now, None);
         (t, a)
+    }
+
+    #[test]
+    fn a_group_preference_beats_the_fullest_lobby_when_it_can_take_the_ticket() {
+        let mut m = mm();
+        // Lobby X: the leader alone. Lobby Y: two others (fuller: normally preferred).
+        let (_, _) = join(&mut m, "leader", "Battle24", 1, 0.0);
+        let x = m.lobby_of(&crate::users::ticket_user_id("leader")).unwrap();
+        let mut y_lobby = Lobby::new("Battle24", None, 3, 0.0);
+        let y = y_lobby.id;
+        for (i, n) in ["e", "f"].iter().enumerate() {
+            let t = m.create(&format!("tenants/t/users/{}", crate::users::ticket_user_id(n)), "Battle24", vec![], 1);
+            let ticket = m.tickets.get(&t).unwrap().clone();
+            y_lobby.add_seat(&ticket, 10 + i as u32);
+            m.tickets.get_mut(&t).unwrap().lobby = Some(y);
+        }
+        m.lobbies.insert(y, y_lobby);
+        // Without a group: the fuller lobby.
+        let (t, _) = join(&mut m, "stranger", "Battle24", 20, 1.0);
+        assert_eq!(m.tickets[&t].lobby, Some(y));
+        // A follower prefers its leader's lobby.
+        let f = m.create(&format!("tenants/t/users/{}", crate::users::ticket_user_id("follower")), "Battle24", vec![], 1);
+        m.track(f, (21, 1), 21, 2.0, Some(x));
+        assert_eq!(m.tickets[&f].lobby, Some(x));
+        // A preference that can't take the ticket (other mode) is ignored.
+        let g = m.create(&format!("tenants/t/users/{}", crate::users::ticket_user_id("g")), "Normal24", vec![], 1);
+        m.track(g, (22, 1), 22, 3.0, Some(x));
+        assert_ne!(m.tickets[&g].lobby, Some(x));
     }
 
     #[test]
@@ -634,7 +668,7 @@ mod tests {
         let mut m = mm();
         for (n, (name, ussid)) in [("a", 7u32), ("b", 2), ("c", 5)].into_iter().enumerate() {
             let t = m.create(&format!("tenants/t/users/{}", crate::users::ticket_user_id(name)), "Normal24", vec![], 1);
-            m.track(t, (n as u64 + 1, 1), ussid, 0.0);
+            m.track(t, (n as u64 + 1, 1), ussid, 0.0, None);
         }
         let l = m.lobbies.values().next().unwrap();
         let (by, join) = l.order();

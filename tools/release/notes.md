@@ -1,3 +1,16 @@
+**mkwmp 1.4.3**: the official mkw-recomp 0.1.17, new graphics options, and the fix for the crash when a 4th player joins.
+
+The launcher updates itself from 1.4.x: accept the update when it offers it, then accept the mkw-recomp update and the quick Set Up Again (the game code is not rebuilt).
+
+- **Fixed: the crash when a 4th player joins a room.** MKWMP's own pause-menu voice marks read the game's player list wrongly from the 4th player on; they are gone.
+- **MKWMP no longer draws anything in the game**: no voice marks or mute keys in the pause menu, no pop-ups, no tabs in mkw-recomp's menu, no camera name tiles. Everything is set in the launcher. There is no muting for now (players muted before stay muted; unmute them in Settings › Voice & Camera).
+- **mkw-recomp: the official 0.1.17** by Adrià, in place of MKWMP's build: what online play needed is now in it. Your game, saves, mods and settings stay.
+- **New game settings from 0.1.17**: AI upscaling (NVIDIA DLSS on RTX cards or AMD FSR 3.1), upscaling quality, frame generation, NVIDIA Reflex, shadow map, and "first controller to player 2". All off by default. DLSS and FSR 3.1 need their libraries next to mkw.exe, which mkw-recomp does not ship.
+- **Steam Deck and Linux**: the controller is found at start and NVIDIA cards no longer crash at loading under Proton (both handled by the launcher and the mod now); the overlay comes to the front on KDE Plasma.
+- **Controls**: the launcher and the game agree on the button layout (Nintendo, Xbox, Automatic), and mkw-recomp's own menu shortcut never takes your overlay shortcut's buttons.
+
+---
+
 **mkwmp 1.4.2**: a Ready to Play checklist, your own overlay button, smoother scrolling and touch, and a tidier Mods list.
 
 The launcher updates itself from 1.4.0 and 1.4.1: accept the update when it offers it. Coming from 1.3, follow the 1.4.0 instructions further below.

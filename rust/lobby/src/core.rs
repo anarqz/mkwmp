@@ -23,14 +23,17 @@ pub const AUTH_SIGN_IN: &str = "/nn.npln.auth.v1.Auth/IssuePrearrangedUserToken"
 /// The game refreshes its NPLN token shortly before it expires, on a new connection.
 pub const AUTH_REFRESH: &str = "/nn.npln.auth.v1.Auth/RefreshToken";
 /// Unary calls the game makes whose answer it ignores: an empty OK, as always (seen in production).
-pub const EMPTY_OK: [&str; 7] = [
+/// None of the token-returning Auth RPCs may be here: the game aborts on an empty Token
+/// (research AUTH-REPLIES-1.8.0.md). Ugcstore/IssueUploadUri isn't either: an empty upload URI
+/// only makes uploads fail quietly, so it gets UNIMPLEMENTED like anything unknown.
+/// A follower asks for a token to follow its leader (groups.rs).
+pub const DELEGATION: &str = "/nn.npln.matchmaking.v1.GameSessionService/IssueUserDelegationToken";
+pub const EMPTY_OK: [&str; 5] = [
     "/nn.npln.auth.v1.Auth/ValidateToken",
     "/nn.npln.friends.v1.Friends/ActivateUser",
     "/nn.npln.leaderboard.v1.LeaderboardService/UpdateHolder",
     "/nn.npln.leaderboard.v1.LeaderboardService/BrowseLeaderboard",
     "/nn.npln.leaderboard.v1.LeaderboardService/GetScore",
-    "/nn.npln.matchmaking.v1.GameSessionService/IssueUserDelegationToken",
-    "/nn.npln.ugcstore.v1.Ugcstore/IssueUploadUri",
 ];
 pub const GS_ISSUE_TOKEN: &str = "/nn.npln.gamesync.v1.Gamesync/IssueToken";
 pub const GS_REFRESH_TOKEN: &str = "/nn.npln.gamesync.v1.Gamesync/RefreshToken";
@@ -179,6 +182,8 @@ struct State {
     deferred_sends: Sends,
     /// Seat session id (ticket `sid`) per user id, for the seat roster.
     seat_sessions: HashMap<String, String>,
+    /// Leaders and their followers (matchmaking as a group).
+    groups: crate::groups::Groups,
     /// Mutual friends (user ids) per user id, from the seat roster. `None` until a roster
     /// arrives (development: everyone online is a friend).
     friends: Option<HashMap<String, HashSet<String>>>,
@@ -245,6 +250,7 @@ impl Core {
             friend_wait: HashMap::new(),
             deferred_sends: Sends::new(),
             seat_sessions: HashMap::new(),
+            groups: crate::groups::Groups::default(),
             friends: None,
             limiter: Limiter::default(),
             swept: 0.0,
@@ -589,6 +595,7 @@ impl State {
         let reply = match path {
             AUTH_SIGN_IN => self.sign_in(key, body, now),
             AUTH_REFRESH => self.refresh_token(key, body, now),
+            DELEGATION => self.delegation(key, body, now),
             GS_ISSUE_TOKEN | GS_REFRESH_TOKEN => Ok(self.gamesync_token(key, body, now)),
             GS_GET_DOCUMENT => Ok(self.get_document(key, body, now)),
             GS_WRITE_DOCUMENTS => self.write_documents(key, body, now, sends),
@@ -674,6 +681,75 @@ impl State {
             self.pending_social = true;
         }
         Ok(msgs::sign_in_response(&user, &access, &refresh))
+    }
+
+    /// GameSessionService `IssueUserDelegationToken`: a follower's token to follow its leader. The
+    /// request names two user resources (fields 2 and 3: which is which isn't traced); the one that
+    /// isn't the caller is taken as the leader.
+    fn delegation(&mut self, key: StreamKey, body: &[u8], now: f64) -> Result<Vec<u8>, Out> {
+        let user = self.caller(key).ok_or_else(|| Out::status(code::UNAUTHENTICATED, "sign in again"))?;
+        let me = users::tail(&user).to_owned();
+        let named: Vec<Option<String>> = [2u32, 3].iter().map(|n| crate::wire::str_field(body, *n).ok().flatten()).collect();
+        let leader = named
+            .iter()
+            .flatten()
+            .filter_map(|r| msgs::user_resource_uid(r))
+            .map(|u| if u == "current" { me.as_str() } else { u })
+            .find(|u| *u != me)
+            .map(str::to_owned);
+        let actions = crate::wire::bytes_field(body, 5).ok().flatten().filter(|a| !a.is_empty()).map(<[u8]>::to_vec).unwrap_or_else(|| vec![1]);
+        let token = self.groups.issue(&me, leader.as_deref(), now);
+        info!(follower = %me, leader = ?leader, named = ?named, "delegation issued");
+        Ok(msgs::delegation_response(&named, &actions, &token))
+    }
+
+    /// A game-supplied string list (ticket, join, room creation): logged (the group flow is still
+    /// being learned), and our delegation tokens in it bind their followers to the caller.
+    fn group_strings(&mut self, uid: &str, body: &[u8], field: u32, what: &'static str, now: f64) {
+        let strings: Vec<String> = crate::wire::repeated_bytes(body, field)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|b| std::str::from_utf8(b).ok().map(str::to_owned))
+            .collect();
+        if strings.is_empty() {
+            return;
+        }
+        let shown: Vec<String> = strings.iter().take(8).map(|s| s.chars().take(64).collect()).collect();
+        info!(user = %uid, what, strings = ?shown, "game-supplied strings");
+        for follower in self.groups.from_strings(uid, &strings, now) {
+            info!(%follower, leader = %uid, via = "ticket", what, "group bound");
+        }
+    }
+
+    /// The game's `Companion` document (RE-MAP): `companion_state` 3 = follower of `leader_user_id`;
+    /// 0 (none), 1 and 2 (leader) end a follower bond.
+    fn companion_writes(&mut self, writer: &str, writes: &[Write], now: f64) {
+        for w in writes {
+            let Write::Update { name, fields, .. } = w else { continue };
+            if !name.contains("Companion") {
+                continue;
+            }
+            let Some(state) = fields.get("companion_state").and_then(|v| v.as_int()) else { continue };
+            let leader = fields.get("leader_user_id").and_then(|v| v.as_str()).map(|l| users::tail(l).to_owned()).filter(|l| !l.is_empty());
+            match (state, leader) {
+                (3, Some(leader)) => {
+                    if self.groups.bind(writer, &leader, "companion", now) {
+                        info!(follower = %writer, %leader, via = "companion", "group bound");
+                    }
+                }
+                (3, None) => info!(follower = %writer, "companion: follower without a leader_user_id"),
+                (s, _) => {
+                    if let Some(b) = self.groups.unbind(writer) {
+                        info!(user = %writer, state = s, old_leader = %b.leader, "group left (companion)");
+                    }
+                }
+            }
+        }
+    }
+
+    /// The lobby where someone of `uid`'s group sits, if any (placement keeps a group together).
+    fn group_lobby(&self, uid: &str, now: f64) -> Option<(LobbyId, String)> {
+        self.groups.others(uid, now).into_iter().find_map(|o| self.mm.lobby_of(&o).map(|l| (l, o)))
     }
 
     /// Auth `RefreshToken`: a new token for the same user. The user is proven by a token of ours in
@@ -789,6 +865,7 @@ impl State {
             return Ok(response);
         };
         let writer = writer.expect("scope implies writer");
+        self.companion_writes(&writer, &req.writes, now);
         let lobby = self.lobby_mut(&scope).expect("scope exists");
         let members = lobby.ussids();
         for write in &req.writes {
@@ -908,6 +985,7 @@ impl State {
         }
         let uid = users::tail(&user).to_owned();
         let tenant = users::tenant(&user).to_owned();
+        self.group_strings(&uid, body, 3, "matchmaking ticket", now);
         // One search per player: a repeated request while still gathering is the same ticket;
         // anything else ends the previous search / session.
         if let Some(old) = self.mm.ticket_of(&uid) {
@@ -939,8 +1017,20 @@ impl State {
             sends.push((key, Out::status(code::NOT_FOUND, "no such ticket")));
             return;
         };
-        let ussid = self.users.number(ticket.uid());
-        if let Some(a) = self.mm.track(id, key, ussid, now) {
+        let uid = ticket.uid().to_owned();
+        let ussid = self.users.number(&uid);
+        let prefer = if ticket.lobby.is_none() { self.group_lobby(&uid, now) } else { None };
+        if let Some((lobby, with)) = &prefer {
+            info!(user = %uid, %lobby, with = %with, "group placement: joining the group's lobby");
+        }
+        let prefer = prefer.map(|(l, _)| l);
+        let a = self.mm.track(id, key, ussid, now, prefer);
+        if let (Some(want), Some(got)) = (prefer, self.mm.tickets.get(&id).and_then(|t| t.lobby)) {
+            if want != got {
+                warn!(user = %uid, want = %want, got = %got, "group placement: the group's lobby can't take this ticket; placed elsewhere");
+            }
+        }
+        if let Some(a) = a {
             self.assign(a, now, sends);
         }
     }
@@ -1164,6 +1254,7 @@ impl State {
     fn room_create(&mut self, key: StreamKey, body: &[u8], now: f64) -> Result<Vec<u8>, Out> {
         let user = self.caller(key).ok_or_else(|| Out::status(code::UNAUTHENTICATED, "not signed in"))?;
         let req = msgs::parse_room_request(body).ok_or_else(|| Out::status(code::INVALID_ARGUMENT, "invalid room request"))?;
+        self.group_strings(users::tail(&user), body, 3, "room creation", now);
         if msgs::unsupported_mode(&req.mode) {
             warn!(user = %users::tail(&user), mode = %req.mode, "room refused: mode not supported yet");
             return Err(Out::status(code::FAILED_PRECONDITION, "this mode is not available on this server yet"));
@@ -1277,6 +1368,7 @@ impl State {
         let req = msgs::parse_join(body).ok_or_else(|| Out::status(code::INVALID_ARGUMENT, "invalid join request"))?;
         let lobby_id = uuid::Uuid::parse_str(&req.lobby).map_err(|_| Out::status(code::NOT_FOUND, "no such game session"))?;
         let uid = users::tail(&user).to_owned();
+        self.group_strings(&uid, body, 4, "join", now);
         let players = req.players.len().max(1);
         let game = req.players.first().and_then(|p| msgs::player_game(p).0);
         self.note_game(&uid, game);
@@ -1427,6 +1519,7 @@ impl State {
     }
 
     fn tick(&mut self, now: f64) {
+        self.groups.sweep(now);
         let mut sends = Sends::new();
         for a in self.mm.tick(now) {
             self.assign(a, now, &mut sends);

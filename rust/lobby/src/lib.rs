@@ -11,6 +11,7 @@ use std::net::SocketAddr;
 
 mod core;
 pub mod docs;
+pub mod groups;
 pub mod limits;
 pub mod lobbies;
 pub mod msgs;

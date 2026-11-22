@@ -36,6 +36,27 @@ pub fn sign_in_response(user: &str, access: &str, refresh: &str) -> Vec<u8> {
     Msg::new().msg(2, &token).into_bytes()
 }
 
+/// `<u>` of a well-formed user resource "tenants/<t>/users/<u>" (the game aborts on a malformed one).
+pub fn user_resource_uid(s: &str) -> Option<&str> {
+    let rest = s.strip_prefix("tenants/")?;
+    let (tenant, user) = rest.split_once("/users/")?;
+    (!tenant.is_empty() && !tenant.contains('/') && !user.is_empty() && !user.contains('/')).then_some(user)
+}
+
+/// GameSessionService `IssueUserDelegationToken` response (research AUTH-REPLIES-1.8.0.md §6):
+/// `{1: UserDelegationToken{1 user, 2 user (echoes of request 2/3, only when well-formed),
+/// 4 packed actions (echo of request 5), 5 token, 6 Duration}}`.
+pub fn delegation_response(users: &[Option<String>], actions: &[u8], token: &str) -> Vec<u8> {
+    let mut t = Msg::new();
+    for (field, user) in [1u32, 2].into_iter().zip(users) {
+        if let Some(u) = user.as_deref().filter(|u| user_resource_uid(u).is_some()) {
+            t = t.bytes(field, u);
+        }
+    }
+    let t = t.bytes(4, actions).bytes(5, token).msg(6, &wire::seconds(crate::groups::DELEGATION_TTL_SECS));
+    Msg::new().msg(1, &t).into_bytes()
+}
+
 /// Every length-delimited field of `buf` that is UTF-8 text, one level deep and inside nested
 /// messages (the layout of Auth `RefreshToken`'s request isn't known: the token is searched for).
 pub fn texts(buf: &[u8]) -> Vec<String> {
