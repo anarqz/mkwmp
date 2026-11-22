@@ -7,7 +7,7 @@ namespace Mkwmp.Core.Targets.MkwRecomp;
 
 /// <summary>
 /// mkw-recomp's own settings, as its menu shows them (runtime/core/base/cfg.c <c>metas</c>,
-/// runtime/ui/menu/settings_tabs.cpp; texts from i18n/ui/mkw.pot, mkw-recomp 0.1.15 and 0.1.16):
+/// runtime/ui/menu/settings_tabs.cpp; texts from i18n/ui/mkw.pot, mkw-recomp 0.1.15, 0.1.16 and 0.1.17):
 /// the Screen, Graphics, Sound, Controls, General and Advanced tabs. They live in <c>&lt;data dir&gt;/mkw.ini</c>
 /// (beside mkw.exe unless <c>game_dir</c> moved the installation; the same on Windows, under
 /// Proton and in the Linux build), one <c>key = value</c> line each, absent while at its default.
@@ -38,9 +38,10 @@ public static partial class RecompSettings
 
     /// <summary>
     /// The runtimes whose settings this table describes (others name or read some keys differently).
-    /// 0.1.16-mkwmp is the fork's next build: upstream 0.1.16's menu, unchanged.
+    /// 0.1.16-mkwmp is the fork's next build: upstream 0.1.16's menu, unchanged. 0.1.17 is upstream's next release:
+    /// 0.1.16's menu and its own new rows (<see cref="Has017Rows"/>).
     /// </summary>
-    public static readonly IReadOnlyList<string> Runtimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"];
+    public static readonly IReadOnlyList<string> Runtimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17"];
 
     /// <summary>
     /// The Logic rate row came right after upstream 0.1.15 (the fork's 0.1.15-mkwmp is built from
@@ -49,7 +50,15 @@ public static partial class RecompSettings
     internal static bool HasLogicRate(string version) => version != "0.1.15";
 
     /// <summary>0.1.16's rows: the HDR tone mapper with its peak and paper white, Keyboard and mouse, NSFW mods.</summary>
-    internal static bool Has016Rows(string version) => version is "0.1.16" or "0.1.16-mkwmp" or "0.1.16-mkwmp.1";
+    internal static bool Has016Rows(string version) => version is "0.1.16" or "0.1.16-mkwmp" or "0.1.16-mkwmp.1" || Has017Rows(version);
+
+    /// <summary>
+    /// 0.1.17's rows: DLSS / FSR 3.1 upscaling (its quality, the DLSS model, CAS), frame generation's engine, NVIDIA
+    /// Reflex (#462); the keys with no menu row the launcher offers too: the shadow-map draws (#644) and the first
+    /// controller to player 2 (#742). Not MKW_GPU_CLOCKS (#645): it is Linux's amdgpu only (vk_pstate.c, __linux__), and
+    /// MKWMP runs the Windows build, also under Proton.
+    /// </summary>
+    internal static bool Has017Rows(string version) => version is "0.1.17";
 
     /// <summary>
     /// Where the setup puts the HDR tone mapper's programs (prepare.py <c>tonemap</c>, from 0.1.16).
@@ -72,11 +81,14 @@ public static partial class RecompSettings
         ["FULLSCREEN"] = "display", ["WINDOW_SIZE"] = "display", ["PERF_OVERLAY"] = "display", ["VK_PRESENT"] = "display", ["UPSCALER"] = "display",
         ["HDR"] = "display", ["HDR_TONEMAP"] = "display", ["HDR_PEAK"] = "display", ["HDR_WHITE"] = "display", ["SHARPNESS"] = "display", ["PICTURE_FIT"] = "display", ["RESOLUTION"] = "display", ["ASPECT"] = "display",
         ["HUD_POSITION"] = "display", ["FPS"] = "display", ["LOGIC_HZ"] = "display", ["FRAMEGEN"] = "display", ["VRR"] = "display", ["LOW_LATENCY"] = "display",
+        ["TEMPORAL"] = "display", ["TEMPORAL_QUALITY"] = "display", ["DLSS_PRESET"] = "display", ["CAS"] = "display", ["CAS_SHARPNESS"] = "display",
+        ["FG_ENGINE"] = "display", ["REFLEX"] = "display",
+        ["SHADOW_DRAWS"] = "graphics", // a key cfg.c gives no section (K): next to the shadow map's size
         ["QUALITY"] = "graphics", ["ANISO"] = "graphics", ["TEX_QUALITY"] = "graphics", ["DETAIL_DISTANCE"] = "graphics", ["SHADOW_SIZE"] = "graphics",
         ["MENU_LANG"] = "language", ["LANG"] = "language", ["OPERATION_MODE"] = "language",
         ["VOLUME"] = "audio", ["AUDIO_CHANNELS"] = "audio", ["BACKGROUND_MUTE"] = "audio",
         ["MOTION"] = "input", ["RUMBLE_STRENGTH"] = "input", ["RUMBLE_CURVE"] = "input", ["RUMBLE_TRIGGERS"] = "input", ["PAD_LAYOUT"] = "input",
-        ["BUTTON_ICONS"] = "input", ["MENU_SHORTCUT"] = "input", ["MOUSE_SENS"] = "input", ["KEYBOARD_MOUSE"] = "input", ["STICK_DEADZONE"] = "input", ["SWITCH2"] = "input",
+        ["BUTTON_ICONS"] = "input", ["MENU_SHORTCUT"] = "input", ["MOUSE_SENS"] = "input", ["KEYBOARD_MOUSE"] = "input", ["STICK_DEADZONE"] = "input", ["SWITCH2"] = "input", ["PAD_P2"] = "input",
         ["DSU"] = "input", ["DSU_SERVER"] = "input", ["DSU_SLOT"] = "input",
         ["ASYNC_PREEMPT"] = "performance", ["REPLAY_ASYNC"] = "performance", ["FREE_CORES"] = "performance", ["TIMER_1MS"] = "performance",
         ["PIPE_WAIT"] = "performance", ["PIPE_SKIP"] = "performance", ["PIPE_PREBUILD"] = "performance", ["GPL"] = "performance", ["ASTC"] = "performance",
@@ -347,7 +359,7 @@ public static partial class RecompSettings
     private static partial Regex Figures();
 
     private static readonly HashSet<string> Names = new(StringComparer.Ordinal)
-        { "FPS", "HDR", "CPU", "AMD FSR 1", "Nintendo", "Xbox", "PlayStation", "PsychoV35", "VSync" };
+        { "FPS", "HDR", "CPU", "AMD FSR 1", "Nintendo", "Xbox", "PlayStation", "PsychoV35", "VSync", "NVIDIA DLSS", "AMD FSR 3.1", "MKW Recomp", "J", "K", "L", "M" };
 
     /// <summary>An option whose label is a figure, a product's name or a language's own name is not translated.</summary>
     private static bool Translatable(GameSetting setting, GameSettingOption option) =>
@@ -455,6 +467,7 @@ public static partial class RecompSettings
     private static GameSettingsSchema Build(string version, bool deck, bool console, string windowSize)
     {
         var new016 = Has016Rows(version);
+        var new017 = Has017Rows(version);
         GameSetting[] hdr = !new016 ? [] :
         [
             GameSetting.Choice("hdr_tonemap", "HDR tone mapper",
@@ -545,6 +558,47 @@ public static partial class RecompSettings
         {
             graphics.RemoveAll(s => s.Id == "logic_hz");
         }
+        if (new017)
+        {
+            // settings_tabs.cpp tab_graphics: DLSS / FSR 3.1 under the FSR sharpness (gfx/vk/exec/vk_temporal.c); the game
+            // shows them all, the launcher those the upscaler's choice uses. DLSS needs an NVIDIA RTX GPU, Reflex an NVIDIA
+            // one, as their texts say; the game greys out what this PC cannot run ("Not available on this PC").
+            string[] upscaled = ["dlss", "fsr3"];
+            graphics.InsertRange(graphics.FindIndex(s => s.Id == "sharpness") + 1,
+            [
+                GameSetting.Choice("temporal", "AI upscaling",
+                    "Renders the race at a lower resolution and rebuilds it from several frames: NVIDIA DLSS (RTX GPUs) or AMD FSR 3.1 (any GPU). Sharper and steadier edges than the game's own scaling; the HUD stays sharp.",
+                    "off", Live, O("off", "Off"), O("dlss", "NVIDIA DLSS"), O("fsr3", "AMD FSR 3.1")) with { Group = "Resolution" },
+                GameSetting.Choice("temporal_quality", "Upscaling quality",
+                    "The share of the screen's resolution the race renders at: Native (DLAA) 100 %, Quality 67 %, Balanced 58 %, Performance 50 %, Ultra performance 33 %. Applies at the next start.",
+                    "quality", Restart, O("native", "Native (DLAA)"), O("quality", "Quality"), O("balanced", "Balanced"), O("performance", "Performance"),
+                    O("ultra", "Ultra performance")) with { Group = "Resolution", VisibleWhen = When("temporal", upscaled) },
+                GameSetting.Choice("dlss_preset", "DLSS model",
+                    "NVIDIA's model DLSS uses: the default of the DLSS version next to the game, or presets J, K, L, M.",
+                    "default", Live, O("default", "Default"), O("j", "J"), O("k", "K"), O("l", "L"), O("m", "M"))
+                    with { Group = "Resolution", VisibleWhen = When("temporal", "dlss") },
+                GameSetting.Choice("cas", "CAS sharpening",
+                    "AMD's contrast adaptive sharpening of the race after DLSS or FSR 3.1, before the HUD is drawn. Needs AI upscaling on.",
+                    "off", Live, O("off", "Off"), O("on", "On")) with { Group = "Resolution", VisibleWhen = When("temporal", upscaled) },
+                GameSetting.Range("cas_sharpness", "CAS strength", "How strongly CAS sharpens: 0 is the lightest touch, 100 the strongest.", 50, Live, 0, 100, 5, "%")
+                    with { Group = "Resolution", VisibleWhen = When("cas", "on") },
+            ]);
+            graphics.InsertRange(graphics.FindIndex(s => s.Id == "framegen") + 1,
+            [
+                GameSetting.Choice("fg_engine", "Frame generation by",
+                    "Who makes the frames between the game's own. The port's own works everywhere. NVIDIA DLSS Frame Generation (RTX 40 and 50) and AMD FSR 3.1 use the scene's depth and motion and need DLSS or FSR 3.1 upscaling on.",
+                    "flow", Live, O("flow", "MKW Recomp"), O("dlss", "NVIDIA DLSS"), O("fsr3", "AMD FSR 3.1"))
+                    with { Group = "Performance", VisibleWhen = When("framegen", "auto", "2", "3", "4", "120") },
+                GameSetting.Choice("reflex", "NVIDIA Reflex",
+                    "Starts each frame as late as the GPU allows, so what you press reaches the screen sooner. Boost also keeps the GPU's clocks up. NVIDIA GPUs only.",
+                    "off", Live, O("off", "Off"), O("on", "On"), O("boost", "On + Boost")) with { Group = "Performance" },
+            ]);
+            // MKW_SHADOW_DRAWS (vk_exec_draw.c, read once at start): no menu row in the game; 1 by default, auto leaves the
+            // shadow map out with 3 or more views (MKW_SHADOW_AUTO_RUNS), 0 always
+            graphics.Insert(graphics.FindIndex(s => s.Id == "shadow_size") + 1, GameSetting.Choice("shadow_draws", "Shadow map",
+                "Whether the game draws the map its shadows come from. Automatic leaves it out in 3 and 4 player split screen, where every view draws its own; Off leaves the shadows out everywhere, for the weakest graphics cards. Applies after a restart.",
+                "1", Restart, O("1", "On"), O("auto", "Automatic"), O("0", "Off")));
+        }
 
         var sound = new[]
         {
@@ -583,6 +637,13 @@ public static partial class RecompSettings
                 "How far a stick must tilt before it counts. Raise it if the kart drifts with the stick at rest.", 8, Live, 0, 40, 1, "%"),
             GameSetting.Range("mouse_sens", "Mouse camera sensitivity", "How fast the mouse turns the camera.", 1, Live, 0, 10, 0.1),
         };
+        if (new017)
+        {
+            // MKW_PAD_P2 (input.c scan_pads, #742): a cfg.c row in [input], no menu row in the game
+            controls.Insert(controls.FindIndex(s => s.Id == "pad_layout") + 1, GameSetting.Toggle("pad_p2", "First controller to player 2",
+                "The first controller plays as player 2 and the keyboard as player 1, for local play with a keyboard and a controller. Leave it off online: MKWMP's racer is player 1, so the controller would only work in the menus.",
+                false, Live));
+        }
         if (new016)
         {
             // settings_tabs.cpp tab_controls: between the stick dead zone and the mouse sensitivity

@@ -65,7 +65,8 @@ internal readonly record struct RecompId(RecompKind Kind, string? Version)
 /// <see cref="Supported"/>. Each release's mkw.exe (the Windows build, also what runs under
 /// Proton) is identified by its SHA-256, taken from the release zips: the official ones and
 /// MKWMP's fork (github.com/anarqz/mkw-recomp): 0.1.15-mkwmp, which added the camera to the
-/// plugin API before upstream took it in 0.1.16, and 0.1.16-mkwmp. The patch also hooks one game version (guest addresses): <see cref="Games"/>
+/// plugin API before upstream took it in 0.1.16, and 0.1.16-mkwmp, whose plugin API 4 upstream took in 0.1.17,
+/// the first official release MKWMP installs again. The patch also hooks one game version (guest addresses): <see cref="Games"/>
 /// lists the ones it has tables for, read from mkw-recomp's setup-state.json.
 /// </summary>
 internal static class Recomp
@@ -73,11 +74,11 @@ internal static class Recomp
     public const string Exe = "mkw.exe";
 
     /// <summary>The runtimes the game patch supports.</summary>
-    public static readonly string[] Supported = ["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"];
+    public static readonly string[] Supported = ["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17"];
 
     /// <summary>What the window recommends installing.</summary>
-    public const string Recommended = "0.1.16-mkwmp.1";
-    public const string Download = "https://github.com/anarqz/mkw-recomp/releases/tag/v0.1.16-mkwmp.1";
+    public const string Recommended = "0.1.17";
+    public const string Download = "https://github.com/adriadam10/mkw-recomp/releases/tag/v0.1.17";
 
     /// <summary>mkw.exe SHA-256 per mkw-recomp release (mkw-recomp-&lt;v&gt;-windows-x64.zip).</summary>
     internal static readonly (string Version, string Sha256)[] Known =
@@ -95,6 +96,9 @@ internal static class Recomp
         // 0.1.16-mkwmp.1: setup under Wine/Proton (zig's cache lock), no SDL x11 request from the Windows build
         ("0.1.16-mkwmp.1", "d04dc49a14618dce8385cdb1c3e61ba1bd62a2e5938ddf7dd216c926517cc72d"),
         ("0.1.16-mkwmp.1", "59af1fcc9c3a233e2d86c8437224f90a958e9ecb473118d71d92090379fbe3c0"),
+        // 0.1.17, official again: plugin API 4 (#743), DLSS / FSR 3.1 / Reflex (#462); its windows-x64 and noavx2 zips
+        ("0.1.17", "48ede546a7da356d2319260b6f8ec1814c009bc8421c1b5b3c847d82b6be09ce"),
+        ("0.1.17", "e67d12344bab5bb4d2411e85265aa71cdaf814045d1adb7ae4b51f4fec871211"),
     ];
 
     /// <summary>MKWMP's mod folder name, under mkw-recomp's <c>mods/</c>.</summary>
@@ -102,9 +106,9 @@ internal static class Recomp
 
     /// <summary>
     /// The supported releases that load mods (MKW_MODS): plugin API 1 in 0.1.15, 3 in 0.1.15-mkwmp
-    /// and 0.1.16, and the fork's 0.1.16-mkwmp. The mod asks the runtime which version it has and leaves out what is missing.
+    /// and 0.1.16, 4 in the fork's 0.1.16-mkwmp and in 0.1.17. The mod asks the runtime which version it has and leaves out what is missing.
     /// </summary>
-    public static readonly string[] ModRuntimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"];
+    public static readonly string[] ModRuntimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17"];
 
     /// <summary>
     /// The game versions MKWMP plays on. The game patch also has guest-address tables for 1.0.0, but
@@ -127,6 +131,7 @@ internal static class Recomp
         ("0.1.16", "c9bbcb75a9ac9a49"), // unchanged from 0.1.15: a game set up by it needs no rebuild
         ("0.1.16-mkwmp", "c9bbcb75a9ac9a49"), // 0.1.16's: an update from 0.1.15-mkwmp builds the game again
         ("0.1.16-mkwmp.1", "c9bbcb75a9ac9a49"), // only setup tools and mkw.exe changed: no rebuild from 0.1.16-mkwmp
+        ("0.1.17", "c9bbcb75a9ac9a49"), // unchanged (check_release.py): the update from 0.1.16-mkwmp.1 keeps the game code
     ];
 
     private static readonly string[] ModLibraries = ["mkwmp.dll", "libmkwmp.so", "mkwmp.so"];

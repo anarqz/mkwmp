@@ -26,11 +26,22 @@ namespace Mkwmp.Core.Targets.MkwRecomp;
 /// when it is missing while the launcher runs from Steam (<c>SteamGameId</c>), so the game never drops the pad the
 /// player holds.
 /// </para>
+/// <para>
+/// <b>Shadow storage.</b> Under Proton on NVIDIA (RTX 3070, driver 580.196.07, Proton 11, Debian 12; 21/11/2026) the
+/// driver refused every host memory import (VK_ERROR_OUT_OF_HOST_MEMORY, 499 of 499): Wine's write watch takes the
+/// write permission off the guest heap's pages, so they cannot be pinned, and the run ended in "render target view
+/// could not be created". mkw-recomp's Windows build imports by default and takes shadow storage (host-visible copies,
+/// Linux's default) only with <c>MKW_SHADOW=1</c> (0.1.17 runtime/gfx/vk/mem/vk_mem_log.c, <c>_WIN32</c> branch;
+/// the environment wins over mkw.ini, cfg.c <c>raw_get</c>). Our fork's unreleased fix/wine-shadow-default made it the
+/// default under Wine; with the official build the launcher sets it, unless the player set <c>MKW_SHADOW</c> in the
+/// environment or <c>shadow</c> in mkw.ini (0 brings the imports back).
+/// </para>
 /// </summary>
 public static class RecompLaunchEnv
 {
     public const string Fullscreen = "MKW_FULLSCREEN";
     public const string AllowSteamVirtualGamepad = "SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD";
+    public const string Shadow = "MKW_SHADOW";
 
     /// <summary>SteamOS (Steam sets <c>SteamOS=1</c> there) or a gamescope session (Game Mode, or gamescope run by hand).</summary>
     public static bool SteamOsOrGamescope(Func<string, string?> env)
@@ -71,6 +82,10 @@ public static class RecompLaunchEnv
             {
                 list.Add((Fullscreen, "1", "Wine: full screen until mkw.ini says otherwise"));
             }
+        }
+        if (env(Shadow) is null && !ini.ContainsKey("SHADOW"))
+        {
+            list.Add((Shadow, "1", "Wine: shadow storage, as on Linux (NVIDIA under Proton refuses the host memory imports)"));
         }
         if (env("SteamGameId") is { Length: > 0 } && env(AllowSteamVirtualGamepad) != "1")
         {
