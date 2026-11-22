@@ -2,7 +2,7 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
-## 1.4.4 — unreleased
+## 1.4.4 — 2026-11-22
 
 - **Updates install themselves.** A new MKWMP is no longer an offer. When the launcher finds one at start (or with Check Now) it downloads it at once and shows the update card, which stays until the update is in: Install and Restart, or the card does it by itself after ten seconds. Play waits for it. It never restarts under a running game: the update is then installed as soon as the game closes. Without a connection nothing changes and you play as before. If the download or the install fails, the card says why and offers Try Again, Continue Without Updating (for this time; the launcher asks again at its next start) and Quit. The "Update Automatically" switch is gone from Settings › Updates. This applies from 1.4.4 on: 1.4.3 and older still ask first.
 - **Touch: a drag scrolls, a tap taps.** Buttons, list entries and everything else you can press now act when you lift your finger, and only if it did not move: a drag that starts on a button scrolls the list and no longer presses the button. Before, a drag that began on Settings' categories changed the category and stopped the scroll. The file picker's list can now be dragged on a Steam Deck too.
