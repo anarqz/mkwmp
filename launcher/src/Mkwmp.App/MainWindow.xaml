@@ -42,34 +42,41 @@
         </StackPanel>
       </Button>
 
-      <!-- 1: the friends panel, from the right, on any page -->
-      <Border x:Name="FriendsScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnFriendsScrim"
+      <!-- the page's hint bar. A layer that covers it brings its own: the two side panels below (c:HintBar InPanel),
+           the on-screen keyboard. While one of those panels is open this one keeps only its input picture, dimmed
+           with the page: the buttons shown belong to the panel. -->
+      <c:HintBar x:Name="Hints" ShowHints="{Binding IsSidePanelOpen, Converter={StaticResource Conv.Not}}" />
+
+      <!-- 1: the friends panel, from the right, on any page: over the whole height, its own hint bar at its bottom -->
+      <Border x:Name="FriendsScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonUp="OnFriendsScrim"
               Visibility="{Binding IsFriendsOpen, Converter={StaticResource Conv.Visible}}" />
       <c:SlideHost x:Name="FriendsLayer" IsOpen="{Binding IsFriendsOpen}" Edge="Right" HorizontalAlignment="Right" Width="700">
-        <v:FriendsPanel DataContext="{Binding FriendsPanel}" />
+        <Grid>
+          <v:FriendsPanel DataContext="{Binding FriendsPanel}" />
+          <c:HintBar InPanel="True" />
+        </Grid>
       </c:SlideHost>
 
       <!-- 2: a bottom sheet -->
-      <Border x:Name="SheetScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnSheetScrim"
+      <Border x:Name="SheetScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonUp="OnSheetScrim"
               Visibility="{Binding IsSheetOpen, Converter={StaticResource Conv.Visible}}" />
       <c:BottomSheet x:Name="SheetLayer" IsOpen="{Binding IsSheetOpen}" Content="{Binding Sheet}" />
-
-      <!-- the hint bar stays readable over the panel and the sheet -->
-      <c:HintBar x:Name="Hints" />
 
       <!-- 3: the modal, over everything but the toasts -->
       <c:ModalHost x:Name="ModalLayer" />
 
       <!-- 3b: the launcher's own file and folder picker (ShellViewModel.Picker.cs), from the right, above a modal (the
-           game setup's card opens it) and under the on-screen keyboard (its path box uses it). It brings the hint bar
-           with it: the one below is under the modal's scrim. -->
+           game setup's card opens it) and under the on-screen keyboard (its path box uses it). Its hint bar is inside
+           the panel, as the friends panel's. -->
       <Grid x:Name="PickerLayer">
-        <Border Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnPickerScrim"
+        <Border Background="{DynamicResource Brush.Dim}" MouseLeftButtonUp="OnPickerScrim"
                 Visibility="{Binding IsPickerOpen, Converter={StaticResource Conv.Visible}}" />
         <c:SlideHost IsOpen="{Binding IsPickerOpen}" Edge="Right" HorizontalAlignment="Right" Width="1180">
-          <v:PickerSidebar DataContext="{Binding Picker}" />
+          <Grid>
+            <v:PickerSidebar DataContext="{Binding Picker}" />
+            <c:HintBar InPanel="True" />
+          </Grid>
         </c:SlideHost>
-        <c:HintBar Visibility="{Binding IsPickerOpen, Converter={StaticResource Conv.Visible}}" />
       </Grid>
 
       <!-- 4: the on-screen keyboard (Input/TextEntry opens it for any text box) -->

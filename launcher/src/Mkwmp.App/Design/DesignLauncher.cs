@@ -924,6 +924,13 @@ public sealed partial class DesignLauncher : ILauncher
         Change(() => Update = new UpdateView(UpdateState.UpToDate, null, null, 0, null, "Up to date"));
     }
 
+    public void ContinueWithoutUpdate() => Change(() => Update = Update with { Required = false });
+
+    /// <summary>For screenshots: the update as a real launcher has it, required (--modal update | ready | ready-game | update-failed).</summary>
+    public void RequireUpdate(string? failure = null) => Change(() => Update = failure is null
+        ? Update with { Required = true }
+        : Update with { State = UpdateState.Failed, Required = true, Progress = 0, Remaining = null, Status = failure });
+
     public void InstallUpdateAfterGame(bool on) =>
         Change(() => Update = Update with { AfterGame = on, GameBlocks = on || Session.Busy || Session.GameRunning, Status = on ? "Will be installed when the game closes" : "Version 1.4.1 is downloaded and ready to install" });
 

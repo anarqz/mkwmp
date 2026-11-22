@@ -29,9 +29,9 @@ public sealed partial class SettingsViewModel
         });
         Servers.HintsChanged += (_, _) => RefreshHints(); // a row has the focus: Y hides it
         HiddenServersCommand = new RelayCommand(() => Shell.Navigate(new HiddenServersViewModel(Shell)), () => HasHiddenServers);
-        PrivacyCommand = new RelayCommand(() => Shell.Navigate(new PrivacyViewModel(Shell)));
-        ConsentCommand = new RelayCommand(() => Shell.Navigate(SetupViewModel.ConsentOnly(Shell)), () => !Busy);
+        PrivacyCommand = new RelayCommand(() => Shell.Navigate(SetupViewModel.PrivacyPolicy(Shell)));
         DisconnectCommand = RelayCommand.Async(DisconnectAsync, () => !Busy && OnlineEnabled);
+        ReportCommand = new RelayCommand(() => Shell.Navigate(new ReportViewModel(Shell)), () => ReportViewModel.Allowed(Launcher));
         OnlineCommand = new RelayCommand(Shell.ConfigureOnline);
     }
 
@@ -74,25 +74,50 @@ public sealed partial class SettingsViewModel
     /// <summary>The page that lists them, each with "Show again".</summary>
     public ICommand HiddenServersCommand { get; private set; } = null!;
 
-    /// <summary>The privacy policy of the server in use, rendered in the launcher.</summary>
+    /// <summary>The privacy page (the welcome flow's own, alone): the policy of the server in use and its acceptance.</summary>
     public ICommand PrivacyCommand { get; private set; } = null!;
 
-    /// <summary>The consent page, for a profile signed in without it.</summary>
-    public ICommand ConsentCommand { get; private set; } = null!;
+    /// <summary>
+    /// The server row's small line: "ONLINE · 12/32 PLAYERS · 3 in queue · its name", and under it what the server
+    /// said when something is wrong. (The seats are in the status itself: no second line repeats them.)
+    /// </summary>
+    public string ServerSummary
+    {
+        get
+        {
+            var server = Launcher.Server;
+            var parts = new List<string> { ServerStatus };
+            if (server.State == ServerState.Online && server.Queued > 0)
+            {
+                parts.Add(S.Format("servers.queued", ("n", server.Queued.ToString(System.Globalization.CultureInfo.CurrentCulture))));
+            }
+            if (!string.IsNullOrWhiteSpace(server.Name) && !string.Equals(server.Name, ServerShort, StringComparison.OrdinalIgnoreCase))
+            {
+                parts.Add(server.Name);
+            }
+            var line = string.Join(" · ", parts);
+            return string.IsNullOrWhiteSpace(server.Message) ? line : line + "\n" + server.Message;
+        }
+    }
 
-    /// <summary>"12/32 seats taken · 3 in queue", from the server's live status.</summary>
-    public string SeatsText => Launcher.Server.State == ServerState.Online
-        ? S.Format("settings.online.seats", ("seated", Launcher.Server.Seated.ToString(System.Globalization.CultureInfo.CurrentCulture)), ("total", Launcher.Server.SeatsTotal.ToString(System.Globalization.CultureInfo.CurrentCulture)))
-            + (Launcher.Server.Queued > 0 ? " · " + S.Format("servers.queued", ("n", Launcher.Server.Queued.ToString(System.Globalization.CultureInfo.CurrentCulture))) : "")
-        : "";
+    /// <summary>Settings › Online › Report Abuse (ReportViewModel): for a registered player who confirmed their age.</summary>
+    public ICommand ReportCommand { get; private set; } = null!;
+
+    /// <summary>Under the row: why it is closed, the report that waits, else what a report is.</summary>
+    public string ReportCaption => !ReportViewModel.Allowed(Launcher) ? S["settings.report.gate"]
+        : ReportViewModel.WaitingText(Launcher, S) is { Length: > 0 } waiting ? waiting
+        : S["settings.report.caption"];
 
     public string TypeAddressLabel => Servers.HasList ? S["settings.online.type"] : S["settings.online.connect"];
 
-    /// <summary>Signed in and consented: the consent can be withdrawn.</summary>
-    public bool ConsentGiven => Registered && Launcher.Settings.AdultConsent;
-
     /// <summary>Signed in, and the server holds no consent for its current policy.</summary>
     public bool ConsentNeeded => Registered && !Launcher.Settings.AdultConsent;
+
+    /// <summary>The Privacy Policy row's mark: this server holds the profile's consent.</summary>
+    public bool PrivacyAccepted => PrivacyViewModel.IsAccepted(Launcher);
+
+    /// <summary>Under the row: what it opens; or that this server waits for the consent (given on that page).</summary>
+    public string PrivacyCaption => S[ConsentNeeded ? "settings.privacy.review_caption" : "settings.privacy.policy_caption"];
 
     // ── Online ──
 
@@ -112,8 +137,6 @@ public sealed partial class SettingsViewModel
 
     /// <summary>The consent was taken back while connected: nothing reaches the server until it is given again.</summary>
     public bool ConsentMissing => OnlineEnabled && !Launcher.Settings.AdultConsent;
-
-    public string DisconnectCaption => S.Format("settings.online.disconnect_caption", ("server", ServerShort));
 
     public ICommand ConnectCommand { get; private set; } = null!;
 

@@ -8,7 +8,7 @@
              Focusable="False">
   <!-- DataContext: FriendsPanelViewModel. Header, "add a friend", one message line, then the list in
        sections (requests, friends, sent). The shell slides it in from the right and dims the page; the
-       bottom 112 units belong to the hint bar. Without a server (Locked) only the header and the locked
+       bottom 112 units belong to the panel's own hint bar (MainWindow.xaml). Without a server (Locked) only the header and the locked
        state: no field, no list. -->
   <UserControl.Resources>
     <!-- a small button inside a line of the list -->
@@ -113,15 +113,13 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
+          <!-- the icon leads the box and stays (as a search field's); the text and its placeholder start after it -->
           <TextBox x:Name="EntryBox" Text="{Binding Entry, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" IsEnabled="{Binding SignedIn}"
+                   Padding="72,0,22,0" FontSize="27" input:TextEntry.Placeholder="{Binding S[friends.add_hint]}"
                    input:TextEntry.Title="{Binding S[friends.add_title]}" input:TextEntry.Charset="Gamertag"
                    input:TextEntry.Submitted="OnSubmitted" />
-          <StackPanel Orientation="Horizontal" IsHitTestVisible="False" VerticalAlignment="Center" Margin="26,0,0,0"
-                      Visibility="{Binding ShowPlaceholder, Converter={StaticResource Conv.Visible}}">
-            <c:Icon Data="{StaticResource Icon.UserPlus}" Width="34" Height="34" Foreground="{DynamicResource Brush.TextFaint}" />
-            <TextBlock Text="{Binding S[friends.add_hint]}" Style="{StaticResource Text.Base}" FontSize="27" Margin="14,0,0,0"
-                       Foreground="{DynamicResource Brush.TextFaint}" />
-          </StackPanel>
+          <c:Icon Data="{StaticResource Icon.UserPlus}" Width="34" Height="34" Margin="24,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                  Foreground="{DynamicResource Brush.TextMuted}" IsHitTestVisible="False" />
           <c:ConsoleButton Grid.Column="1" Kind="Primary" Content="{Binding S[friends.add]}" MinWidth="140" Padding="26,0" Margin="14,0,0,0"
                            Command="{Binding AddCommand}" IsEnabled="{Binding SignedIn}" />
         </Grid>

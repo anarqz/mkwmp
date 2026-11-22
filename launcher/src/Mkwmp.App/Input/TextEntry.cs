@@ -15,6 +15,8 @@ namespace Mkwmp.App.Input;
 /// <list type="bullet">
 /// <item><c>input:TextEntry.Title</c>: what is being typed, shown above the keyboard's text.</item>
 /// <item><c>input:TextEntry.Charset</c>: <c>Any</c> / <c>Gamertag</c> / <c>Digits</c>; the other keys are greyed out.</item>
+/// <item><c>input:TextEntry.Placeholder</c>: what the empty box says. The box's own template draws it, exactly where
+/// the typed text and the caret are (same padding, font size and alignment): never lay a TextBlock over a box for it.</item>
 /// </list>
 /// The box's own <c>MaxLength</c> is the keyboard's limit.
 /// </summary>
@@ -26,6 +28,14 @@ public static class TextEntry
     public static readonly DependencyProperty CharsetProperty =
         DependencyProperty.RegisterAttached("Charset", typeof(KeyboardCharset), typeof(TextEntry), new PropertyMetadata(KeyboardCharset.Any));
 
+    /// <summary>What the empty box says ("mkw.example.net"), drawn by the box's template where its text would be.</summary>
+    public static readonly DependencyProperty PlaceholderProperty =
+        DependencyProperty.RegisterAttached("Placeholder", typeof(string), typeof(TextEntry), new PropertyMetadata(""));
+
+    /// <summary>A <c>PasswordBox</c> has nothing typed in it (its password cannot be bound; kept by a class handler). For its template.</summary>
+    public static readonly DependencyProperty IsEmptyProperty =
+        DependencyProperty.RegisterAttached("IsEmpty", typeof(bool), typeof(TextEntry), new PropertyMetadata(true));
+
     /// <summary>Enter in the box, or OK on the on-screen keyboard. Bubbles: <c>input:TextEntry.Submitted="OnSubmitted"</c>.</summary>
     public static readonly RoutedEvent SubmittedEvent =
         EventManager.RegisterRoutedEvent("Submitted", RoutingStrategy.Bubble, typeof(RoutedEventHandler), typeof(TextEntry));
@@ -36,6 +46,11 @@ public static class TextEntry
     public static void SetTitle(DependencyObject o, string value) => (o ?? throw new ArgumentNullException(nameof(o))).SetValue(TitleProperty, value);
     public static KeyboardCharset GetCharset(DependencyObject o) => (KeyboardCharset)(o ?? throw new ArgumentNullException(nameof(o))).GetValue(CharsetProperty);
     public static void SetCharset(DependencyObject o, KeyboardCharset value) => (o ?? throw new ArgumentNullException(nameof(o))).SetValue(CharsetProperty, value);
+
+    public static string GetPlaceholder(DependencyObject o) => (string)(o ?? throw new ArgumentNullException(nameof(o))).GetValue(PlaceholderProperty);
+    public static void SetPlaceholder(DependencyObject o, string value) => (o ?? throw new ArgumentNullException(nameof(o))).SetValue(PlaceholderProperty, value);
+    public static bool GetIsEmpty(DependencyObject o) => (bool)(o ?? throw new ArgumentNullException(nameof(o))).GetValue(IsEmptyProperty);
+    public static void SetIsEmpty(DependencyObject o, bool value) => (o ?? throw new ArgumentNullException(nameof(o))).SetValue(IsEmptyProperty, value);
 
     public static void AddSubmittedHandler(DependencyObject o, RoutedEventHandler handler) => (o as UIElement)?.AddHandler(SubmittedEvent, handler);
     public static void RemoveSubmittedHandler(DependencyObject o, RoutedEventHandler handler) => (o as UIElement)?.RemoveHandler(SubmittedEvent, handler);
@@ -51,6 +66,8 @@ public static class TextEntry
             return;
         }
         s_registered = true;
+        EventManager.RegisterClassHandler(typeof(PasswordBox), PasswordBox.PasswordChangedEvent,
+            new RoutedEventHandler((sender, _) => SetIsEmpty((PasswordBox)sender, ((PasswordBox)sender).SecurePassword.Length == 0)), true);
         foreach (var type in (Type[])[typeof(TextBox), typeof(PasswordBox)])
         {
             EventManager.RegisterClassHandler(type, UIElement.TouchUpEvent,
@@ -67,7 +84,7 @@ public static class TextEntry
 
         static void OpenFor(object? sender, bool touch)
         {
-            if (sender is not UIElement { IsEnabled: true } box || Window.GetWindow(box)?.DataContext is not ShellViewModel shell || shell.IsKeyboardOpen)
+            if (Tap.Dragged || sender is not UIElement { IsEnabled: true } box || Window.GetWindow(box)?.DataContext is not ShellViewModel shell || shell.IsKeyboardOpen)
             {
                 return;
             }

@@ -223,7 +223,8 @@ public class UpdaterTests
         var exe = Path.Combine(home, "mkwmp.exe");
         File.WriteAllText(exe, "this launcher");
         var path = Path.Combine(root, "client.toml");
-        new ClientConfig { Settings = new LauncherSettings { Server = FakeSeatServer.Url, Game = game, AutoUpdate = updates } }.Save(path);
+        // client.toml's old "update = false" no longer turns anything off (a player cannot); --no-update does, for a run
+        new ClientConfig { Settings = new LauncherSettings { Server = FakeSeatServer.Url, Game = game, AutoUpdate = false } }.Save(path);
         var launcher = new Launcher(path, home, new LauncherOptions
         {
             Version = "1.4.0",
@@ -233,6 +234,7 @@ public class UpdaterTests
             Targets = [new MkwRecompTarget("1.4.0") { RunningOverride = () => false }],
             BindLocalApi = false,
             Headless = true, // no stars, no start-up entry
+            NoUpdate = !updates,
             ApplyUpdatesAutomatically = autoApply,
             Exit = _ => { },
         }, github);

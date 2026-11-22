@@ -396,7 +396,7 @@ public class SelfUpdateTests
 
     private sealed record Started(string Helper, IReadOnlyList<string> Arguments);
 
-    private static (Launcher Launcher, string Home, string Exe, Game Game, List<Started> Helpers) Launch(FakeGitHub github, string? home = null, string version = "1.4.0", bool headless = false)
+    private static (Launcher Launcher, string Home, string Exe, Game Game, List<Started> Helpers) Launch(FakeGitHub github, string? home = null, string version = "1.4.0", bool headless = false, bool require = false, Func<string, string?>? environment = null)
     {
         _ = Rig.TestExe;
         var root = home is null ? Rig.NewFolder("selfupdate") : Path.GetDirectoryName(home)!;
@@ -425,6 +425,8 @@ public class SelfUpdateTests
             BindLocalApi = false,
             Headless = headless,
             ApplyUpdatesAutomatically = headless,
+            RequireUpdates = require,
+            UpdateEnvironment = environment,
             Tick = TimeSpan.FromMilliseconds(30),
             Exit = _ => { },
             StartUpdateHelper = (helper, arguments) =>
@@ -610,6 +612,131 @@ public class SelfUpdateTests
 
             game.Running = false;
             await Rig.Until("the update to be handed to the helper", () => helpers.Count == 1 && launcher.Update.State == UpdateState.Restarting);
+        }
+    }
+
+    // ── a real launcher: the update is required (UPDATES.md, section 1) ──
+
+    [Fact]
+    public async Task A_newer_release_is_required_downloaded_by_itself_and_nothing_is_played_before_it_is_installed()
+    {
+        var github = GitHubWith150(out var zip);
+        var (launcher, home, exe, _, helpers) = Launch(github, require: true);
+        await using (launcher)
+        {
+            await launcher.StartAsync(default);
+            await launcher.StartupUpdates;
+            // Nobody asked: it is there, verified, and required.
+            Assert.Equal((UpdateState.ReadyToInstall, "1.5.0", true, false), (launcher.Update.State, launcher.Update.AvailableVersion, launcher.Update.Required, launcher.Update.GameBlocks));
+            Assert.Equal(zip, File.ReadAllBytes(Path.Combine(home, ".mkwmp-selfupdate", "1.5.0", "package.zip")));
+            Assert.Empty(helpers); // installing is the window's step ("Install and Restart", or its countdown)
+            Assert.Equal("launcher 1.4.0", File.ReadAllText(exe));
+
+            // PLAY is refused, and the update cannot be put off.
+            await launcher.PlayAsync();
+            Assert.False(launcher.Session.Busy);
+            launcher.ContinueWithoutUpdate(); // only after a failure
+            Assert.True(launcher.Update.Required);
+
+            await launcher.ApplyUpdateAsync(default);
+            Assert.Equal(UpdateState.Restarting, launcher.Update.State);
+            Assert.Single(helpers);
+        }
+    }
+
+    [Fact]
+    public async Task Without_GitHub_nothing_is_required_and_the_launcher_plays_as_it_is()
+    {
+        var github = GitHubWith150(out _);
+        github.Down = true;
+        var (launcher, _, _, _, helpers) = Launch(github, require: true);
+        await using (launcher)
+        {
+            await launcher.StartAsync(default);
+            await launcher.StartupUpdates;
+            Assert.Equal((UpdateState.UpToDate, false), (launcher.Update.State, launcher.Update.Required));
+            Assert.Empty(helpers);
+        }
+    }
+
+    [Fact]
+    public async Task With_a_game_running_the_required_update_waits_for_it_and_then_installs_by_itself()
+    {
+        var github = GitHubWith150(out _);
+        var (launcher, _, exe, game, helpers) = Launch(github, require: true);
+        game.Running = true;
+        await using (launcher)
+        {
+            await launcher.StartAsync(default);
+            await launcher.StartupUpdates;
+            // Downloaded behind the game; armed for after it (the window does not block: GameBlocks).
+            Assert.Equal((UpdateState.ReadyToInstall, true, true, true, Strings.UpdateAfterGame),
+                (launcher.Update.State, launcher.Update.Required, launcher.Update.GameBlocks, launcher.Update.AfterGame, launcher.Update.Status));
+            launcher.InstallUpdateAfterGame(false); // not something a required update lets go of
+            Assert.True(launcher.Update.AfterGame);
+            await Task.Delay(200);
+            Assert.Empty(helpers); // never under a game
+            Assert.Equal("launcher 1.4.0", File.ReadAllText(exe));
+
+            game.Running = false;
+            await Rig.Until("the update to be handed to the helper", () => helpers.Count == 1 && launcher.Update.State == UpdateState.Restarting);
+        }
+    }
+
+    [Fact]
+    public async Task A_required_update_that_fails_says_so_and_lets_the_player_go_on_and_a_rolled_back_one_does_not_loop()
+    {
+        var big = new byte[300_000];
+        new Random(3).NextBytes(big);
+        var name = Updater.ZipAsset("1.5.0");
+        var github = new FakeGitHub().Release("1.5.0", new() { [name] = ZipBytes(("mkwmp/mkwmp.exe", big), ("mkwmp/updater.exe", "helper 1.5.0"u8.ToArray())) });
+        var (launcher, home, _, _, helpers) = Launch(github, require: true);
+        await using (launcher)
+        {
+            // The download breaks: failed, still required (the card: Try Again, Continue Without Updating, Quit).
+            github.CutOnce = (name, 100_000);
+            await launcher.StartAsync(default);
+            await launcher.StartupUpdates;
+            Assert.Equal((UpdateState.Failed, true), (launcher.Update.State, launcher.Update.Required));
+            await launcher.PlayAsync();
+            Assert.False(launcher.Session.Busy);
+
+            // "Continue Without Updating": this run goes on as it is.
+            launcher.ContinueWithoutUpdate();
+            Assert.Equal((UpdateState.Failed, false), (launcher.Update.State, launcher.Update.Required));
+
+            // "Try Again" (also later, from Settings): the rest is downloaded; no longer forced in this run.
+            await launcher.CheckForUpdatesAsync();
+            Assert.Equal((UpdateState.ReadyToInstall, false), (launcher.Update.State, launcher.Update.Required));
+            Assert.Empty(helpers);
+        }
+
+        // The helper could not install it and started the previous launcher again: it says why, once, and neither
+        // checks nor installs by itself (no loop), until the player says Try Again.
+        var before = github.Requests.Count;
+        var (back, _, _, _, again) = Launch(github, home, require: true,
+            environment: variable => variable == UpdateRunner.UpdatedVariable ? "1" : variable == UpdateRunner.FailedVariable ? "mkwmp.exe is in use" : null);
+        await using (back)
+        {
+            await back.StartAsync(default);
+            await back.StartupUpdates;
+            Assert.Equal((UpdateState.Failed, true, Strings.UpdateNotInstalled("mkwmp.exe is in use")), (back.Update.State, back.Update.Required, back.Update.Status));
+            Assert.Equal(before, github.Requests.Count);
+            Assert.Empty(again);
+            back.ContinueWithoutUpdate();
+            Assert.False(back.Update.Required);
+        }
+
+        var (retry, _, _, _, third) = Launch(github, home, require: true,
+            environment: variable => variable == UpdateRunner.UpdatedVariable ? "1" : variable == UpdateRunner.FailedVariable ? "mkwmp.exe is in use" : null);
+        await using (retry)
+        {
+            await retry.StartAsync(default);
+            await retry.StartupUpdates;
+            await retry.CheckForUpdatesAsync(); // Try Again: the kept download is ready at once, and required
+            Assert.Equal((UpdateState.ReadyToInstall, true), (retry.Update.State, retry.Update.Required));
+            await retry.ApplyUpdateAsync(default);
+            Assert.Single(third);
         }
     }
 

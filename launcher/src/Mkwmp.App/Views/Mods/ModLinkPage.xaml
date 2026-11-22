@@ -18,9 +18,7 @@
         <TextBlock Text="{Binding S[mods.link.field]}" Style="{StaticResource Text.Base}" FontSize="25" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextMuted}" Margin="20,0,20,10" />
         <Grid Margin="20,0">
           <TextBox x:Name="LinkBox" Text="{Binding Link, UpdateSourceTrigger=PropertyChanged}" MaxLength="1000" InputScope="Url" FontSize="30"
-                   input:TextEntry.Title="{Binding S[mods.link.field]}" />
-          <TextBlock Text="https://…/mod.zip" Style="{StaticResource Text.Base}" FontSize="30" Foreground="{DynamicResource Brush.TextFaint}" Margin="28,0" VerticalAlignment="Center"
-                     IsHitTestVisible="False" Visibility="{Binding Link, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
+                   input:TextEntry.Placeholder="https://…/mod.zip" input:TextEntry.Title="{Binding S[mods.link.field]}" />
         </Grid>
         <TextBlock Text="{Binding Problem}" Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.Bad}" Margin="20,14,20,0"
                    Visibility="{Binding Problem, Converter={StaticResource Conv.Visible}}" />

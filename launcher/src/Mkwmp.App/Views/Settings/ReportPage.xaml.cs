@@ -3,7 +3,7 @@ using System.Windows.Controls;
 
 namespace Mkwmp.App.Views.Settings;
 
-public partial class PrivacyPage : UserControl
+public partial class ReportPage : UserControl
 {
-    public PrivacyPage() => InitializeComponent();
+    public ReportPage() => InitializeComponent();
 }

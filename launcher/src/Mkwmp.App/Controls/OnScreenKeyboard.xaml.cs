@@ -62,5 +62,11 @@ public partial class OnScreenKeyboard : UserControl
         }
     }
 
-    private void OnScrim(object sender, MouseButtonEventArgs e) => _shell?.Keyboard?.Cancel();
+    private void OnScrim(object sender, MouseButtonEventArgs e)
+    {
+        if (Input.Tap.IsTap((System.Windows.DependencyObject)sender))
+        {
+            _shell?.Keyboard?.Cancel();
+        }
+    }
 }

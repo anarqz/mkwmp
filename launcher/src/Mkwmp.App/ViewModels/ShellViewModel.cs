@@ -322,10 +322,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
                 {
                     FriendsPanel.OnClosed();
                 }
+                Raise(nameof(IsSidePanelOpen));
                 RefreshHints();
             }
         }
     }
+
+    /// <summary>A panel from the side is open (friends, the file picker): it has its own hint bar, the page's shows no buttons.</summary>
+    public bool IsSidePanelOpen => _isFriendsOpen || IsPickerOpen;
 
     public void ToggleFriends() => IsFriendsOpen = !IsFriendsOpen;
 

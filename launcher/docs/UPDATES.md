@@ -11,35 +11,50 @@ folder) and the game patch's sync (`game/`), which have their own rules.
 
 ## 1. What the player sees
 
-1. **Available.** At start (and "Check Now") the launcher asks GitHub for a newer release. Home's
-   What's New tile says "Version 1.5.0 is available" with a "New" badge; Settings › Updates shows
-   the row "Install Version 1.5.0". Both open the update card, which shows the release notes.
-2. **Download.** The card shows the bar, "31.2 MB of 78.0 MB · 2.4 MB/s · 20 seconds remaining",
-   Cancel and Close. Close leaves the download running; when it finishes behind another page a toast
-   says "Update downloaded". Nothing installed is touched and nothing restarts.
-3. **Ready to install.** The card offers **Install and Restart** and **Later**. After "Later" the
-   tile says "Version 1.5.0 is ready to install" with a "Ready" badge and Settings › Updates shows
-   "Install Version 1.5.0 and Restart". The download stays ready across restarts of the launcher,
-   and without a connection.
+**An update is not an offer: it is required** (from 1.4.4; the user's rule: "Launcher must enforce users to
+update to latest version when identified a new version exists"). The player cannot turn the check off:
+client.toml's old `update = false` is read and ignored, and Settings › Updates has no switch for it.
+
+1. **Found.** At start (and "Check Now") the launcher asks GitHub for a newer release. When there is one it
+   starts the download **by itself, at once**, and the update card opens by itself and **cannot be closed**
+   (no Later, no Close, B does nothing): "Updating MKWMP… Version 1.5.0 is needed to keep playing." PLAY is
+   refused by the core while the update is pending (`UpdateView.Required`), and nothing behind the card can
+   be reached. The card's bottom button is **Quit MKWMP**, in every blocking state.
+2. **Download.** The card shows the bar, "31.2 MB of 78.0 MB · 2.4 MB/s · 20 seconds remaining". No Cancel.
+   Nothing installed is touched yet. A download cut by closing the launcher is continued at the next start.
+3. **Ready to install.** The card offers **Install and Restart** and counts down ("Installing in 10
+   seconds"): at zero (`UpdateModal.AutoInstallSeconds`) it presses it itself. Home's tile and Settings ›
+   Updates say "ready to install" behind it.
 4. **Install and Restart.** The launcher frees its seat and closes. The helper's small window
    (centred, no frame, the launcher's theme and language) says "Installing the update…" with the step
    under it: "Waiting for MKWMP to close", "Checking the download", "Replacing files" (a bar),
    "Starting MKWMP". Then the new launcher opens with the same arguments.
-5. **A game is running.** Nothing is ever installed under a game: not during a PLAY session, not
-   while the game runs by itself, not while the launcher stands by as the game's overlay host
-   (OVERLAY.md §7). The download still happens in the background. The card then says so and offers
-   **Install After the Game**: the launcher installs by itself once no game runs any more (it can be
-   taken back). Without that choice the update simply stays "ready to install".
-6. **It fails.** The helper says "The update was not installed" for a few seconds (a click or a key
-   ends it sooner), every file is back as it was, and the previous launcher opens again and says why
-   (Settings › Updates; `logs/updater.log` has the detail). The download is kept, so "Try again"
-   needs no new download unless it was the download that was wrong.
+5. **A game is running: it does not block, and a game is never killed.** Nothing is ever installed under a
+   game: not during a PLAY session, not while the game runs by itself, not while the launcher stands by as
+   the game's overlay host (OVERLAY.md §7). The download still happens in the background, the card does not
+   hold the player (it can be closed and says "The update is installed as soon as the game closes"), and the
+   launcher **installs by itself once no game runs any more**. This cannot be taken back.
+6. **It fails** (the download, or the install). Never a dead end:
+   - *The download fails:* the card says why, with **Try Again**, **Continue Without Updating** and Quit.
+   - *The install fails:* the helper says "The update was not installed" for a few seconds, every file is
+     back as it was, and the previous launcher opens again (`MKWMP_UPDATED=1`, `MKWMP_UPDATE_FAILED=<reason>`).
+     That launcher shows the same card with the reason and the same three buttons. It **does not check or
+     install anything by itself in that run**, so a release that cannot be installed on this PC never loops.
+     The download is kept: Try Again needs no new download unless it was the download that was wrong.
+   - **Continue Without Updating** lifts the requirement **for this run only** (everything works, online too,
+     with the version that is installed; a server that needs the newer one says so itself). The next start
+     asks again. It is offered only after a failure.
+7. **Not blocked at all:** GitHub cannot be reached or the PC is offline (the check finds nothing: play as
+   before, and a verified download that already waits is still installed); a game running (5);
+   `--headless` (below); `--no-update` (development and tests only: nothing is asked of GitHub).
 
 `--headless` has no window to ask: a newer release found at start is downloaded, verified and
 installed by the launcher process itself (the same swap, in place: a running executable can be
 renamed aside), then the new launcher is started and its exit code passed on, as before.
-`--no-update` and "Update Automatically" off: nothing is asked of GitHub, nothing is downloaded.
 
+**Who this binds.** Only launchers from 1.4.4 on. A 1.4.3 (or older 1.4.x) launcher still only *offers* the
+update (What's New tile, Settings › Updates, "Later"): nothing in a newer release can make an older launcher
+enforce it.
 ## 2. The pieces
 
 | Project | What it is |
@@ -104,6 +119,17 @@ verified once more.
 **Check** (`Launcher.CheckAsync`): the newest non-draft release above this version. If its verified
 download is already staged, the state is `ReadyToInstall` at once. If GitHub cannot be reached but a
 verified download waits, it is `ReadyToInstall` all the same.
+
+**Required** (`Launcher.EnforceUpdateAsync`, when `LauncherOptions.RequireUpdates`: what `LauncherOptions.Parse`
+gives every real run; not headless, and only a launcher that can replace itself, so not under `dotnet`). A
+check that found a release sets `UpdateView.Required` on every view from then on and downloads at once. Then:
+a game runs → `InstallUpdateAfterGame(true)` by itself (and `InstallUpdateAfterGame(false)` is ignored); no
+game → the view is `ReadyToInstall` and the window installs (`UpdateModal`: the button, or its countdown).
+`PlayAsync` returns without starting while `Required`. `ILauncher.ContinueWithoutUpdate()` clears `Required`
+for the run, and only from `Failed`. The window blocks on `UpdateModal.Blocks`: `Required`, no game
+(`GameBlocks`, `AfterGame`, a session), not in overlay mode; `ShellViewModel.WatchUpdate` opens the card.
+A launcher started by the helper (`MKWMP_UPDATED`) checks nothing at start; after a rollback
+(`MKWMP_UPDATE_FAILED`) its view is `Failed` and `Required`, and "Try Again" is `CheckForUpdatesAsync`.
 
 **Download** (`ILauncher.DownloadUpdateAsync` → `SelfUpdate.StageAsync`):
 
@@ -197,7 +223,7 @@ updater.exe --shot out.png [--theme dark] [--locale pt-BR] [--step waiting|verif
 ```
 
 writes one frame as a PNG and opens no window. The card's states are in the launcher's harness:
-`shot.ps1 out.png --modal available | update | ready | ready-game`.
+`shot.ps1 out.png --modal available | update | ready | ready-game | update-failed` (the last four as a real launcher shows them: required).
 
 ## 8. The release
 
@@ -332,10 +358,27 @@ opened) and `UpdaterTests.cs`:
   pid, theme and language, the stage cleared by the new launcher; a cut download continued with a
   Range request; a staged download that survives a restart, also offline; a tampered stage
   downloaded again; refused while a game runs, installed after the game when asked; `--headless` in
-  place from the zip; a 1.3.x folder the zip was unzipped into (the Rust launcher's client.toml);
+  place from the zip;
+- required updates: found → downloaded by itself, `Required`, PLAY refused, installed when the window says
+  so; GitHub down → nothing required; a game running → armed for after the game, cannot be taken back,
+  installed when it ends; a failed download → `Failed` and `Required`, Continue Without Updating lifts it,
+  Try Again finishes the download; a rolled-back install (`MKWMP_UPDATE_FAILED`) → said once, no request to
+  GitHub and no install by itself (no loop), Try Again installs from the kept download; a 1.3.x folder the zip was unzipped into (the Rust launcher's client.toml);
 - the game's package: only `game/` beside the launcher, never downloaded (UpdaterTests, ModInstallTests).
 
 ## 10. Not done, and to check on a device
+
+- **The required update was not run end to end against a real release.** The core's states are tested with
+  a fake GitHub and the card's states in the harness (`shot.ps1 out.png --modal update | ready | ready-game |
+  update-failed`); the first real one is 1.4.4 → the release after it.
+- **"Continue Without Updating" lifts everything for the run, online included.** Limiting that run to offline
+  play was considered and left out (it needs a forced-offline session mode); a server that must refuse old
+  launchers has to do so itself.
+- **A game that runs by itself while the download is still running** is only seen once the download is done
+  (the check for a game process is made then): until then the card blocks the launcher's window, which is
+  not in front of that game anyway. In overlay mode the card never blocks.
+- **The card replaces another modal that is open** when the update is found (the game setup's card, a
+  question): what that modal was doing goes on in the core.
 
 - **Under Wine/Proton nothing was run.** The helper uses only APIs Wine implements, but the window
   under gamescope (Game Mode has one focused window) and the rename of the running single-file

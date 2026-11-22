@@ -36,7 +36,8 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
     private SetupStep _step;
     private bool _goOnline;
     private string _name;
-    private bool _adult;
+    private PrivacyViewModel? _privacy;
+    private string _privacyServer = "";
     private string _address;
     private ServerProbe? _probe;
     private bool _probing;
@@ -55,7 +56,6 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         Servers.HintsChanged += (_, _) => RefreshHints();
         var s = Launcher.Settings;
         _name = s.Name;
-        _adult = s.AdultConsent;
         _address = Launcher.OnlineEnabled ? ProfileForm.HostOf(s.Server)
             : Launcher.SavedServers.Count > 0 ? ProfileForm.HostOf(Launcher.SavedServers[^1].Address) : "";
         _goOnline = connectOnly || Launcher.OnlineEnabled;
@@ -71,7 +71,6 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         Game.Refresh();
         PrimaryCommand = RelayCommand.Async(PrimaryAsync, () => CanPrimary);
         SecondaryCommand = RelayCommand.Async(SecondaryAsync, () => ShowSecondary);
-        PrivacyCommand = new RelayCommand(() => Shell.Navigate(new PrivacyViewModel(Shell)));
         LanguageCommand = RelayCommand.Async(Shell.PickLanguageAsync);
         InitGame();
         _step = start ?? (connectOnly ? SetupStep.Server : FirstOpenStep());
@@ -89,14 +88,18 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
     /// </summary>
     public static SetupViewModel Connect(ShellViewModel shell, string? address = null) => new(shell, connectOnly: true, address: address);
 
-    /// <summary>Settings › Online's "Review and Accept": the consent page alone, for a profile that is signed in without it.</summary>
-    public static SetupViewModel ConsentOnly(ShellViewModel shell) => new(shell, connectOnly: true, start: SetupStep.Consent);
+    /// <summary>
+    /// Settings › Online's "Privacy Policy": the welcome's consent page alone (what is kept, the server's policy, its
+    /// acceptance under them), the one privacy page of the launcher. Its button closes it and B leaves it: back to
+    /// Settings › Online, never on to the next welcome page.
+    /// </summary>
+    public static SetupViewModel PrivacyPolicy(ShellViewModel shell) => new(shell, connectOnly: true, start: SetupStep.Consent) { PolicyOnly = true };
+
+    /// <summary>Opened from Settings to read the policy and give or withdraw the consent: one page, no flow around it.</summary>
+    private bool PolicyOnly { get; init; }
 
     /// <summary>The servers to choose from (the beholder's list), on the server page.</summary>
     public ServerPicker Servers { get; }
-
-    /// <summary>The privacy policy, rendered in the launcher (a page over this one).</summary>
-    public ICommand PrivacyCommand { get; }
 
     public bool IsFirstRun => !_connectOnly;
 
@@ -143,7 +146,7 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
             ? [SetupStep.Welcome, SetupStep.Name, SetupStep.Game, SetupStep.Online, SetupStep.Server, SetupStep.Register, SetupStep.Consent, SetupStep.Pin, SetupStep.Done]
             : [SetupStep.Welcome, SetupStep.Name, SetupStep.Game, SetupStep.Online, SetupStep.Done];
 
-    public int StepCount => Path.Count;
+    public int StepCount => PolicyOnly ? 0 : Path.Count;
 
     public int StepIndex => Math.Max(0, Path.ToList().IndexOf(_step));
 
@@ -174,7 +177,7 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         SetupStep.Name => S["setup.name.title"],
         SetupStep.Game => S["setup.game.title"],
         SetupStep.Online => S["setup.online.title"],
-        SetupStep.Consent => S["setup.consent.title"],
+        SetupStep.Consent => S[PolicyOnly ? "settings.privacy.policy" : "setup.consent.title"],
         SetupStep.Server => S["setup.server.title"],
         SetupStep.Register => S["setup.register.title"],
         SetupStep.Pin => S["setup.pin.title"],
@@ -218,17 +221,24 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
 
     // ── the consent (nothing reaches a server before it) ──
 
-    /// <summary>"I'm 18 or older and I accept the privacy policy".</summary>
-    public bool Adult
+    /// <summary>
+    /// The consent page's content: the privacy component (the policy, and its acceptance under it). Only while that
+    /// page shows (it asks the server for its policy), and made again for another server.
+    /// </summary>
+    public PrivacyViewModel? Privacy
     {
-        get => _adult;
-        set
+        get
         {
-            if (Set(ref _adult, value))
+            if (_step != SetupStep.Consent)
             {
-                Raise(nameof(CanPrimary));
-                CommandManager.InvalidateRequerySuggested();
+                return null;
             }
+            if (_privacy is null || _privacyServer != Launcher.Settings.Server)
+            {
+                _privacyServer = Launcher.Settings.Server;
+                _privacy = new PrivacyViewModel(Shell) { Lead = PolicyOnly ? "" : ConsentText };
+            }
+            return _privacy;
         }
     }
 
@@ -339,9 +349,6 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
     /// <summary>The consent page's lead: whose policy is being agreed to.</summary>
     public string ConsentText => S.Format("setup.consent.text", ("server", ServerShort));
 
-    /// <summary>Why the consent was not stored (the server could not be reached), under the box.</summary>
-    public string ConsentNote => _step == SetupStep.Consent && Launcher.Profile is { Register: RegisterState.Failed, Message: { } why } ? why : "";
-
     /// <summary>After signing in: the consent when the server holds none for this profile, else straight to the PIN.</summary>
     private SetupStep AfterSignIn => Launcher.Settings.AdultConsent ? SetupStep.Pin : SetupStep.Consent;
 
@@ -383,6 +390,7 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
     public string PrimaryLabel => _step switch
     {
         SetupStep.Game => GamePrimaryLabel,
+        SetupStep.Consent when PolicyOnly => S["common.close"],
         SetupStep.Online => S["setup.online.go"],
         SetupStep.Server => ProbeOk ? S["common.next"] : S["setup.server.connect"],
         SetupStep.Register when !Launcher.Profile.SignedIn => Profile.Working ? "…"
@@ -397,7 +405,7 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
     {
         SetupStep.Name => Links.ValidName(_name),
         SetupStep.Game => GameCanPrimary,
-        SetupStep.Consent => _adult && Launcher.Profile.Register != RegisterState.Working,
+        SetupStep.Consent => PolicyOnly || Launcher.Settings.AdultConsent && Launcher.Profile.Register != RegisterState.Working,
         SetupStep.Server => !_probing && _address.Length > 0 && !Launcher.Session.Busy,
         SetupStep.Register => Launcher.Profile.SignedIn ? !Profile.Editing : Profile.ShowPinEntry ? Profile.CanUsePin : Profile.CanRegister,
         _ => true,
@@ -431,6 +439,9 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
             case SetupStep.Online:
                 _goOnline = true;
                 Step = SetupStep.Server;
+                break;
+            case SetupStep.Consent when PolicyOnly:
+                Shell.GoBack(); // read, accepted or withdrawn: back to Settings › Online
                 break;
             case SetupStep.Consent:
                 // Stored on the server first (with the version of its policy), then here; it stays on this page when that failed.
@@ -571,6 +582,7 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         Game.Refresh();
         Servers.Sync();
         FollowGame();
+        _privacy?.OnStateChanged();
         base.OnStateChanged();
         RefreshHints();
         CommandManager.InvalidateRequerySuggested();
@@ -637,7 +649,6 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
             return;
         }
         _goOnline |= to is SetupStep.Consent or SetupStep.Server or SetupStep.Register or SetupStep.Pin || Launcher.OnlineEnabled;
-        _adult = Launcher.Settings.AdultConsent;
         Step = to;
         if (arg.Length == 0)
         {
@@ -649,7 +660,10 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
                 NameText = arg;
                 break;
             case SetupStep.Consent:
-                Adult = arg is "1" or "yes";
+                if (arg is "1" or "yes")
+                {
+                    RelayCommand.Async(() => Launcher.SetConsentAsync(true)).Execute(null);
+                }
                 break;
             case SetupStep.Server:
                 Address = arg;

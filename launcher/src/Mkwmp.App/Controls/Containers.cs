@@ -105,6 +105,25 @@ public sealed class CategoryList : ListBox
     }
 }
 
+/// <summary>
+/// What depends on a switch: the rows under a <c>SettingsRow Kind="Toggle"</c> that mean nothing while it is off.
+/// <c>&lt;c:Dependents Of="{Binding VoiceEnabled}"&gt; rows &lt;/c:Dependents&gt;</c>, right after the switch's row.
+/// While <see cref="Of"/> is false they are gone (collapsed: no room, no focus stop), never greyed out; their
+/// settings keep their values and are back, as they were, when the switch is on again.
+/// </summary>
+public sealed class Dependents : StackPanel
+{
+    public static readonly DependencyProperty OfProperty = Dp.Register<Dependents, bool>(nameof(Of), true,
+        (d, e) => ((Dependents)d).Visibility = (bool)e.NewValue ? Visibility.Visible : Visibility.Collapsed);
+
+    /// <summary>The switch these rows depend on.</summary>
+    public bool Of
+    {
+        get => (bool)GetValue(OfProperty);
+        set => SetValue(OfProperty, value);
+    }
+}
+
 /// <summary>From which edge a <see cref="SlideHost"/> comes in.</summary>
 public enum SlideEdge { Right, Bottom, Left, Top }
 

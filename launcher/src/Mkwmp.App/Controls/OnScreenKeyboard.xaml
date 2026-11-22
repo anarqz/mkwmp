@@ -44,7 +44,7 @@
   </UserControl.Resources>
 
   <Grid>
-    <Border Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnScrim"
+    <Border Background="{DynamicResource Brush.Dim}" MouseLeftButtonUp="OnScrim"
             Visibility="{Binding IsKeyboardOpen, Converter={StaticResource Conv.Visible}}" />
     <c:SlideHost IsOpen="{Binding IsKeyboardOpen}" Edge="Bottom" VerticalAlignment="Bottom">
       <!-- its DataContext is the keyboard (kept while it slides away): see the code-behind -->

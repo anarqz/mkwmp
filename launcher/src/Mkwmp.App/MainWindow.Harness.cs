@@ -126,7 +126,7 @@ public partial class MainWindow
             // the privacy policy as the launcher renders it (the server's Markdown), over Settings › Online
             _vm.Nav.ResetTo(Routes.Home);
             _vm.Navigate(Routes.SettingsOnline);
-            _vm.Navigate(new PrivacyViewModel(_vm));
+            _vm.Navigate(SetupViewModel.PrivacyPolicy(_vm));
         }
         else if (page == "whatsnew")
         {
@@ -185,6 +185,11 @@ public partial class MainWindow
                 await Task.Delay(900).ConfigureAwait(true); // a server asked answers
             }
         }
+        // --mod camera=1,camera_view=0: the mod's camera switches as the game's file has them (Settings › Voice & Camera)
+        if (App.Option(args, "--mod") is { } mod && _vm.Page is SettingsViewModel voice)
+        {
+            voice.PretendMod(mod);
+        }
         _vm.TrayAvailable = args.Contains("--with-tray");
         // --overlay [--overlay-frame <png>|none] [--overlay-no-menu]: overlay mode, as after a request of the game
         ImageSource? overlayPicture = null;
@@ -220,8 +225,14 @@ public partial class MainWindow
         }
         switch (App.Option(args, "--modal"))
         {
+            // the required update's card, as a real launcher shows it: downloading, ready (ready-game: a game runs), failed
             case "update":
                 (_vm.Launcher as DesignLauncher)?.FreezeDownloadAt(0.4);
+                (_vm.Launcher as DesignLauncher)?.RequireUpdate();
+                _vm.ShowUpdateModal();
+                break;
+            case "update-failed":
+                (_vm.Launcher as DesignLauncher)?.RequireUpdate(Mkwmp.Core.Strings.UpdateNotInstalled("mkwmp.exe could not be replaced: it is in use"));
                 _vm.ShowUpdateModal();
                 break;
             case "available":
@@ -231,6 +242,11 @@ public partial class MainWindow
             case "ready":
             case "ready-game":
                 (_vm.Launcher as DesignLauncher)?.ReadyToInstall(gameRuns: App.Option(args, "--modal") == "ready-game");
+                (_vm.Launcher as DesignLauncher)?.RequireUpdate();
+                if (App.Option(args, "--modal") == "ready-game")
+                {
+                    _vm.Launcher.InstallUpdateAfterGame(true);
+                }
                 _vm.ShowUpdateModal();
                 break;
             case "confirm":

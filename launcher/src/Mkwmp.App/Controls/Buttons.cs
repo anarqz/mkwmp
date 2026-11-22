@@ -26,6 +26,8 @@ public enum ButtonKind
     Ghost,
     /// <summary>The full-width button at the bottom of a modal card.</summary>
     Bottom,
+    /// <summary>An action that takes something away (disconnect, delete): outlined and written in the "bad" colour.</summary>
+    Danger,
 }
 
 /// <summary>The launcher's button. <c>&lt;c:ConsoleButton Kind="Primary" Content="Next" Command="…"/&gt;</c>, optional <see cref="Icon"/>.</summary>
@@ -255,6 +257,7 @@ public sealed class SettingsRow : Button
     public static readonly DependencyProperty KindProperty = Dp.Register<SettingsRow, RowKind>(nameof(Kind), RowKind.Plain);
     public static readonly DependencyProperty IconProperty = Dp.Register<SettingsRow, Geometry?>(nameof(Icon), null);
     public static readonly DependencyProperty ShowRuleProperty = Dp.Register<SettingsRow, bool>(nameof(ShowRule), true);
+    public static readonly DependencyProperty IsDestructiveProperty = Dp.Register<SettingsRow, bool>(nameof(IsDestructive), false);
     public static readonly DependencyProperty IsOnProperty = DependencyProperty.Register(nameof(IsOn), typeof(bool), typeof(SettingsRow),
         new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault));
 
@@ -292,6 +295,13 @@ public sealed class SettingsRow : Button
     {
         get => (bool)GetValue(ShowRuleProperty);
         set => SetValue(ShowRuleProperty, value);
+    }
+
+    /// <summary>The row takes something away (delete, uninstall): its label and icon are in the "bad" colour.</summary>
+    public bool IsDestructive
+    {
+        get => (bool)GetValue(IsDestructiveProperty);
+        set => SetValue(IsDestructiveProperty, value);
     }
 
     /// <summary>The switch of a <see cref="RowKind.Toggle"/> row (binds two-way by default).</summary>

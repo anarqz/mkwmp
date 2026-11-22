@@ -11,7 +11,7 @@ using CoreStrings = Mkwmp.Core.Strings;
 
 namespace Mkwmp.App.ViewModels;
 
-/// <summary>A muted player: UNMUTE, or REPORT (fills the report form below).</summary>
+/// <summary>A muted player: UNMUTE, or REPORT (opens Settings › Online › Report Abuse with the name filled in).</summary>
 public sealed class MuteRow
 {
     public MuteRow(MutedPlayer player, Action<MutedPlayer> unmute, Action<MutedPlayer> report)
@@ -33,12 +33,14 @@ public sealed class MuteRow
 }
 
 /// <summary>
-/// Settings › Voice &amp; Camera: the voice switch, devices and volumes (the game polls them through
-/// the local API), the launcher's own microphone / output / camera tests, the in-game camera switches
-/// (the mod's settings, changed while the game is closed), muted players and the report form.
-/// Voice and camera exist only inside the game (private rooms, friends added on the server, up to
-/// four at a time); this pane only configures and tests. Locked until a server is set, as every
-/// category of <see cref="OnlineOnly"/>.
+/// Settings › Voice &amp; Camera, two sections built the same way: a switch ("Use voice / camera in
+/// private rooms"), then the device, then its test. Voice: the switch, devices and volumes are
+/// client.toml's (the game polls them through the local API). Camera: the switch is the mod's two
+/// settings in the game's own file (<see cref="ModSettings.Camera"/>, <see cref="ModSettings.CameraView"/>),
+/// changed while the game is closed; "Show My Camera" under it is the one finer choice. Then the
+/// muted players. Voice and camera exist only inside the game (private rooms, friends added on the
+/// server, up to four at a time); this pane only configures and tests. Locked until a server is
+/// set, as every category of <see cref="OnlineOnly"/>.
 /// </summary>
 public sealed partial class SettingsViewModel
 {
@@ -46,6 +48,20 @@ public sealed partial class SettingsViewModel
 
     private readonly Dictionary<string, string?> _mod = [];
     private readonly Dictionary<string, string?> _demoMod = new() { [ModSettings.Camera] = "1", [ModSettings.CameraView] = "1", ["consent18"] = "1" };
+
+    /// <summary>The harness: the mod's file as another launcher or the game left it ("camera=0,camera_view=1"), then read again.</summary>
+    internal void PretendMod(string pairs)
+    {
+        foreach (var pair in pairs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (pair.Split('=') is [var key, var value])
+            {
+                _demoMod[key] = value;
+            }
+        }
+        ReadMod(force: true);
+        RaiseAll();
+    }
     private IReadOnlyList<AudioDevice> _labInputs = [];
     private IReadOnlyList<AudioDevice> _labOutputs = [];
     private IReadOnlyList<CameraDevice> _cameras = [];
@@ -55,9 +71,6 @@ public sealed partial class SettingsViewModel
     private DateTime _modRead;
     private bool _gameRunning;
     private bool _modSupported;
-    private string _reportName = "";
-    private string _reportReason = "";
-    private string _reportDetails = "";
     private bool _playingSound;
 
     /// <summary>The microphone test (level meter, hear myself).</summary>
@@ -75,22 +88,13 @@ public sealed partial class SettingsViewModel
 
     public ICommand TestCameraCommand { get; private set; } = null!;
 
-    public ICommand ReasonCommand { get; private set; } = null!;
-
-    public ICommand SendReportCommand { get; private set; } = null!;
-
-    public ICommand WithdrawReportCommand { get; private set; } = null!;
-
     private void InitVoice()
     {
-        InputCommand = RelayCommand.Async(() => PickAudioAsync(input: true), () => VoiceEnabled);
-        OutputCommand = RelayCommand.Async(() => PickAudioAsync(input: false), () => VoiceEnabled);
+        InputCommand = RelayCommand.Async(() => PickAudioAsync(input: true));
+        OutputCommand = RelayCommand.Async(() => PickAudioAsync(input: false));
         TestOutputCommand = RelayCommand.Async(TestOutputAsync, () => !_playingSound);
         CameraCommand = RelayCommand.Async(PickCameraAsync, () => CameraTestAvailable);
         TestCameraCommand = new RelayCommand(() => Shell.Navigate(new CameraTestViewModel(Shell)), () => CameraTestAvailable);
-        ReasonCommand = RelayCommand.Async(PickReasonAsync);
-        SendReportCommand = RelayCommand.Async(SendReportAsync, () => CanSendReport);
-        WithdrawReportCommand = RelayCommand.Async(() => Launcher.WithdrawReportAsync(), () => !Launcher.Report.Busy);
         ConfigureOnlineCommand = new RelayCommand(Shell.ConfigureOnline);
         SyncMutes();
         SyncOnlineLock();
@@ -188,7 +192,15 @@ public sealed partial class SettingsViewModel
     public bool VoiceEnabled
     {
         get => Launcher.Settings.Voice.Enabled;
-        set => Save(s => s with { Voice = s.Voice with { Enabled = value } });
+        set
+        {
+            if (!value)
+            {
+                Mic.Stop(); // its test goes with the rows that are no longer there
+                FlushGains();
+            }
+            Save(s => s with { Voice = s.Voice with { Enabled = value } });
+        }
     }
 
     /// <summary>What the game reported is authoritative; until it has run, what this launcher lists itself.</summary>
@@ -204,7 +216,7 @@ public sealed partial class SettingsViewModel
 
     public string OutputName => DeviceName(Launcher.Settings.Voice.Output, Outputs);
 
-    /// <summary>Where the device lists come from, said honestly.</summary>
+    /// <summary>Where the device lists come from, said honestly (in the list a device is picked from).</summary>
     public string DevicesCaption
     {
         get
@@ -331,10 +343,10 @@ public sealed partial class SettingsViewModel
     /// <summary>mkwmp-camera.dll has no capture under Wine / Proton yet: the test is simply not offered there.</summary>
     public bool CameraTestAvailable => !Links.IsWine && Launcher.Devices.CameraAvailable;
 
-    /// <summary>Why there is no camera test, in the player's words; "" when there is one.</summary>
-    public string CameraNote => Links.IsWine
-        ? S["settings.chat.camera_linux"]
-        : Launcher.Devices.CameraAvailable ? "" : Launcher.Devices.CameraProblem ?? CoreStrings.CameraDllMissing;
+    /// <summary>The camera's device and test rows are shown (greyed out while mkwmp-camera.dll is missing); not under Wine, where nothing can be captured.</summary>
+#pragma warning disable CA1822 // XAML binds to instance properties
+    public bool CanTestCamera => CanCapture;
+#pragma warning restore CA1822
 
     public string CameraName
     {
@@ -348,12 +360,6 @@ public sealed partial class SettingsViewModel
                 : _cameras.FirstOrDefault(c => c.Id == selected)?.Name
                     ?? (_cameras.Count == 0 ? (voice.CameraName.Length > 0 ? voice.CameraName : selected) : S["settings.chat.not_connected"]);
         }
-    }
-
-    public bool CameraMirror
-    {
-        get => Launcher.Settings.Voice.CameraMirror;
-        set => Save(s => s with { Voice = s.Voice with { CameraMirror = value } });
     }
 
     private async Task PickCameraAsync()
@@ -415,17 +421,25 @@ public sealed partial class SettingsViewModel
 
     private bool ModOn(string key) => _mod.GetValueOrDefault(key) == "1";
 
-    private void WriteMod(string key, bool on)
+    /// <summary>Writes the switches that differ from the file (each a rewrite of it); a refusal is a toast and the pane shows the file again.</summary>
+    private void WriteMod(params (string Key, bool On)[] changes)
     {
         try
         {
-            if (IsDemo)
+            foreach (var (key, on) in changes)
             {
-                _demoMod[key] = on ? "1" : "0";
-            }
-            else if (ModHost is not { } host || !host.Target.WriteModSetting(host.Install, key, on ? "1" : "0"))
-            {
-                return;
+                if (ModOn(key) == on && _mod.GetValueOrDefault(key) is not null)
+                {
+                    continue;
+                }
+                if (IsDemo)
+                {
+                    _demoMod[key] = on ? "1" : "0";
+                }
+                else if (ModHost is not { } host || !host.Target.WriteModSetting(host.Install, key, on ? "1" : "0"))
+                {
+                    break;
+                }
             }
         }
         catch (LauncherException e)
@@ -443,34 +457,56 @@ public sealed partial class SettingsViewModel
     public bool CanChangeGameCamera => _modSupported && !_gameRunning;
 
     /// <summary>Showing a camera needs a capture: none under Wine / Proton yet (seeing friends' cameras works there).</summary>
-    public bool CanShowMyCamera => CanChangeGameCamera && !Links.IsWine;
+    private static bool CanCapture => !Links.IsWine;
 
+    /// <summary>
+    /// "Use camera in private rooms": one switch for the mod's two (<see cref="ModSettings.Camera"/>, my camera is
+    /// shown; <see cref="ModSettings.CameraView"/>, I see my friends'). On when either is on, so what an older
+    /// launcher saved reads as it was meant: any camera use is "on". Turning it on sets both (showing mine only
+    /// where there is a capture), off clears both; <see cref="ShowMyCamera"/> is the one finer choice under it.
+    /// </summary>
+    public bool CameraEnabled
+    {
+        get => ModOn(ModSettings.Camera) || ModOn(ModSettings.CameraView);
+        set => WriteMod((ModSettings.CameraView, value), (ModSettings.Camera, value && CanCapture));
+    }
+
+    public bool CanShowMyCamera => CanChangeGameCamera && CanCapture;
+
+    /// <summary>
+    /// "Show My Camera". With the camera in use, friends' cameras are seen: a file an older launcher left with only
+    /// "show mine" on gets "see friends'" with the next change made here.
+    /// </summary>
     public bool ShowMyCamera
     {
         get => ModOn(ModSettings.Camera);
-        set => WriteMod(ModSettings.Camera, value);
+        set => WriteMod((ModSettings.CameraView, true), (ModSettings.Camera, value));
     }
 
-    public bool SeeFriendsCameras
-    {
-        get => ModOn(ModSettings.CameraView);
-        set => WriteMod(ModSettings.CameraView, value);
-    }
-
-    public string GameCameraCaption
+    /// <summary>Under the switch: what it does; why it cannot be changed now; the 18+ confirmation still missing.</summary>
+    public string CameraCaption
     {
         get
         {
+            if (!_modSupported)
+            {
+                return Launcher.Game.Install is null ? S["settings.game.not_found"] : ModSettings.NoProfileYet;
+            }
             if (_gameRunning)
             {
                 return S["settings.chat.game_camera_running"];
             }
-            return (ShowMyCamera || SeeFriendsCameras) && !ModOn("consent18")
-                ? S["settings.chat.game_camera_caption"] + "\n" + S["settings.chat.game_camera_consent"]
-                : S["settings.chat.game_camera_caption"];
+            return CameraEnabled && !ModOn("consent18")
+                ? S["settings.chat.camera_enabled_caption"] + "\n" + S["settings.chat.game_camera_consent"]
+                : S["settings.chat.camera_enabled_caption"];
         }
     }
 
+    /// <summary>Under "Show My Camera": what off means, or that this system cannot capture a camera yet.</summary>
+    public string ShowMineCaption => CanCapture ? S["settings.chat.show_mine_caption"] : S["settings.chat.camera_linux"];
+
+    /// <summary>Why there is no camera device to choose or test on Windows (mkwmp-camera.dll); "" otherwise (Linux says it under Show My Camera).</summary>
+    public string CameraDeviceNote => Links.IsWine || Launcher.Devices.CameraAvailable ? "" : Launcher.Devices.CameraProblem ?? CoreStrings.CameraDllMissing;
     // ── muted players ──
 
     public bool NoMutes => Mutes.Count == 0;
@@ -490,80 +526,8 @@ public sealed partial class SettingsViewModel
         {
             if (Mutes.All(m => m.Account != muted.Account))
             {
-                Mutes.Add(new MuteRow(muted, m => RelayCommand.Async(() => Launcher.UnmuteAsync(m.Account)).Execute(null), m => ReportName = m.Name));
+                Mutes.Add(new MuteRow(muted, m => RelayCommand.Async(() => Launcher.UnmuteAsync(m.Account)).Execute(null), m => Shell.Navigate(new ReportViewModel(Shell, m.Name))));
             }
         }
-    }
-
-    // ── report voice abuse: one report waiting for review at a time ──
-
-    /// <summary>Registered and 18+ confirmed: the server may be asked.</summary>
-    private bool SignedUp => Launcher.Settings.AdultConsent && Launcher.Profile.SignedIn;
-
-    private ReportView Report => Launcher.Report;
-
-    /// <summary>gate (not signed up) / checking / open (one is waiting) / form.</summary>
-    public string ReportState => !SignedUp ? "gate" : Report.Loaded != true ? "checking" : Report.Open is not null ? "open" : "form";
-
-    public string ReportChecking => Report.Busy || Report.Loaded is null ? CoreStrings.ReportChecking : CoreStrings.ReportCantCheck;
-
-    private string ReasonLabel(string code) => Report.Reasons.FirstOrDefault(r => r.Code == code)?.Label ?? code;
-
-    public string OpenReportText => Report.Open is { } open
-        ? S.Format("settings.report.waiting", ("name", open.Reported), ("reason", ReasonLabel(open.Reason)))
-        : "";
-
-    public string ReportName
-    {
-        get => _reportName;
-        set
-        {
-            var clean = new string([.. (value ?? "").Where(c => !char.IsWhiteSpace(c)).Take(16)]);
-            if (Set(ref _reportName, clean))
-            {
-                CommandManager.InvalidateRequerySuggested();
-            }
-            else if (clean != value)
-            {
-                Raise();
-            }
-        }
-    }
-
-    private string ReasonCode => Report.Reasons.Any(r => r.Code == _reportReason) ? _reportReason : (Report.Reasons.Count > 0 ? Report.Reasons[0].Code : "");
-
-    public string ReportReasonName => ReasonLabel(ReasonCode);
-
-    public string ReportDetails
-    {
-        get => _reportDetails;
-        set => Set(ref _reportDetails, value is { Length: > CoreStrings.ReportDetailsMax } ? value[..CoreStrings.ReportDetailsMax] : value ?? "");
-    }
-
-    public static int ReportDetailsMax => CoreStrings.ReportDetailsMax;
-
-    public bool CanSendReport => !Report.Busy && Links.ValidName(_reportName)
-        && !string.Equals(_reportName, Launcher.Settings.Name, StringComparison.OrdinalIgnoreCase);
-
-    public string ReportNote => Report.Note ?? "";
-
-    public bool ReportNoteIsError => Report.NoteIsError;
-
-    private async Task PickReasonAsync()
-    {
-        var picked = await Choice.AskAsync(Shell, S["settings.report.what"], "", [.. Report.Reasons.Select(r => new ChoiceOption(r.Code, r.Label))], ReasonCode).ConfigureAwait(true);
-        if (picked is not null)
-        {
-            _reportReason = picked;
-            Raise(nameof(ReportReasonName));
-        }
-    }
-
-    private async Task SendReportAsync()
-    {
-        var (name, reason, details) = (_reportName, ReasonCode, _reportDetails.Trim());
-        (_reportName, _reportDetails, _reportReason) = ("", "", "");
-        RaiseAll();
-        await Launcher.SendReportAsync(name, reason, details.Length == 0 ? null : details).ConfigureAwait(true);
     }
 }

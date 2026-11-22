@@ -28,17 +28,38 @@ public partial class SetupPage : UserControl
 
     private SetupViewModel? Flow => DataContext as SetupViewModel;
 
+    private bool _answered;
+
     /// <summary>A new page of the flow: the focus goes to what that page is about (its button; its box while the button cannot be pressed yet).</summary>
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
+        // the server answered (a row was chosen, or an address typed): the button is now Next, and the focus goes to it
+        var answered = Flow is { Step: SetupStep.Server, ProbeOk: true };
+        if (answered && !_answered && IsVisible)
+        {
+            // once the button is enabled again (commands are asked again at a lower priority than this event)
+            Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () =>
+            {
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+                Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, () => FocusNav.Focus(ServerPrimary));
+            });
+        }
+        _answered = answered;
         if (e.PropertyName == nameof(SetupViewModel.Step))
         {
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
             {
                 if (IsVisible && Flow is { } flow)
                 {
-                    // the consent's box is what the page asks for; elsewhere the button, or the first stop while it is disabled
-                    if (flow.Step != SetupStep.Consent || !FocusNav.Focus(AdultBox))
+                    // the consent's box is what the page asks for; the nearest server on Choose a Server (the address box
+                    // while there is no list yet); elsewhere the button, or the first stop while it is disabled
+                    var placed = flow.Step switch
+                    {
+                        SetupStep.Consent when !flow.CanPrimary => FocusNav.FocusDefault(ConsentPanel), // the acceptance, under the text
+                        SetupStep.Server when !flow.ProbeOk => ServerRows.FocusFirst() || FocusNav.Focus(AddressBox),
+                        _ => false,
+                    };
+                    if (!placed)
                     {
                         FocusNav.FocusDefault(this);
                     }

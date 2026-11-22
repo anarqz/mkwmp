@@ -4,14 +4,21 @@
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              x:Name="Self" Height="{StaticResource Metric.HintBarHeight}" Focusable="False" VerticalAlignment="Bottom">
-  <!-- DataContext: ShellViewModel. The hints are buttons for the mouse and touch, never focus stops. -->
+  <!-- DataContext: ShellViewModel. The hints are buttons for the mouse and touch, never focus stops.
+       The page's bar spans the stage. A panel from the side (friends, the file picker) covers it and carries its own
+       (InPanel): no input picture, the rule and the hints inside the panel's margins, a little smaller. Hints that
+       do not fit (a long language, six of them) shrink together rather than run out of the bar. -->
   <Grid>
-    <Border Height="1.5" VerticalAlignment="Top" Margin="{StaticResource Metric.PageMargin}" Background="{DynamicResource Brush.Rule}"
+    <Border x:Name="Rule" Height="1.5" VerticalAlignment="Top" Margin="{StaticResource Metric.PageMargin}" Background="{DynamicResource Brush.Rule}"
             Visibility="{Binding ShowTopBar, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
-    <Grid Margin="98,0,88,0">
+    <Grid x:Name="Row" Margin="98,0,88,0">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
       <!-- what is in the player's hands: a generic gamepad (with a green "connected" dot on its corner, as an
            avatar's presence dot, when one is plugged in or paired), else a keyboard -->
-      <Grid HorizontalAlignment="Left" VerticalAlignment="Center">
+      <Grid x:Name="InputPicture" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,0,40,0">
         <Grid x:Name="Pad" Visibility="{Binding InputKind, Converter={StaticResource Conv.Visible}, ConverterParameter='=Gamepad'}">
           <c:Icon Data="{StaticResource IconFill.Gamepad}" Filled="True" Width="66" Height="66" Foreground="{DynamicResource Brush.Glyph}" />
           <Ellipse Width="22" Height="22" Fill="{DynamicResource Brush.Good}" Stroke="{DynamicResource Brush.Background}" StrokeThickness="4"
@@ -22,7 +29,8 @@
                 Foreground="{DynamicResource Brush.Glyph}" Visibility="{Binding InputKind, Converter={StaticResource Conv.Visible}, ConverterParameter='!=Gamepad'}" />
       </Grid>
 
-      <ItemsControl ItemsSource="{Binding Hints}" HorizontalAlignment="Right" VerticalAlignment="Center" Focusable="False">
+      <Viewbox x:Name="HintsBox" Grid.Column="1" Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Right" VerticalAlignment="Center">
+      <ItemsControl x:Name="HintItems" ItemsSource="{Binding Hints}" Focusable="False">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
             <StackPanel Orientation="Horizontal" />
@@ -41,6 +49,7 @@
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
+      </Viewbox>
     </Grid>
   </Grid>
 </UserControl>

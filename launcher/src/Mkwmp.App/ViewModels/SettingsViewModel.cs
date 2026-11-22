@@ -14,7 +14,8 @@ namespace Mkwmp.App.ViewModels;
 /// window's SETTINGS modal and PLAYER card could change is here (rust/client/src/gui.rs is the
 /// reference for every rule and text). A change is saved at once (<c>SaveSettingsAsync</c>);
 /// what the old window disabled while playing is disabled while <c>Session.Busy</c>.
-/// Voice &amp; Camera's pane, and the lock of the categories that need a server, are in SettingsViewModel.Voice.cs.
+/// Voice &amp; Camera's pane, and the lock of the categories that need a server, are in SettingsViewModel.Voice.cs;
+/// Settings › Online (with its Report Abuse row, a page of its own: ReportViewModel) in SettingsViewModel.Online.cs.
 /// </summary>
 public sealed partial class SettingsViewModel : PageViewModel
 {
@@ -257,15 +258,6 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     public ICommand TestToastCommand { get; }
 
-    // ── privacy ──
-
-    /// <summary>"I'm 18 or older and I accept the privacy policy": without it nothing reaches the server.</summary>
-    public bool Adult
-    {
-        get => Launcher.Settings.AdultConsent;
-        set => RelayCommand.Async(() => Launcher.SetConsentAsync(value)).Execute(null);
-    }
-
     // ── server (its address is chosen in the connect flow: SettingsViewModel.Online.cs) ──
 
     public string ServerStatus => CoreStrings.ServerPill(Launcher.Server);
@@ -277,10 +269,6 @@ public sealed partial class SettingsViewModel : PageViewModel
         ServerState.Checking => "busy",
         _ => "muted",
     };
-
-    public string ServerDetail => string.Join("\n", new[] { Launcher.Server.Name, Launcher.Server.Message }.Where(t => !string.IsNullOrWhiteSpace(t)));
-
-    public IReadOnlyList<StatusLine> ServerLines => [new StatusLine(ServerTone, ServerStatus, ServerDetail)];
 
     // ── appearance ──
 
@@ -334,12 +322,6 @@ public sealed partial class SettingsViewModel : PageViewModel
     public string UpdateInstallLabel => S.Format(Launcher.Update.State == UpdateState.ReadyToInstall ? "settings.updates.ready" : "settings.updates.install", ("version", Launcher.Update.AvailableVersion ?? ""));
 
     public string UpdateNotes => Launcher.Update.Notes ?? "";
-
-    public bool AutoUpdate
-    {
-        get => Launcher.Settings.AutoUpdate;
-        set => Save(s => s with { AutoUpdate = value });
-    }
 
     public ICommand CheckUpdateCommand { get; }
 

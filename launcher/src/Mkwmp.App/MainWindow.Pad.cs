@@ -33,7 +33,7 @@ public partial class MainWindow
     private void OnLauncherChangedForPad(object? sender, EventArgs e) => FollowPadLayout();
 
     /// <summary>
-    /// The right stick scrolls the list that has the focus (or, when the focus is not in one, the
+    /// The right stick (a speed, units a second) scrolls the list that has the focus (or, when the focus is not in one, the
     /// largest list of the layer in front: Settings' pane from its categories). At its end, the list around it.
     /// </summary>
     private void ScrollWithStick(ScrollStep step)
@@ -43,9 +43,15 @@ public partial class MainWindow
             return;
         }
         var root = ActiveRoot;
+        if (step == default)
+        {
+            _stickViewer?.ScrollAt(0, 0); // the stick was let go
+            _stickViewer = null;
+            return;
+        }
         for (DependencyObject? node = FocusNav.Current(this); node is not null && !ReferenceEquals(node, root); node = VisualTreeHelper.GetParent(node))
         {
-            if (node is SmoothScrollViewer viewer && viewer.ScrollBy(step.X, step.Y))
+            if (node is SmoothScrollViewer viewer && Drive(viewer, step))
             {
                 return;
             }
@@ -59,7 +65,28 @@ public partial class MainWindow
                 largest = viewer;
             }
         }
-        largest?.ScrollBy(step.X, step.Y);
+        if (largest is null || !Drive(largest, step))
+        {
+            Drive(null, step);
+        }
+    }
+
+    private SmoothScrollViewer? _stickViewer;
+
+    /// <summary>The stick's speed to <paramref name="viewer"/>; the list it drove before is let go when it is another.</summary>
+    private bool Drive(SmoothScrollViewer? viewer, ScrollStep step)
+    {
+        if (!ReferenceEquals(viewer, _stickViewer))
+        {
+            _stickViewer?.ScrollAt(0, 0);
+            _stickViewer = null;
+        }
+        if (viewer is null || !viewer.ScrollAt(step.X, step.Y))
+        {
+            return false;
+        }
+        _stickViewer = viewer;
+        return true;
     }
 
     private static IEnumerable<SmoothScrollViewer> Viewers(DependencyObject node)

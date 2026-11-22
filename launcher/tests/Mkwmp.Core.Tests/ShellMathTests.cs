@@ -124,16 +124,15 @@ public class ShellMathTests
     // ── the scroll motion ──
 
     [Fact]
-    public void WheelNotchGoesAThirdFurtherThanWpf()
+    public void WheelNotchGoesTwoThirdsFurtherThanWpf()
     {
-        // WPF: 3 lines of 16 units a notch = 48; now 64 (+33%)
-        Assert.Equal(64, ScrollMotion.WheelDistance(-120, 3, 800), 6);
-        Assert.Equal(-64, ScrollMotion.WheelDistance(120, 3, 800), 6);
-        Assert.True(ScrollMotion.WheelDistance(-120, 3, 800) / 48.0 >= 1.2);
+        // WPF: 3 lines of 16 units a notch = 48; 64 since 1.3, now 80 (players asked for faster, twice)
+        Assert.Equal(80, ScrollMotion.WheelDistance(-120, 3, 800), 6);
+        Assert.Equal(-80, ScrollMotion.WheelDistance(120, 3, 800), 6);
         // Settings' category list: 1000 units to scroll. A full flick of the wheel is ~5 notches:
-        // before 48 × 5 = 240 a flick, 4.2 flicks; now 320 a flick, 3.1 flicks
+        // WPF's 48 × 5 = 240 a flick, 4.2 flicks; now 400 a flick, 2.5 flicks
         Assert.True(1000 / (5 * 48.0) > 4);
-        Assert.True(1000 / (5 * ScrollMotion.WheelDistance(-120, 3, 800)) < 3.2);
+        Assert.True(1000 / (5 * ScrollMotion.WheelDistance(-120, 3, 800)) <= 2.5);
     }
 
     [Fact]
@@ -162,16 +161,52 @@ public class ShellMathTests
         {
             positions.Add(m.Step(1.0 / 60, 1000));
         }
-        // moving at once, never back, never past the target; each step smaller (eased out)
-        Assert.True(positions[0] > 10);
+        // moving at once (no dead first frame), never back, never past the target
+        Assert.True(positions[0] > 3);
         for (var i = 1; i < positions.Count; i++)
         {
             Assert.True(positions[i] >= positions[i - 1]);
             Assert.True(positions[i] <= 100);
-            Assert.True(positions[i] - positions[i - 1] <= positions[Math.Max(0, i - 1)] - (i >= 2 ? positions[i - 2] : 0) + 0.3); // the last step snaps the last quarter unit
+        }
+        // it picks up speed over the first frames (no jolt: the old glide did a fifth of the way in one frame)...
+        Assert.True(positions[0] < 12);
+        Assert.True(positions[1] - positions[0] > positions[0]);
+        // ...is most of the way within a tenth of a second, and then eases out: each step smaller
+        Assert.True(positions[5] > 55);
+        for (var i = 6; i < positions.Count; i++)
+        {
+            Assert.True(positions[i] - positions[i - 1] <= positions[i - 1] - positions[i - 2] + 0.3); // the last step snaps the last quarter unit
         }
         Assert.Equal(100, positions[^1]);
         Assert.False(m.Moving);
+        Assert.Equal(0, m.Velocity);
+    }
+
+    [Fact]
+    public void ANewTargetKeepsTheSpeed()
+    {
+        // a held direction moves the target every 50 to 100 ms: the list must not stop and start at each one
+        var m = new ScrollMotion();
+        m.Jump(0);
+        var speeds = new List<double>();
+        for (var row = 1; row <= 12; row++)
+        {
+            m.GlideTo(row * 104, 100000); // the next row comes into view
+            for (var frame = 0; frame < 4; frame++) // 67 ms at 60 frames a second
+            {
+                var before = m.Velocity;
+                m.Step(1.0 / 60, 100000);
+                if (row > 4)
+                {
+                    speeds.Add(m.Velocity);
+                    // from one frame to the next the speed changes by a fraction, never by a jump
+                    Assert.True(Math.Abs(m.Velocity - before) < 0.35 * Math.Max(m.Velocity, before));
+                }
+            }
+        }
+        // once under way it is one even movement: about a row every 67 ms, within a fifth
+        Assert.InRange(speeds.Min(), 104 / 0.0667 * 0.8, 104 / 0.0667 * 1.2);
+        Assert.InRange(speeds.Max(), 104 / 0.0667 * 0.8, 104 / 0.0667 * 1.2);
     }
 
     [Fact]
@@ -191,8 +226,9 @@ public class ShellMathTests
         }
         Assert.Equal(At(60, 1.0 / 6), At(144, 1.0 / 6), 0); // 10, 24 and 5 frames
         Assert.Equal(At(60, 1.0 / 6), At(30, 1.0 / 6), 0);
-        // ~ 95% of the way after 3 time constants
-        Assert.InRange(At(60, 3 * ScrollMotion.GlideTime), 470, 480);
+        // ~ 95% of the way after 4.75 time constants (a critically damped spring), about 210 ms
+        Assert.InRange(At(60, 4.75 * ScrollMotion.GlideTime), 470, 480);
+        Assert.InRange(4.75 * ScrollMotion.GlideTime, 0.15, 0.25);
     }
 
     [Fact]
@@ -303,6 +339,112 @@ public class ShellMathTests
         m.Jump(10);
         m.Fling(5);
         Assert.False(m.Moving);
+    }
+
+    [Fact]
+    public void StickDrivesAtItsSpeedEveryFrame()
+    {
+        // the stick is read by a timer (60 times a second at best, unevenly); the list moves every frame at the speed it asked for
+        double After(int fps, double seconds)
+        {
+            var m = new ScrollMotion();
+            m.Jump(0);
+            var poll = 0.0;
+            for (var i = 0; i < (int)Math.Round(seconds * fps); i++)
+            {
+                poll += 1.0 / fps;
+                if (poll >= 1.0 / 60 || i == 0)
+                {
+                    poll = 0;
+                    m.Drive(1000, 100000);
+                }
+                m.Step(1.0 / fps, 100000);
+            }
+            Assert.InRange(m.Velocity, 990, 1000);
+            return m.Position;
+        }
+        // the same distance at any frame rate; a little less than speed × time (it eased in)
+        Assert.Equal(After(60, 1), After(144, 1), 0);
+        Assert.Equal(After(60, 1), After(30, 1), 0);
+        Assert.InRange(After(60, 1), 1000 - 1000 * ScrollMotion.DriveTime - 1, 1000);
+    }
+
+    [Fact]
+    public void StickLetGoSettlesAndSilenceLetsGoToo()
+    {
+        var m = new ScrollMotion();
+        m.Jump(0);
+        for (var i = 0; i < 60; i++)
+        {
+            m.Drive(1000, 100000);
+            m.Step(1.0 / 60, 100000);
+        }
+        var at = m.Position;
+        m.Drive(0, 100000);
+        while (m.Moving)
+        {
+            var before = m.Position;
+            m.Step(1.0 / 60, 100000);
+            Assert.True(m.Position >= before); // on a little, never back
+        }
+        Assert.InRange(m.Position - at, 50, 150);
+
+        // the last word of the stick lost (the window lost the controller): it stops by itself
+        m.Jump(0);
+        m.Drive(1000, 100000);
+        for (var i = 0; i < 120 && m.Moving; i++)
+        {
+            m.Step(1.0 / 60, 100000);
+        }
+        Assert.False(m.Moving);
+        Assert.InRange(m.Position, 50, 400);
+
+        // an end is a wall
+        m.Jump(990);
+        for (var i = 0; i < 30; i++)
+        {
+            m.Drive(2000, 1000);
+            m.Step(1.0 / 60, 1000);
+        }
+        Assert.Equal(1000, m.Position);
+    }
+
+    // ── tap or drag ──
+
+    [Fact]
+    public void APressThatStaysWithinTheSlopIsATap()
+    {
+        var t = new TapTracker();
+        t.Press(100, 100);
+        Assert.False(t.Move(104, 103));
+        Assert.False(t.Move(100 + TapTracker.Slop, 100)); // on the edge: still a tap
+        Assert.False(t.Dragged);
+        Assert.True(t.Release());
+    }
+
+    [Fact]
+    public void APressThatLeavesTheSlopIsADragForGood()
+    {
+        var t = new TapTracker();
+        t.Press(100, 100);
+        Assert.False(t.Move(100, 108));
+        Assert.True(t.Move(100, 111));   // the move that makes it a drag, said once
+        Assert.False(t.Move(100, 160));
+        Assert.False(t.Move(100, 100));  // back where it began: a drag all the same
+        Assert.True(t.Dragged);
+        Assert.False(t.Release());
+        Assert.True(t.Dragged);          // readable by the handlers of that release
+        // diagonal: the distance counts, not each axis
+        t.Press(0, 0);
+        Assert.False(t.Dragged);
+        Assert.True(t.Move(8, 8));
+        // moves without a press are nothing
+        t.Release();
+        t.Press(0, 0);
+        t.Release();
+        Assert.False(t.Move(50, 50));
+        Assert.False(t.Dragged);
+        Assert.InRange(TapTracker.Slop, 8, 10);
     }
 
     [Fact]

@@ -47,6 +47,7 @@ public partial class MainWindow : Window
         PreviewMouseDown += (_, _) => _vm.InputKind = InputKind.Mouse;
         PreviewTouchDown += (_, _) => _vm.InputKind = InputKind.Mouse;
         PreviewMouseMove += OnPreviewMouseMove;
+        Tap.Attach(this); // every press: a tap acts when it is let go, a drag never clicks
         Activated += (_, _) =>
         {
             _gamepad.Enabled = true;
@@ -247,11 +248,30 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnFriendsScrim(object sender, MouseButtonEventArgs e) => _vm.IsFriendsOpen = false;
+    // a tap beside a layer closes it: when the tap ends, as every other control (Input/Tap.cs)
+    private void OnFriendsScrim(object sender, MouseButtonEventArgs e)
+    {
+        if (Tap.IsTap((DependencyObject)sender))
+        {
+            _vm.IsFriendsOpen = false;
+        }
+    }
 
-    private void OnPickerScrim(object sender, MouseButtonEventArgs e) => _vm.CancelPicker();
+    private void OnPickerScrim(object sender, MouseButtonEventArgs e)
+    {
+        if (Tap.IsTap((DependencyObject)sender))
+        {
+            _vm.CancelPicker();
+        }
+    }
 
-    private void OnSheetScrim(object sender, MouseButtonEventArgs e) => _vm.CloseSheet();
+    private void OnSheetScrim(object sender, MouseButtonEventArgs e)
+    {
+        if (Tap.IsTap((DependencyObject)sender))
+        {
+            _vm.CloseSheet();
+        }
+    }
 
     // ── input ──
 

@@ -10,12 +10,36 @@ namespace Mkwmp.App.ViewModels;
 /// what is new → the download with its progress, speed and time left → "Install and Restart"
 /// (or "Later": Home's What's New tile and Settings › Updates then say "ready to install").
 /// While a game runs nothing is installed: the card offers "Install After the Game" instead.
+/// <para>
+/// A real launcher does not offer: the update is <b>required</b> (<see cref="UpdateView.Required"/>). The shell
+/// opens this card by itself and it cannot be closed (<see cref="Blocks"/>): the download runs, then "Install and
+/// Restart", pressed by the card itself after <see cref="AutoInstallSeconds"/>; "Quit MKWMP" is always there. If it
+/// fails: Try Again, or Continue Without Updating (this run only). With a game running it does not block: it says
+/// the update follows the game.
+/// </para>
 /// </summary>
 public sealed class UpdateModal : ModalViewModel, IDisposable
 {
     private readonly ShellViewModel _shell;
-    private (UpdateState State, bool Game, bool After)? _shown;
+    /// <summary>How long "Install and Restart" waits before the card presses it itself.</summary>
+    public const int AutoInstallSeconds = 10;
+
+    private (UpdateState State, bool Game, bool After, bool Required)? _shown;
     private CancellationTokenSource? _cancel;
+    private System.Windows.Threading.DispatcherTimer? _countdown;
+    private int _secondsLeft;
+
+    /// <summary>
+    /// The launcher must update before anything else: the card is shown and stays. Not while a game runs (the
+    /// update follows it) nor over a game as its overlay.
+    /// </summary>
+    public static bool Blocks(ShellViewModel shell)
+    {
+        ArgumentNullException.ThrowIfNull(shell);
+        var launcher = shell.Launcher;
+        var update = launcher.Update;
+        return update.Required && !update.GameBlocks && !update.AfterGame && !launcher.Session.Busy && !launcher.Session.GameRunning && !shell.IsOverlay;
+    }
 
     public UpdateModal(ShellViewModel shell)
     {
@@ -27,9 +51,43 @@ public sealed class UpdateModal : ModalViewModel, IDisposable
 
     public void Dispose()
     {
+        StopCountdown();
         _cancel?.Dispose();
         _cancel = null;
     }
+
+    private void StopCountdown()
+    {
+        _countdown?.Stop();
+        _countdown = null;
+    }
+
+    /// <summary>"Installing in 10 seconds", counted down; at zero the card installs. (A screenshot only shows it.)</summary>
+    private void StartCountdown()
+    {
+        StopCountdown();
+        _secondsLeft = AutoInstallSeconds;
+        ShowCountdown();
+        if (!_shell.AutoGameUpdate)
+        {
+            return;
+        }
+        _countdown = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _countdown.Tick += (_, _) =>
+        {
+            if (--_secondsLeft > 0)
+            {
+                ShowCountdown();
+                return;
+            }
+            StopCountdown();
+            Install();
+        };
+        _countdown.Start();
+    }
+
+    private void ShowCountdown() =>
+        Body = _shell.S["update.ready_body"] + "\n\n" + _shell.S.Format("update.installing_in", ("n", _secondsLeft.ToString(CultureInfo.CurrentCulture)));
 
     public override void OnStateChanged()
     {
@@ -43,18 +101,27 @@ public sealed class UpdateModal : ModalViewModel, IDisposable
         }
         // A game the launcher sees right now counts before the core is asked (and refuses).
         var game = update.GameBlocks || launcher.Session.Busy || launcher.Session.GameRunning;
-        var now = (update.State, update.State == UpdateState.ReadyToInstall && game, update.AfterGame);
+        var now = (update.State, update.State == UpdateState.ReadyToInstall && game, update.AfterGame, update.Required);
         if (_shown == now)
         {
             return;
         }
         _shown = now;
+        StopCountdown();
         Actions.Clear();
         ShowProgress = false;
         ShowSpinner = false;
         CanDismiss = true;
+        if (update.State != UpdateState.Downloading)
+        {
+            Detail = "";
+        }
         var close = new ModalAction(s["common.close"], () => _shell.CloseModal(this));
         var later = new ModalAction(s["update.later"], () => _shell.CloseModal(this));
+        if (update.Required && Required(s, launcher, update, game, close))
+        {
+            return;
+        }
         switch (update.State)
         {
             case UpdateState.Available:
@@ -117,6 +184,52 @@ public sealed class UpdateModal : ModalViewModel, IDisposable
         }
     }
 
+    /// <summary>The card of a required update; false for a state it shows as any other (installing).</summary>
+    private bool Required(Strings s, ILauncher launcher, UpdateView update, bool game, ModalAction close)
+    {
+        var version = update.AvailableVersion ?? "";
+        var quit = new ModalAction(s["power.quit"], _shell.Quit);
+        switch (update.State)
+        {
+            case UpdateState.Available or UpdateState.Downloading:
+                Title = s["update.required"];
+                Body = s.Format("update.required_body", ("version", version));
+                ShowProgress = update.State == UpdateState.Downloading;
+                ShowSpinner = true;
+                CanDismiss = game;
+                Bottom = game ? close : quit;
+                return true;
+            case UpdateState.ReadyToInstall when game || update.AfterGame:
+                // never under a game: it follows the game by itself, and the card does not hold the player
+                Title = s.Format("update.ready", ("version", version));
+                Body = s["update.after_game_on"];
+                Bottom = close;
+                return true;
+            case UpdateState.ReadyToInstall:
+                Title = s.Format("update.ready", ("version", version));
+                Body = s["update.ready_body"];
+                Actions.Add(new ModalAction(s["update.install"], Install, ButtonKind.Outline, isDefault: true));
+                CanDismiss = false;
+                Bottom = quit;
+                StartCountdown();
+                return true;
+            case UpdateState.Failed:
+                Title = s["update.failed"];
+                Body = update.Status + "\n\n" + s["update.failed_required"];
+                Actions.Add(new ModalAction(s["update.retry"], () => RelayCommand.Async(launcher.CheckForUpdatesAsync).Execute(null), ButtonKind.Outline, isDefault: true));
+                Actions.Add(new ModalAction(s["update.continue_without"], () =>
+                {
+                    launcher.ContinueWithoutUpdate();
+                    _shell.CloseModal(this);
+                }, ButtonKind.Secondary));
+                CanDismiss = false;
+                Bottom = quit;
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private void Download()
     {
         _cancel?.Dispose();
@@ -125,7 +238,12 @@ public sealed class UpdateModal : ModalViewModel, IDisposable
         RelayCommand.Async(() => _shell.Launcher.DownloadUpdateAsync(token)).Execute(null);
     }
 
-    private void Install() => RelayCommand.Async(() => _shell.Launcher.ApplyUpdateAsync(CancellationToken.None)).Execute(null);
+    private void Install()
+    {
+        StopCountdown();
+        RelayCommand.Async(() => _shell.Launcher.ApplyUpdateAsync(CancellationToken.None)).Execute(null);
+    }
+
 
     /// <summary>"31.2 MB of 78.0 MB · 2.4 MB/s · 20 seconds remaining"; less of it while less is known.</summary>
     internal static string DownloadLine(Strings s, UpdateView update)

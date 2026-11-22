@@ -15,10 +15,8 @@
       </Grid.ColumnDefinitions>
       <Grid>
         <TextBox x:Name="NameBox" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" IsEnabled="{Binding CanEdit}"
+                 input:TextEntry.Placeholder="{Binding S[settings.profile.name_hint]}"
                  input:TextEntry.Title="{Binding S[settings.profile.gamertag]}" input:TextEntry.Charset="Gamertag" />
-        <TextBlock Text="{Binding S[settings.profile.name_hint]}" Style="{StaticResource Text.Base}" Foreground="{DynamicResource Brush.TextFaint}"
-                   Margin="28,0" IsHitTestVisible="False"
-                   Visibility="{Binding Text, ElementName=NameBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
       </Grid>
       <c:ConsoleButton Grid.Column="1" Kind="Primary" Width="300" Margin="20,0,0,0" Content="{Binding RegisterLabel}"
                        Command="{Binding RegisterCommand}" />

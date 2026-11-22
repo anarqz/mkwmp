@@ -198,6 +198,13 @@ public interface ILauncher : IAsyncDisposable
     /// </summary>
     void InstallUpdateAfterGame(bool on);
 
+    /// <summary>
+    /// The way on after a required update could not be installed (<see cref="UpdateState.Failed"/> with
+    /// <see cref="UpdateView.Required"/>): this launcher is used as it is until it is closed, and asks again at
+    /// its next start. Nothing in any other state.
+    /// </summary>
+    void ContinueWithoutUpdate();
+
     /// <summary>Collects logs into a zip; returns its path (or throws IOException with the reason).</summary>
     Task<string> SaveBugReportAsync();
 
@@ -702,6 +709,12 @@ public enum UpdateState { Off, Checking, UpToDate, Available, Downloading, Ready
 /// <param name="BytesPerSecond">The download's speed over the last seconds.</param>
 /// <param name="GameBlocks">Ready, but a game runs: installing would restart the launcher under it.</param>
 /// <param name="AfterGame">Ready, and it is installed when the game closes (<see cref="ILauncher.InstallUpdateAfterGame"/>).</param>
+/// <param name="Required">
+/// A newer release was found and this launcher must install it before it goes on: it downloads by itself, PLAY is
+/// refused, and the window shows the update card with no way around it, unless a game runs (<paramref name="GameBlocks"/>:
+/// then it installs after the game). False again once installing failed and the player chose to go on
+/// (<see cref="ILauncher.ContinueWithoutUpdate"/>), for this run.
+/// </param>
 public sealed record UpdateView(
     UpdateState State, string? AvailableVersion, string? Notes, double Progress, TimeSpan? Remaining, string Status,
-    long Received = 0, long Total = 0, double BytesPerSecond = 0, bool GameBlocks = false, bool AfterGame = false);
+    long Received = 0, long Total = 0, double BytesPerSecond = 0, bool GameBlocks = false, bool AfterGame = false, bool Required = false);

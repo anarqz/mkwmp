@@ -18,6 +18,12 @@ public sealed partial class ShellViewModel
         var update = Launcher.Update;
         var before = _updateSeen;
         _updateSeen = update.State;
+        // A required update: its card comes by itself and stays (UpdateModal.Blocks), over whatever was open.
+        if (UpdateModal.Blocks(this) && _modal is not UpdateModal)
+        {
+            ShowUpdateModal();
+            return;
+        }
         if (before == UpdateState.Downloading && update.State == UpdateState.ReadyToInstall && _modal is not UpdateModal)
         {
             ShowToast(S["update.toast_ready"], S.Format("update.toast_ready_body", ("version", update.AvailableVersion ?? "")));

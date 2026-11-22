@@ -23,14 +23,14 @@
   <DataTemplate DataType="{x:Type vm:ChoiceListViewModel}">
     <settings:ChoiceList />
   </DataTemplate>
-  <DataTemplate DataType="{x:Type vm:PrivacyViewModel}">
-    <settings:PrivacyPage />
-  </DataTemplate>
   <DataTemplate DataType="{x:Type vm:ChecklistViewModel}">
     <v:ChecklistPage />
   </DataTemplate>
   <DataTemplate DataType="{x:Type vm:WhatsNewViewModel}">
     <v:WhatsNewPage />
+  </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:ReportViewModel}">
+    <settings:ReportPage />
   </DataTemplate>
   <DataTemplate DataType="{x:Type vm:HiddenServersViewModel}">
     <settings:HiddenServersPage />
