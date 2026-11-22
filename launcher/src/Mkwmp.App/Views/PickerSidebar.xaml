@@ -7,7 +7,7 @@
   <!-- DataContext: PickerViewModel. The launcher's own file and folder picker (never the system's dialog): the header,
        the path (Up, its steps, and a box to type or paste one), the quick places at the left, the open folder's list,
        and under it what is asked for or why a choice was refused, with "Use This Folder". The shell slides it in from
-       the right and dims the page; the bottom 112 units belong to the hint bar. -->
+       the right and dims the page; the bottom 112 units belong to the panel's own hint bar (MainWindow.xaml). -->
   <UserControl.Resources>
     <!-- a small button of the path row -->
     <Style x:Key="PathButton" TargetType="c:ConsoleButton" BasedOn="{StaticResource {x:Type c:ConsoleButton}}">

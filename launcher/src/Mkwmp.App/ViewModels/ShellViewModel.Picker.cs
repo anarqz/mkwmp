@@ -35,6 +35,7 @@ public sealed partial class ShellViewModel
         _picker = _pickerShown = picker;
         Raise(nameof(Picker));
         Raise(nameof(IsPickerOpen));
+        Raise(nameof(IsSidePanelOpen));
         RefreshHints();
         picker.OnOpened();
         return picker.Result;
@@ -58,6 +59,7 @@ public sealed partial class ShellViewModel
         {
             _picker = null;
             Raise(nameof(IsPickerOpen));
+            Raise(nameof(IsSidePanelOpen));
             RefreshHints();
         }
     }

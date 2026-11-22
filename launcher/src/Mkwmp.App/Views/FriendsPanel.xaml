@@ -8,7 +8,7 @@
              Focusable="False">
   <!-- DataContext: FriendsPanelViewModel. Header, "add a friend", one message line, then the list in
        sections (requests, friends, sent). The shell slides it in from the right and dims the page; the
-       bottom 112 units belong to the hint bar. Without a server (Locked) only the header and the locked
+       bottom 112 units belong to the panel's own hint bar (MainWindow.xaml). Without a server (Locked) only the header and the locked
        state: no field, no list. -->
   <UserControl.Resources>
     <!-- a small button inside a line of the list -->

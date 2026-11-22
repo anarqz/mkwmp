@@ -26,7 +26,41 @@ public partial class TopBar : UserControl
 /// <summary>The bottom line: which input is in use at the left, what the buttons do here at the right.</summary>
 public partial class HintBar : UserControl
 {
+    public static readonly DependencyProperty InPanelProperty = Dp.Register<HintBar, bool>(nameof(InPanel), false, (d, _) => ((HintBar)d).ApplyPlace());
+    public static readonly DependencyProperty ShowHintsProperty = Dp.Register<HintBar, bool>(nameof(ShowHints), true, (d, _) => ((HintBar)d).ApplyPlace());
+
     public HintBar() => InitializeComponent();
+
+    /// <summary>
+    /// The bar of a panel that covers the page's bar (the friends panel, the file picker): put it at the bottom of
+    /// the panel. No input picture, the rule always, everything inside the panel's margins and a little smaller.
+    /// </summary>
+    public bool InPanel
+    {
+        get => (bool)GetValue(InPanelProperty);
+        set => SetValue(InPanelProperty, value);
+    }
+
+    /// <summary>False: only the input picture (the page's bar while a panel with its own bar has the buttons).</summary>
+    public bool ShowHints
+    {
+        get => (bool)GetValue(ShowHintsProperty);
+        set => SetValue(ShowHintsProperty, value);
+    }
+
+    private void ApplyPlace()
+    {
+        HintsBox.Visibility = ShowHints ? Visibility.Visible : Visibility.Hidden;
+        if (!InPanel)
+        {
+            return; // as the XAML has it
+        }
+        InputPicture.Visibility = Visibility.Collapsed;
+        Rule.ClearValue(VisibilityProperty);
+        Rule.Margin = new Thickness(56, 0, 56, 0);
+        Row.Margin = new Thickness(44, 0, 42, 0);
+        HintItems.LayoutTransform = new ScaleTransform(0.85, 0.85);
+    }
 
     private void OnHint(object sender, RoutedEventArgs e)
     {
