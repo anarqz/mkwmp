@@ -2,7 +2,7 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
-## 1.4.3 — unreleased
+## 1.4.3 — 2026-11-21
 
 - **mkw-recomp: the official 0.1.17.** The launcher now installs Adrià's own mkw-recomp release instead of MKWMP's build of it: what online play needed from that build is in 0.1.17. An install of 0.1.16-mkwmp.1 is updated in place; your game, its setup, saves, mods and settings stay, and the game code does not need rebuilding (the launcher may still ask for a quick Set Up Again). On Linux and the Steam Deck the launcher and the MKWMP mod keep the two Proton fixes of that build: shadow memory on (it stops a crash on NVIDIA cards) and the controller found at start.
 - **New game settings from mkw-recomp 0.1.17.** Settings › Graphics: AI upscaling (NVIDIA DLSS on RTX cards, or AMD FSR 3.1), Upscaling quality, DLSS model, CAS sharpening and its strength, Frame generation by (mkw-recomp's own, DLSS or FSR 3.1), NVIDIA Reflex (NVIDIA cards only), and Shadow map (leave the shadows out in 3-4 player split screen, or everywhere). Settings › Controls: First controller to player 2, for local play with a keyboard and a controller (keep it off online). All off by default, as in the game. DLSS and FSR 3.1 need their libraries next to mkw.exe (nvngx_dlss.dll; amd_fidelityfx_*_vk.dll), which mkw-recomp does not ship.
