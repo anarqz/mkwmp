@@ -30,7 +30,6 @@ public sealed partial class SettingsViewModel
         Servers.HintsChanged += (_, _) => RefreshHints(); // a row has the focus: Y hides it
         HiddenServersCommand = new RelayCommand(() => Shell.Navigate(new HiddenServersViewModel(Shell)), () => HasHiddenServers);
         PrivacyCommand = new RelayCommand(() => Shell.Navigate(new PrivacyViewModel(Shell)));
-        ConsentCommand = new RelayCommand(() => Shell.Navigate(SetupViewModel.ConsentOnly(Shell)), () => !Busy);
         DisconnectCommand = RelayCommand.Async(DisconnectAsync, () => !Busy && OnlineEnabled);
         ReportCommand = new RelayCommand(() => Shell.Navigate(new ReportViewModel(Shell)), () => ReportViewModel.Allowed(Launcher));
         OnlineCommand = new RelayCommand(Shell.ConfigureOnline);
@@ -78,9 +77,6 @@ public sealed partial class SettingsViewModel
     /// <summary>The privacy policy of the server in use, rendered in the launcher.</summary>
     public ICommand PrivacyCommand { get; private set; } = null!;
 
-    /// <summary>The consent page, for a profile signed in without it.</summary>
-    public ICommand ConsentCommand { get; private set; } = null!;
-
     /// <summary>
     /// The server row's small line: "ONLINE · 12/32 PLAYERS · 3 in queue · its name", and under it what the server
     /// said when something is wrong. (The seats are in the status itself: no second line repeats them.)
@@ -114,11 +110,11 @@ public sealed partial class SettingsViewModel
 
     public string TypeAddressLabel => Servers.HasList ? S["settings.online.type"] : S["settings.online.connect"];
 
-    /// <summary>Signed in and consented: the consent can be withdrawn.</summary>
-    public bool ConsentGiven => Registered && Launcher.Settings.AdultConsent;
-
     /// <summary>Signed in, and the server holds no consent for its current policy.</summary>
     public bool ConsentNeeded => Registered && !Launcher.Settings.AdultConsent;
+
+    /// <summary>Under the consent switch: what turning it off does; or that this server has none yet.</summary>
+    public string AdultCaption => S[ConsentNeeded ? "settings.privacy.review_caption" : "settings.privacy.adult_caption"];
 
     // ── Online ──
 

@@ -176,7 +176,6 @@
   "keyboard.backspace": "Backspace",
   "keyboard.rule.gamertag": "3-16 letters, digits, - or _ (no spaces)",
   "keyboard.rule.digits": "Digits only",
-  "settings.privacy": "Privacy",
   "settings.server": "Server",
   "settings.support": "Support",
   "settings.busy": "Stop playing to change this.",
@@ -370,7 +369,6 @@
   "setup.consent.p1": "MKWMP's online play, friends and voice chat are for adults: you must be 18 or older.",
   "setup.consent.p2": "The server keeps your gamertag, a hash of your PIN, your friends and any report you file. Unused gamertags are deleted after a month; you can delete yours any time (SETTINGS > ONLINE).",
   "setup.consent.p3": "Voice chat works only in private rooms, relayed live to the players in your room; a camera you turn on is shown only to mutual friends there. Neither is ever recorded.",
-  "setup.consent.policy": "Read the Privacy Policy",
   "setup.name.text": "What should we call you?",
   "setup.game.searching": "Looking for the game…",
   "setup.later": "Later",
@@ -523,7 +521,6 @@
   "privacy.version": "version {version}",
   "settings.online.servers": "Servers",
   "settings.online.type": "Type an Address",
-  "settings.privacy.review": "Review and Accept",
   "settings.privacy.review_caption": "This server has no consent from you for its current privacy policy. Friends, voice and a seat wait for it.",
   "settings.privacy.policy_caption": "This server's own policy, shown here in the launcher.",
 

@@ -55,7 +55,7 @@ public partial class SetupPage : UserControl
                     // while there is no list yet); elsewhere the button, or the first stop while it is disabled
                     var placed = flow.Step switch
                     {
-                        SetupStep.Consent => FocusNav.Focus(AdultBox),
+                        SetupStep.Consent => AdultBox.FocusAccept(),
                         SetupStep.Server when !flow.ProbeOk => ServerRows.FocusFirst() || FocusNav.Focus(AddressBox),
                         _ => false,
                     };

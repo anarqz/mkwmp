@@ -127,6 +127,7 @@ Styles are implicit: just use the element.
 | `c:ConsoleCheck` | tick box with text | `IsChecked`, `Content` |
 | `TextBox`, `PasswordBox` | text entry (implicit styles) | `input:TextEntry.Placeholder` (what the empty box says: drawn by the box itself exactly where its text starts; never lay a TextBlock over a box). The text sits at `Padding` (26) from the edge; a leading icon is an `c:Icon` over the box and a larger left `Padding` |
 | `c:SectionHeader` | "▍Title" and the rule under it | `Text`, `ShowRule` |
+| `c:Dependents` | the rows that depend on the switch above them: gone while it is off (section 15) | `Of` |
 | `c:PageHeader` | icon, title, rule; content at the right | `Title`, `Icon`, content (e.g. `c:PageDots`) |
 | `c:CategoryList` | the left navigation of settings (a ListBox) | `ItemsSource` of `CategoryEntry(Key, Title, SeparatorBefore, Heading, Icon, Locked)` (`Locked`: a small lock after the title, section 12), `SelectedItem` two-way. Focus selects |
 | `c:Tile` | carousel card (372 x 372) | `Title`, `Subtitle`, `Icon`, `Seed` (generated art; `#0`…`#7` picks a gradient), `Image` (instead of the art), `Badge`, `Progress` (0..1, NaN hides), `Art`, `Command` |
@@ -562,7 +563,8 @@ The pane is two sections built the same way (section 15, "A feature that can be 
 private rooms", then the microphone, its volume, its test, then the output, its volume, its test. **Camera**: "Use
 camera in private rooms" (one switch for the mod's two settings, `camera` and `camera_view`: on when either is, so an
 older launcher's file reads as it was meant; turning it on sets both, off clears both), "Show My Camera" under it
-while it is on (the one finer choice: see friends without being seen), then the camera and its test. Mirroring is
+while it is on (the one finer choice: see friends without being seen), then the camera and its test. Everything under
+a switch is hidden while it is off (`c:Dependents`, section 15). Mirroring is
 on the Test Camera page (X), where it can be seen. Then the muted players; reporting one is Settings › Online ›
 Report Abuse.
 The microphone is opened only while "Test microphone" is on, the camera only while the Test Camera page shows; both
@@ -596,7 +598,7 @@ Core marks a working online profile as done so an existing player never meets it
 | `Online` | "Want to go online?": **Not Now** → `Done` → home, locked; **Go Online** → the next four |
 | `Server` | two columns: the list at the left, scrolling by itself; at the right the address (typed, or put there by a row), the server's answer and the page's button (Connect, then Next: the focus goes to it when the server answered), and "Show closest to me" under them. The beholder's list (`ServerPicker` / `ServerList`: latency bars and ms measured to each server, name, region, version, players, queue; the five nearest first and five more with each "Show More"; Refresh; re-measured every 15 s while shown; Y on a row, or its "…", hides that server on this PC and the next takes its place, Settings › Online › Hidden Servers shows it again) and a typed address; Connect asks the server who it is ("MKWMP server · 12/32 players", or why not) |
 | `Register` | sign in: register the name (a new PIN), or, for a name that exists, "It's Mine" with its PIN (masked) |
-| `Consent` | only **after** signing in (the server keeps the consent): the three paragraphs, "Read the Privacy Policy" (`PrivacyViewModel`: the server's Markdown rendered by `MarkdownView`, never a browser; a server without `/privacy` gets "This server doesn't publish a privacy policy", never another page), the 18+ box; skipped when the sign-in said the server already has it |
+| `Consent` | only **after** signing in (the server keeps the consent): the three paragraphs, then `settings:PrivacyConsent` (the 18+ switch and "Privacy Policy" in one card; `PrivacyViewModel`: the server's Markdown rendered by `MarkdownView`, never a browser; a server without `/privacy` gets "This server doesn't publish a privacy policy", never another page); skipped when the sign-in said the server already has it |
 | `Pin` | the PIN, masked, with its eye (and X) |
 | `Done` | what is ready and what waits |
 
@@ -689,7 +691,9 @@ and Linux dot files only with Y; names keep the disk's letter case, a typed path
 | A chevron navigates | `Kind="Chevron"` only for a row that opens something (a page, a list to choose from). An action that happens in place (play a test sound, check for updates) is `Kind="Plain"` with an icon |
 | What takes something away looks it | `ConsoleButton Kind="Danger"` (Disconnect), `SettingsRow IsDestructive="True"` (delete a profile, uninstall); and it asks first (`Shell.ConfirmAsync`) |
 | A status is not a button | What only informs (the server row of Settings › Online: address, light, players) is a `Card`, not a row that acts when pressed. The action beside it is a button that says what it does ("Disconnect"), and the other action is its own row ("Connect to Another Server") |
-| A feature that can be off | Its section starts with its switch ("Use voice in private rooms", "Use camera in private rooms"); under it, in this order, the device and then its test. What depends on the switch is greyed out or absent while it is off. Two features of one pane are built in parallel, row for row |
+| A feature that can be off | Its section starts with its switch ("Use voice in private rooms", "Use camera in private rooms"); under it, in this order, the device and then its test. Two features of one pane are built in parallel, row for row |
+| What depends on a switch is hidden while it is off | Never greyed out. Put the rows right after the switch's row in `<c:Dependents Of="{Binding TheSwitch}">` (a StackPanel that is collapsed while `Of` is false: no room, no focus stop). Their values are kept and come back with the switch; a file with the switch off and its sub-settings set loads as it is. The focus stays on the switch when it is turned off. Voice (microphone, volumes, tests, output), "Test Microphone" (Hear Myself), camera (Show My Camera, device, test). The game's own settings and mod options do the same from their schema (`GameSetting.VisibleWhen`); "Show closest to me" has no rows under it (it hides the latency of each server row). `IsEnabled="False"` is for what cannot be changed *now* for a reason said in the caption (the game is running), not for what a switch turned off |
+| Privacy is one card | `settings:PrivacyConsent`: "I'm 18 or older and I accept the privacy policy" and, under it in the same card, "Privacy Policy". The only place either appears: Settings › Online (right under the server row) and the consent page. In Settings, turning it off withdraws; turning it on opens the consent page (what the server keeps is read before it is accepted) |
 | Rarely needed | Not a row of the pane: on the page where its effect shows (the camera''s mirror on Test Camera), or as the caption of the list it explains (where the device names come from) |
 | One list, one column | A list that can grow (servers) gets a column that scrolls by itself (`SmoothScrollViewer`, `FocusNav.IsColumn`); what acts on one entry (an address, its answer, the button) is the other column, a `Card`, 640 wide; the list''s column is the `*` one. Use two columns when a page would otherwise put a form under a list; a plain run of settings rows stays one column (Settings already is two) |
 | The page''s button | Under the page (the welcome flow), or, on a two-column page, in the column of what it acts on. Never both |

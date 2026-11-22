@@ -8,7 +8,7 @@
        Online" leads from every locked place. Without a server: "Online is off" and Connect to a Server (the
        welcome flow's online pages). With one: the profile on it with its PIN (dots until the eye, or X); the server
        on ONE row (its address, its status in small text, Disconnect), and right below it what else is about that
-       server: its privacy policy, reporting a player to its host, and Connect to Another Server (the way to swap:
+       server: privacy (settings:PrivacyConsent: the age confirmation and the policy, one card), reporting a player to its host, and Connect to Another Server (the way to swap:
        the server row itself is not a button); then the profile, the consent, and deleting the profile there. -->
   <UserControl.Resources>
     <Style x:Key="Note" TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
@@ -145,8 +145,9 @@
                            Icon="{StaticResource Icon.SignalOff}" Content="{Binding S[settings.online.disconnect]}" Command="{Binding DisconnectCommand}" />
         </Grid>
       </Border>
-      <c:SettingsRow Label="{Binding S[settings.privacy.policy]}" Kind="Chevron" Icon="{StaticResource Icon.Shield}"
-                     Command="{Binding PrivacyCommand}" Caption="{Binding S[settings.privacy.policy_caption]}" />
+      <!-- privacy, in one place, right under the server it is about: the age confirmation and the policy it accepts -->
+      <settings:PrivacyConsent Margin="0,8,0,8" Accepted="{Binding Adult}" ShowAccept="{Binding Registered}" CanChange="{Binding NotBusy}"
+                               AcceptCaption="{Binding AdultCaption}" PolicyCommand="{Binding PrivacyCommand}" />
       <c:SettingsRow Label="{Binding S[settings.report.title]}" Kind="Chevron" Icon="{StaticResource Icon.Flag}"
                      Command="{Binding ReportCommand}" Caption="{Binding ReportCaption}" />
       <c:SettingsRow Label="{Binding S[settings.online.connect_other]}" Kind="Chevron" Icon="{StaticResource Icon.Signal}"
@@ -165,22 +166,6 @@
         <c:SettingsRow Label="{Binding S[settings.profile.change]}" Kind="Chevron" Icon="{StaticResource Icon.User}" Margin="0,8,0,0"
                        Command="{Binding EditCommand}" Caption="{Binding S[settings.profile.change_caption]}" />
       </StackPanel>
-
-      <c:SectionHeader Text="{Binding S[settings.privacy]}" />
-      <Border Style="{StaticResource Card}" Margin="0,18,0,6">
-        <StackPanel>
-          <TextBlock Text="{Binding S[setup.consent.p1]}" Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.Text}" />
-          <TextBlock Text="{Binding S[setup.consent.p2]}" Style="{StaticResource Text.Caption}" Margin="0,12,0,0" />
-          <TextBlock Text="{Binding S[setup.consent.p3]}" Style="{StaticResource Text.Caption}" Margin="0,12,0,0" />
-        </StackPanel>
-      </Border>
-      <!-- signed in without the consent this server keeps: one way, the consent page -->
-      <c:SettingsRow Label="{Binding S[settings.privacy.review]}" Kind="Chevron" Icon="{StaticResource Icon.Warning}"
-                     Command="{Binding ConsentCommand}" Caption="{Binding S[settings.privacy.review_caption]}"
-                     Visibility="{Binding ConsentNeeded, Converter={StaticResource Conv.Visible}}" />
-      <c:SettingsRow Label="{Binding S[setup.consent.adult]}" Kind="Toggle" IsOn="{Binding Adult}" IsEnabled="{Binding NotBusy}"
-                     Caption="{Binding S[settings.privacy.adult_caption]}"
-                     Visibility="{Binding ConsentGiven, Converter={StaticResource Conv.Visible}}" />
 
       <StackPanel DataContext="{Binding Profile}" Visibility="{Binding SignedIn, Converter={StaticResource Conv.Visible}}">
         <c:SectionHeader Text="{Binding S[settings.profile.delete_section]}" />
