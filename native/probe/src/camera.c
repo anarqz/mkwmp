@@ -116,34 +116,7 @@ void camera_cycle_stop(CameraCycle *v) {
     v->target = -1;
 }
 
-// ---- pure: the pictures we make ourselves -------------------------------------------------------------------------
-
-// 5x7 glyphs, a row per byte, bit 4 the left column: A-Z, 0-9, '-', '_' (the characters of an MKWMP name).
-static const uint8_t kGlyph[38][7] = {
-    {0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}, {0x1e, 0x11, 0x11, 0x1e, 0x11, 0x11, 0x1e}, {0x0e, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0e},
-    {0x1e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1e}, {0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x1f}, {0x1f, 0x10, 0x10, 0x1e, 0x10, 0x10, 0x10},
-    {0x0e, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0f}, {0x11, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}, {0x0e, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0e},
-    {0x07, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0c}, {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11}, {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1f},
-    {0x11, 0x1b, 0x15, 0x15, 0x11, 0x11, 0x11}, {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11}, {0x0e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e},
-    {0x1e, 0x11, 0x11, 0x1e, 0x10, 0x10, 0x10}, {0x0e, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0d}, {0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11},
-    {0x0f, 0x10, 0x10, 0x0e, 0x01, 0x01, 0x1e}, {0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}, {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e},
-    {0x11, 0x11, 0x11, 0x11, 0x11, 0x0a, 0x04}, {0x11, 0x11, 0x11, 0x15, 0x15, 0x1b, 0x11}, {0x11, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x11},
-    {0x11, 0x11, 0x0a, 0x04, 0x04, 0x04, 0x04}, {0x1f, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1f},
-    {0x0e, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0e}, {0x04, 0x0c, 0x04, 0x04, 0x04, 0x04, 0x0e}, {0x0e, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1f},
-    {0x1e, 0x01, 0x01, 0x0e, 0x01, 0x01, 0x1e}, {0x02, 0x06, 0x0a, 0x12, 0x1f, 0x02, 0x02}, {0x1f, 0x10, 0x1e, 0x01, 0x01, 0x11, 0x0e},
-    {0x06, 0x08, 0x10, 0x1e, 0x11, 0x11, 0x0e}, {0x1f, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}, {0x0e, 0x11, 0x11, 0x0e, 0x11, 0x11, 0x0e},
-    {0x0e, 0x11, 0x11, 0x0f, 0x01, 0x02, 0x0c},
-    {0x00, 0x00, 0x00, 0x1f, 0x00, 0x00, 0x00}, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1f},
-};
-
-static const uint8_t *glyph(char ch) {
-    if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 'a' + 'A');
-    if (ch >= 'A' && ch <= 'Z') return kGlyph[ch - 'A'];
-    if (ch >= '0' && ch <= '9') return kGlyph[26 + ch - '0'];
-    if (ch == '-') return kGlyph[36];
-    if (ch == '_') return kGlyph[37];
-    return NULL;   // a space
-}
+// ---- pure: the test pattern (the Camera device "Test pattern" or MKWMP_CAMERA_PATTERN=1; no text in it) -----------
 
 static void fill(uint8_t *rgba, int w, int h, int x0, int y0, int x1, int y1, int r, int g, int b) {
     if (x0 < 0) x0 = 0;
@@ -156,31 +129,7 @@ static void fill(uint8_t *rgba, int w, int h, int x0, int y0, int x1, int y1, in
     }
 }
 
-// name in a dark band across the middle. The game shows the centre square of the picture (the icon is round), so the
-// text is sized to fit a width of h.
-static void name_band(uint8_t *rgba, int w, int h, const char *name, int band) {
-    int len = name ? (int)strlen(name) : 0;
-    if (len > 20) len = 20;
-    if (!len) return;
-    int scale = (h - 16) / (len * 6);
-    if (scale > h / 54) scale = h / 54;   // 4 at 216 lines
-    if (scale < 1) scale = 1;
-    int tw = len * 6 * scale - scale, th = 7 * scale;
-    int x0 = (w - tw) / 2, y0 = (h - th) / 2;
-    if (band) fill(rgba, w, h, 0, y0 - 2 * scale, w, y0 + th + 2 * scale, 16, 16, 16);
-    for (int i = 0; i < len; i++) {
-        const uint8_t *g = glyph(name[i]);
-        if (!g) continue;
-        for (int gy = 0; gy < 7; gy++)
-            for (int gx = 0; gx < 5; gx++)
-                if (g[gy] & (0x10 >> gx)) {
-                    int x = x0 + (i * 6 + gx) * scale, y = y0 + gy * scale;
-                    fill(rgba, w, h, x, y, x + scale, y + scale, 255, 255, 255);
-                }
-    }
-}
-
-void camera_pattern(uint8_t *rgba, int w, int h, uint32_t tick, const char *name) {
+void camera_pattern(uint8_t *rgba, int w, int h, uint32_t tick) {
     static const uint8_t kBar[8][3] = {{191, 191, 191}, {191, 191, 0}, {0, 191, 191}, {0, 191, 0},
                                        {191, 0, 191},   {191, 0, 0},   {0, 0, 191},   {16, 16, 16}};
     if (!rgba || w < 8 || h < 8) return;
@@ -200,21 +149,11 @@ void camera_pattern(uint8_t *rgba, int w, int h, uint32_t tick, const char *name
     int size = h / 8, travel = h - size, t = (int)((tick * 3u) % (uint32_t)(2 * travel));
     int sy = t < travel ? t : 2 * travel - t, sx = w / 2 + h / 4;
     fill(rgba, w, h, sx, sy, sx + size, sy + size, 255, 255, 255);
-    name_band(rgba, w, h, name, 1);
-}
-
-void camera_tile(uint8_t *rgba, int w, int h, const char *name) {
-    if (!rgba || w < 1 || h < 1) return;
-    for (int y = 0; y < h; y++) {
-        int r = 44 - 18 * y / h, g = 48 - 20 * y / h, b = 60 - 24 * y / h;   // a dark slate, lighter at the top
-        fill(rgba, w, h, 0, y, w, y + 1, r, g, b);
-    }
-    name_band(rgba, w, h, name, 0);
 }
 
 // ---- the feature ----------------------------------------------------------------------------------------------------
 
-enum { KIND_NONE, KIND_PATTERN, KIND_CAPTURE, KIND_TILE };
+enum { KIND_NONE, KIND_PATTERN, KIND_CAPTURE, KIND_EMPTY };
 enum { PICTURE_BYTES = CAMERA_W * CAMERA_H * 4, CAPTURE_FPS = 15, PATTERN_MS = 66 };
 #define LOOPBACK_ACCOUNT 0x4d4b574d504c4f4full   // the member made up when a loopback lobby has nobody else
 
@@ -253,7 +192,6 @@ static CamEncoder g_enc, g_loop_enc;       // the game's thread only
 static uint8_t g_jpeg[CAMCODEC_FRAME_MAX], g_loop_rgba[PICTURE_BYTES];   // the game's thread only
 static uint32_t g_tick, g_capture_serial;
 static uint64_t g_pattern_at, g_capture_at;
-static char g_name[64];
 static int g_key_cleared;                  // ClearSharingKey calls (the next SetSharingKey is logged again)
 static CameraHold g_hold;                  // the chat held on for the game's camera prompt (camera_hold)
 static int g_prompted;                     // the game's prompt opened at the last Online Play (camera_declined)
@@ -464,12 +402,13 @@ static void video_write(Video *v, int image, const uint8_t *rgba) {
     }
 }
 
-// Every image of a camera shows the tile: at set-up and when its stream stops, so the next member it is given to
-// does not start with the last one's face.
-static void video_blank(Video *v) {
-    static uint8_t tile[PICTURE_BYTES];   // under g_lock
-    camera_tile(tile, CAMERA_W, CAMERA_H, v == &g_video[0] ? g_name : NULL);
-    for (int i = 0; i < v->made; i++) video_write(v, i, tile);
+// Every image of a camera is emptied (all zero, as the runtime makes a new image): at set-up and when its stream
+// stops, so the next member it is given to does not start with the last one's face. Nothing of ours is drawn in it.
+static void video_clear(Video *v) {
+    for (int i = 0; i < v->made; i++) {
+        for (int y = 0; y < v->h; y++) memset(v->pixels[i] + (size_t)y * (size_t)v->row, 0, (size_t)v->w * 4);
+        H.native_image_touch(v->handle[i]);
+    }
 }
 
 static Video *video_find(uint64_t type) {
@@ -486,7 +425,7 @@ static int local_picture(void) {
     if (g_env_pattern || !strcmp(g_settings.device, CAMERA_DEVICE_TEST)) {
         if (g_local_kind != KIND_PATTERN || now - g_pattern_at >= PATTERN_MS) {
             g_pattern_at = now;
-            camera_pattern(g_local.rgba, CAMERA_W, CAMERA_H, g_tick++, g_name);
+            camera_pattern(g_local.rgba, CAMERA_W, CAMERA_H, g_tick++);
             g_local_kind = KIND_PATTERN;
             fresh = 1;
         }
@@ -494,9 +433,11 @@ static int local_picture(void) {
         g_capture_at = now;
         g_local_kind = KIND_CAPTURE;
         fresh = 1;
-    } else if (g_local_kind != KIND_TILE && (g_local_kind != KIND_CAPTURE || now - g_capture_at > 2000)) {
-        camera_tile(g_local.rgba, CAMERA_W, CAMERA_H, g_name);   // no capture (yet, or any more): the name
-        g_local_kind = KIND_TILE;
+    } else if (g_local_kind == KIND_CAPTURE && now - g_capture_at > 2000) {
+        // the capture stopped: an empty picture once (no last face frozen here or at the others); before the first
+        // capture nothing is written at all, and the game's images stay empty
+        memset(g_local.rgba, 0, sizeof g_local.rgba);
+        g_local_kind = KIND_EMPTY;
         fresh = 1;
     }
     if (!fresh) return 0;
@@ -530,7 +471,7 @@ static int local_picture(void) {
 // the console, opens the face position page. The flag is dropped when the chat ends or the player returns to the
 // title screen. The runtime has no camera service: its stand-in (mkw-recomp patches.c host_camera_event, an object
 // followed by its own table) answers 0x7c4, "no camera", so the prompt never came.
-// The hook stands in front of that node's update and, when the node is the online one and the Camera tab has the
+// The hook stands in front of that node's update and, when the node is the online one and the camera settings have the
 // camera on, puts a game function that returns 0 in the stand-in's slot for the length of the call. Local play's
 // node (is_online 0, the console's own camera, which MKWMP does not feed) and every other asker keep "no camera".
 static void hook_camera_check(Cpu *c) {
@@ -564,7 +505,7 @@ static void hook_camera_check(Cpu *c) {
         plat_unlock(&g_lock);
     }
     if (tr(T_SETUP))
-        mkwmp_log("camera: trace: set-up: the game's camera check ran (node %#llx, %s, state %d -> %d; the Camera tab %s; "
+        mkwmp_log("camera: trace: set-up: the game's camera check ran (node %#llx, %s, state %d -> %d; the camera settings %s; "
                   "the camera service %#llx is %s; answer %s)", (unsigned long long)node, online ? "online" : "local play",
                   before, after, want ? "has the camera on" : "has the camera off", (unsigned long long)service,
                   stand_in ? "the runtime's stand-in" : "not the runtime's stand-in", slot ? "a camera is attached" : "left alone");
@@ -576,7 +517,7 @@ static void hook_camera_check(Cpu *c) {
         else
             mkwmp_log("camera: set-up: Online Play chosen: the game asked whether a camera is attached and was told no (%s): "
                       "no \"Use the camera?\" prompt, so no face above this player's kart, here or for the others",
-                      !want ? "the camera is off in the Camera tab, or the 18+ consent is missing" :
+                      !want ? "the camera is off in the launcher's settings, or the 18+ consent is missing" :
                       !stand_in ? "the camera service is not the runtime's stand-in" : "the stand-in could not be changed");
     }
     c->x[0] = ret;
@@ -608,7 +549,7 @@ int camera_setup_install(const struct game_addrs *a) {
         mkwmp_log("camera: set-up: off: the game's camera check could not be hooked (no \"Use the camera?\" prompt)");
         return 0;
     }
-    mkwmp_log("camera: set-up: the game's camera check is hooked: with the camera on in the Camera tab, choosing Online Play "
+    mkwmp_log("camera: set-up: the game's camera check is hooked: with the camera on in the launcher's settings, choosing Online Play "
               "opens the game's \"Use the camera?\" prompt");
     return 1;
 }
@@ -838,7 +779,7 @@ static void storage_init(Cpu *c, int local) {
         }
         camera_cycle_stop(&v->cycle);
         v->cycle.index = (int)(v - g_video);
-        video_blank(v);
+        video_clear(v);
         mkwmp_log("camera: %s camera %d: %d images of %dx%d (rows %d bytes apart)", local ? "local" : "remote",
                   v->cycle.index, v->made, w, h, v->row);
         if (g_trace)
@@ -896,7 +837,7 @@ static void ov_stop_local(Cpu *c) {
     g_local_streaming = 0;
     camera_cycle_stop(&g_video[0].cycle);
     g_video[0].cycle.index = 0;
-    video_blank(&g_video[0]);
+    video_clear(&g_video[0]);
     plat_unlock(&g_lock);
     if (was) mkwmp_log("camera: the game stopped the local camera");
     ret_x(c, 0);
@@ -932,7 +873,7 @@ static void ov_stop_remote(Cpu *c) {
     for (int i = 1; account && i < CAMERA_VIDEOS; i++)
         if (g_video[i].cycle.account == account) {
             camera_cycle_stop(&g_video[i].cycle);
-            video_blank(&g_video[i]);
+            video_clear(&g_video[i]);
         }
     plat_unlock(&g_lock);
     if (s) mkwmp_log("camera: the game stopped the camera of account %#llx", (unsigned long long)account);
@@ -1007,7 +948,6 @@ void camera_refresh(void) {
     camera_settings_read(H.setting_get, &s);
     int online = H.online ? H.online() : 0;
     uint64_t self = H.self_account ? H.self_account() : 0;
-    const char *name = H.self_name ? H.self_name() : NULL;
     plat_lock(&g_lock);
     int held = camera_hold(&g_hold, online, plat_ms());   // the game's camera prompt, before the sign-in
     // Camera Off in that prompt: the game draws and sends no face of this player, so nothing is captured, shown or
@@ -1015,7 +955,7 @@ void camera_refresh(void) {
     int declined = camera_declined(g_prompted, online, g_face), was_declined = g_declined;
     g_declined = declined;
     plat_unlock(&g_lock);
-    CameraSettings tab = s;   // what the Camera tab says: the game's next prompt is offered by it
+    CameraSettings tab = s;   // what the settings say: the game's next prompt is offered by it
     if (declined) s.camera = 0;
     int chatting = camera_chatting(&s, online || held);
     if (declined != was_declined)
@@ -1066,7 +1006,6 @@ void camera_refresh(void) {
     g_settings = tab;
     g_camera_on = s.camera;
     g_chatting = chatting;
-    snprintf(g_name, sizeof g_name, "%s", name ? name : "");
     if (changed) {
         memcpy(g_room, room, sizeof room);
         g_room_dirty = 1;
@@ -1184,7 +1123,7 @@ int camera_install(const CameraHost *host) {
     g_stock_trywait = g_rt.stock ? g_rt.stock(kOverrides[CAMERA_OVERRIDES - 1].name) : NULL;
     for (int i = 0; i < CAMERA_OVERRIDES; i++) g_rt.override(kOverrides[i].name, kOverrides[i].fn);
     g_installed = 1;
-    mkwmp_log("camera: %d overrides (plugin API %u)%s%s%s%s; off until the player turns it on in the Camera tab", CAMERA_OVERRIDES,
+    mkwmp_log("camera: %d overrides (plugin API %u)%s%s%s%s; off until the player turns it on in the MKWMP launcher (Settings > Voice & Camera)", CAMERA_OVERRIDES,
               (unsigned)host->api_version, g_loopback ? ", loopback" : "", g_env_pattern ? ", test pattern" : "",
               g_trace ? ", trace" : "", g_stock_attach && g_stock_trywait ? "" : ", the runtime has no stock handler to chain to");
     if (!host->no_thread && !plat_thread_start(worker, NULL)) mkwmp_log("camera: no thread: the camera stays off");

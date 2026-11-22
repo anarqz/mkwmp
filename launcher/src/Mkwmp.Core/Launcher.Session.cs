@@ -205,6 +205,7 @@ public sealed partial class Launcher
 
             EnforceOnlineOwned(target, install);
             EnforceOverlayOwned(target, install);
+            SyncModSettings(target, install, force: true);
             var launches = LaunchesGame(s) && target.Capabilities.HasFlag(TargetCapabilities.Launch);
             if (launches)
             {
@@ -287,6 +288,7 @@ public sealed partial class Launcher
         try
         {
             EnforceOverlayOwned(target, install);
+            SyncModSettings(target, install, force: true);
             var launches = LaunchesGame(s) && target.Capabilities.HasFlag(TargetCapabilities.Launch);
             if (launches)
             {

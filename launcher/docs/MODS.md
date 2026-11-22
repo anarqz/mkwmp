@@ -77,7 +77,8 @@ hash, a path the game lacks without `-`, or `-` for a path it has. So a mod's ro
   `mkw_mod_page`, which draws through a small immediate-mode API (`heading`, `note`, `checkbox`, `input`,
   `choice`, `slider`, `button`, lists) that the runtime renders with ImGui
   (`runtime/ui/launcher/mod_page.cpp:47-98`, `runtime/plugin/mod_page_ui.cpp`). There is no manifest schema.
-  MKWMP's own page is `native/probe/src/modpage.c` (:599-761) with `cameratab.c` and `voicetab.c`.
+  MKWMP had its own page (`modpage.c`, `cameratab.c`, `voicetab.c`) up to 1.4.2; since 1.4.3 it has none: the
+  launcher writes its settings (`Launcher.ModSettings.cs`).
 - A mod **without a plugin has no options at all** (`UI_MOD_NO_OPTIONS`, `mod_page.cpp:90-93`): a texture or
   RomFS replacement is on or off. An archive that offers choices ships several mods (variants) instead.
 

@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
     seatd_start(&c);   // the next game: the mute is still there
     assert(req("GET", "/local/v1/voice", NULL, &body) == 200 && strstr(body, "\"account\":\"42\",\"name\":\"Luz\""));
     SeatdMute m[4];
-    assert(seatd_mutes(m, 4) == 1 && m[0].account == 42 && !strcmp(m[0].name, "Luz"));   // the Voice chat tab's list
+    assert(seatd_mutes(m, 4) == 1 && m[0].account == 42 && !strcmp(m[0].name, "Luz"));   // the mod's mute list
     assert(req("POST", "/local/v1/voice/mute", "{\"account\":\"42\",\"name\":\"Luz\",\"muted\":false}", &body) == 204);
     assert(req("GET", "/local/v1/voice", NULL, &body) == 200 && !strstr(body, "\"account\":\"42\""));
     assert(!s_get("mutes.1", kept, sizeof kept));
@@ -144,7 +144,7 @@ int main(int argc, char **argv) {
     }
     printf("mutes kept in the mod's settings across games (64)\n");
     assert(req("GET", "/local/v1/room", NULL, &body) == 404);
-    // the devices the engine reports, for the Voice chat tab; the tab's settings reach voice.c at its next poll
+    // the devices the engine reports; the voice settings reach voice.c at its next poll
     assert(req("POST", "/local/v1/voice/devices", "{\"inputs\":[{\"id\":\"mic1\",\"name\":\"Mic\"}],\"outputs\":[]}", &body) == 204);
     char dev[256];
     assert(seatd_devices_json(dev, sizeof dev) && strstr(dev, "mic1"));

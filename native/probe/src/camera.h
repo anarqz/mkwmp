@@ -20,7 +20,7 @@
 //   - the game's own set-up (camera_setup_install; research/docs/CAMERA-RE.md 9): a player's face is drawn and sent
 //     only after the player answered the game's "Use the camera?" prompt with Camera On, and the game shows that
 //     prompt, when Online Play is chosen, only if the console's camera service says a camera is attached. The
-//     runtime's stand-in for that service says none is; while the game's node asks, and the Camera tab has the
+//     runtime's stand-in for that service says none is; while the game's node asks, and the camera settings have the
 //     camera on, ours says yes. MKWMP_CAMERA_SETUP=0 leaves the runtime's answer alone (no prompt, no faces).
 //     Camera Off in that prompt turns the local camera off for the session (camera_declined).
 //
@@ -165,19 +165,18 @@ int camera_cycle_poll(CameraCycle *v, const uint64_t handle[2], uint32_t source_
 void camera_cycle_stop(CameraCycle *v);
 
 // The test pattern: eight colour bars moving left one step per tick, a white square bouncing down and up, a red
-// corner mark top left (so a flipped or mirrored picture shows), and name in a dark band. RGBA, rows w * 4 apart.
-void camera_pattern(uint8_t *rgba, int w, int h, uint32_t tick, const char *name);
-// The tile shown for a camera with no picture: dark, with the name (may be NULL or "").
-void camera_tile(uint8_t *rgba, int w, int h, const char *name);
+// corner mark top left (so a flipped or mirrored picture shows); no text. RGBA, rows w * 4 apart. A camera with no
+// picture gets nothing of ours: its images are left empty (all zero), as the runtime makes them.
+void camera_pattern(uint8_t *rgba, int w, int h, uint32_t tick);
 
 // ---- the feature ---------------------------------------------------------------------------------------------------
 
 // From mkw_plugin_init, before the game loads: registers the overrides when camera_unavailable says nothing.
 // Returns how many were registered (CAMERA_OVERRIDES, or 0 with the reason logged).
 int camera_install(const CameraHost *host);
-// Why camera_install left the camera off (NULL when it is on, or before camera_install ran), for the Camera tab.
+// Why camera_install left the camera off (NULL when it is on, or before camera_install ran), logged.
 const char *camera_off_reason(void);
-// For the Camera tab when camera_install never ran (online play not set up).
+// The reason when camera_install never ran (online play not set up).
 void camera_set_off_reason(const char *why);
 // What the camera's thread does twice a second: settings, members, the room, the capture wanted. Tests call it.
 void camera_refresh(void);
@@ -213,7 +212,7 @@ int camera_jpeg_in(uint64_t account, const uint8_t *jpeg, int len);
 void camera_members_set(uint64_t room_id, const CameraMember *members, int n);
 int camera_subscriptions(uint64_t *accounts, int cap);
 int camera_local_streaming(void);
-// 1 while the player's Camera Off in the game's prompt holds (camera_declined): the Camera tab says so.
+// 1 while the player's Camera Off in the game's prompt holds (camera_declined).
 int camera_declined_now(void);
 
 #endif

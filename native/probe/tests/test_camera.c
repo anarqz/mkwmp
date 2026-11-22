@@ -257,13 +257,11 @@ static int is(const uint8_t *p, int r, int g, int b) { return p[0] == r && p[1] 
 
 static void test_pattern(void) {
     memset(pic, 0, sizeof pic);
-    camera_pattern(pic[0], W, HT, 0, "Bia_7");
-    camera_pattern(pic[1], W, HT, 1, "Bia_7");
-    camera_pattern(pic[2], W, HT, 0, "Rafa");
-    camera_pattern(pic[3], W, HT, 0, "Bia_7");
-    CHECK(!memcmp(pic[0], pic[3], sizeof pic[0]));   // the same tick and name: the same picture
+    camera_pattern(pic[0], W, HT, 0);
+    camera_pattern(pic[1], W, HT, 1);
+    camera_pattern(pic[3], W, HT, 0);
+    CHECK(!memcmp(pic[0], pic[3], sizeof pic[0]));   // the same tick: the same picture
     CHECK(memcmp(pic[0], pic[1], sizeof pic[0]));    // it moves
-    CHECK(memcmp(pic[0], pic[2], sizeof pic[0]));    // the name is in it
     for (int i = 3; i < W * HT * 4; i += 4) CHECK(pic[0][i] == 255 && pic[1][i] == 255);
     // tick 0: eight bars of 48 columns in the bottom rows: white, yellow, cyan, green, magenta, red, blue, black
     static const uint8_t bars[8][3] = {{191, 191, 191}, {191, 191, 0}, {0, 191, 191}, {0, 191, 0},
@@ -278,29 +276,13 @@ static void test_pattern(void) {
     // the bouncing square: at the top at tick 0, three rows lower a tick later
     CHECK(is(PX(pic[0], W / 2 + HT / 4 + 3, 1), 255, 255, 255) && !is(PX(pic[1], W / 2 + HT / 4 + 3, 1), 255, 255, 255));
     CHECK(is(PX(pic[1], W / 2 + HT / 4 + 3, 3 + 26), 255, 255, 255));
-    // the name: white on the dark band across the middle, inside the square the game shows
-    int white = 0, dark = 0, outside = 0;
-    for (int x = 0; x < W; x++) {
-        const uint8_t *p = PX(pic[0], x, HT / 2);
-        if (is(p, 255, 255, 255)) white++, outside += x < 84 || x >= 300;
-        else if (is(p, 16, 16, 16)) dark++;
-    }
-    CHECK(white > 10 && dark > 100 && white + dark == W && !outside);
-    // 'B' is the first glyph of Bia_7: its left column is solid over all seven rows (scale 4: 28 pixels)
-    int x0 = -1;
-    for (int x = 0; x < W && x0 < 0; x++)
-        if (is(PX(pic[0], x, HT / 2), 255, 255, 255)) x0 = x;
-    int solid = 0;
-    for (int y = 0; y < HT; y++) solid += is(PX(pic[0], x0, y), 255, 255, 255);
-    CHECK(solid == 28);
-
-    camera_tile(pic[1], W, HT, "Bia_7");
-    camera_tile(pic[2], W, HT, NULL);
-    CHECK(memcmp(pic[1], pic[2], sizeof pic[1]));
-    for (int i = 3; i < W * HT * 4; i += 4) CHECK(pic[2][i] == 255);
-    CHECK(PX(pic[2], 0, 0)[0] < 64 && PX(pic[2], W - 1, HT - 1)[0] < 64);   // dark, no text
-    camera_pattern(NULL, W, HT, 0, "x");   // refused quietly
-    camera_pattern(pic[0], 4, 4, 0, "x");
+    // no text: the middle row is the bars alone (no dark band, no white letters) away from the bouncing square
+    int bars_only = 1;
+    for (int x = 0; x < W; x++)
+        if (x < W / 2 + HT / 4 || x >= W / 2 + HT / 4 + HT / 8) bars_only &= !is(PX(pic[0], x, HT / 2), 255, 255, 255);
+    CHECK(bars_only);
+    camera_pattern(NULL, W, HT, 0);   // refused quietly
+    camera_pattern(pic[0], 4, 4, 0);
 }
 
 // ---- the overrides, as the game calls them ---------------------------------------------------------------------------
@@ -388,9 +370,11 @@ static void test_overrides(void) {
         }
     }
     CHECK(g_nimg == 15);
-    for (int i = 0; i < 15; i++) {   // every image starts as the placeholder, not as whatever the memory held
-        CHECK(g_img[i].touches == 1 && g_img[i].pixels[3] == 255 && g_img[i].pixels[(HT - 1) * ROW + (W - 1) * 4 + 3] == 255);
-        CHECK(g_img[i].pixels[W * 4] == 0 && g_img[i].pixels[ROW - 1] == 0 && g_img[i].pixels[ROW + 3] == 255);
+    for (int i = 0; i < 15; i++) {   // every image starts empty (all zero), not as whatever the memory held: nothing of ours
+        int empty = 1;
+        for (int y = 0; y < HT; y++)
+            for (int x = 0; x < W * 4; x++) empty &= g_img[i].pixels[y * ROW + x] == 0;
+        CHECK(g_img[i].touches == 1 && empty);
     }
     // an object the game never initialised: the runtime's kind of handle
     uint8_t stranger[0x100];
@@ -473,15 +457,12 @@ static void test_overrides(void) {
     CHECK(g_stock_trywait_calls == 2);   // each camera's first poll: slot 0's zero handle, the runtime's to answer
     CHECK(g_out_calls >= 3 && g_out_first[3] == 255);   // the local pictures were handed to the transport
     CHECK(g_jpeg_calls >= 2 && g_jpeg_calls <= g_out_calls && !g_jpeg_bad);   // and as frames to send, fewer of them
-    // what is shown is the test pattern with the player's name, on both: the remote one is the loopback
+    // what is shown is the test pattern (no text), on both: the remote one is the loopback
     const uint8_t *local = g_img[g[0].current].pixels, *remote = g_img[3 + g[1].current].pixels;
     // (stored flipped left to right: the corner mark, top left of the picture, is top right in the image)
     CHECK(local[(HT - 3) * ROW + 3] == 255 && is(local + 16 * ROW + (W - 1 - (84 + 16)) * 4, 255, 0, 0));
     CHECK(!is(local + 16 * ROW + (84 + 16) * 4, 255, 0, 0));
     CHECK(is(remote + 16 * ROW + (W - 1 - (84 + 16)) * 4, 255, 0, 0));
-    int white = 0;
-    for (int x = 84; x < 300; x++) white += is(local + (HT / 2) * ROW + x * 4, 255, 255, 255);
-    CHECK(white > 10);
     // a decoder's sync (the movie player's) goes to the runtime
     uint64_t decoder[2] = {3, 77};
     CHECK(call("TryWaitNativeSync", P(decoder), 0, 0, 0, 0, 0) == 1 && g_stock_trywait_calls == 3);
@@ -538,8 +519,8 @@ static void test_overrides(void) {
     CHECK(call("StopRemoteCameraStreaming", P(&fake), 0, 0, 0, 0, 0) == 0);
     CHECK(call("TryWaitNativeSync", P(held), 0, 0, 0, 0, 0) == 1);
     CHECK(camera_subscriptions(subs, 8) == 0 && camera_frame_in(fake, pic[0], W, HT) == 0);
-    camera_tile(pic[2], W, HT, NULL);
-    for (int i = 0; i < 3; i++) CHECK(image_is(handles[1][i], pic[2]));   // nobody's face is left in the images
+    memset(pic[2], 0, sizeof pic[2]);
+    for (int i = 0; i < 3; i++) CHECK(image_is(handles[1][i], pic[2]));   // nobody's face is left in the images: empty
     // the player mutes a member: the face goes too
     g_muted = 0xa2;
     camera_refresh();
@@ -562,7 +543,7 @@ static void test_overrides(void) {
         CHECK(call("StartRemoteCameraStreaming", P(&id), 0, 0, 0, 0, 0) == (id == 0xc5 ? 1u : 0u));
     CHECK(camera_subscriptions(subs, 8) == 4);
 
-    // the camera turned off in the tab while playing: the room says so; watching goes on (camera_view)
+    // the camera turned off in the settings while playing: the room says so; watching goes on (camera_view)
     set("camera", "0"), set("camera_view", "1");
     camera_refresh();
     CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1);
@@ -572,8 +553,8 @@ static void test_overrides(void) {
     plat_sleep_ms(80);
     CHECK(call("IsChatting", 0, 0, 0, 0, 0, 0) == 1 && g_out_calls == out_calls);   // nothing leaves any more
     CHECK(call("StopLocalCameraStreaming", 0, 0, 0, 0, 0, 0) == 0);
-    camera_tile(pic[2], W, HT, "Bia_7");
-    CHECK(image_is(handles[0][0], pic[2]) && image_is(handles[0][2], pic[2]));
+    memset(pic[2], 0, sizeof pic[2]);
+    CHECK(image_is(handles[0][0], pic[2]) && image_is(handles[0][2], pic[2]));   // emptied, no name tile
     // both off, or offline: the chat ends
     set("camera_view", "0");
     camera_refresh();
@@ -689,7 +670,7 @@ static void test_setup(void) {
     CHECK(camera_setup_install(&g_row) && g_hook && g_hook_addr == P(g_code_check));   // the function the slot holds
     CHECK(camera_setup_install(&g_row));                        // once
 
-    // the camera off in the Camera tab: the game is told what the runtime tells it, no camera, and no chat is held on
+    // the camera off in the settings: the game is told what the runtime tells it, no camera, and no chat is held on
     g_online = 0;
     camera_refresh();
     CHECK(run_check(1) == 3 && g_queries == 1);

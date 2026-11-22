@@ -1,6 +1,6 @@
 // The built plugin (mkwmp.dll / mkwmp.so) against a fake MkwPluginApi, for the GameChat camera's gate: on plugin API
-// 3 with game 1.8.0 the 21 nn::chat overrides and nn::gs::TryWaitNativeSync are registered and the Camera tab is
-// added; on plugin API 2, or game 1.0.0, none is, the plugin still loads, and mkwmp.log says why. One mode per run
+// 3 with game 1.8.0 the 21 nn::chat overrides and nn::gs::TryWaitNativeSync are registered (and no settings tab
+// is added: the launcher sets the camera); on plugin API 2, or game 1.0.0, none is, the plugin still loads, and mkwmp.log says why. One mode per run
 // (the probe's state is the process's). Windows and Linux.
 //
 //   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"
@@ -32,7 +32,7 @@ static void env_set(const char *k, const char *v) { if (v) setenv(k, v, 1); else
 static int failures;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d %s\n", __FILE__, __LINE__, #c); failures++; } } while (0)
 
-static int g_chat, g_trywait, g_other, g_tabs, g_camera_tab, g_images;
+static int g_chat, g_trywait, g_other, g_tabs, g_images;
 static void (*g_loaded)(void *);
 
 static void fake_host(MkwCpu *c) { (void)c; }
@@ -66,8 +66,8 @@ static int fake_setting_get(const char *key, char *out, size_t cap) { (void)key,
 static int fake_setting_set(const char *key, const char *value) { (void)key, (void)value; return 1; }
 static int fake_on_exit(void (*cb)(void *), void *user) { (void)cb, (void)user; return 1; }
 static int fake_settings_tab(const char *title, void (*draw)(const struct MkwPage *)) {
-    g_tabs += draw != NULL;
-    g_camera_tab += !strcmp(title, "Camera");
+    (void)title;
+    g_tabs += draw != NULL;   // the mod registers none any more
     return 1;
 }
 static uint32_t fake_image_create(int w, int h, void **pixels, int *row_bytes) {
@@ -115,9 +115,9 @@ int main(int argc, char **argv) {
     CHECK(init(&api, version, &message) == 0 && !message);   // the plugin loads on every one of them
     CHECK(g_other > 40);                                       // online play's own overrides, as ever
     if (!strcmp(mode, "v3")) {
-        CHECK(g_chat == 21 && g_trywait == 1 && g_camera_tab == 1);
+        CHECK(g_chat == 21 && g_trywait == 1 && g_tabs == 0);
     } else {
-        CHECK(g_chat == 0 && g_trywait == 0 && g_camera_tab == 1 && g_images == 0);
+        CHECK(g_chat == 0 && g_trywait == 0 && g_tabs == 0 && g_images == 0);
     }
     CHECK(g_loaded != NULL);
     if (g_loaded) g_loaded(NULL);
@@ -136,8 +136,8 @@ int main(int argc, char **argv) {
     if (!strcmp(mode, "v3")) CHECK(strstr(text, "camera: 28 overrides (plugin API 3)") != NULL);
     else if (!strcmp(mode, "v2")) CHECK(strstr(text, "camera: off: this mkw-recomp's plugin API is older than version 3") != NULL);
     else CHECK(strstr(text, "camera: off: the game is not 1.8.0") != NULL);
-    printf("test_plugin_camera %s: %s (%d nn::chat overrides, TryWaitNativeSync %d, Camera tab %d)\n", mode,
-           failures ? "FAIL" : "PASS", g_chat, g_trywait, g_camera_tab);
+    printf("test_plugin_camera %s: %s (%d nn::chat overrides, TryWaitNativeSync %d, settings tabs %d)\n", mode,
+           failures ? "FAIL" : "PASS", g_chat, g_trywait, g_tabs);
     fflush(stdout);
 #ifdef _WIN32
     TerminateProcess(GetCurrentProcess(), failures != 0);   // the probe's threads are not ours to wait for

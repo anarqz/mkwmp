@@ -71,7 +71,7 @@ static void test_round_trip(void) {
     int n90 = camcodec_jpeg_encode(small, SW, SH, 90, big, sizeof big);
     CHECK(n90 > n && camcodec_jpeg_decode(big, n90, small_back, &w, &h) && psnr(small, small_back, SW * SH) > db + 3);
     // flat colours come back as they went (the test pattern's bars, the corner mark)
-    camera_pattern(pattern, W, H, 0, "Bia_7");
+    camera_pattern(pattern, W, H, 0);
     camcodec_scale(pattern, W, H, small, SW, SH);
     n = camcodec_jpeg_encode(small, SW, SH, CAMCODEC_QUALITY, jpeg, sizeof jpeg);
     CHECK(n && camcodec_jpeg_decode(jpeg, n, small_back, &w, &h));
@@ -297,7 +297,7 @@ int main(int argc, char **argv) {
     if (argc == 3 && !strcmp(argv[1], "write")) {
         static CamEncoder e;
         camcodec_encoder_init(&e);
-        camera_pattern(pattern, W, H, 7, "Bia_7");
+        camera_pattern(pattern, W, H, 7);
         int n = camcodec_encode(&e, pattern, 1, jpeg, sizeof jpeg);
         FILE *f = fopen(argv[2], "wb");
         if (!f || !n || fwrite(jpeg, 1, (size_t)n, f) != (size_t)n) return 1;

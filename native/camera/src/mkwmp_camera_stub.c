@@ -1,6 +1,6 @@
 /* mkwmp_camera.h where there is no capture yet (Linux; V4L2 is the plan: /dev/video* with VIDIOC_QUERYCAP, YUYV or
  * MJPG, mmap streaming, which also lists OBS's v4l2loopback device). The device list is empty and a start fails, so
- * the probe shows the player's name tile, or the test pattern when that is the device chosen. */
+ * the probe shows nothing (the game's images stay empty), or the test pattern when that is the device chosen. */
 #include "mkwmp_camera.h"
 
 #include <stdio.h>

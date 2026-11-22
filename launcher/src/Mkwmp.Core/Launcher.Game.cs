@@ -100,6 +100,10 @@ public sealed partial class Launcher
             }
         });
         FollowGameSettings();
+        if (install is not null)
+        {
+            SyncModSettings(_targets.Get(Settings.Target), install, force: false); // the mod's settings follow the launcher's (game closed)
+        }
         FollowMods();
         FollowCover(install, setup); // the Play card's picture, made once from the player's copy (Launcher.Cover.cs)
         PublishModRecord(); // the mod finds this launcher in its own folder (portable)

@@ -60,7 +60,7 @@ int friends_page(const FriendRoster *roster, const uint64_t owner[2], int offset
 // offset 0 picks up the latest roster; later pages continue in that same snapshot.
 int friends_list(const uint64_t owner[2], int offset, int count, GFriend *out);
 
-// A friend's name by account id, from the cached roster (the Camera tab's Report). 0 when it is not a friend's.
+// A friend's name by account id, from the cached roster (the camera's trace). 0 when it is not a friend's.
 int friends_name_of(uint64_t account, char *out, size_t cap);
 
 // The account ids of the cached roster (the camera's loopback: camera.h). Returns how many were written.

@@ -23,7 +23,7 @@ What it prints, for OLD and NEW side by side:
   11. the MKW_* keys MKWMP sets, as strings of mkw.exe (cfg.c known[])
   12. the native plugin API (runtime/plugin/plugin.c api_template: its size and version) against the mod's
       mkw_plugin.h (the MKWMP mod is the probe built as a plugin, backend_plugin.c): which of the versions the mod
-      uses the runtime has (2 options page and settings, 3 native images for the camera, 4 the overlay's pad filter,
+      uses the runtime has (2 the mod's settings, 3 native images for the camera, 4 the overlay's pad filter,
       menu_open and frame capture). Upstream may be behind the mod (those parts stay off); MKWMP's own release
       line (a version ending in -mkwmp) should carry the mod's version (a WARN when it does not)
 
@@ -855,7 +855,7 @@ def main() -> int:
             else:
                 ok(f"NEW has the mod's plugin API (version {version} >= {probe.plugin_version})")
         else:
-            off = [what for v, what in ((2, "the options page, the mod's settings, the in-game tabs, on_exit"),
+            off = [what for v, what in ((2, "the mod's settings, on_exit"),
                                         (3, "native images (the GameChat camera)"),
                                         (4, "the overlay (pad filter, menu_open, frame capture)"))
                    if version < v <= probe.plugin_version]

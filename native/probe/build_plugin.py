@@ -6,9 +6,9 @@
 Produces build/plugin/linux/mkwmp.so (x86_64-linux-gnu) and build/plugin/windows/mkwmp.dll (x86_64-windows-gnu, a
 plain DLL, not the winmm.dll proxy): the core sources of build.py (minus the winmm loader and the COFF backend, as
 build_linux.py), the plat files of the target (with its HTTP: WinHTTP, or libcurl loaded at run
-time), the plugin's seat client (seatapi.c, seatd.c), its options page (modpage.c), the GameChat camera (camera.c,
-camcodec.c, camlib.c, cameratab.c; plugin API 3), the chat room on the relay (roomnet.c) and src/backend_plugin.c. Both
-export only mkw_plugin_init and mkw_mod_page (Linux: a version script, linked with --no-undefined). --test also builds tests/test_plugin.c and runs
+time), the plugin's seat client (seatapi.c, seatd.c), the GameChat camera (camera.c, camcodec.c, camlib.c; plugin
+API 3), the chat room on the relay (roomnet.c), the overlay trigger (overlay.c) and src/backend_plugin.c. No options page or
+settings tab: the MKWMP launcher sets everything. Both export only mkw_plugin_init (Linux: a version script, linked with --no-undefined). --test also builds tests/test_plugin.c and runs
 it against the Linux .so (on a Linux host): a fake MkwPluginApi, no runtime needed. Runs in CI
 (.github/workflows/probe-linux.yml).
 
@@ -39,12 +39,11 @@ from build_linux import WINDOWS_ONLY, POSIX  # noqa: E402
 SRC = HERE / "src"
 OUT = HERE / "build" / "plugin"
 BACKEND = "backend_plugin.c"
-# the plugin's own parts: its seat client (no launcher), its options page in mkw-recomp's start screen
-PLUGIN_ONLY = ["seatapi.c", "seatd.c", "modpage.c", "voicetab.c", "camera.c", "camcodec.c", "camlib.c", "cameratab.c",
-               "chatroom.c", "roomnet.c", "overlay.c"]
+# the plugin's own parts: its seat client (no launcher running), the camera, the friend room, the overlay trigger
+PLUGIN_ONLY = ["seatapi.c", "seatd.c", "camera.c", "camcodec.c", "camlib.c", "chatroom.c", "roomnet.c", "overlay.c"]
 WIN_PLAT = ["plat_win.c", "plat_net_win.c", "plat_http_win.c"]
 POSIX_HTTP = ["plat_http_posix.c"]
-VERSION_SCRIPT = "{ global: mkw_plugin_init; mkw_mod_page; local: *; };\n"
+VERSION_SCRIPT = "{ global: mkw_plugin_init; local: *; };\n"
 
 
 def run(cmd):
@@ -93,7 +92,7 @@ def test(zig, so):
     exe = OUT / "linux" / "test_plugin"
     run([zig, "cc", "-target", "x86_64-linux-gnu", "-O1", "-Wall", "-Wextra", "-Werror", "-o", str(exe),
          str(HERE / "tests" / "test_plugin.c"), "-ldl"])
-    # the options page and the plugin's own sign-in against a fake seat server (tests/fake_seat.py, plain HTTP)
+    # the plugin's own sign-in (the launcher's settings) against a fake seat server (tests/fake_seat.py, plain HTTP)
     import os
     import tempfile
     import time

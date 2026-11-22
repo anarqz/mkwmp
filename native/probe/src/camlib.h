@@ -1,8 +1,6 @@
 // The capture library (native/camera: mkwmp-camera.dll / libmkwmp-camera.so), loaded from the mod's folder the first
-// time the camera is wanted or its settings are on screen, and driven from one thread of this file's own: loading it,
-// listing devices (COM) and opening a camera can each take a while, and the callers are the game's thread (camera.c)
-// and the menu's (cameratab.c). Every function here returns at once and may be called from any thread. Used in the
-// game and in the start screen's process (the options page) alike.
+// time the camera is wanted, and driven from one thread of this file's own: loading it, listing devices (COM) and
+// opening a camera can each take a while, and the caller is the game's thread (camera.c). Every function here returns at once and may be called from any thread.
 #ifndef MKWMP_CAMLIB_H
 #define MKWMP_CAMLIB_H
 

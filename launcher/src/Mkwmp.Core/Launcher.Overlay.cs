@@ -98,6 +98,12 @@ public sealed partial class Launcher
     private void WatchOverlayHost()
     {
         _local.Instance.ParentAttached += (_, _) => Mutate(() => { });
-        _local.Instance.ParentExited += (_, _) => Mutate(() => { });
+        _local.Instance.ParentExited += (_, _) =>
+        {
+            // the game it stood by for is closed now: an account signed in over it reaches the mod's next start
+            Volatile.Write(ref _modSynced, null);
+            SyncModSettings();
+            Mutate(() => { });
+        };
     }
 }

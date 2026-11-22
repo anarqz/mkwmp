@@ -408,9 +408,11 @@ Mod-only players (mkwmp-mod.zip in `mods/`, the mod signs in itself) have no lau
 | Cost | small | small (built) | very high: WPF's `RenderTargetBitmap` is software rendering (a 1280 x 720 frame of this UI is tens of ms, so 15-25 fps at best), a new API entry to draw a full-screen texture, every input forwarded, text entry, focus | the whole launcher UI twice, in two toolkits |
 | Memory while playing | none | one idle WPF process (about 100-150 MB) | the same plus frames | none |
 
-Decision (the user's): **(b)**, with (a) only as the restart when the host is gone. (c) and (d) are not built. The mod
-already has a small (d) in mkw-recomp's menu (the MKWMP, Voice chat and Camera tabs), which stays the fallback when
-no launcher can be found.
+Decision (the user's): **(b)**, with (a) only as the restart when the host is gone. (c) and (d) are not built. The mod's
+small (d) in mkw-recomp's menu (the MKWMP, Voice chat and Camera tabs) is gone since 1.4.3: everything is set in the
+launcher, which writes the mod's settings while the game is closed, also right after a game it stood by for ends (so
+an account signed in over the game reaches the mod at its next start). Without a launcher to find, a mod-only player
+has no way to sign in.
 
 How it works:
 

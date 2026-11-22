@@ -264,10 +264,10 @@ static int view_reply(const SeatApiView *v, char *buf, size_t cap, const char **
 }
 
 static int refused(const SeatApiResult *r, char *buf, size_t cap, const char **body) {
-    const char *why = !strcmp(r->code, "PIN_WRONG")           ? "Wrong PIN: open Mods > MKWMP > Options and enter it again"
-                      : !strcmp(r->code, "PROFILE_NOT_FOUND") ? "This name is not registered: register it in Mods > MKWMP > Options"
+    const char *why = !strcmp(r->code, "PIN_WRONG")           ? "Wrong PIN: sign in again in the MKWMP launcher"
+                      : !strcmp(r->code, "PROFILE_NOT_FOUND") ? "This name is not registered: sign up in the MKWMP launcher"
                       : !strcmp(r->code, "NAME_TAKEN")        ? "This name is already online (the MKWMP launcher, or another PC)"
-                      : !strcmp(r->code, "NAME_REGISTERED")   ? "Your name expired and someone else took it: register another in Mods > MKWMP > Options"
+                      : !strcmp(r->code, "NAME_REGISTERED")   ? "Your name expired and someone else took it: sign up with another in the MKWMP launcher"
                                                               : r->message;
     mkwmp_log("seat: refused: %s (%s)", r->code, r->message);
     return reply(buf, cap, body, 409, "{\"state\":\"refused\",\"message\":\"%s\"}", clean(why));
@@ -331,7 +331,7 @@ static int friends(char *buf, size_t cap, const char **body) {
     return 200;
 }
 
-// The voice settings: the mod's (its in-game Voice chat tab and options page), read at each poll so a change applies
+// The voice settings: the mod's (written by the MKWMP launcher while the game is closed), read at each poll so a change applies
 // at once. Device ids go into JSON: quotes and backslashes are not kept.
 static void setting(const char *key, const char *fallback, char *out, size_t cap) {
     if (!C.setting_get || !C.setting_get(key, out, cap)) snprintf(out, cap, "%s", fallback);

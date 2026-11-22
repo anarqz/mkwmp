@@ -9,6 +9,12 @@ record what was proposed and our fork's prototype, which v1 supersedes.
 toggle, its vtable hooks and keyboard / pad shortcuts), `keypad.c` / `detour.c` (the winmm build's Room ID keypad in
 mkw-recomp's ImGui frame) and the notice sink (`notify_set_sink` to `api->notice`) are removed; `notify.c` only logs.
 The rows below that name them are history. The overlay trigger (`overlay.c`) is the mod's only input in the game.
+The mod's options page (`modpage.c`, the `mkw_mod_page` export) and its three tabs in mkw-recomp's settings
+(`settings_tab`: MKWMP, Voice chat, Camera; `voicetab.c`, `cameratab.c`) are removed too: everything is set in the
+MKWMP launcher, which writes the mod's settings (`consent18`, `server`, `pin`, `pin_name`, `seat_mode`, `voice*`,
+`camera_device`, `camera_mirror`; `camera` / `camera_view` from Settings › Voice & Camera) whenever the game is closed
+(`launcher/src/Mkwmp.Core/Launcher.ModSettings.cs`). The plugin's own seat client (below) signs in with those, as
+`pin_name`, not the game's profile name. A camera with no picture gets nothing of the mod's (no name tile).
 
 Proposed by upstream: `.dll`/`.so` from `<mod>/plugin/`, loaded only when the player enables the mod;
 `mkw_plugin_init(const MkwPluginApi *api, uint32_t api_version)` before the game loads; a versioned function table

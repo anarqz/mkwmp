@@ -1,5 +1,5 @@
 // The MKWMP launcher's local API (docs/contracts/LAUNCHER_API.md), answered inside the game when no launcher runs: the
-// plugin build with the mod's own settings (its options page, modpage.c). seat.c, friends.c and voice.c keep asking
+// plugin build with the account the MKWMP launcher wrote into the mod's settings. seat.c, friends.c and voice.c keep asking
 // /local/v1/... through launcher.c, which hands the requests here instead of to a socket (launcher_set_direct), and
 // this file calls the seat server itself (seatapi.c).
 #ifndef MKWMP_SEATD_H
@@ -30,7 +30,7 @@ typedef struct {
 void seatd_start(const SeatdConfig *cfg);
 // launcher.c's direct handler: the same contract as its HTTP answers (status, body in buf).
 int seatd_request(const char *method, const char *path, const char *json, char *buf, size_t cap, const char **body);
-// For the in-game Voice chat tab (voicetab.c): the device list the voice engine last reported
+// The device list the voice engine last reported
 // ({"inputs":[{"id","name"}],"outputs":[...]}; 0 until it did), the players muted, and unmuting one (voice.c reads
 // the list back at its next poll).
 int seatd_devices_json(char *out, size_t cap);

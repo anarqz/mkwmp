@@ -352,7 +352,7 @@ Tabs, in order (`settings_tabs.cpp` `tab_order`): Screen, Graphics, Sound, Contr
 | General | lang, menu_lang, update_check, start_screen, discord | `lan` (left out on purpose) |
 | Advanced | the scheduling, shader, texture, fix, Vulkan and diagnostics rows | input_record, Open log folder, Copy system info, Reset all |
 | Hacks | none, on purpose | |
-| Mods' tabs | the MKWMP, Voice chat and Camera tabs are the mod's own; the launcher has Settings › Voice & Camera and `ModSettings.cs` | |
+| Mods' tabs | none of MKWMP's since 1.4.3 (its MKWMP, Voice chat and Camera tabs and its options page are gone); the launcher sets everything and writes the mod's settings (`ModSettings.cs`, `Launcher.ModSettings.cs`) | |
 
 ### 2.4 The three missing settings, and what each needs
 

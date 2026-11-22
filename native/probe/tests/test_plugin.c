@@ -10,9 +10,10 @@
 // kRegs, read from the source, plus the core-mask pair), the fs stock handlers asked for under the names the probe
 // overrides, mkwmp.env read and mkwmp.log written in mod_dir, and on_game_loaded with main not mapped (no game build)
 // installing no address override. A version 1 table (no mod settings) still loads.
-// With MKWMP_TEST_SERVER (build_plugin.py --test starts tests/fake_seat.py), also the options page (mkw_mod_page)
-// against a fake MkwPage: consent first, sign-up storing the PIN, a friend request, a profile name the server refuses,
-// and a version 2 init with those settings signing in itself (in a child process: the probe's state is global).
+// With MKWMP_TEST_SERVER (build_plugin.py --test starts tests/fake_seat.py), also a version 2 init with the settings
+// the MKWMP launcher writes (consent18, server, pin, pin_name) signing in itself, and one without them staying off
+// (in child processes: the probe's state is global). The mod has no options page and no settings tab of its own: it
+// exports mkw_plugin_init only and never calls settings_tab.
 #define _GNU_SOURCE
 #undef NDEBUG
 #include "../src/mkw_plugin.h"
@@ -64,13 +65,10 @@ static void fake_notice(const char *text, int seconds) { (void)text, (void)secon
 static int fake_overlay_set(MkwOverlayFn draw, void *user) { (void)draw, (void)user; return 1; }
 static void fake_overlay_show(MkwOverlayFn draw, int on) { (void)draw, (void)on; }
 
-// ---- a fake MkwPage: settings in memory, the widgets recorded, one button "clicked" by label
+// ---- the mod's settings, in memory (as the MKWMP launcher leaves them in mkwmp.ini)
 enum { MAX_SETTINGS = 32 };
 static struct { char key[65], value[1025]; } g_settings[MAX_SETTINGS];
-static int g_nsettings, g_disabled;
-static char g_click[128], g_texts[16384];
-static struct { char name[40], detail[60]; } g_rows[64];
-static int g_nrows;
+static int g_nsettings;
 
 static int s_get(const char *key, char *out, size_t cap) {
     for (int i = 0; i < g_nsettings; i++)
@@ -90,88 +88,6 @@ static int s_set(const char *key, const char *value) {
     snprintf(g_settings[g_nsettings++].value, sizeof g_settings[0].value, "%s", value);
     return 1;
 }
-static void p_log(const char *fmt, ...) { (void)fmt; }
-static void p_redraw(void) {}
-static void record(const char *t) {
-    size_t n = strlen(g_texts);
-    snprintf(g_texts + n, sizeof g_texts - n, "%s\n", t ? t : "");
-}
-static void p_heading(const char *t) { record(t); }
-static void p_text(const char *t) { record(t); }
-static void p_note(int kind, const char *t) { (void)kind; record(t); }
-static void p_separator(void) {}
-static void p_same_line(void) {}
-static int g_stack[32], g_depth;   // each section's own flag; disabled while any is
-static void p_disabled_begin(int on) {
-    assert(g_depth < 32);
-    g_stack[g_depth++] = on != 0;
-    g_disabled += on != 0;
-}
-static void p_disabled_end(void) {
-    assert(g_depth > 0);   // always paired
-    g_disabled -= g_stack[--g_depth];
-}
-static void p_busy(const char *t) { record(t); }
-static int p_checkbox(const char *k, const char *l, int d) { (void)k, (void)l, (void)d; return 0; }
-static int p_input(const char *k, const char *l, const char *h, int m, int f) { (void)k, (void)l, (void)h, (void)m, (void)f; return 0; }
-static int p_choice(const char *k, const char *l, const char *const *v, const char *const *lb, int n) {
-    (void)k, (void)l, (void)v, (void)lb, (void)n; return 0;
-}
-static int p_button(const char *label) {
-    if (g_disabled || strcmp(label, g_click)) return 0;
-    g_click[0] = 0;
-    return 1;
-}
-static void p_list_begin(const char *id, int rows) { (void)id, (void)rows; g_nrows = 0; }
-static int p_list_row(const char *name, const char *detail, const char *const *b, int n) {
-    (void)b, (void)n;
-    if (g_nrows < 64) {
-        snprintf(g_rows[g_nrows].name, sizeof g_rows[0].name, "%s", name);
-        snprintf(g_rows[g_nrows++].detail, sizeof g_rows[0].detail, "%s", detail ? detail : "");
-    }
-    return 0;
-}
-static void p_list_end(void) {}
-static int g_cols;
-static void p_columns_begin(int n) { assert(!g_cols); g_cols = n; }
-static void p_column_next(void) { assert(g_cols); }
-static void p_columns_end(void) { assert(g_cols); g_cols = 0; }
-static int p_slider(const char *k, const char *l, int mn, int mx, int d) { (void)k, (void)l, (void)mn, (void)mx, (void)d; return 0; }
-static void p_list_empty(const char *t) { (void)t; }
-
-static MkwModPage g_page_fn;
-static const char *g_profile = "Bia";
-static int g_opened = 1;
-static void frame(void) {
-    MkwPage pg = {
-        .size = sizeof pg, .version = MKW_PLUGIN_API_VERSION, .port_version = "test", .mod_dir = ".", .mod_name = "mkwmp",
-        .language = "en", .profile_name = g_profile, .scale = 1, .opened = g_opened,
-        .log = p_log, .setting_get = s_get, .setting_set = s_set, .redraw = p_redraw,
-        .heading = p_heading, .text = p_text, .note = p_note, .separator = p_separator, .same_line = p_same_line,
-        .disabled_begin = p_disabled_begin, .disabled_end = p_disabled_end, .busy = p_busy, .checkbox = p_checkbox, .input = p_input, .choice = p_choice,
-        .button = p_button, .list_begin = p_list_begin, .list_row = p_list_row, .list_end = p_list_end,
-        .list_empty = p_list_empty, .columns_begin = p_columns_begin, .column_next = p_column_next,
-        .columns_end = p_columns_end, .slider = p_slider,
-    };
-    g_opened = 0;
-    g_texts[0] = 0;
-    g_disabled = g_depth = 0;
-    g_page_fn(&pg);
-    assert(g_depth == 0);   // every section the page opened, it closed
-    assert(!g_cols);        // and its columns
-}
-// Frames until cond holds (the page's worker thread answers), at most 8 s.
-#define FRAMES_UNTIL(cond)                                                                                             \
-    do {                                                                                                               \
-        int ok_ = 0;                                                                                                   \
-        for (int f_ = 0; f_ < 400 && !(ok_ = !!(cond)); f_++) { frame(); usleep(20000); }                                \
-        if (!ok_) { fprintf(stderr, "timed out: %s\n--- page:\n%s", #cond, g_texts); assert(0); }                     \
-    } while (0)
-static int has_row(const char *name, const char *detail) {
-    for (int i = 0; i < g_nrows; i++)
-        if (!strcmp(g_rows[i].name, name) && !strcmp(g_rows[i].detail, detail)) return 1;
-    return 0;
-}
 static int setting_is(const char *key, const char *value) {
     char v[64];
     return s_get(key, v, sizeof v) && !strcmp(v, value);
@@ -179,10 +95,8 @@ static int setting_is(const char *key, const char *value) {
 static int v2_get(const char *key, char *out, size_t cap) { return s_get(key, out, cap); }
 static void (*g_exit_cb)(void *);
 static int g_tabs;
-static void (*g_voice_tab)(const struct MkwPage *);
 static int v2_settings_tab(const char *title, void (*draw)(const struct MkwPage *)) {
-    assert(draw);
-    if (!strcmp(title, "Voice chat")) g_voice_tab = draw;
+    (void)title, (void)draw;
     g_tabs++;
     return 1;
 }
@@ -243,6 +157,7 @@ int main(int argc, char **argv) {
     MkwPluginInit init = (MkwPluginInit)dlsym(so, "mkw_plugin_init");
     assert(init);
     assert(!dlsym(so, "npln_register") && !dlsym(so, "g_rt"));   // nothing else is exported
+    assert(!dlsym(so, "mkw_mod_page"));                            // no options page: the launcher sets everything
 
     MkwPluginApi api = {
         .size = sizeof api, .version = MKW_PLUGIN_API_VERSION, .port_version = "test", .game_version = "1.8.0",
@@ -309,53 +224,14 @@ int main(int argc, char **argv) {
 
     assert(strstr(text, "runtime without mod settings (plugin API 1)"));
 
-    // ---- the options page and the plugin's own sign-in, against the fake seat server
+    // ---- the plugin's own sign-in with the launcher's settings, against the fake seat server
     const char *server = getenv("MKWMP_TEST_SERVER");
     if (server && *server) {
-        g_page_fn = (MkwModPage)dlsym(so, "mkw_mod_page");
-        assert(g_page_fn);
         s_set("server", server);
-        frame();
-        assert(strstr(g_texts, "Accept the notice above"));       // nothing works before the consent
-        snprintf(g_click, sizeof g_click, "Sign up as Bia");
-        frame();
-        assert(g_click[0]);                                          // greyed out: not pressed
         s_set("consent18", "1");
-        FRAMES_UNTIL(!g_click[0]);
-        FRAMES_UNTIL(setting_is("pin_name", "Bia"));
-        char pin[16];
-        assert(s_get("pin", pin, sizeof pin) && strlen(pin) == 6);
-        FRAMES_UNTIL(strstr(g_texts, "Your PIN is ") && strstr(g_texts, "Signed up as Bia"));
-        printf("options page: consent first, then signed up as Bia (PIN stored, shown once)\n");
-        // a friend request: the list shows it as sent
-        s_set("friend_add", "Rafa");
-        snprintf(g_click, sizeof g_click, "Send request");
-        FRAMES_UNTIL(!g_click[0]);
-        FRAMES_UNTIL(has_row("Rafa", "request sent"));
-        assert(!s_get("friend_add", pin, sizeof pin));               // the field is emptied
-        printf("options page: friend request to Rafa listed as sent\n");
-        // signing up a name someone has: the page says so and offers the PIN field
-        g_profile = "Luz";
-        g_opened = 1;
-        snprintf(g_click, sizeof g_click, "Sign up as Luz");
-        FRAMES_UNTIL(!g_click[0]);
-        FRAMES_UNTIL(strstr(g_texts, "already signed up"));
-        s_set("pin_entry", "999999");
-        snprintf(g_click, sizeof g_click, "Use this PIN");
-        FRAMES_UNTIL(!g_click[0]);
-        FRAMES_UNTIL(strstr(g_texts, "Wrong PIN"));
-        s_set("pin_entry", "333333");
-        snprintf(g_click, sizeof g_click, "Use this PIN");
-        FRAMES_UNTIL(!g_click[0]);
-        FRAMES_UNTIL(setting_is("pin_name", "Luz") && setting_is("pin", "333333"));
-        printf("options page: a taken name, a wrong PIN refused, the right one stored\n");
-        g_profile = "Bad Name";
-        g_opened = 1;
-        frame();
-        assert(strstr(g_texts, "cannot be used online"));
-        g_profile = "Luz";
-
-        // a version 2 runtime with those settings: the plugin signs in itself (in a child: the probe is global)
+        s_set("pin_name", "Luz");   // the launcher's name, not the game's profile name
+        s_set("pin", "333333");
+        assert(setting_is("pin", "333333"));
         pid_t child = fork();
         if (!child) {
             char dir2[600];
@@ -364,7 +240,7 @@ int main(int argc, char **argv) {
             MkwPluginApi v2 = api;
             v2.mod_dir = dir2;
             v2.language = "en";
-            v2.profile_name = "Luz";
+            v2.profile_name = "Player";
             v2.setting_get = v2_get;
             v2.setting_set = v2_set;
             v2.on_exit = v2_on_exit;
@@ -382,7 +258,7 @@ int main(int argc, char **argv) {
             if (!strstr(t2, "the plugin signs in to") || !strstr(t2, "as Luz itself")) { fputs(t2, stderr); _exit(12); }
             if (!strstr(t2, "overrides registered")) _exit(13);
             if (!g_exit_cb) _exit(14);   // the seat is given back at the game's end
-            if (g_tabs != 3) _exit(15);  // Voice chat, MKWMP and Camera in the in-game settings
+            if (g_tabs != 0) _exit(15);  // no tab of the mod's in mkw-recomp's settings
             g_exit_cb(NULL);             // nothing seated yet: a no-op that must not hang
             _exit(0);
         }
@@ -390,9 +266,11 @@ int main(int argc, char **argv) {
         waitpid(child, &st, 0);
         if (!WIFEXITED(st) || WEXITSTATUS(st)) fprintf(stderr, "child: status %d\n", WIFEXITED(st) ? WEXITSTATUS(st) : -1);
         assert(WIFEXITED(st) && WEXITSTATUS(st) == 0);
-        printf("version 2 init with the page's settings: engaged, signing in itself as Luz\n");
+        printf("version 2 init with the launcher's settings: engaged, signing in itself as Luz, no tabs\n");
 
-        // a player not signed up (Zed): the tabs are there all the same, Voice chat greyed and pointing at MKWMP
+        // no account in the settings (the launcher never signed in): online play stays off, still no tabs
+        s_set("pin", NULL);
+        s_set("pin_name", NULL);
         child = fork();
         if (!child) {
             char dir3[600];
@@ -409,50 +287,16 @@ int main(int argc, char **argv) {
             unsetenv("MKWMP_ENABLE");
             const char *m = NULL;
             if (init(&v2, MKW_PLUGIN_API_VERSION, &m)) _exit(20);
-            if (g_tabs != 3 || !g_voice_tab) _exit(21);   // Voice chat, MKWMP and Camera, not signed up
-            g_page_fn = (MkwModPage)g_voice_tab;
-            frame();
-            if (!strstr(g_texts, "Voice chat needs an MKWMP account")) { fputs(g_texts, stderr); _exit(22); }
+            if (g_tabs != 0) _exit(21);
             _exit(0);
         }
         st = 0;
         waitpid(child, &st, 0);
         if (!WIFEXITED(st) || WEXITSTATUS(st)) fprintf(stderr, "child: status %d\n", WIFEXITED(st) ? WEXITSTATUS(st) : -1);
         assert(WIFEXITED(st) && WEXITSTATUS(st) == 0);
-        printf("version 2 init, not signed up: the Voice chat and MKWMP tabs all the same, Voice chat greyed\n");
-
-        // a voice-abuse report: filed, shown as waiting, withdrawn; reporting oneself is greyed out
-        g_opened = 1;
-        FRAMES_UNTIL(strstr(g_texts, "Report voice abuse") && !strstr(g_texts, "Checking your reports"));
-        s_set("report_name", "Luz");
-        snprintf(g_click, sizeof g_click, "Send report");
-        frame();
-        assert(g_click[0]);                                          // oneself: not pressed
-        s_set("report_name", "Rafa");
-        s_set("report_reason", "hate");
-        s_set("report_details", "slurs in \"Mario Circuit\"\\lobby");
-        FRAMES_UNTIL(!g_click[0]);
-        FRAMES_UNTIL(strstr(g_texts, "Your report about Rafa (Hate speech or slurs) is waiting"));
-        assert(!s_get("report_name", pin, sizeof pin));              // the form is emptied
-        snprintf(g_click, sizeof g_click, "Withdraw");
-        FRAMES_UNTIL(!g_click[0]);
-        FRAMES_UNTIL(strstr(g_texts, "Report withdrawn.") && !strstr(g_texts, "Your report about"));
-        printf("options page: a report filed, shown as waiting, withdrawn; oneself cannot be reported\n");
-
-        // deleting the account: asked first, then gone from the server (the name is free again), the PIN forgotten
-        snprintf(g_click, sizeof g_click, "Delete my account");
-        FRAMES_UNTIL(!g_click[0]);
-        FRAMES_UNTIL(strstr(g_texts, "Delete \"Luz\" from this server?"));
-        snprintf(g_click, sizeof g_click, "Delete");
-        FRAMES_UNTIL(!g_click[0]);
-        FRAMES_UNTIL(strstr(g_texts, "Account deleted from this server."));
-        assert(!s_get("pin", pin, sizeof pin) && !s_get("pin_name", pin, sizeof pin));
-        snprintf(g_click, sizeof g_click, "Sign up as Luz");         // free again: anyone can sign up as it
-        FRAMES_UNTIL(!g_click[0]);
-        FRAMES_UNTIL(setting_is("pin_name", "Luz"));
-        printf("options page: the account deleted after a confirmation, the name free again\n");
+        printf("version 2 init without an account: online play off, no tabs\n");
     } else {
-        printf("(MKWMP_TEST_SERVER unset: options page not tested)\n");
+        printf("(MKWMP_TEST_SERVER unset: the plugin's own sign-in not tested)\n");
     }
 
     remove(path);
