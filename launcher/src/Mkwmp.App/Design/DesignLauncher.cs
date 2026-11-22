@@ -924,7 +924,17 @@ public sealed partial class DesignLauncher : ILauncher
         Change(() => Update = new UpdateView(UpdateState.UpToDate, null, null, 0, null, "Up to date"));
     }
 
-    public void ContinueWithoutUpdate() => Change(() => Update = Update with { Required = false });
+    private bool _offlineOnly;
+
+    public bool OnlineEnabled => !_offlineOnly && !string.IsNullOrWhiteSpace(Settings.Server);
+
+    public bool OnlineBlockedByUpdate => _offlineOnly;
+
+    public void ContinueWithoutUpdate() => Change(() =>
+    {
+        _offlineOnly = true;
+        Update = Update with { Required = false };
+    });
 
     /// <summary>For screenshots: the update as a real launcher has it, required (--modal update | ready | ready-game | update-failed).</summary>
     public void RequireUpdate(string? failure = null) => Change(() => Update = failure is null

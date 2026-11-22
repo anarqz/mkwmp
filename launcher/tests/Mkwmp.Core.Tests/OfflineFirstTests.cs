@@ -24,8 +24,8 @@ public class OfflineFirstTests
         Assert.Equal("", ClientConfig.Parse("name = \"Ana\"\n").Settings.Server);
         Assert.Equal("", ClientConfig.Parse("server = \"  \"\n").Settings.Server);
         Assert.Equal("https://mkw.example.net", ClientConfig.Parse("server = \"https://mkw.example.net/\"\n").Settings.Server);
-        Assert.False(Launcher.IsOnline(new LauncherSettings()));
-        Assert.True(Launcher.IsOnline(new LauncherSettings { Server = "x:1" }));
+        Assert.False(Launcher.HasServer(new LauncherSettings()));
+        Assert.True(Launcher.HasServer(new LauncherSettings { Server = "x:1" }));
     }
 
     [Fact]
@@ -95,6 +95,76 @@ public class OfflineFirstTests
         server.Requests.Clear();
         await Task.Delay(700);
         Assert.Empty(server.Requests);
+    }
+
+    /// <summary>
+    /// The run after a required update could not be installed and the player chose "Continue Offline" (UPDATES.md,
+    /// section 1): the launcher's own offline state although a server is set, with its own reason, until it is closed.
+    /// </summary>
+    [Fact]
+    public async Task After_a_failed_update_the_run_goes_on_offline_only_and_the_next_start_requires_it_again()
+    {
+        var server = new FakeSeatServer();
+        var root = Rig.NewFolder("offline-update");
+        var path = Path.Combine(root, "client.toml");
+        var exe = Path.Combine(root, "mkwmp.exe");
+        File.WriteAllText(exe, "launcher");
+        new ClientConfig { Settings = new LauncherSettings { Server = FakeSeatServer.Url, Name = "Ana", Pin = "123456", AdultConsent = true } }.Save(path);
+        // as the helper starts the previous launcher after a rollback: nothing is checked, the failure is said
+        Launcher Rolled() => new(path, root, new LauncherOptions
+        {
+            BindLocalApi = false, RequireUpdates = true, Executable = exe, Version = "1.4.4", Targets = [new MkwRecompTarget("1.4.4")], UpdateApi = "http://github.test",
+            UpdateEnvironment = variable => variable == Mkwmp.Update.UpdateRunner.UpdatedVariable ? "1" : variable == Mkwmp.Update.UpdateRunner.FailedVariable ? "mkwmp.exe is in use" : null,
+        }, server);
+
+        await using (var launcher = Rolled())
+        {
+            await launcher.StartAsync(CancellationToken.None);
+            await launcher.StartupUpdates;
+            Assert.Equal((UpdateState.Failed, true), (launcher.Update.State, launcher.Update.Required));
+            // Until the player decides, it is the launcher as it was: online.
+            Assert.True(launcher.OnlineEnabled);
+            await Rig.Until("the sign-in", () => server.Requests.Contains("POST /seat/v1/presence"));
+
+            launcher.ContinueWithoutUpdate();
+            Assert.Equal((false, true, false), (launcher.Update.Required, launcher.OnlineBlockedByUpdate, launcher.OnlineEnabled));
+            Assert.Equal(FakeSeatServer.Url, launcher.Settings.Server); // nothing saved is touched: the server, the PIN, the consent
+            Assert.Equal(("123456", true), (launcher.Settings.Pin, launcher.Settings.AdultConsent));
+            Assert.Equal(ServerState.NotAsked, launcher.Server.State);
+            Assert.False(launcher.Friends.Loaded);
+            await Rig.Until("the sign-out", () => server.Requests.Contains("DELETE /seat/v1/presence"));
+            await Task.Delay(300);
+            server.Requests.Clear();
+
+            // Everything that talks to the game server is refused, with the one reason, and without a request.
+            await launcher.RegisterAsync("Ana");
+            Assert.Equal((RegisterState.Failed, Strings.UpdateToPlayOnline), (launcher.Profile.Register, launcher.Profile.Message));
+            await launcher.AddFriendAsync("Bia");
+            Assert.Equal((Strings.UpdateToPlayOnline, true), (launcher.Friends.Note, launcher.Friends.NoteIsError));
+            await launcher.SendReportAsync("Bia", "other", null);
+            Assert.Equal((Strings.UpdateToPlayOnline, true), (launcher.Report.Note, launcher.Report.NoteIsError));
+            Assert.Equal("Update MKWMP to play online", Strings.UpdateToPlayOnline);
+
+            // The game asking this launcher for a seat is refused too (409: it stays offline), in words the mod can show.
+            using var api = new LocalApi(launcher, TimeProvider.System);
+            var answer = await api.HandleAsync("POST", "/local/v1/seat", $"Bearer {launcher.Token}", ReadOnlyMemory<byte>.Empty, CancellationToken.None);
+            Assert.Equal(409, answer.Status);
+            Assert.Contains(Strings.UpdateToPlayOnlineInGame, answer.Body, StringComparison.Ordinal);
+            Assert.True(Strings.UpdateToPlayOnlineInGame.Length < 128 && Strings.UpdateToPlayOnlineInGame.All(c => c is >= ' ' and <= '~' and not ('"' or '<' or '>' or '&' or '\\' or '\'' or '+')));
+
+            // PLAY is allowed, and is the offline one: no seat is asked for.
+            await launcher.PlayAsync();
+            await Task.Delay(700);
+            Assert.Equal(0, server.Joins);
+            Assert.Empty(server.Requests);
+        }
+
+        // The next start: online again as far as the server goes, and the update required again.
+        server.Requests.Clear();
+        await using var next = Rolled();
+        await next.StartAsync(CancellationToken.None);
+        await next.StartupUpdates;
+        Assert.Equal((true, false, true), (next.Update.Required, next.OnlineBlockedByUpdate, next.OnlineEnabled));
     }
 
     [Fact]

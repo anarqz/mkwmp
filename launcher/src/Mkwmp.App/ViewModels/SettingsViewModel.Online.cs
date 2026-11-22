@@ -37,6 +37,12 @@ public sealed partial class SettingsViewModel
 
     public bool IsOnlinePane => _category.Key == Routes.OnlineCategory;
 
+    /// <summary>Offline only until MKWMP is updated (a required update failed and the player went on): no server list, no connecting; the way back is the update.</summary>
+    public bool UpdateOffline => Launcher.OnlineBlockedByUpdate;
+
+    /// <summary>"Online is off" with its server list: no server is set (and it is not <see cref="UpdateOffline"/>).</summary>
+    public bool ShowOnlineOff => OnlineLocked && !UpdateOffline;
+
     /// <summary>The servers to choose from while offline (the beholder's list, nearest first).</summary>
     public ServerPicker Servers { get; private set; } = null!;
 
@@ -47,7 +53,7 @@ public sealed partial class SettingsViewModel
         {
             return; // a category chosen while the page is still being made
         }
-        if (visible && IsOnlinePane && OnlineLocked)
+        if (visible && IsOnlinePane && OnlineLocked && !UpdateOffline)
         {
             Servers.Start();
         }

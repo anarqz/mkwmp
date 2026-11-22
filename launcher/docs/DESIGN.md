@@ -538,6 +538,13 @@ asks the server anything.
 | Toasts, system notifications | none of the friend kinds (`ToastKind.Friend*`) are shown |
 | Power menu | no "your seat is given back" line |
 
+**Offline only until MKWMP is updated** (`Shell.OnlineBlockedByUpdate`; UPDATES.md, section 1: a required update could
+not be installed and the player chose "Continue Offline"). The same locks, for the rest of the run, although a server
+is set (`OnlineEnabled` is false). What differs is said in one place each: `v:OnlineLocked` shows "Update MKWMP to play
+online" and its button reads "Try the Update Again" wherever it is used; `Shell.OnlineLockLabel` is the label of Home's
+tile and dock button; `Shell.ConfigureOnline()` opens the update's card instead of Settings › Online. A place that locks
+something of its own needs nothing more than the rule above.
+
 With a server everything is as before; the lock follows `Changed` (choosing a server in Settings › Online unlocks
 the rest at once, the chosen category stays chosen).
 

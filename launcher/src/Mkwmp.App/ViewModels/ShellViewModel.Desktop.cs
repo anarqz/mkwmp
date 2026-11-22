@@ -38,10 +38,25 @@ public sealed partial class ShellViewModel
     /// </summary>
     public bool OnlineEnabled => Launcher.OnlineEnabled;
 
-    /// <summary>"Configure online": Settings › Online, from wherever a lock was (the friends panel closes).</summary>
+    /// <summary>
+    /// Online is locked for this run although a server is set: a required update could not be installed and the
+    /// player went on offline (UPDATES.md, section 1). Every lock then says "Update MKWMP to play online" and
+    /// <see cref="ConfigureOnline"/> leads to the update instead of Settings › Online.
+    /// </summary>
+    public bool OnlineBlockedByUpdate => Launcher.OnlineBlockedByUpdate;
+
+    /// <summary>The label of every lock's way out: "Configure Online", or "Try the Update Again".</summary>
+    public string OnlineLockLabel => S[OnlineBlockedByUpdate ? "online.update.button" : "online.configure"];
+
+    /// <summary>"Configure online": Settings › Online, from wherever a lock was (the friends panel closes). Offline only until MKWMP is updated: the update's card.</summary>
     public void ConfigureOnline()
     {
         IsFriendsOpen = false;
+        if (OnlineBlockedByUpdate)
+        {
+            ShowUpdateModal();
+            return;
+        }
         OpenSettings();
         if (Page is SettingsViewModel settings
             && settings.Categories.FirstOrDefault(c => c.Key == Routes.OnlineCategory) is { } entry)

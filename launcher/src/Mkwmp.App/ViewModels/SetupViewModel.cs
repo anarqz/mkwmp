@@ -437,6 +437,11 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
                 await GamePrimaryAsync().ConfigureAwait(true);
                 break;
             case SetupStep.Online:
+                if (Launcher.OnlineBlockedByUpdate)
+                {
+                    Shell.ConfigureOnline(); // offline only until MKWMP is updated: the update's card, not a server
+                    break;
+                }
                 _goOnline = true;
                 Step = SetupStep.Server;
                 break;

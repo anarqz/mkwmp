@@ -196,6 +196,12 @@ public static class Strings
     /// <remarks>Plain ASCII without quotes, &lt;, &gt; or &amp;: the mod reads it out of the JSON as it is written, and keeps 127 characters. So it stays English.</remarks>
     public const string OnlineOffInGame = "Online is off: connect to a server in the MKWMP launcher (Settings, Online)";
 
+    /// <summary>An online action asked for in a run that is offline only: a required update could not be installed (UPDATES.md, section 1).</summary>
+    public static string UpdateToPlayOnline => T("core.update_to_play_online");
+
+    /// <summary>The same, told to the game that asks for a seat: English and plain ASCII, as <see cref="OnlineOffInGame"/>.</summary>
+    public const string UpdateToPlayOnlineInGame = "Update MKWMP to play online: open the MKWMP launcher (Settings, Updates)";
+
     /// <summary>The profile card while offline: the name is only on this device.</summary>
     public static string LocalNameOnly => T("core.local_name_only");
 

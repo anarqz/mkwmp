@@ -10,11 +10,11 @@
     <!-- online is off: the offline picture (Assets/Art) -->
     <Image Source="pack://application:,,,/Assets/Art/empty-offline.png" Height="210" HorizontalAlignment="Center"
            RenderOptions.BitmapScalingMode="HighQuality" IsHitTestVisible="False" />
-    <TextBlock Text="{Binding Title, ElementName=Self}" Style="{StaticResource Text.Heading}" TextWrapping="Wrap" TextAlignment="Center"
+    <TextBlock Text="{Binding ShownTitle, ElementName=Self}" Style="{StaticResource Text.Heading}" TextWrapping="Wrap" TextAlignment="Center"
                HorizontalAlignment="Center" Margin="0,30,0,0" />
-    <TextBlock Text="{Binding Text, ElementName=Self}" Style="{StaticResource Text.Caption}" FontSize="26" LineHeight="38" TextAlignment="Center"
+    <TextBlock Text="{Binding ShownText, ElementName=Self}" Style="{StaticResource Text.Caption}" FontSize="26" LineHeight="38" TextAlignment="Center"
                HorizontalAlignment="Center" Margin="0,12,0,0" />
-    <c:ConsoleButton Kind="Primary" Icon="{StaticResource Icon.Globe}" Content="{Binding S[online.configure]}" HorizontalAlignment="Center"
+    <c:ConsoleButton Kind="Primary" Icon="{StaticResource Icon.Globe}" Content="{Binding ButtonText, ElementName=Self}" HorizontalAlignment="Center"
                      MinWidth="360" Margin="0,34,0,0" Command="{Binding ConfigureOnlineCommand}" />
   </StackPanel>
 </UserControl>

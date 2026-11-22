@@ -25,6 +25,9 @@ public sealed partial class Launcher
     private volatile bool _mustUpdate;
     private volatile bool _waived;
 
+    // The run after "Continue Without Updating": offline only (Launcher.IsOnline is false whatever server is set).
+    private volatile bool _offlineOnly;
+
     /// <summary>This run enforces updates: a real, windowed launcher that can replace itself.</summary>
     private bool Enforces => _options.RequireUpdates && !_options.Headless && UpdateExe is not null;
 
@@ -35,11 +38,31 @@ public sealed partial class Launcher
 
     private static string RootOf(string exe) => Path.GetDirectoryName(Path.GetFullPath(exe)) ?? ".";
 
+    /// <summary>
+    /// Into (or out of) the offline-only run: the same steps as leaving a server (or choosing one). Signed out there,
+    /// friends and reports cleared, the status not asked for; the loops only wait. A session that holds a seat is stopped.
+    /// </summary>
+    private void SetOfflineOnly(bool on)
+    {
+        if (_offlineOnly == on)
+        {
+            return;
+        }
+        var server = Settings.Server;
+        if (on && Session.Busy)
+        {
+            _stop.Set(); // its seat is given back; the game, if it runs, is left alone
+        }
+        _offlineOnly = on;
+        ServerChanged(on ? server : "");
+    }
+
     private void SetUpdate(UpdateView view)
     {
         if (view.State is UpdateState.UpToDate or UpdateState.Off)
         {
             _mustUpdate = false;
+            SetOfflineOnly(false); // nothing newer after all (the release was withdrawn): online again
         }
         view = view with { Required = _mustUpdate && !_waived && view.State is not (UpdateState.UpToDate or UpdateState.Off or UpdateState.Checking) };
         lock (_gate)
@@ -171,8 +194,9 @@ public sealed partial class Launcher
     {
         if (Update is { State: UpdateState.Failed, Required: true })
         {
-            Note("the update failed and the player goes on without it for this run");
+            Note("the update failed and the player goes on without it: offline only for this run");
             _waived = true;
+            SetOfflineOnly(true);
             SetUpdate(Update);
         }
     }

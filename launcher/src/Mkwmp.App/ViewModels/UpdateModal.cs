@@ -171,7 +171,8 @@ public sealed class UpdateModal : ModalViewModel, IDisposable
                 break;
             case UpdateState.Failed:
                 Title = s["update.failed"];
-                Body = update.Status;
+                // the run that went on offline: why online is locked, and this is the way back
+                Body = launcher.OnlineBlockedByUpdate ? update.Status + "\n\n" + s["online.update.text"] : update.Status;
                 Actions.Add(new ModalAction(s["update.retry"], Download, ButtonKind.Outline, isDefault: true));
                 Bottom = close;
                 break;

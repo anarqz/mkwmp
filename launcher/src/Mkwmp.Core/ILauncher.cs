@@ -51,6 +51,14 @@ public interface ILauncher : IAsyncDisposable
     bool OnlineEnabled => !string.IsNullOrWhiteSpace(Settings.Server);
 
     /// <summary>
+    /// This run is offline only although a server is set: a required update could not be installed and the player
+    /// chose to go on (<see cref="ContinueWithoutUpdate"/>). <see cref="OnlineEnabled"/> is false, so every locked
+    /// place shows; they say "Update MKWMP to play online" and lead to the update instead of Settings › Online.
+    /// Over at the next start, or when the update is installed.
+    /// </summary>
+    bool OnlineBlockedByUpdate => false;
+
+    /// <summary>
     /// Asks a server who it is (its public status), without saving anything: what "Connect" shows
     /// before the address becomes <see cref="LauncherSettings.Server"/> through
     /// <see cref="SaveSettingsAsync"/>. Never throws: the answer says unreachable, not an MKWMP
@@ -200,8 +208,9 @@ public interface ILauncher : IAsyncDisposable
 
     /// <summary>
     /// The way on after a required update could not be installed (<see cref="UpdateState.Failed"/> with
-    /// <see cref="UpdateView.Required"/>): this launcher is used as it is until it is closed, and asks again at
-    /// its next start. Nothing in any other state.
+    /// <see cref="UpdateView.Required"/>): this launcher goes on <b>offline only</b> until it is closed
+    /// (<see cref="OnlineBlockedByUpdate"/>: the game plays offline, nothing reaches the game server), and
+    /// requires the update again at its next start. Nothing in any other state.
     /// </summary>
     void ContinueWithoutUpdate();
 

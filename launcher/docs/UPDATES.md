@@ -41,9 +41,17 @@ client.toml's old `update = false` is read and ignored, and Settings › Updates
      That launcher shows the same card with the reason and the same three buttons. It **does not check or
      install anything by itself in that run**, so a release that cannot be installed on this PC never loops.
      The download is kept: Try Again needs no new download unless it was the download that was wrong.
-   - **Continue Without Updating** lifts the requirement **for this run only** (everything works, online too,
-     with the version that is installed; a server that needs the newer one says so itself). The next start
-     asks again. It is offered only after a failure.
+   - **Continue Offline** (`update.continue_without`) lets this run go on **offline only**, until the launcher
+     is closed. PLAY works and is the offline one (the game starts with no seat). Everything that talks to the
+     game server is off, with one reason, "Update MKWMP to play online": no status, no sign-in, no friends,
+     no reports, no consent written, no server list measured, and the game asking this launcher for a seat
+     (`/local/v1/seat`) is refused (409, "Update MKWMP to play online: open the MKWMP launcher (Settings,
+     Updates)"). Nothing saved is touched (the server, the PIN, the consent stay in client.toml). The way back
+     is always there and never blocks: Home's Friends tile and dock button become "Try the Update Again",
+     every locked place (the friends panel, Settings › Online, Voice & Camera) shows the reason with that
+     button, and Settings › Updates has the row; all open the update's card (Try again, Close). GitHub and
+     the mod browser are not affected. **The next start requires the update again.** Offered only after a
+     failure.
 7. **Not blocked at all:** GitHub cannot be reached or the PC is offline (the check finds nothing: play as
    before, and a verified download that already waits is still installed); a game running (5);
    `--headless` (below); `--no-update` (development and tests only: nothing is asked of GitHub).
@@ -126,7 +134,14 @@ check that found a release sets `UpdateView.Required` on every view from then on
 a game runs → `InstallUpdateAfterGame(true)` by itself (and `InstallUpdateAfterGame(false)` is ignored); no
 game → the view is `ReadyToInstall` and the window installs (`UpdateModal`: the button, or its countdown).
 `PlayAsync` returns without starting while `Required`. `ILauncher.ContinueWithoutUpdate()` clears `Required`
-for the run, and only from `Failed`. The window blocks on `UpdateModal.Blocks`: `Required`, no game
+for the run, and only from `Failed`, and makes the run **offline only** (`ILauncher.OnlineBlockedByUpdate`).
+That is not a second offline: it is the launcher's one offline state (section 12 of DESIGN.md, "locked
+online"), entered without clearing the server. `Launcher.IsOnline(settings)`, the gate every server call
+already went through, is now "a server is set **and** the run is not offline only" (`Launcher.HasServer` is
+the old meaning, for what is only about the file), and `ILauncher.OnlineEnabled` follows it; entering does
+what leaving a server does (`ServerChanged`: signed out there, friends and reports cleared, a session's seat
+given back). The window reads `Shell.OnlineBlockedByUpdate`: `Shell.ConfigureOnline()` opens the update's
+card instead of Settings › Online, and `v:OnlineLocked` shows the one reason in every locked place. The window blocks on `UpdateModal.Blocks`: `Required`, no game
 (`GameBlocks`, `AfterGame`, a session), not in overlay mode; `ShellViewModel.WatchUpdate` opens the card.
 A launcher started by the helper (`MKWMP_UPDATED`) checks nothing at start; after a rollback
 (`MKWMP_UPDATE_FAILED`) its view is `Failed` and `Required`, and "Try Again" is `CheckForUpdatesAsync`.
@@ -361,8 +376,10 @@ opened) and `UpdaterTests.cs`:
   place from the zip;
 - required updates: found → downloaded by itself, `Required`, PLAY refused, installed when the window says
   so; GitHub down → nothing required; a game running → armed for after the game, cannot be taken back,
-  installed when it ends; a failed download → `Failed` and `Required`, Continue Without Updating lifts it,
-  Try Again finishes the download; a rolled-back install (`MKWMP_UPDATE_FAILED`) → said once, no request to
+  installed when it ends; a failed download → `Failed` and `Required`, Continue Offline lifts it,
+  Try Again finishes the download; after Continue Offline (OfflineFirstTests): `OnlineEnabled` false with the
+  server still saved, signed out, register / friends / reports refused with "Update MKWMP to play online" and
+  no request, the local API's seat refused (409), PLAY asks for no seat, and the next start requires again; a rolled-back install (`MKWMP_UPDATE_FAILED`) → said once, no request to
   GitHub and no install by itself (no loop), Try Again installs from the kept download; a 1.3.x folder the zip was unzipped into (the Rust launcher's client.toml);
 - the game's package: only `game/` beside the launcher, never downloaded (UpdaterTests, ModInstallTests).
 
@@ -371,9 +388,12 @@ opened) and `UpdaterTests.cs`:
 - **The required update was not run end to end against a real release.** The core's states are tested with
   a fake GitHub and the card's states in the harness (`shot.ps1 out.png --modal update | ready | ready-game |
   update-failed`); the first real one is 1.4.4 → the release after it.
-- **"Continue Without Updating" lifts everything for the run, online included.** Limiting that run to offline
-  play was considered and left out (it needs a forced-offline session mode); a server that must refuse old
-  launchers has to do so itself.
+- **Offline only binds this launcher, not a game started without it.** The MKWMP mod keeps the account the
+  launcher handed it earlier (`mod-settings/mkwmp.ini`); a game started from mkw-recomp or Steam while this
+  launcher is not its host can still go online by itself. A game started by PLAY, or one that asks this
+  launcher for its seat, stays offline. A server that must refuse old clients has to do so itself.
+- **A session that holds a seat when "Continue Offline" is chosen** gets STOP (the seat is given back); the
+  card only shows without a game, so this is a corner.
 - **A game that runs by itself while the download is still running** is only seen once the download is done
   (the check for a game process is made then): until then the card blocks the launcher's window, which is
   not in front of that game anyway. In overlay mode the card never blocks.

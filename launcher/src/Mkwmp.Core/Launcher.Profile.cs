@@ -16,7 +16,7 @@ public sealed partial class Launcher
     private ((string Server, string Name, string Pin) Who, string Token)? _presence;
     private (string Server, string Name, string Pin)? _reportAskedFor;
 
-    private static (string Server, string Name, string Pin)? Ident(LauncherSettings s) =>
+    private (string Server, string Name, string Pin)? Ident(LauncherSettings s) =>
         IsOnline(s) && ClientConfig.ValidName(s.Name) && s.Pin.Length == 6 ? (s.Server, s.Name.ToLowerInvariant(), s.Pin) : null;
 
     /// <summary>What PLAY shows for an API error (the details of a network failure go to the log).</summary>
@@ -43,7 +43,7 @@ public sealed partial class Launcher
         if (!IsOnline(Settings))
         {
             // No server chosen: the name stays a local one, and nothing is asked of anyone.
-            Mutate(() => (_register, _registerMessage) = (RegisterState.Failed, Strings.OnlineOff));
+            Mutate(() => (_register, _registerMessage) = (RegisterState.Failed, OnlineOffWhy));
             return;
         }
         // Signing in comes before the consent: the consent is the server's to keep (Launcher.Privacy.cs), asked for right after.
@@ -123,7 +123,7 @@ public sealed partial class Launcher
         }
         if (!IsOnline(Settings))
         {
-            Mutate(() => (_register, _registerMessage) = (RegisterState.Failed, Strings.OnlineOff));
+            Mutate(() => (_register, _registerMessage) = (RegisterState.Failed, OnlineOffWhy));
             return;
         }
         Mutate(() => (_register, _registerMessage) = (RegisterState.Working, null));
@@ -235,7 +235,7 @@ public sealed partial class Launcher
         var s = Settings;
         if (!IsOnline(s))
         {
-            throw ApiException.Refused(Strings.OnlineOff); // no server chosen: nobody to ask
+            throw ApiException.Refused(OnlineOffWhy); // no server chosen (or offline only until MKWMP is updated): nobody to ask
         }
         var id = Ident(s) ?? throw ApiException.Refused(Strings.RegisterFirst);
         var token = await SignInAsync(s, id, cancel).ConfigureAwait(false);

@@ -345,6 +345,10 @@
                            Caption="{Binding UpdateStatus}" />
             <c:SettingsRow Label="{Binding UpdateInstallLabel}" Kind="Chevron" Icon="{StaticResource Icon.Download}" Command="{Binding UpdateCommand}"
                            Visibility="{Binding UpdateAvailable, Converter={StaticResource Conv.Visible}}" />
+            <!-- the run that went on offline after a failed update: the way back, always here -->
+            <c:SettingsRow Label="{Binding S[online.update.button]}" Kind="Chevron" Icon="{StaticResource Icon.Warning}" Command="{Binding UpdateCommand}"
+                           Caption="{Binding S[online.update.text]}"
+                           Visibility="{Binding UpdateOffline, Converter={StaticResource Conv.Visible}}" />
             <c:SettingsRow Label="{Binding S[settings.updates.check]}" Icon="{StaticResource Icon.Refresh}" Command="{Binding CheckUpdateCommand}">
               <c:Spinner Width="40" Height="40" Visibility="{Binding UpdateBusy, Converter={StaticResource Conv.Visible}}" />
             </c:SettingsRow>

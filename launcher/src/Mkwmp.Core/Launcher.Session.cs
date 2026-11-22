@@ -123,7 +123,7 @@ public sealed partial class Launcher
         var s = Settings;
         var target = _targets.Get(s.Target);
         var install = GameFinder.Detect(target, s.Game);
-        if (ConfigProblem(s, install is not null, target.FolderHint) is { } missing)
+        if (ConfigProblem(s, install is not null, target.FolderHint, IsOnline(s)) is { } missing)
         {
             throw new LauncherException(missing);
         }

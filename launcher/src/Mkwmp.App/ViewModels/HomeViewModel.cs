@@ -240,7 +240,7 @@ public sealed class HomeViewModel : PageViewModel
     public bool HasRequests => !Locked && Launcher.Friends.Incoming.Count > 0;
 
     /// <summary>The dock's Friends button; "Configure Online" with a lock while there is no server.</summary>
-    public string FriendsLabel => Locked ? S["online.configure"] : S["home.friends"];
+    public string FriendsLabel => Locked ? Shell.OnlineLockLabel : S["home.friends"];
 
     public string FriendsIcon => Locked ? "Icon.FriendsLocked" : "Icon.Friends";
 
@@ -387,8 +387,8 @@ public sealed class HomeViewModel : PageViewModel
 
         // Friends; without a server the same tile is "Configure online" (it keeps its place and the focus)
         _friends.IconKey = Locked ? "Icon.Lock" : "Icon.Friends";
-        _friends.Title = Locked ? S["online.configure"] : S["home.friends"];
-        _friends.Subtitle = Locked ? S["home.configure_sub"]
+        _friends.Title = Locked ? Shell.OnlineLockLabel : S["home.friends"];
+        _friends.Subtitle = Locked ? S[Shell.OnlineBlockedByUpdate ? "core.update_to_play_online" : "home.configure_sub"]
             : !Launcher.Profile.SignedIn ? S["home.friends_signin"]
             : !friends.Loaded ? S["home.friends_loading"]
             : S.Format("home.friends_online", ("n", Number(friends.OnlineCount)));

@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
+             xmlns:v="clr-namespace:Mkwmp.App.Views"
              Focusable="False">
   <!-- DataContext: SettingsViewModel (SettingsViewModel.Online.cs). Settings › Online, where "Configure
        Online" leads from every locked place. Without a server: "Online is off" and Connect to a Server (the
@@ -32,7 +33,9 @@
   <StackPanel>
   <Grid>
     <!-- ───────── offline: online is off ───────── -->
-    <StackPanel Visibility="{Binding OnlineLocked, Converter={StaticResource Conv.Visible}}">
+    <!-- offline only until MKWMP is updated: one reason, and the way back to the update -->
+    <v:OnlineLocked Margin="0,96,0,40" Visibility="{Binding UpdateOffline, Converter={StaticResource Conv.Visible}}" />
+    <StackPanel Visibility="{Binding ShowOnlineOff, Converter={StaticResource Conv.Visible}}">
       <Border Style="{StaticResource Card}" Margin="0,38,0,0" Padding="34,30">
         <StackPanel>
           <StackPanel Orientation="Horizontal">

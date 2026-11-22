@@ -94,7 +94,7 @@ public static class Headless
             // No PIN yet: register the name if it's free (the PIN is printed once).
             var s = launcher.Settings;
             // (With no server in client.toml the launcher is offline: nothing is registered, and PLAY starts the game alone.)
-            if (Launcher.IsOnline(s) && s.Pin.Length == 0 && ClientConfig.ValidName(s.Name) && s.AdultConsent)
+            if (Launcher.HasServer(s) && s.Pin.Length == 0 && ClientConfig.ValidName(s.Name) && s.AdultConsent)
             {
                 try
                 {

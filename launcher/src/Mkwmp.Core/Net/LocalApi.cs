@@ -20,6 +20,9 @@ internal interface ILocalApiHost
     /// <summary>A server is chosen. False (offline): the game never gets a seat, and its Online Play is told why.</summary>
     bool Online => true;
 
+    /// <summary>What the game is told when it asks for a seat while <see cref="Online"/> is false (plain ASCII: the mod shows it).</summary>
+    string OfflineText => Strings.OnlineOffInGame;
+
     /// <summary>Accepted friends as the server orders them; null until the first list arrives.</summary>
     IReadOnlyList<Friend>? FriendsOrNull { get; }
 
@@ -321,7 +324,7 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
         if (!host.Online)
         {
             // Offline: a refusal (409) ends the game's wait at once and its text is what the mod shows; the game stays offline.
-            return State(409, "refused", Strings.OnlineOffInGame);
+            return State(409, "refused", host.OfflineText);
         }
         if (host.Seat is not { } seat)
         {

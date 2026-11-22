@@ -31,11 +31,11 @@ public sealed partial class Launcher
             ("camera_device", v.Camera),
             ("camera_mirror", v.CameraMirror ? "1" : "0"),
         };
-        if (IsOnline(s))
+        if (HasServer(s))
         {
             keys.Add(("consent18", s.AdultConsent ? "1" : "0"));
         }
-        if (IsOnline(s) && s.Name.Length > 0 && ClientConfig.ValidPin(s.Pin))
+        if (HasServer(s) && s.Name.Length > 0 && ClientConfig.ValidPin(s.Pin))
         {
             keys.Add(("server", s.Server));
             keys.Add(("pin_name", s.Name));

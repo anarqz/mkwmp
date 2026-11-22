@@ -218,9 +218,26 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
     public IReadOnlyList<SavedServer> SavedServers => _savedServersView;
 
     /// <summary>A server is chosen (<see cref="ILauncher.OnlineEnabled"/>): without one, no server is ever contacted and PLAY starts the game offline.</summary>
-    internal static bool IsOnline(LauncherSettings s) => !string.IsNullOrWhiteSpace(s.Server);
+    internal static bool HasServer(LauncherSettings s) => !string.IsNullOrWhiteSpace(s.Server);
+
+    /// <summary>
+    /// The one gate of everything that talks to the game server: a server is chosen, and this run is not offline only
+    /// (<see cref="OnlineBlockedByUpdate"/>: a required update could not be installed and the player went on without
+    /// it). False is the launcher's offline state, the same in both cases: no status, presence, friends or reports,
+    /// PLAY starts the game with no seat, and the game's own request for one is refused.
+    /// </summary>
+    internal bool IsOnline(LauncherSettings s) => HasServer(s) && !_offlineOnly;
+
+    public bool OnlineEnabled => IsOnline(Settings);
+
+    public bool OnlineBlockedByUpdate => _offlineOnly;
+
+    /// <summary>Why an online action is refused now, in the player's language.</summary>
+    private string OnlineOffWhy => _offlineOnly ? Strings.UpdateToPlayOnline : Strings.OnlineOff;
 
     bool ILocalApiHost.Online => IsOnline(Settings);
+
+    string ILocalApiHost.OfflineText => _offlineOnly ? Strings.UpdateToPlayOnlineInGame : Strings.OnlineOffInGame;
 
     /// <summary>The registered game targets (the selected one first is not implied: see <see cref="LauncherSettings.Target"/>).</summary>
     public TargetRegistry Targets => _targets;
@@ -323,9 +340,9 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
     /// What is missing in the settings before PLAY can work, in the order the player fixes it.
     /// Offline (no server) only the game is asked for: consent, gamertag and PIN belong to a server.
     /// </summary>
-    internal static string? ConfigProblem(LauncherSettings s, bool gameFound, string folderHint)
+    internal static string? ConfigProblem(LauncherSettings s, bool gameFound, string folderHint, bool? online = null)
     {
-        if (IsOnline(s))
+        if (online ?? HasServer(s))
         {
             // The order of the flow: a server, a profile on it (sign in), then the consent that server keeps.
             if (!ClientConfig.ValidName(s.Name))
@@ -364,7 +381,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
 
         var s = _config.Settings;
         var target = _targets.Get(s.Target);
-        var configProblem = ConfigProblem(s, _install is not null, target.FolderHint);
+        var configProblem = ConfigProblem(s, _install is not null, target.FolderHint, IsOnline(s));
         var settings = _settingsView;
         Put(ref settings, s);
         _settingsView = settings;
