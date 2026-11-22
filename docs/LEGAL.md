@@ -1,8 +1,8 @@
 # Interoperability and legal notes
 
 MKWMP is an unofficial, community-made online service for the mkw-recomp PC runtime of Mario Kart World. It is
-not affiliated with, endorsed by or sponsored by Nintendo. Mario Kart World and related names are Nintendo's
-trademarks; MKWMP uses them only to say which game it works with.
+not affiliated with, endorsed by or sponsored by Nintendo. Mario Kart World, Nintendo, Nintendo Switch 2 and related
+names are Nintendo's trademarks; MKWMP uses them only to say which game it works with.
 
 This page describes what the project is and is not. It is not legal advice.
 
@@ -18,7 +18,7 @@ This page describes what the project is and is not. It is not legal advice.
 
 ## What you need, and what MKWMP doesn't do
 
-- You need your **own legally obtained copy** of the game, already set up with mkw-recomp, which is a separate
+- You need your **own legally obtained copy** of Mario Kart World for Nintendo Switch 2, already set up with mkw-recomp, which is a separate
   project.
 - MKWMP does **not** obtain, dump, decrypt or distribute games, and it doesn't explain how to. It doesn't provide
   or ask for keys or firmware.
