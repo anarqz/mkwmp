@@ -23,6 +23,7 @@
 // Types: the probe's Cpu (recomp.h) starts with MkwCpu's guaranteed prefix (x0..x31, sp, pc), and both are passed by
 // pointer, so a GuestFn is handed to the runtime as an MkwGuestFn as it is. Nothing here reads past that prefix.
 #include "mkw_plugin.h"
+#include "winepad.h"   // the controller under Wine / Proton: XInput asked at load (winepad.h)
 
 #include "breadcrumbs.h"
 #include "camera.h"
@@ -267,6 +268,7 @@ MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_vers
     crumb_state("loader", "mod");
     crumb_state("recomp", "%s (plugin API %u)", api->port_version ? api->port_version : "?", (unsigned)api_version);
     crumb_state("game", "%s", api->game_version ? api->game_version : "?");
+    winepad_start();   // under Wine only, before the runtime's input starts SDL's gamepads (at its first poll)
 
     const char *missing = !api->override_symbol ? "override_symbol" : !api->guest_symbol ? "guest_symbol"
                         : !api->log ? "log" : !api->call ? "call" : !api->cfg_get ? "cfg_get"
