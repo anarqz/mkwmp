@@ -184,8 +184,6 @@
           <TextBlock Text="{Binding S[settings.profile.gamertag]}" Style="{StaticResource FieldLabel}" />
           <Grid Grid.Column="1">
             <TextBox x:Name="ReportNameBox" Text="{Binding ReportName, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" />
-            <TextBlock Text="{Binding S[settings.report.name_hint]}" Style="{StaticResource Hint}" FontSize="25"
-                       Visibility="{Binding Text, ElementName=ReportNameBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
           </Grid>
         </Grid>
       </Border>
@@ -194,8 +192,6 @@
         <Grid>
           <TextBox x:Name="ReportDetailsBox" Text="{Binding ReportDetails, UpdateSourceTrigger=PropertyChanged}" Height="170"
                    MaxLength="{Binding ReportDetailsMax, Mode=OneTime}" TextWrapping="Wrap" />
-          <TextBlock Text="{Binding S[settings.report.details_hint]}" Style="{StaticResource Hint}" FontSize="25"
-                     Visibility="{Binding Text, ElementName=ReportDetailsBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
         </Grid>
       </Border>
       <c:SettingsRow Label="{Binding S[settings.report.send]}" Icon="{StaticResource Icon.Flag}" Command="{Binding SendReportCommand}"

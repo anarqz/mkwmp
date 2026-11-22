@@ -14,11 +14,10 @@
     </Grid.ColumnDefinitions>
     <Grid>
       <PasswordBox x:Name="Masked" MaxLength="6" PasswordChar="•" FontFamily="{DynamicResource Font.Ui}" FontWeight="ExtraBold"
+                   input:TextEntry.Placeholder="{Binding Hint, ElementName=Self}"
                    input:TextEntry.Charset="Digits" input:TextEntry.Title="{Binding Title, ElementName=Self}" PasswordChanged="OnMasked" />
-      <TextBox x:Name="Plain" MaxLength="6" InputScope="Number" Visibility="Collapsed"
+      <TextBox x:Name="Plain" MaxLength="6" InputScope="Number" Visibility="Collapsed" input:TextEntry.Placeholder="{Binding Hint, ElementName=Self}"
                input:TextEntry.Charset="Digits" input:TextEntry.Title="{Binding Title, ElementName=Self}" TextChanged="OnPlain" />
-      <TextBlock x:Name="HintText" Text="{Binding Hint, ElementName=Self}" Style="{StaticResource Text.Base}"
-                 Foreground="{DynamicResource Brush.TextFaint}" Margin="28,0" IsHitTestVisible="False" />
     </Grid>
     <c:ConsoleButton Grid.Column="1" Kind="Secondary" Width="88" MinWidth="88" Height="88" Padding="0" Margin="14,0,0,0" Click="OnEye">
       <c:Icon x:Name="EyeIcon" Data="{StaticResource Icon.Eye}" Width="40" Height="40" />

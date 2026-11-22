@@ -180,11 +180,8 @@
           <c:ConsoleButton x:Name="UpButton" Style="{StaticResource PathButton}" Kind="Secondary" Icon="{StaticResource Icon.ArrowUp}"
                            Content="{Binding S[picker.up]}" Command="{Binding UpCommand}" />
           <TextBox x:Name="PathBox" Grid.Column="1" Height="68" FontSize="25" Padding="22,0" Margin="14,0,14,0"
-                   Text="{Binding PathText, UpdateSourceTrigger=PropertyChanged}"
+                   Text="{Binding PathText, UpdateSourceTrigger=PropertyChanged}" input:TextEntry.Placeholder="{Binding S[picker.path_hint]}"
                    input:TextEntry.Title="{Binding S[picker.path_title]}" input:TextEntry.Submitted="OnPathSubmitted" />
-          <TextBlock Grid.Column="1" Text="{Binding S[picker.path_hint]}" Style="{StaticResource Text.Base}" FontSize="25" Margin="38,0" VerticalAlignment="Center"
-                     Foreground="{DynamicResource Brush.TextFaint}" IsHitTestVisible="False"
-                     Visibility="{Binding Text, ElementName=PathBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
           <c:ConsoleButton Grid.Column="2" Style="{StaticResource PathButton}" Kind="Secondary" Content="{Binding S[picker.go]}" Command="{Binding GoCommand}" />
         </Grid>
         <ItemsControl ItemsSource="{Binding Crumbs}" Focusable="False" Margin="0,12,0,0" Height="46">

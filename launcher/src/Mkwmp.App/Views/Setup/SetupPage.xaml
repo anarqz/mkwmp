@@ -95,10 +95,8 @@
       <TextBlock Text="{Binding S[setup.name.text]}" Style="{StaticResource Lead}" Margin="0,22,0,0" />
       <Grid Margin="0,34,0,0">
         <TextBox x:Name="NameBox" Text="{Binding NameText, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" TextAlignment="Center" FontSize="36"
+                 input:TextEntry.Placeholder="{Binding S[setup.name.hint]}"
                  input:TextEntry.Title="{Binding S[setup.name.title]}" input:TextEntry.Charset="Gamertag" input:TextEntry.Submitted="OnSubmitted" />
-        <TextBlock Text="{Binding S[setup.name.hint]}" Style="{StaticResource Text.Base}" Foreground="{DynamicResource Brush.TextFaint}"
-                   HorizontalAlignment="Center" IsHitTestVisible="False"
-                   Visibility="{Binding Text, ElementName=NameBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
       </Grid>
       <TextBlock Text="{Binding NameNote}" Margin="0,18,0,0">
         <TextBlock.Style>
@@ -195,10 +193,8 @@
           </StackPanel>
           <Grid Margin="0,16,0,0" Width="980">
             <TextBox x:Name="DumpBox" Text="{Binding DumpText, UpdateSourceTrigger=PropertyChanged}" FontSize="26"
+                     input:TextEntry.Placeholder="{Binding DumpTextCaption}"
                      input:TextEntry.Title="{Binding S[setup.game.need_dump]}" input:TextEntry.Submitted="OnDumpSubmitted" />
-            <TextBlock Text="{Binding DumpTextCaption}" Style="{StaticResource Text.Base}" FontSize="26" Foreground="{DynamicResource Brush.TextFaint}"
-                       Margin="28,0" IsHitTestVisible="False"
-                       Visibility="{Binding Text, ElementName=DumpBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
           </Grid>
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,18,0,0">
             <c:Icon Data="{StaticResource Icon.Shield}" Width="30" Height="30" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,12,0" VerticalAlignment="Top" />
@@ -354,10 +350,8 @@
                  Visibility="{Binding Servers.HasList, Converter={StaticResource Conv.Visible}}" />
       <Grid Margin="0,10,0,0">
         <TextBox x:Name="AddressBox" Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" MaxLength="200" InputScope="Url" FontSize="32"
+                 input:TextEntry.Placeholder="{Binding S[setup.server.hint]}"
                  input:TextEntry.Title="{Binding S[setup.server.address]}" input:TextEntry.Submitted="OnAddressSubmitted" />
-        <TextBlock Text="{Binding S[setup.server.hint]}" Style="{StaticResource Text.Base}" Foreground="{DynamicResource Brush.TextFaint}"
-                   Margin="28,0" IsHitTestVisible="False"
-                   Visibility="{Binding Text, ElementName=AddressBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
       </Grid>
       <!-- the answer keeps its room, so the buttons do not jump when it arrives -->
       <Grid MinHeight="98" Margin="0,0,0,0">
@@ -375,10 +369,8 @@
       <TextBlock Text="{Binding DataContext.RegisterText, RelativeSource={RelativeSource AncestorType=UserControl}}" Style="{StaticResource Lead}" Margin="0,24,0,0" />
       <Grid Margin="0,30,0,0">
         <TextBox x:Name="GamertagBox" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" TextAlignment="Center" FontSize="36"
+                 input:TextEntry.Placeholder="{Binding S[settings.profile.name_hint]}"
                  IsEnabled="{Binding CanEdit}" input:TextEntry.Title="{Binding S[settings.profile.gamertag]}" input:TextEntry.Charset="Gamertag" />
-        <TextBlock Text="{Binding S[settings.profile.name_hint]}" Style="{StaticResource Text.Base}" Foreground="{DynamicResource Brush.TextFaint}"
-                   HorizontalAlignment="Center" IsHitTestVisible="False"
-                   Visibility="{Binding Text, ElementName=GamertagBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
       </Grid>
       <!-- the name is someone's: "it's mine" is its PIN (masked as it is typed) -->
       <settings:PinEntry Margin="0,16,0,0" Pin="{Binding Pin}" IsRevealed="{Binding EntryRevealed}" IsEnabled="{Binding CanEdit}"

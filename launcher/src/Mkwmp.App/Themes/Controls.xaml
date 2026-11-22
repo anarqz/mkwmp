@@ -897,6 +897,10 @@
   </Style>
 
   <!-- ───────── text entry ───────── -->
+  <!-- The text sits at Padding from the box's edge: TextBoxBase gives its Padding to PART_ContentHost itself, so the
+       host must not take it again as a margin (it did: the caret stood twice as far in as a placeholder laid over the
+       box). The placeholder (input:TextEntry.Placeholder) is part of the template, at the same Padding plus the two
+       units a text view keeps for its caret, in the box's font size and alignment: it is exactly where typing starts. -->
   <Style TargetType="TextBox">
     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     <Setter Property="OverridesDefaultStyle" Value="True" />
@@ -914,10 +918,28 @@
           <Grid>
             <Border CornerRadius="12" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Outline}" BorderThickness="2.5" />
             <c:FocusRing IsActive="{TemplateBinding IsFocused}" CornerRadius="12" Fill="{DynamicResource Brush.Focus.Fill}" />
-            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" Focusable="False"
+            <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" Focusable="False"
                           HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" Background="Transparent" />
+            <TextBlock x:Name="Placeholder" Text="{Binding (input:TextEntry.Placeholder), RelativeSource={RelativeSource TemplatedParent}}"
+                       Margin="{TemplateBinding Padding}" Padding="2,0" TextAlignment="{TemplateBinding TextAlignment}"
+                       VerticalAlignment="{TemplateBinding VerticalContentAlignment}" TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource Brush.TextFaint}" IsHitTestVisible="False" Visibility="Collapsed" />
           </Grid>
           <ControlTemplate.Triggers>
+            <Trigger Property="Text" Value="">
+              <Setter TargetName="Placeholder" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="TextWrapping" Value="Wrap">
+              <Setter TargetName="Placeholder" Property="TextWrapping" Value="Wrap" />
+            </Trigger>
+            <!-- a centred box has its caret in the middle of the placeholder: while it is typed into, the caret alone -->
+            <MultiTrigger>
+              <MultiTrigger.Conditions>
+                <Condition Property="TextAlignment" Value="Center" />
+                <Condition Property="IsKeyboardFocused" Value="True" />
+              </MultiTrigger.Conditions>
+              <Setter TargetName="Placeholder" Property="Visibility" Value="Collapsed" />
+            </MultiTrigger>
             <Trigger Property="IsEnabled" Value="False">
               <Setter Property="Opacity" Value="0.45" />
             </Trigger>
@@ -941,9 +963,21 @@
           <Grid>
             <Border CornerRadius="12" Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Outline}" BorderThickness="2.5" />
             <c:FocusRing IsActive="{TemplateBinding IsFocused}" CornerRadius="12" Fill="{DynamicResource Brush.Focus.Fill}" />
-            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" Focusable="False"
+            <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center" Focusable="False"
                           HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden" Background="Transparent" />
+            <TextBlock x:Name="Placeholder" Text="{Binding (input:TextEntry.Placeholder), RelativeSource={RelativeSource TemplatedParent}}"
+                       Margin="{TemplateBinding Padding}" Padding="2,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                       FontFamily="{DynamicResource Font.Ui}" FontWeight="Regular"
+                       Foreground="{DynamicResource Brush.TextFaint}" IsHitTestVisible="False" Visibility="Collapsed" />
           </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="input:TextEntry.IsEmpty" Value="True">
+              <Setter TargetName="Placeholder" Property="Visibility" Value="Visible" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.45" />
+            </Trigger>
+          </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>
     </Setter>

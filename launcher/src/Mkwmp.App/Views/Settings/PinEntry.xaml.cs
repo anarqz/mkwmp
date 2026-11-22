@@ -102,7 +102,6 @@ public partial class PinEntry : UserControl
         {
             _syncing = false;
         }
-        HintText.Visibility = pin.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnEye(object sender, RoutedEventArgs e) => SetCurrentValue(IsRevealedProperty, !IsRevealed);

@@ -19,11 +19,6 @@
       <Setter Property="FontSize" Value="32" />
       <Setter Property="Margin" Value="0,0,28,0" />
     </Style>
-    <Style x:Key="Hint" TargetType="TextBlock" BasedOn="{StaticResource Text.Base}">
-      <Setter Property="Foreground" Value="{DynamicResource Brush.TextFaint}" />
-      <Setter Property="Margin" Value="28,0" />
-      <Setter Property="IsHitTestVisible" Value="False" />
-    </Style>
     <!-- a paragraph under a group of rows -->
     <Style x:Key="Note" TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
       <Setter Property="Margin" Value="20,16,20,0" />
@@ -76,9 +71,8 @@
                 <TextBlock Text="{Binding S[settings.profile.local_label]}" Style="{StaticResource FieldLabel}" />
                 <Grid Grid.Column="1">
                   <TextBox x:Name="LocalNameBox" Text="{Binding LocalName, UpdateSourceTrigger=PropertyChanged}" MaxLength="16"
+                           input:TextEntry.Placeholder="{Binding S[setup.name.hint]}"
                            input:TextEntry.Title="{Binding S[settings.profile.local_label]}" input:TextEntry.Charset="Gamertag" />
-                  <TextBlock Text="{Binding S[setup.name.hint]}" Style="{StaticResource Hint}"
-                             Visibility="{Binding Text, ElementName=LocalNameBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
                 </Grid>
               </Grid>
             </Border>
@@ -166,9 +160,8 @@
               <StackPanel>
                 <TextBlock Text="{Binding S[settings.game.typed]}" Style="{StaticResource FieldLabel}" Margin="0,0,0,12" />
                 <Grid>
-                  <TextBox x:Name="TypedFolder" Text="{Binding Game.TypedFolder, UpdateSourceTrigger=LostFocus}" IsEnabled="{Binding Game.CanChange}" />
-                  <TextBlock Text="{Binding S[settings.game.typed_hint]}" Style="{StaticResource Hint}"
-                             Visibility="{Binding Text, ElementName=TypedFolder, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
+                  <TextBox x:Name="TypedFolder" Text="{Binding Game.TypedFolder, UpdateSourceTrigger=LostFocus}" IsEnabled="{Binding Game.CanChange}"
+                           input:TextEntry.Placeholder="{Binding S[settings.game.typed_hint]}" />
                 </Grid>
                 <TextBlock Text="{Binding Game.TypedFolderCaption}" Style="{StaticResource Text.Caption}" Margin="0,10,0,0" />
               </StackPanel>
@@ -177,9 +170,8 @@
               <StackPanel>
                 <TextBlock Text="{Binding S[settings.game.command]}" Style="{StaticResource FieldLabel}" Margin="0,0,0,12" />
                 <Grid>
-                  <TextBox x:Name="LaunchBox" Text="{Binding LaunchCommandText, UpdateSourceTrigger=LostFocus}" IsEnabled="{Binding NotBusy}" />
-                  <TextBlock Text="{Binding S[settings.game.command_hint]}" Style="{StaticResource Hint}"
-                             Visibility="{Binding Text, ElementName=LaunchBox, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
+                  <TextBox x:Name="LaunchBox" Text="{Binding LaunchCommandText, UpdateSourceTrigger=LostFocus}" IsEnabled="{Binding NotBusy}"
+                           input:TextEntry.Placeholder="{Binding S[settings.game.command_hint]}" />
                 </Grid>
                 <TextBlock Text="{Binding S[settings.game.command_caption]}" Style="{StaticResource Text.Caption}" Margin="0,10,0,0" />
               </StackPanel>
