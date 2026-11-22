@@ -323,12 +323,6 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     public string UpdateNotes => Launcher.Update.Notes ?? "";
 
-    public bool AutoUpdate
-    {
-        get => Launcher.Settings.AutoUpdate;
-        set => Save(s => s with { AutoUpdate = value });
-    }
-
     public ICommand CheckUpdateCommand { get; }
 
     public ICommand UpdateCommand { get; }

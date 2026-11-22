@@ -20,6 +20,14 @@ public sealed partial class Launcher
     private int _updateWork;
     private int _afterGameLoop;
 
+    // A newer release was found and must be installed (LauncherOptions.RequireUpdates), until it is, or until
+    // installing failed and the player chose to go on without it for this run.
+    private volatile bool _mustUpdate;
+    private volatile bool _waived;
+
+    /// <summary>This run enforces updates: a real, windowed launcher that can replace itself.</summary>
+    private bool Enforces => _options.RequireUpdates && !_options.Headless && UpdateExe is not null;
+
     private IReadOnlyList<string> UpdateKeys => _options.ReleaseKeys ?? Updater.ReleaseKeys;
 
     /// <summary>The executable an update replaces; null under <c>dotnet</c> or a test host (then there is nothing to update).</summary>
@@ -29,6 +37,11 @@ public sealed partial class Launcher
 
     private void SetUpdate(UpdateView view)
     {
+        if (view.State is UpdateState.UpToDate or UpdateState.Off)
+        {
+            _mustUpdate = false;
+        }
+        view = view with { Required = _mustUpdate && !_waived && view.State is not (UpdateState.UpToDate or UpdateState.Off or UpdateState.Checking) };
         lock (_gate)
         {
             _updateView = view;
@@ -62,8 +75,9 @@ public sealed partial class Launcher
         }
         var available = false;
         // Set by the helper: this launcher is the result of an update, or of one that could not be installed.
-        var failed = Environment.GetEnvironmentVariable(UpdateRunner.FailedVariable);
-        if (Environment.GetEnvironmentVariable(UpdateRunner.UpdatedVariable) is null)
+        var environment = _options.UpdateEnvironment ?? Environment.GetEnvironmentVariable;
+        var failed = environment(UpdateRunner.FailedVariable);
+        if (environment(UpdateRunner.UpdatedVariable) is null)
         {
             available = await CheckAsync(manual: false).ConfigureAwait(false);
             if (available && _options.ApplyUpdatesAutomatically)
@@ -75,11 +89,19 @@ public sealed partial class Launcher
                 }
                 available = false;
             }
+            else if (available)
+            {
+                await EnforceUpdateAsync().ConfigureAwait(false); // not an offer: downloaded now, installed before anything else
+            }
         }
         await SyncQuietlyAsync().ConfigureAwait(false);
         if (failed is not null)
         {
+            // The helper put the previous launcher back and started it: said once, with Try Again and a way on.
+            // Nothing is checked or installed by itself in this run (MKWMP_UPDATED is set), so a release that
+            // cannot be installed here never loops.
             Note($"the update was not installed: {failed} (logs/updater.log)");
+            _mustUpdate = Enforces;
             SetUpdate(new UpdateView(UpdateState.Failed, null, null, 0, null, Strings.UpdateNotInstalled(failed)));
         }
         else if (!available)
@@ -105,7 +127,55 @@ public sealed partial class Launcher
     }
 
     /// <summary>Asks GitHub for a newer release; <see cref="Update"/> says Available (with its notes), ReadyToInstall (already downloaded) or UpToDate.</summary>
-    public async Task CheckForUpdatesAsync() => await CheckAsync(manual: true).ConfigureAwait(false);
+    public async Task CheckForUpdatesAsync()
+    {
+        if (await CheckAsync(manual: true).ConfigureAwait(false))
+        {
+            await EnforceUpdateAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// A newer release is known: required from now on, and downloaded at once. With a game running it is armed to
+    /// install when the game is gone (a game is never interrupted); else the window installs it ("Install and
+    /// Restart", by itself after a moment). A failed download leaves <see cref="UpdateState.Failed"/>, required.
+    /// </summary>
+    private async Task EnforceUpdateAsync()
+    {
+        if (!Enforces)
+        {
+            return;
+        }
+        _mustUpdate = true;
+        SetUpdate(Update);
+        if (Interlocked.CompareExchange(ref _updateWork, 1, 0) != 0)
+        {
+            return;
+        }
+        try
+        {
+            if (await StageAsync(_life.Token).ConfigureAwait(false) is { } staged && GameBlocksUpdate())
+            {
+                Note("update ready: it is installed when the game closes");
+                SetReady(staged, gameBlocks: true);
+                InstallUpdateAfterGame(true);
+            }
+        }
+        finally
+        {
+            Volatile.Write(ref _updateWork, 0);
+        }
+    }
+
+    public void ContinueWithoutUpdate()
+    {
+        if (Update is { State: UpdateState.Failed, Required: true })
+        {
+            Note("the update failed and the player goes on without it for this run");
+            _waived = true;
+            SetUpdate(Update);
+        }
+    }
 
     private async Task<bool> CheckAsync(bool manual)
     {
@@ -202,6 +272,10 @@ public sealed partial class Launcher
                 // Never under a running game: it would lose its launcher (the seat, the overlay) mid-race.
                 Note("update ready, not installed: a game is running");
                 SetReady(staged, gameBlocks: true);
+                if (_mustUpdate && !_waived)
+                {
+                    InstallUpdateAfterGame(true); // required: it follows the game by itself
+                }
                 return;
             }
             await InstallAsync(staged).ConfigureAwait(false);
@@ -214,6 +288,10 @@ public sealed partial class Launcher
 
     public void InstallUpdateAfterGame(bool on)
     {
+        if (!on && _mustUpdate && !_waived)
+        {
+            return; // a required update cannot be put off
+        }
         _installAfterGame = on;
         if (_staged is { } staged && Update.State == UpdateState.ReadyToInstall)
         {

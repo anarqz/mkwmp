@@ -31,8 +31,15 @@ public sealed record LauncherOptions
     /// <summary>Only hold the seat for this run (not saved): the game starts elsewhere.</summary>
     public bool NoLaunch { get; init; }
 
-    /// <summary>No update check and no downloads for this run (not saved).</summary>
+    /// <summary>No update check and no downloads for this run (not saved). For development and tests: a player cannot turn updates off.</summary>
     public bool NoUpdate { get; init; }
+
+    /// <summary>
+    /// A newer release is not an offer: the launcher downloads it by itself and installs it before anything else
+    /// (<see cref="UpdateView.Required"/>; launcher/docs/UPDATES.md, section 1). What <see cref="Parse"/> gives a
+    /// real run. False (tests of the pieces): found, then waits to be asked.
+    /// </summary>
+    public bool RequireUpdates { get; init; }
 
     /// <summary>
     /// Started by the mod of a running game as its overlay host (<c>--overlay-host</c>, see
@@ -97,6 +104,9 @@ public sealed record LauncherOptions
     /// <summary>False: the local API is not bound by <see cref="ILauncher.StartAsync"/> (and counts as up).</summary>
     internal bool BindLocalApi { get; init; } = true;
 
+    /// <summary>What the update helper left in the environment (MKWMP_UPDATED, MKWMP_UPDATE_FAILED) instead of the process's own.</summary>
+    internal Func<string, string?>? UpdateEnvironment { get; init; }
+
     /// <summary>What ends the process after a self-update (tests: nothing).</summary>
     internal Action<int>? Exit { get; init; }
 
@@ -122,7 +132,7 @@ public sealed record LauncherOptions
     {
         ArgumentNullException.ThrowIfNull(args);
         var all = args.ToArray();
-        var o = new LauncherOptions { Arguments = all };
+        var o = new LauncherOptions { Arguments = all, RequireUpdates = true };
         foreach (var arg in all)
         {
             o = arg switch

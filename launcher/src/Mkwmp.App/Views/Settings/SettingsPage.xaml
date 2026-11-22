@@ -348,8 +348,6 @@
             <c:SettingsRow Label="{Binding S[settings.updates.check]}" Icon="{StaticResource Icon.Refresh}" Command="{Binding CheckUpdateCommand}">
               <c:Spinner Width="40" Height="40" Visibility="{Binding UpdateBusy, Converter={StaticResource Conv.Visible}}" />
             </c:SettingsRow>
-            <c:SettingsRow Label="{Binding S[settings.updates.auto]}" Kind="Toggle" IsOn="{Binding AutoUpdate}"
-                           Caption="{Binding S[settings.updates.auto_caption]}" />
             <c:SettingsRow Label="{Binding S[home.update]}" Kind="Chevron" Icon="{StaticResource Icon.Info}" Command="{Binding WhatsNewCommand}"
                            Caption="{Binding S[whatsnew.caption]}" />
             <StackPanel Visibility="{Binding UpdateNotes, Converter={StaticResource Conv.Visible}}">

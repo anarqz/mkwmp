@@ -269,7 +269,8 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
 
     private bool LaunchesGame(LauncherSettings s) => s.Launch && !_options.NoLaunch;
 
-    private bool UpdatesOn(LauncherSettings s) => s.AutoUpdate && !_options.NoUpdate;
+    /// <summary>Always, for a player (client.toml's old <c>update = false</c> is read and ignored); off only with <c>--no-update</c>.</summary>
+    private bool UpdatesOn(LauncherSettings s) => !_options.NoUpdate;
 
     private void Note(string message) => Log.Note(message);
 

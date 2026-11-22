@@ -225,8 +225,14 @@ public partial class MainWindow
         }
         switch (App.Option(args, "--modal"))
         {
+            // the required update's card, as a real launcher shows it: downloading, ready (ready-game: a game runs), failed
             case "update":
                 (_vm.Launcher as DesignLauncher)?.FreezeDownloadAt(0.4);
+                (_vm.Launcher as DesignLauncher)?.RequireUpdate();
+                _vm.ShowUpdateModal();
+                break;
+            case "update-failed":
+                (_vm.Launcher as DesignLauncher)?.RequireUpdate(Mkwmp.Core.Strings.UpdateNotInstalled("mkwmp.exe could not be replaced: it is in use"));
                 _vm.ShowUpdateModal();
                 break;
             case "available":
@@ -236,6 +242,11 @@ public partial class MainWindow
             case "ready":
             case "ready-game":
                 (_vm.Launcher as DesignLauncher)?.ReadyToInstall(gameRuns: App.Option(args, "--modal") == "ready-game");
+                (_vm.Launcher as DesignLauncher)?.RequireUpdate();
+                if (App.Option(args, "--modal") == "ready-game")
+                {
+                    _vm.Launcher.InstallUpdateAfterGame(true);
+                }
                 _vm.ShowUpdateModal();
                 break;
             case "confirm":

@@ -49,6 +49,11 @@ public sealed partial class Launcher
     /// </summary>
     public Task PlayAsync()
     {
+        if (Update.Required)
+        {
+            Note("PLAY refused: this launcher installs its update first");
+            return Task.CompletedTask;
+        }
         Mutate(() =>
         {
             if (_sessionState is SessionState.Starting or SessionState.Running)
