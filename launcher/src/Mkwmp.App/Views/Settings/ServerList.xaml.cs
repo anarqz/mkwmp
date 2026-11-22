@@ -10,7 +10,28 @@ namespace Mkwmp.App.Views.Settings;
 
 public partial class ServerList : UserControl
 {
+    public static readonly DependencyProperty ShowClosestProperty =
+        DependencyProperty.Register(nameof(ShowClosest), typeof(bool), typeof(ServerList), new PropertyMetadata(true));
+
     private ServerPicker? _picker;
+
+    /// <summary>The "Show closest to me" switch above the rows (false where the page shows it itself, beside the list).</summary>
+    public bool ShowClosest
+    {
+        get => (bool)GetValue(ShowClosestProperty);
+        set => SetValue(ShowClosestProperty, value);
+    }
+
+    /// <summary>The focus on the first server (the nearest); false while there is none.</summary>
+    public bool FocusFirst()
+    {
+        if (RowsHost.Items.Count == 0)
+        {
+            return false;
+        }
+        RowsHost.UpdateLayout();
+        return Mkwmp.App.Input.FocusNav.Focus(FirstButton(RowsHost.ItemContainerGenerator.ContainerFromIndex(0)));
+    }
 
     public ServerList()
     {

@@ -317,51 +317,73 @@
     </Grid>
 
     <!-- ═════════ Choose a server ═════════ -->
-    <Grid Grid.Row="1" Width="1180" Margin="0,18,0,0"
+    <!-- Two columns, each with one job. Left: the servers that announce themselves, in a list that scrolls by itself
+         however long it gets (A on a row asks that server). Right: everything about one server: its address (typed,
+         or put there by the row), what it answered, and the page's button (Connect, then Next); under it the list's
+         one option. This page has its button there, beside what it acts on, instead of under the page. -->
+    <Grid Grid.Row="1" Grid.RowSpan="2" Margin="72,22,72,0"
           Visibility="{Binding StepName, Converter={StaticResource Conv.Visible}, ConverterParameter='=server'}">
-     <Grid.RowDefinitions>
-       <RowDefinition Height="Auto" />
-       <RowDefinition Height="*" />
-       <RowDefinition Height="Auto" />
-     </Grid.RowDefinitions>
-     <!-- the servers that announce themselves, nearest first (none without a directory: then only the address) -->
-     <Grid Visibility="{Binding Servers.HasList, Converter={StaticResource Conv.Visible}}">
-       <Grid.ColumnDefinitions>
-         <ColumnDefinition Width="*" />
-         <ColumnDefinition Width="Auto" />
-       </Grid.ColumnDefinitions>
-       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+     <Grid.ColumnDefinitions>
+       <ColumnDefinition Width="*" />
+       <ColumnDefinition Width="48" />
+       <ColumnDefinition Width="640" />
+     </Grid.ColumnDefinitions>
+
+     <!-- the list (none without a directory: then the picture and what to do) -->
+     <Grid input:FocusNav.IsColumn="True" Visibility="{Binding Servers.HasList, Converter={StaticResource Conv.Visible}}">
+       <Grid.RowDefinitions>
+         <RowDefinition Height="Auto" />
+         <RowDefinition Height="*" />
+       </Grid.RowDefinitions>
+       <Grid Margin="0,0,72,0">
+         <Grid.ColumnDefinitions>
+           <ColumnDefinition Width="Auto" />
+           <ColumnDefinition Width="*" />
+           <ColumnDefinition Width="Auto" />
+         </Grid.ColumnDefinitions>
          <Image Source="pack://application:,,,/Assets/Art/step-server.png" Style="{StaticResource StepArt}" Height="84" Margin="0,0,18,0" />
-         <TextBlock Text="{Binding Servers.PickCaption}" Style="{StaticResource Text.Body}" FontSize="30" VerticalAlignment="Center" />
-       </StackPanel>
-       <c:ConsoleButton Grid.Column="1" Kind="Ghost" Height="68" MinWidth="0" Padding="22,0" Icon="{StaticResource Icon.Refresh}" Content="{Binding S[servers.refresh]}"
-                        Command="{Binding Servers.RefreshCommand}" />
+         <!-- two lines when a language needs them (the column is 190 units narrower on a Steam Deck) -->
+         <TextBlock Grid.Column="1" Text="{Binding Servers.PickCaption}" Style="{StaticResource Text.Body}" FontSize="29" LineHeight="36" LineStackingStrategy="BlockLineHeight" MaxHeight="74"
+                    TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,12,0" />
+         <c:ConsoleButton Grid.Column="2" Kind="Ghost" Height="68" MinWidth="0" Padding="22,0" Icon="{StaticResource Icon.Refresh}" Content="{Binding S[servers.refresh]}"
+                          Command="{Binding Servers.RefreshCommand}" />
+       </Grid>
+       <c:SmoothScrollViewer Grid.Row="1" Padding="10,8,14,16" Margin="-10,6,-14,0" EdgePadding="70" FadeEdges="60">
+         <settings:ServerList x:Name="ServerRows" DataContext="{Binding Servers}" ShowClosest="False" />
+       </c:SmoothScrollViewer>
      </Grid>
-     <c:SmoothScrollViewer Grid.Row="1" Padding="10,8,14,8" Margin="-10,4,-14,0" EdgePadding="60" VerticalAlignment="Top"
-                           Visibility="{Binding Servers.HasList, Converter={StaticResource Conv.Visible}}">
-       <settings:ServerList DataContext="{Binding Servers}" />
-     </c:SmoothScrollViewer>
-     <StackPanel Grid.Row="1" VerticalAlignment="Center" Visibility="{Binding Servers.HasList, Converter={StaticResource Conv.Visible}, ConverterParameter=!}">
+     <StackPanel VerticalAlignment="Center" Margin="0,0,0,80" Visibility="{Binding Servers.HasList, Converter={StaticResource Conv.Visible}, ConverterParameter=!}">
        <Image Source="pack://application:,,,/Assets/Art/step-server.png" Style="{StaticResource StepArt}" />
-       <TextBlock Text="{Binding S[setup.server.text]}" Style="{StaticResource Lead}" Margin="0,22,0,0" />
+       <TextBlock Text="{Binding S[setup.server.text]}" Style="{StaticResource Lead}" MaxWidth="760" Margin="0,22,0,0" />
      </StackPanel>
-     <StackPanel Grid.Row="2">
-      <TextBlock Text="{Binding S[setup.server.or_type]}" Style="{StaticResource Text.Caption}" FontSize="24" Margin="6,8,0,0"
-                 Visibility="{Binding Servers.HasList, Converter={StaticResource Conv.Visible}}" />
-      <Grid Margin="0,10,0,0">
-        <TextBox x:Name="AddressBox" Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" MaxLength="200" InputScope="Url" FontSize="32"
-                 input:TextEntry.Placeholder="{Binding S[setup.server.hint]}"
-                 input:TextEntry.Title="{Binding S[setup.server.address]}" input:TextEntry.Submitted="OnAddressSubmitted" />
-      </Grid>
-      <!-- the answer keeps its room, so the buttons do not jump when it arrives -->
-      <Grid MinHeight="98" Margin="0,0,0,0">
-        <settings:StatusLines DataContext="{Binding ProbeLines}" HorizontalAlignment="Center" Margin="0,-6,0,0" />
-        <TextBlock Text="{Binding S[setup.server.note]}" Style="{StaticResource Small}" FontSize="24" VerticalAlignment="Center"
-                   Visibility="{Binding ProbeLines.Count, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
-      </Grid>
+
+     <!-- one server: its address, its answer, the button -->
+     <StackPanel Grid.Column="2" input:FocusNav.IsColumn="True" input:FocusNav.IsGroup="True">
+       <Border Style="{StaticResource Card}" Padding="30,24,30,30" Margin="0,8,0,0">
+         <StackPanel>
+           <TextBlock Text="{Binding S[setup.server.or_type]}" Style="{StaticResource Text.Caption}" FontSize="24" Margin="2,0,0,12"
+                      Visibility="{Binding Servers.HasList, Converter={StaticResource Conv.Visible}}" />
+           <TextBlock Text="{Binding S[setup.server.address]}" Style="{StaticResource Text.Caption}" FontSize="24" Margin="2,0,0,12"
+                      Visibility="{Binding Servers.HasList, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
+           <TextBox x:Name="AddressBox" Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" MaxLength="200" InputScope="Url" FontSize="30"
+                    input:TextEntry.Placeholder="{Binding S[setup.server.hint]}"
+                    input:TextEntry.Title="{Binding S[setup.server.address]}" input:TextEntry.Submitted="OnAddressSubmitted" />
+           <!-- the answer keeps its room, so the button does not jump when it arrives -->
+           <Grid MinHeight="128" Margin="0,10,0,10">
+             <settings:StatusLines DataContext="{Binding ProbeLines}" Margin="-14,-8,-14,0" VerticalAlignment="Center" />
+             <TextBlock Text="{Binding S[setup.server.note]}" Style="{StaticResource Text.Caption}" FontSize="23" LineHeight="33" VerticalAlignment="Center" Margin="2,0"
+                        Visibility="{Binding ProbeLines.Count, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
+           </Grid>
+           <c:ConsoleButton x:Name="ServerPrimary" Kind="Secondary" Height="104" HorizontalAlignment="Stretch" Content="{Binding PrimaryLabel}"
+                            Command="{Binding PrimaryCommand}" input:FocusNav.IsDefault="True" />
+         </StackPanel>
+       </Border>
+       <!-- "Show closest to me": the list's one option (ServerList has it itself where there is no second column) -->
+       <c:SettingsRow Label="{Binding Servers.S[servers.closest]}" Caption="{Binding Servers.S[servers.closest.caption]}" Kind="Toggle"
+                      IsOn="{Binding Servers.Closest}" Margin="10,18,10,0" ShowRule="False"
+                      Visibility="{Binding Servers.HasList, Converter={StaticResource Conv.Visible}}" />
      </StackPanel>
     </Grid>
-
     <!-- ═════════ Register your profile ═════════ -->
     <StackPanel Grid.Row="1" Width="1080" VerticalAlignment="Center" DataContext="{Binding Profile}"
                 Visibility="{Binding DataContext.StepName, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Conv.Visible}, ConverterParameter='=register'}">
@@ -421,7 +443,9 @@
       </Border>
     </StackPanel>
 
-    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,18,0,40" input:FocusNav.IsGroup="True">
+    <!-- the page's buttons (Choose a Server has its own, beside the address) -->
+    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,18,0,40" input:FocusNav.IsGroup="True"
+                Visibility="{Binding StepName, Converter={StaticResource Conv.Visible}, ConverterParameter='!=server'}">
       <!-- the first page only: the language, before there is anything to read (a globe and the language's own name) -->
       <c:ConsoleButton Kind="Secondary" MinWidth="400" Height="112" Margin="0,0,24,0" Icon="{StaticResource Icon.Globe}"
                        Content="{Binding LanguageLabel}" Command="{Binding LanguageCommand}"
