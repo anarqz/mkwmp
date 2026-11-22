@@ -60,7 +60,7 @@
     "lead": "Aponte o MKWMP para a sua própria cópia do jogo, versão 1.8.0, como .nup, .nx ou pasta. Ele faz o resto.",
     "section": "O que o launcher faz",
     "s1": "Baixa o mkw-recomp",
-    "s1c": "A versão do MKWMP, 0.1.16-mkwmp.1, conferida pelo hash conhecido. Em um processador sem AVX2, ele escolhe a versão feita para isso.",
+    "s1c": "O mkw-recomp 0.1.17, a versão oficial, conferido pelo hash conhecido. Em um processador sem AVX2, ele escolhe a versão feita para isso.",
     "s2": "Usa a sua cópia",
     "s2c": "Ele lê a sua cópia onde ela está, ou faz uma cópia, como você preferir. Nada do jogo é baixado.",
     "s3": "Gera o jogo",
@@ -72,7 +72,7 @@
     "shot_alt": "A configuração do jogo em andamento: uma barra de progresso, a etapa atual e o tempo restante.",
     "shot_cap": "A primeira configuração demora um pouco. Depois, o jogo abre em segundos.",
     "credit": "Obrigado ao mkw-recomp",
-    "creditc": "O <a href=\"https://github.com/adriadam10/mkw-recomp\">mkw-recomp</a>, uma recompilação estática do jogo, é feito por <a href=\"https://github.com/adriadam10\">Adrià</a> e distribuído sob a Licença MIT. O MKWMP instala a sua própria versão dele, o fork <a href=\"https://github.com/anarqz/mkw-recomp\">anarqz/mkw-recomp</a>, e é construído sobre ele nos termos dessa licença."
+    "creditc": "O <a href=\"https://github.com/adriadam10/mkw-recomp\">mkw-recomp</a>, uma recompilação estática do jogo, é feito por <a href=\"https://github.com/adriadam10\">Adrià</a> e distribuído sob a Licença MIT. O MKWMP instala a versão oficial e é construído sobre ela nos termos dessa licença."
   },
   "offline": {
     "title": "Offline primeiro, online quando quiser",
@@ -103,7 +103,7 @@
     "r1": "Amigos",
     "r1c": "Pedidos, quem está online e quem está correndo, e as salas deles para entrar.",
     "r2": "Chat de voz",
-    "r2c": "Nas salas de amigos, para todos na sala. Silencie quem quiser. Transmitido ao vivo e nunca gravado.",
+    "r2c": "Nas salas de amigos, para todos na sala. Transmitido ao vivo e nunca gravado.",
     "r3": "Câmera",
     "r3c": "Desligada até você ligar. Só amigos mútuos na sua sala veem, até 4 rostos cada.",
     "r4": "Denúncias",
@@ -117,7 +117,7 @@
     "r1c": "B ou Guide volta para o jogo de onde você parou.",
     "r2": "Amigos sem sair do jogo",
     "r2c": "Veja quem está online e responda pedidos pelo overlay.",
-    "note": "O overlay precisa do mkw-recomp 0.1.16-mkwmp(.1) com o mod MKWMP: o launcher configura os dois.",
+    "note": "O overlay precisa do mkw-recomp 0.1.17 com o mod MKWMP: o launcher configura os dois.",
     "shot_alt": "O overlay: o jogo pausado, encolhido dentro do bloco Jogar da tela inicial."
   },
   "mods": {
@@ -209,7 +209,7 @@
     "hosting": "Guia de hospedagem",
     "bug": "Relatar um bug",
     "legal": "O MKWMP é um projeto comunitário, independente e de código aberto. Você precisa da sua própria cópia do jogo. A arte daqui é do próprio MKWMP.",
-    "credits": "Feito sobre o <a href=\"https://github.com/adriadam10/mkw-recomp\">mkw-recomp</a>, uma recompilação estática do jogo, de <a href=\"https://github.com/adriadam10\">Adrià</a> (Licença MIT). O MKWMP instala a sua própria versão dele, o fork <a href=\"https://github.com/anarqz/mkw-recomp\">anarqz/mkw-recomp</a>."
+    "credits": "Feito sobre o <a href=\"https://github.com/adriadam10/mkw-recomp\">mkw-recomp</a>, uma recompilação estática do jogo, de <a href=\"https://github.com/adriadam10\">Adrià</a> (Licença MIT). O MKWMP instala a versão oficial."
   },
   "hints": {
     "move": "Mover",
