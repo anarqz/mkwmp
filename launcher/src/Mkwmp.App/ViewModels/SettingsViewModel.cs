@@ -372,7 +372,7 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     public string RecompLicense => RecompCredit.License;
 
-    /// <summary>The source of the exact build MKWMP installs (anarqz/mkw-recomp at the pinned tag): MIT and GPL both want it reachable.</summary>
+    /// <summary>The source of the exact build MKWMP installs (adriadam10/mkw-recomp at the pinned tag): MIT and GPL both want it reachable.</summary>
     public string RecompSourceUrl => RecompCredit.SourceUrl.AbsoluteUri;
 
     public ICommand RecompRepoCommand { get; }

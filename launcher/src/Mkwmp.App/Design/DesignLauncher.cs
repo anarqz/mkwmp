@@ -152,7 +152,7 @@ public sealed partial class DesignLauncher : ILauncher
     public GameView Game { get; private set; } = new(
         [new TargetInfo("mkw-recomp", "mkw-recomp", "the folder with mkw.exe",
             TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch) { GameVersions = ["1.8.0"] }],
-        new GameInstall("mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp\mkw.exe", "0.1.15-mkwmp", "1.8.0", null),
+        new GameInstall("mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp\mkw.exe", "0.1.17", "1.8.0", null),
         new TargetCheck(TargetStatus.Ready, null, null, null, null),
         DemoMod,
         false, false, null, false);
@@ -1040,8 +1040,18 @@ public sealed partial class DesignLauncher : ILauncher
                 new("fsr", "AMD FSR 1"), new("bilinear", "Bilinear")) with { Group = "Resolution" },
             GameSetting.Range("sharpness", "FSR sharpness", "Sharpening after FSR scaling; 0 turns it off.", 80, false, 0, 100, 5, "%")
                 with { Group = "Resolution", VisibleWhen = new("upscaler", ["fsr"]) },
+            // mkw-recomp 0.1.17's DLSS / FSR 3.1 rows (RecompSettings.Has017Rows)
+            GameSetting.Choice("temporal", "AI upscaling", "NVIDIA DLSS (RTX GPUs) or AMD FSR 3.1 (any GPU).", "off", false,
+                new("off", "Off"), new("dlss", "NVIDIA DLSS"), new("fsr3", "AMD FSR 3.1")) with { Group = "Resolution" },
+            GameSetting.Choice("temporal_quality", "Upscaling quality", "The share of the screen's resolution the race renders at.", "quality", true,
+                new("native", "Native (DLAA)"), new("quality", "Quality"), new("balanced", "Balanced"), new("performance", "Performance"), new("ultra", "Ultra performance"))
+                with { Group = "Resolution", VisibleWhen = new("temporal", ["dlss", "fsr3"]) },
+            GameSetting.Choice("dlss_preset", "DLSS model", "NVIDIA's model DLSS uses.", "default", false,
+                new("default", "Default"), new("j", "J"), new("k", "K"), new("l", "L"), new("m", "M")) with { Group = "Resolution", VisibleWhen = new("temporal", ["dlss"]) },
             GameSetting.Choice("fps", "Frame rate", "Frames per second the game aims for.", "auto", false,
                 new("auto", "Automatic"), new("60", "60"), new("30", "30")) with { Group = "Performance", Locked = "Set by the environment variable MKW_FPS" },
+            GameSetting.Choice("reflex", "NVIDIA Reflex", "NVIDIA GPUs only.", "off", false,
+                new("off", "Off"), new("on", "On"), new("boost", "On + Boost")) with { Group = "Performance" },
         ]),
         new("sound", "Sound", "Volume",
         [
@@ -1054,6 +1064,7 @@ public sealed partial class DesignLauncher : ILauncher
         [
             GameSetting.Choice("pad_layout", "Button layout", "Which button confirms and accelerates, the same in the game and in this launcher.", "auto", false,
                 new("auto", "Automatic"), new("nintendo", "Nintendo (A right)"), new("xbox", "Xbox (A bottom)")),
+            GameSetting.Toggle("pad_p2", "First controller to player 2", "The first controller plays as player 2 and the keyboard as player 1.", false, false),
             GameSetting.Toggle("motion", "Motion controls", "Steering by tilting the controller.", true, false),
             GameSetting.Range("rumble_strength", "Vibration strength", "How strong the controller vibrates.", 130, false, 0, 300, 10, "%"),
             GameSetting.Range("rumble_curve", "Vibration curve", "Lower values make weak vibration stronger.", 0.6, false, 0.2, 1.5, 0.05),
@@ -1068,7 +1079,7 @@ public sealed partial class DesignLauncher : ILauncher
         ], "These settings are for testing and troubleshooting. Change them only when you know why.", Advanced: true),
     ], "Changes apply the next time the game starts.");
 
-    private readonly Dictionary<string, string> _gameValues = new(StringComparer.OrdinalIgnoreCase) { ["fullscreen"] = "1", ["resolution"] = "1080", ["volume"] = "85" };
+    private readonly Dictionary<string, string> _gameValues = new(StringComparer.OrdinalIgnoreCase) { ["fullscreen"] = "1", ["resolution"] = "1080", ["volume"] = "85", ["temporal"] = "dlss" };
     private string? _gameSettingsNote;
 
     public GameSettingsView GameSettings

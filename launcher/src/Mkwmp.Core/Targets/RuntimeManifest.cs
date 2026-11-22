@@ -53,8 +53,9 @@ public sealed record RuntimeManifest
     public long SetupSpace { get; init; }
 
     /// <summary>
-    /// Versions ending in this are builds of the same fork ("-mkwmp"): an install of one may be
-    /// updated in place. Any other install is someone else's and is left alone.
+    /// Versions ending in this (or in it and a point release, ".1") are builds of the same lineage ("-mkwmp": the
+    /// fork this launcher installed up to 0.1.16-mkwmp.1): an install of one may be updated in place, also to an
+    /// official release. Any other install is someone else's and is left alone.
     /// </summary>
     public required string LineageSuffix { get; init; }
 
@@ -122,10 +123,29 @@ public sealed record RuntimeManifest
     /// <summary>Tests: a server inside the test.</summary>
     internal Uri? UrlOverride { get; init; }
 
-    /// <summary>Whether an install of <paramref name="version"/> is a build of this fork (this very version included).</summary>
-    public bool SameLineage(string? version) =>
-        version is not null
-        && (version == Version || (LineageSuffix.Length > 0 && version.EndsWith(LineageSuffix, StringComparison.Ordinal)));
+    /// <summary>
+    /// Whether an install of <paramref name="version"/> is one this launcher may update in place: this very version, or
+    /// a build of the lineage, which ends in <see cref="LineageSuffix"/> or in it and a point release ("0.1.16-mkwmp",
+    /// "0.1.16-mkwmp.1"; never "0.1.16-mkwmpx").
+    /// </summary>
+    public bool SameLineage(string? version)
+    {
+        if (version is null)
+        {
+            return false;
+        }
+        if (version == Version)
+        {
+            return true;
+        }
+        var at = LineageSuffix.Length > 0 ? version.LastIndexOf(LineageSuffix, StringComparison.Ordinal) : -1;
+        if (at <= 0)
+        {
+            return false;
+        }
+        var rest = version[(at + LineageSuffix.Length)..];
+        return rest.Length == 0 || (rest[0] == '.' && rest.Length > 1 && rest[1..].All(char.IsAsciiDigit));
+    }
 
     /// <summary>Whether a path inside the install (relative, any separator) is under a <see cref="Preserved"/> name.</summary>
     public bool IsPreserved(string relativePath)

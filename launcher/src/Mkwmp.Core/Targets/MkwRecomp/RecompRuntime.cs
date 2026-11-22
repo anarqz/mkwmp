@@ -6,13 +6,14 @@ namespace Mkwmp.Core.Targets.MkwRecomp;
 /// <summary>
 /// The mkw-recomp build this launcher installs. One entry per launcher version, changed by hand
 /// in a launcher release (the <c>bump-mkw-recomp</c> workflow): the values come from the release
-/// itself (<c>gh api repos/anarqz/mkw-recomp/releases/tags/&lt;tag&gt;</c>: the asset's <c>size</c> and
+/// itself (<c>gh api repos/adriadam10/mkw-recomp/releases/tags/&lt;tag&gt;</c>: the asset's <c>size</c> and
 /// <c>digest</c>) and from the zip (the SHA-256 of its mkw.exe, which must be the one in
 /// <see cref="Recomp.Known"/>; the sum of its entries' sizes).
 /// <para>
-/// mkw-recomp is Adrià's work (MIT, github.com/adriadam10/mkw-recomp). MKWMP installs its own
-/// fork of it, which adds what the MKWMP mod needs to the plugin API and nothing else. The zip
-/// holds the runtime and the tools its setup uses; it holds nothing of the game.
+/// mkw-recomp is Adrià's work (MIT, github.com/adriadam10/mkw-recomp). From 0.1.17 MKWMP installs its
+/// official release: everything the MKWMP mod needs (plugin API 4, the setup and the window under
+/// Wine / Proton) is upstream there. Up to 0.1.16-mkwmp.1 it installed its own fork (anarqz/mkw-recomp).
+/// The zip holds the runtime and the tools its setup uses; it holds nothing of the game.
 /// </para>
 /// </summary>
 public static class RecompRuntime
@@ -46,7 +47,7 @@ public static class RecompRuntime
     /// <summary>What the window says wherever mkw-recomp is installed or named (About, the install step).</summary>
     public const string CreditSummary =
         "The game runs on mkw-recomp, a static recompilation of Mario Kart World by Adrià and its contributors (MIT License). "
-        + "MKWMP installs its own build of it, with the additions online play needs. mkw-recomp builds the game from your own "
+        + "MKWMP installs its official release. mkw-recomp builds the game from your own "
         + "copy, on your device; MKWMP is not affiliated with mkw-recomp or with Nintendo.";
 
     /// <summary>
@@ -60,27 +61,32 @@ public static class RecompRuntime
     public static RuntimeManifest For(bool v3) => v3 ? Main : NoAvx2;
 
     /// <summary>
-    /// The pinned build: mkw-recomp 0.1.16-mkwmp.1, the Windows zip (also what runs under Proton: .1 is the
-    /// setup under Wine, where zig cannot use its cache, and the game window under Proton on a Linux desktop).
-    /// Same game id as 0.1.16-mkwmp, so an installed game keeps its compiled code and shaders.
+    /// The pinned build: the official mkw-recomp 0.1.17, the Windows zip (also what runs under Proton). It has
+    /// what the fork's 0.1.16-mkwmp.1 added (plugin API 4, upstream #743; the setup under Wine, #738; no SDL x11
+    /// driver under Proton, #739) and the same game id (c9bbcb75a9ac9a49), so an installed game keeps its compiled
+    /// code. Our fork's two unreleased Wine fixes are done without it: shadow storage by the launcher
+    /// (<see cref="RecompLaunchEnv"/>), the early XInput ask by the mod (native/probe/src/winepad.c).
     /// </summary>
     public static RuntimeManifest Main { get; } = new()
     {
         Name = "mkw-recomp",
-        Version = "0.1.16-mkwmp.1",
-        Repository = "anarqz/mkw-recomp",
-        Tag = "v0.1.16-mkwmp.1",
-        Asset = "mkw-recomp-0.1.16-mkwmp.1-windows-x64.zip",
-        Size = 221_145_220,
-        Sha256 = "313bd96d9f8fdbd5844debc35dbd759c2f3bd54ed87496b591e8c737531e970e",
+        Version = "0.1.17",
+        Repository = "adriadam10/mkw-recomp",
+        Tag = "v0.1.17",
+        Asset = "mkw-recomp-0.1.17-windows-x64.zip",
+        Size = 221_694_058,
+        Sha256 = "1a569435f63cbfe0077b82ff620161ceb9f489808352b9a429aae72284619d4e",
         Executable = Recomp.Exe,
-        ExecutableSha256 = "d04dc49a14618dce8385cdb1c3e61ba1bd62a2e5938ddf7dd216c926517cc72d",
-        // 23,344 files under one "mkw-recomp/" folder; most of the size is setup/ (clang, zig, glslc, python).
-        InstalledSize = 738_676_052,
+        ExecutableSha256 = "48ede546a7da356d2319260b6f8ec1814c009bc8421c1b5b3c847d82b6be09ce",
+        // 23,345 files under one "mkw-recomp/" folder; most of the size is setup/ (clang, zig, glslc, python).
+        InstalledSize = 740_533_976,
         // Measured on an install of game 1.8.0 set up with "link" (the game's data is not copied):
         // spirv 1.80 GB, pipeline cache 0.49 GB, setup-work 0.37 GB, mkwgame.dll 0.23 GB, exefs,
         // sm86 and python's caches 0.07 GB: 2.96 GB, rounded up.
         SetupSpace = 3_500_000_000,
+        // The fork's builds this launcher installed before (0.1.15-mkwmp ... 0.1.16-mkwmp.1): an install of one is
+        // updated in place to the official 0.1.17, keeping the game, its setup and the player's saves (Preserved). An
+        // official release installed by hand (0.1.16, say) is still the player's own and is left alone.
         LineageSuffix = "-mkwmp",
         FolderName = "mkw-recomp",
         Preserved =
@@ -88,7 +94,9 @@ public static class RecompRuntime
             // Not "setup": the bundled toolchain and the setup's sources are the runtime's, and setup\ changed from
             // 0.1.15-mkwmp to 0.1.16-mkwmp (setup\src is hashed into the setup's step keys and the game id,
             // launcher/docs/RECOMP_INTEGRATION.md, 1.5). An update compares its files one by one and replaces only
-            // those that changed, with the backup and rollback of any other file.
+            // those that changed, with the backup and rollback of any other file. Files the zip does not hold are never
+            // touched: the DLSS and FSR 3.1 libraries a player puts next to mkw.exe (nvngx_dlss.dll,
+            // amd_fidelityfx_*_vk.dll; 0.1.17 ships none) stay.
             // the setup's state and work
             "setup-state.json", "setup.lock", "setup-work",
             // the player's settings, saves, mods and logs
@@ -102,7 +110,7 @@ public static class RecompRuntime
             CreditSummary,
             "mkw-recomp",
             new Uri("https://github.com/adriadam10/mkw-recomp"),
-            new Uri("https://github.com/anarqz/mkw-recomp/tree/v0.1.16-mkwmp.1"),
+            new Uri("https://github.com/adriadam10/mkw-recomp/tree/v0.1.17"),
             "MIT",
             Notice,
             "licenses")
@@ -123,12 +131,12 @@ public static class RecompRuntime
     /// </summary>
     public static RuntimeManifest NoAvx2 { get; } = Main with
     {
-        Asset = "mkw-recomp-0.1.16-mkwmp.1-windows-x64-noavx2.zip",
-        Size = 221_040_229,
-        Sha256 = "c1d163f4a787c0bfcae6f28722e5684f13fe7e818bbc8620bb45f88dedd0b3ac",
-        ExecutableSha256 = "59af1fcc9c3a233e2d86c8437224f90a958e9ecb473118d71d92090379fbe3c0",
-        // 23,345 files: the main zip's, its own mkw.exe, and setup/cpu-level.
-        InstalledSize = 738_395_479,
+        Asset = "mkw-recomp-0.1.17-windows-x64-noavx2.zip",
+        Size = 221_587_934,
+        Sha256 = "9dfbdaff20607973e4176e7f6265ff1495b342b228a6adbd266c0879c50bc3c3",
+        ExecutableSha256 = "e67d12344bab5bb4d2411e85265aa71cdaf814045d1adb7ae4b51f4fec871211",
+        // 23,346 files: the main zip's, its own mkw.exe, and setup/cpu-level.
+        InstalledSize = 740_252_379,
         Variant = "no AVX2",
         VariantKey = "core.runtime.variant_noavx2",
         // The main zip's mkw.exe needs AVX2: it would not start here.

@@ -99,7 +99,7 @@ public class GameSettingsTests
     {
         var (_, install, ini, _) = Game();
         GameSettingsSchema For(string version) => RecompSettings.Schema(install with { Version = version }, NoEnv)!;
-        Assert.Equal(["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1"], RecompSettings.Runtimes);
+        Assert.Equal(["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17"], RecompSettings.Runtimes);
         string[] rows016 = ["hdr_tonemap", "hdr_peak", "hdr_white", "keyboard_mouse", "gb_mature"];
 
         // upstream 0.1.15: no Logic rate (it came right after that release) and none of 0.1.16's rows
@@ -112,11 +112,12 @@ public class GameSettingsTests
         Assert.All(rows016, id => Assert.Null(fork15.Find(id)));
         Assert.Equal(v15.Settings.Count() + 1, fork15.Settings.Count());
 
-        foreach (var version in new[] { "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1" })
+        foreach (var version in new[] { "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17" })
         {
             var s = For(version);
             Assert.NotNull(s.Find("logic_hz"));
-            Assert.Equal(fork15.Settings.Count() + rows016.Length, s.Settings.Count());
+            Assert.Equal(fork15.Settings.Count() + rows016.Length + (version == "0.1.17" ? Rows017.Length : 0), s.Settings.Count());
+            Assert.All(Rows017, id => Assert.Equal(version == "0.1.17", s.Find(id) is not null));
             // cfg.c metas: defaults, and what is read only at start
             var tonemap = s.Find("hdr_tonemap")!;
             Assert.Equal((GameSettingKind.Choice, "vanilla", true, "HDR tone mapper"), (tonemap.Kind, tonemap.Default, tonemap.RequiresRestart, tonemap.Label));
@@ -172,6 +173,72 @@ public class GameSettingsTests
         Assert.False(RecompSettings.Read(install with { Version = "0.1.15" }, NoEnv).ContainsKey("keyboard_mouse"));
         Assert.Throws<LauncherException>(() => RecompSettings.Write(target, install with { Version = "0.1.15" }, One("logic_hz", "120"), NoEnv));
         RecompSettings.Write(target, install with { Version = "0.1.15-mkwmp" }, One("logic_hz", "120"), NoEnv);
+    }
+
+    /// <summary>0.1.17's new rows (settings_tabs.cpp tab_graphics, #462) and the two keys without a menu row (#644, #742).</summary>
+    private static readonly string[] Rows017 = ["temporal", "temporal_quality", "dlss_preset", "cas", "cas_sharpness", "fg_engine", "reflex", "shadow_draws", "pad_p2"];
+
+    [Fact]
+    public void The_017_rows_are_the_game_s_with_its_values_defaults_and_places()
+    {
+        var (_, install, ini, _) = Game();
+        var v17 = install with { Version = "0.1.17" };
+        var s = RecompSettings.Schema(v17, NoEnv)!;
+        // cfg.c rows: default, values, whether the game reads it only at start
+        void Is(string id, string def, bool restart, params string[] values)
+        {
+            var x = s.Find(id)!;
+            Assert.Equal((def, restart), (x.Default, x.RequiresRestart));
+            if (values.Length > 0)
+            {
+                Assert.Equal(values, x.Options.Select(o => o.Value));
+            }
+        }
+        Is("temporal", "off", false, "off", "dlss", "fsr3");
+        Is("temporal_quality", "quality", true, "native", "quality", "balanced", "performance", "ultra");
+        Is("dlss_preset", "default", false, "default", "j", "k", "l", "m");
+        Is("cas", "off", false, "off", "on");
+        Is("cas_sharpness", "50", false);
+        Is("fg_engine", "flow", false, "flow", "dlss", "fsr3");
+        Is("reflex", "off", false, "off", "on", "boost");
+        Is("shadow_draws", "1", true, "1", "auto", "0");
+        Is("pad_p2", "0", false);
+        // the game's own texts (mkw.pot) and product names, kept as the game writes them
+        Assert.Equal(("AI upscaling", "NVIDIA DLSS", "AMD FSR 3.1"), (s.Find("temporal")!.Label, s.Find("temporal")!.Options[1].Label, s.Find("temporal")!.Options[2].Label));
+        Assert.Equal(["MKW Recomp", "NVIDIA DLSS", "AMD FSR 3.1"], s.Find("fg_engine")!.Options.Select(o => o.Label));
+        Assert.Equal("On + Boost", s.Find("reflex")!.Options[2].Label);
+        Assert.Contains("NVIDIA GPUs only", s.Find("reflex")!.Description, StringComparison.Ordinal);
+        Assert.Contains("RTX", s.Find("temporal")!.Description, StringComparison.Ordinal);
+        // shown with what they act on
+        Assert.Equal(["dlss", "fsr3"], s.Find("temporal_quality")!.VisibleWhen!.Values);
+        Assert.Equal(("temporal", "dlss"), (s.Find("dlss_preset")!.VisibleWhen!.Setting, s.Find("dlss_preset")!.VisibleWhen!.Values.Single()));
+        Assert.Equal(("cas", "on"), (s.Find("cas_sharpness")!.VisibleWhen!.Setting, s.Find("cas_sharpness")!.VisibleWhen!.Values.Single()));
+        Assert.DoesNotContain("off", s.Find("fg_engine")!.VisibleWhen!.Values);
+        // where the game's menu has them: under the FSR sharpness, and under Frame generation
+        var graphics = s.Categories.Single(c => c.Id == "graphics").Settings.Select(x => x.Id).ToList();
+        Assert.Equal(["sharpness", "temporal", "temporal_quality", "dlss_preset", "cas", "cas_sharpness", "operation_mode"], graphics.GetRange(graphics.IndexOf("sharpness"), 7));
+        Assert.Equal(["framegen", "fg_engine", "reflex", "vrr"], graphics.GetRange(graphics.IndexOf("framegen"), 4));
+        Assert.Equal("shadow_draws", graphics[graphics.IndexOf("shadow_size") + 1]);
+        var controls = s.Categories.Single(c => c.Id == "controls").Settings.Select(x => x.Id).ToList();
+        Assert.Equal("pad_p2", controls[controls.IndexOf("pad_layout") + 1]);
+        // MKW_GPU_CLOCKS is Linux amdgpu only: never a row for the Windows build
+        Assert.Null(s.Find("gpu_clocks"));
+        // written under the sections cfg.c gives them ([graphics] for shadow_draws, which has none there)
+        var target = new MkwRecompTarget("1.4.0") { RunningOverride = () => false };
+        RecompSettings.Write(target, v17, new Dictionary<string, string?> { ["temporal"] = "dlss", ["reflex"] = "boost", ["pad_p2"] = "1", ["shadow_draws"] = "auto" }, NoEnv);
+        var text = File.ReadAllText(ini).Replace("\r\n", "\n", StringComparison.Ordinal);
+        Assert.Contains("temporal = dlss\n", text, StringComparison.Ordinal);
+        Assert.Contains("reflex = boost\n", text, StringComparison.Ordinal);
+        Assert.Contains("[input]\npad_p2 = 1\n", text, StringComparison.Ordinal);
+        Assert.Contains("[graphics]\nshadow_draws = auto\n", text, StringComparison.Ordinal);
+        Assert.Matches(@"\[display\]\n(?:[^\[]*\n)?temporal = dlss\n", text);
+        var read = RecompSettings.Read(v17, NoEnv);
+        Assert.Equal(("dlss", "boost", "1", "auto"), (read["temporal"], read["reflex"], read["pad_p2"], read["shadow_draws"]));
+        Assert.Throws<LauncherException>(() => RecompSettings.Write(target, v17, One("temporal", "xess"), NoEnv));
+        // the same keys are no settings of 0.1.16
+        Assert.Throws<LauncherException>(() => RecompSettings.Write(target, install with { Version = "0.1.16" }, One("temporal", "dlss"), NoEnv));
+        // an MKW_* in the environment locks the row, as the game greys it out
+        Assert.NotNull(RecompSettings.Schema(v17, n => n == "MKW_REFLEX" ? "on" : null)!.Find("reflex")!.Locked);
     }
 
     [Fact]

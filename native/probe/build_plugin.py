@@ -44,6 +44,8 @@ PLUGIN_ONLY = ["seatapi.c", "seatd.c", "camera.c", "camcodec.c", "camlib.c", "ch
 WIN_PLAT = ["plat_win.c", "plat_net_win.c", "plat_http_win.c"]
 POSIX_HTTP = ["plat_http_posix.c"]
 VERSION_SCRIPT = "{ global: mkw_plugin_init; local: *; };\n"
+# the controller under Wine / Proton (XInput asked at load; a no-op elsewhere, so in both builds)
+PLUGIN_ONLY = PLUGIN_ONLY + ["winepad.c"]
 
 
 def run(cmd):
