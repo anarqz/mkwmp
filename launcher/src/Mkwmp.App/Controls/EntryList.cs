@@ -68,9 +68,9 @@ public sealed class EntryList : ListBox
         var item = ItemUnder(e.OriginalSource);
         var pressed = _pressed;
         _pressed = null;
-        if (item is null || !ReferenceEquals(item, pressed))
+        if (item is null || !ReferenceEquals(item, pressed) || Tap.Dragged)
         {
-            return; // pressed elsewhere (the end of a drag, the scroll bar)
+            return; // pressed elsewhere, or the end of a drag (Input/Tap.cs): not a tap on this line
         }
         var now = Environment.TickCount64;
         if (now - _lastClick < DoubleClickMs)

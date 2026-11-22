@@ -120,10 +120,22 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="c:EntryList">
-            <ScrollViewer Focusable="False" CanContentScroll="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                          PanningMode="VerticalOnly">
+            <!-- the launcher's own viewer (a finger drags it, under Wine too, where touch is the mouse), scrolling the
+                 virtualizing panel itself: its template is the default one with CanContentScroll on -->
+            <c:SmoothScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto">
+              <c:SmoothScrollViewer.Template>
+                <ControlTemplate TargetType="c:SmoothScrollViewer">
+                  <Grid Background="Transparent">
+                    <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" CanContentScroll="True" />
+                    <ScrollBar x:Name="PART_VerticalScrollBar" HorizontalAlignment="Right" Margin="0,12,0,12"
+                               Maximum="{TemplateBinding ScrollableHeight}" ViewportSize="{TemplateBinding ViewportHeight}"
+                               Value="{TemplateBinding VerticalOffset}"
+                               Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}" />
+                  </Grid>
+                </ControlTemplate>
+              </c:SmoothScrollViewer.Template>
               <ItemsPresenter />
-            </ScrollViewer>
+            </c:SmoothScrollViewer>
           </ControlTemplate>
         </Setter.Value>
       </Setter>

@@ -7,7 +7,7 @@
              Visibility="{Binding IsModalOpen, Converter={StaticResource Conv.Visible}}">
   <!-- DataContext: ShellViewModel; the card shows Shell.Modal (a ModalViewModel). -->
   <Grid>
-    <Border x:Name="Backdrop" Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnBackdrop" />
+    <Border x:Name="Backdrop" Background="{DynamicResource Brush.Dim}" MouseLeftButtonUp="OnBackdrop" />
     <Border x:Name="Card" Width="1080" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="14"
             Background="{DynamicResource Brush.Modal}" DataContext="{Binding Modal}" RenderTransformOrigin="0.5,0.5">
       <Border.RenderTransform>

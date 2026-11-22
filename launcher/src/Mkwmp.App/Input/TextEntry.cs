@@ -67,7 +67,7 @@ public static class TextEntry
 
         static void OpenFor(object? sender, bool touch)
         {
-            if (sender is not UIElement { IsEnabled: true } box || Window.GetWindow(box)?.DataContext is not ShellViewModel shell || shell.IsKeyboardOpen)
+            if (Tap.Dragged || sender is not UIElement { IsEnabled: true } box || Window.GetWindow(box)?.DataContext is not ShellViewModel shell || shell.IsKeyboardOpen)
             {
                 return;
             }

@@ -65,7 +65,7 @@ public partial class ModalHost : UserControl
 
     private void OnBackdrop(object sender, MouseButtonEventArgs e)
     {
-        if (DataContext is ShellViewModel shell)
+        if (Input.Tap.IsTap((DependencyObject)sender) && DataContext is ShellViewModel shell)
         {
             shell.DismissModal();
         }

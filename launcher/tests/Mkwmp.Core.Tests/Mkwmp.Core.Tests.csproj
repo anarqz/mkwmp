@@ -23,6 +23,7 @@
     <Compile Include="..\..\src\Mkwmp.App\Themes\Palette.cs" Link="App\Palette.cs" />
     <Compile Include="..\..\src\Mkwmp.App\Input\PadLayout.cs" Link="App\PadLayout.cs" />
     <Compile Include="..\..\src\Mkwmp.App\Input\ScrollMotion.cs" Link="App\ScrollMotion.cs" />
+    <Compile Include="..\..\src\Mkwmp.App\Input\TapTracker.cs" Link="App\TapTracker.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- the palette files, read as plain XML by ShellMathTests -->

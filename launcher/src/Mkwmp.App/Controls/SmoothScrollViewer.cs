@@ -15,20 +15,20 @@ namespace Mkwmp.App.Controls;
 /// <list type="bullet">
 /// <item>the focus is kept in view (<see cref="EdgePadding"/> of room around it; <see cref="Centered"/>
 /// keeps it in the middle, for a carousel);</item>
-/// <item>the wheel: a third further a notch than WPF's own; notches that come while it moves add up;
+/// <item>the wheel: 80 units a notch (WPF's own: 48); notches that come while it moves add up;
 /// a precision touchpad's small steps count as their share of a notch;</item>
-/// <item>the right stick (<see cref="ScrollBy"/>, from the window);</item>
-/// <item>a finger (or the mouse) dragged along the list moves it, and a flick coasts. A drag never
-/// clicks what it started on, and does not leave the focus there; a tap on a coasting list only stops it.
+/// <item>the right stick gives a speed (<see cref="ScrollAt"/>, from the window): the list moves every
+/// frame, not at the rhythm the stick is read;</item>
+/// <item>a finger (or the mouse) dragged along the list moves it, and a flick coasts. The drag begins
+/// where every control agrees it does (<see cref="Tap"/>: past the touch slop), so it never clicks what
+/// it started on, and does not leave the focus there; a tap on a coasting list only stops it.
 /// Touch arrives as the mouse (WPF promotes it; under Wine it is the mouse already), so both are one path.</item>
 /// </list>
+/// The offset moves in fractions of a unit while it glides (<see cref="Apply"/>) and rests on whole ones.
 /// <c>Padding</c> is applied as the margin of the content (do not set a Margin on the content element yourself).
 /// </summary>
 public sealed class SmoothScrollViewer : ScrollViewer
 {
-    /// <summary>How far (units) a press moves along the list before it is a drag and not a tap.</summary>
-    private const double DragStart = 12;
-
     public static readonly DependencyProperty EdgePaddingProperty = Dp.Register<SmoothScrollViewer, double>(nameof(EdgePadding), 48.0);
     public static readonly DependencyProperty CenteredProperty = Dp.Register<SmoothScrollViewer, bool>(nameof(Centered), false);
 
@@ -43,7 +43,6 @@ public sealed class SmoothScrollViewer : ScrollViewer
     private double _pressOffset;
     private bool _pressVertical;
     private bool _dragging;
-    private IInputElement? _focusBefore;
     private readonly List<(TimeSpan At, double Position)> _samples = [];
 
     static SmoothScrollViewer()
@@ -89,8 +88,11 @@ public sealed class SmoothScrollViewer : ScrollViewer
         set => SetValue(FadeEdgesProperty, value);
     }
 
-    /// <summary>Glides can play (else every scroll is a jump: the system's animations are off, or it is not on screen).</summary>
-    private bool Animated => IsLoaded && SystemParameters.ClientAreaAnimation;
+    /// <summary>
+    /// Glides can play (else every scroll is a jump: the system's animations are off, or it is not on screen).
+    /// Under Wine the system's switch is not the player's (nothing on a Steam Deck sets it): always.
+    /// </summary>
+    private bool Animated => IsLoaded && (Mkwmp.Core.Platform.WineHost.Detected || SystemParameters.ClientAreaAnimation);
 
     private bool ScrollsVertically => ScrollableHeight > 0 && VerticalScrollBarVisibility != ScrollBarVisibility.Disabled;
 
@@ -103,12 +105,12 @@ public sealed class SmoothScrollViewer : ScrollViewer
     public bool ScrollBy(double dx, double dy)
     {
         var moved = false;
-        if (dy != 0 && ScrollsVertically && CanGo(_vertical, VerticalOffset, ScrollableHeight, dy))
+        if (dy != 0 && ScrollsVertically && CanGo(_vertical.Moving ? _vertical.Target : VerticalOffset, ScrollableHeight, dy))
         {
             GlideBy(_vertical, VerticalOffset, ScrollableHeight, dy);
             moved = true;
         }
-        if (dx != 0 && ScrollsHorizontally && CanGo(_horizontal, HorizontalOffset, ScrollableWidth, dx))
+        if (dx != 0 && ScrollsHorizontally && CanGo(_horizontal.Moving ? _horizontal.Target : HorizontalOffset, ScrollableWidth, dx))
         {
             GlideBy(_horizontal, HorizontalOffset, ScrollableWidth, dx);
             moved = true;
@@ -116,11 +118,46 @@ public sealed class SmoothScrollViewer : ScrollViewer
         return moved;
     }
 
-    private static bool CanGo(ScrollMotion motion, double offset, double max, double delta)
+    /// <summary>
+    /// The right stick: scrolls at (<paramref name="vx"/>, <paramref name="vy"/>) units a second until told
+    /// otherwise (call it at every poll while the stick is held; zeros let go, and so does silence). The list
+    /// moves on the render clock, not at the rhythm of the calls. False when it cannot go that way.
+    /// </summary>
+    public bool ScrollAt(double vx, double vy)
     {
-        var from = motion.Moving ? motion.Target : offset;
-        return delta < 0 ? from > 0.5 : from < max - 0.5;
+        // at an end (or with nothing to scroll) the axis is let go: the caller drives the list around this one
+        var down = vy != 0 && ScrollsVertically && CanGo(_vertical.Moving ? _vertical.Position : VerticalOffset, ScrollableHeight, vy);
+        var across = vx != 0 && ScrollsHorizontally && CanGo(_horizontal.Moving ? _horizontal.Position : HorizontalOffset, ScrollableWidth, vx);
+        DriveAt(_vertical, VerticalOffset, ScrollableHeight, down ? vy : 0);
+        DriveAt(_horizontal, HorizontalOffset, ScrollableWidth, across ? vx : 0);
+        return down || across;
     }
+
+    private void DriveAt(ScrollMotion motion, double offset, double max, double velocity)
+    {
+        if (_dragging)
+        {
+            return; // the finger holds the list
+        }
+        if (!motion.Moving)
+        {
+            if (velocity == 0)
+            {
+                return;
+            }
+            motion.Jump(offset);
+        }
+        if (!Animated)
+        {
+            motion.Jump(Math.Clamp(offset + velocity / 60, 0, max));
+            Apply();
+            return;
+        }
+        motion.Drive(velocity, max);
+        StartTicking();
+    }
+
+    private static bool CanGo(double from, double max, double delta) => delta < 0 ? from > 0.5 : from < max - 0.5;
 
     // ── the wheel ──
 
@@ -154,7 +191,7 @@ public sealed class SmoothScrollViewer : ScrollViewer
         var size = target is UIElement element ? element.RenderSize : default;
         // in the coordinates of the scrolled extent: where it is in the viewport now, plus how far that is scrolled
         var box = target.TransformToAncestor(this).TransformBounds(e.TargetRect.IsEmpty ? new Rect(size) : e.TargetRect);
-        box.Offset(HorizontalOffset, VerticalOffset);
+        box.Offset(HorizontalOffset + _nudge.X, VerticalOffset + _nudge.Y);
         if (ScrollableHeight > 0)
         {
             GlideTo(_vertical, VerticalOffset, ScrollableHeight, Aim(box.Top, box.Bottom, VerticalOffset, ViewportHeight, ScrollableHeight));
@@ -177,7 +214,8 @@ public sealed class SmoothScrollViewer : ScrollViewer
             var pad = Math.Min(EdgePadding, Math.Max(0, (viewport - (far - near)) / 2));
             aim = near - pad < offset ? near - pad : far + pad > offset + viewport ? far + pad - viewport : offset;
         }
-        return Math.Clamp(aim, 0, scrollable);
+        // a whole unit: at rest the content sits on the layout's grid (sharp text)
+        return Math.Round(Math.Clamp(aim, 0, scrollable));
     }
 
     // ── the motion, on the render clock ──
@@ -258,14 +296,8 @@ public sealed class SmoothScrollViewer : ScrollViewer
 
     private void Advance(double dt)
     {
-        if (_vertical.Moving)
-        {
-            _vertical.Step(dt, ScrollableHeight);
-        }
-        if (_horizontal.Moving)
-        {
-            _horizontal.Step(dt, ScrollableWidth);
-        }
+        Step(_vertical, dt, ScrollableHeight);
+        Step(_horizontal, dt, ScrollableWidth);
         Apply();
         if (!_vertical.Moving && !_horizontal.Moving)
         {
@@ -273,15 +305,78 @@ public sealed class SmoothScrollViewer : ScrollViewer
         }
     }
 
+    private static void Step(ScrollMotion motion, double dt, double max)
+    {
+        if (!motion.Moving)
+        {
+            return;
+        }
+        motion.Step(dt, max);
+        if (!motion.Moving)
+        {
+            motion.Jump(Math.Round(motion.Position)); // arrived: on a whole unit (at most half a unit away)
+        }
+    }
+
+    /// <summary>
+    /// Shows the motion's position. The layout places the content on whole units (the window rounds its
+    /// layout, and a unit is two pixels on a 4K screen), which a slow glide shows as steps: so the scroll
+    /// offset takes the whole units and a render transform the fraction. That costs no layout, and at rest
+    /// the fraction is zero (the motion's targets are whole units), so text is as sharp as ever.
+    /// </summary>
     private void Apply()
     {
-        if (Math.Abs(VerticalOffset - _vertical.Position) > 0.01 && ScrollableHeight > 0)
+        var (x, fx) = Split(_horizontal.Position, ScrollableWidth);
+        var (y, fy) = Split(_vertical.Position, ScrollableHeight);
+        if (Math.Abs(VerticalOffset - y) > 0.01 && ScrollableHeight > 0)
         {
-            ScrollToVerticalOffset(_vertical.Position);
+            ScrollToVerticalOffset(y);
         }
-        if (Math.Abs(HorizontalOffset - _horizontal.Position) > 0.01 && ScrollableWidth > 0)
+        if (Math.Abs(HorizontalOffset - x) > 0.01 && ScrollableWidth > 0)
         {
-            ScrollToHorizontalOffset(_horizontal.Position);
+            ScrollToHorizontalOffset(x);
+        }
+        Nudge(fx, fy);
+    }
+
+    private (double Whole, double Fraction) Split(double position, double max)
+    {
+        if (!_fine || max <= 0)
+        {
+            return (position, 0);
+        }
+        var whole = Math.Floor(position);
+        var fraction = position - whole;
+        return fraction < 0.004 ? (whole, 0) : (whole, fraction);
+    }
+
+    private readonly TranslateTransform _fineShift = new();
+    private Vector _nudge;
+    private bool _fine;
+
+    /// <summary>The part of the offset below a whole unit, as a shift of the content.</summary>
+    private void Nudge(double x, double y)
+    {
+        if (!_fine || (_nudge.X == x && _nudge.Y == y))
+        {
+            return;
+        }
+        _nudge = new Vector(x, y);
+        _fineShift.X = -x;
+        _fineShift.Y = -y;
+    }
+
+    /// <summary>The content takes the fine shift unless it has a transform of its own (then whole units it is).</summary>
+    private void AdoptContent()
+    {
+        _fine = false;
+        _nudge = default;
+        _fineShift.X = _fineShift.Y = 0;
+        if (Content is UIElement content && !CanContentScroll
+            && (content.RenderTransform is null || content.RenderTransform == Transform.Identity || ReferenceEquals(content.RenderTransform, _fineShift)))
+        {
+            content.RenderTransform = _fineShift;
+            _fine = true;
         }
     }
 
@@ -290,13 +385,15 @@ public sealed class SmoothScrollViewer : ScrollViewer
         base.OnScrollChanged(e);
         UpdateFade();
         // moved by something else (the layout, the scroll bar, content that shrank): the motion starts from there next time
-        if (!_vertical.Moving && !_dragging && Math.Abs(_vertical.Position - VerticalOffset) > 0.5)
+        if (!_vertical.Moving && !_dragging && Math.Abs(_vertical.Position - VerticalOffset) > 1)
         {
             _vertical.Jump(VerticalOffset);
+            Nudge(_nudge.X, 0);
         }
-        if (!_horizontal.Moving && !_dragging && Math.Abs(_horizontal.Position - HorizontalOffset) > 0.5)
+        if (!_horizontal.Moving && !_dragging && Math.Abs(_horizontal.Position - HorizontalOffset) > 1)
         {
             _horizontal.Jump(HorizontalOffset);
+            Nudge(0, _nudge.Y);
         }
     }
 
@@ -307,24 +404,24 @@ public sealed class SmoothScrollViewer : ScrollViewer
         ArgumentNullException.ThrowIfNull(e);
         base.OnPreviewMouseLeftButtonDown(e);
         _press = null;
-        if (e.Handled || TakesItsOwnDrag(e.OriginalSource as DependencyObject))
+        if (e.Handled || Tap.OwnsDrag(e.OriginalSource as DependencyObject, this))
         {
             return;
         }
-        var coasting = Math.Abs(_vertical.Velocity) + Math.Abs(_horizontal.Velocity) > 150;
+        var coasting = (_vertical.Coasting || _horizontal.Coasting) && Math.Abs(_vertical.Velocity) + Math.Abs(_horizontal.Velocity) > 150;
         if (_vertical.Moving || _horizontal.Moving)
         {
             // a touch stops a moving list where it is
-            _vertical.Jump(VerticalOffset);
-            _horizontal.Jump(HorizontalOffset);
+            _vertical.Jump(Math.Round(_vertical.Position));
+            _horizontal.Jump(Math.Round(_horizontal.Position));
             StopTicking();
+            Apply();
         }
         if (coasting)
         {
             e.Handled = true; // and that is all it does: no click on what happened to pass under the finger
         }
         _press = e.GetPosition(this);
-        _focusBefore = Keyboard.FocusedElement;
         _samples.Clear();
     }
 
@@ -344,14 +441,19 @@ public sealed class SmoothScrollViewer : ScrollViewer
         var at = e.GetPosition(this);
         if (!_dragging)
         {
+            // the same moment for every control: the press is a drag once it left the touch slop (Input/Tap.cs)
+            if (!Tap.Dragged)
+            {
+                return;
+            }
             var dx = at.X - press.X;
             var dy = at.Y - press.Y;
             bool vertical;
-            if (ScrollsVertically && Math.Abs(dy) >= DragStart && Math.Abs(dy) > Math.Abs(dx))
+            if (ScrollsVertically && Math.Abs(dy) > Math.Abs(dx))
             {
                 vertical = true;
             }
-            else if (ScrollsHorizontally && Math.Abs(dx) >= DragStart && Math.Abs(dx) > Math.Abs(dy))
+            else if (ScrollsHorizontally && Math.Abs(dx) > Math.Abs(dy))
             {
                 vertical = false;
             }
@@ -384,16 +486,12 @@ public sealed class SmoothScrollViewer : ScrollViewer
     {
         _press = at; // from here: the list does not jump by the distance it took to become a drag
         _pressVertical = vertical;
-        _pressOffset = vertical ? VerticalOffset : HorizontalOffset;
+        var motion = vertical ? _vertical : _horizontal;
+        motion.Jump(motion.Moving ? motion.Position : vertical ? VerticalOffset : HorizontalOffset); // whatever moved it stops: the finger has it
+        _pressOffset = motion.Position;
         _dragging = true;
-        // taking the mouse from the button under the finger: it lets go without a click
+        // the pointer is this list's until it is let go (Tap already took it from the button under the finger)
         CaptureMouse();
-        // the press may have put the focus on that button: a drag leaves it where it was
-        if (_focusBefore is not null && !ReferenceEquals(Keyboard.FocusedElement, _focusBefore)
-            && _focusBefore is UIElement { IsVisible: true })
-        {
-            Keyboard.Focus(_focusBefore);
-        }
         _samples.Clear();
         _samples.Add((_clock.Elapsed, vertical ? at.Y : at.X));
     }
@@ -442,6 +540,12 @@ public sealed class SmoothScrollViewer : ScrollViewer
             motion.Fling(-velocity); // the content follows the finger: the offset goes the other way
             StartTicking();
         }
+        else
+        {
+            // let go at rest: onto a whole unit (the fine shift back to zero)
+            motion.Jump(Math.Round(motion.Position));
+            Apply();
+        }
     }
 
     /// <summary>Units a second at the release, from the last tenth of a second of the drag; 0 when the finger rested before it let go.</summary>
@@ -455,19 +559,6 @@ public sealed class SmoothScrollViewer : ScrollViewer
         var first = _samples.First(s => (last.At - s.At).TotalSeconds <= 0.1);
         var seconds = (last.At - first.At).TotalSeconds;
         return seconds < 0.008 ? 0 : (last.Position - first.Position) / seconds;
-    }
-
-    /// <summary>Controls that a drag works on themselves: a slider's knob, a scroll bar, text.</summary>
-    private bool TakesItsOwnDrag(DependencyObject? source)
-    {
-        for (var node = source; node is not null && !ReferenceEquals(node, this); node = UpOf(node))
-        {
-            if (node is Slider or ScrollBar or Thumb or TextBoxBase or PasswordBox)
-            {
-                return true;
-            }
-        }
-        return false;
     }
 
     /// <summary>A list inside this one, under the finger, that can scroll that way itself.</summary>
@@ -485,7 +576,6 @@ public sealed class SmoothScrollViewer : ScrollViewer
 
     private static DependencyObject? UpOf(DependencyObject node) =>
         node is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
-
     protected override void OnManipulationBoundaryFeedback(ManipulationBoundaryFeedbackEventArgs e)
     {
         ArgumentNullException.ThrowIfNull(e);
@@ -531,6 +621,7 @@ public sealed class SmoothScrollViewer : ScrollViewer
     {
         base.OnContentChanged(oldContent, newContent);
         ApplyPadding();
+        AdoptContent();
     }
 
     /// <summary>

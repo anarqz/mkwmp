@@ -49,7 +49,7 @@ public sealed class GamepadInput : IDisposable
     /// <summary>A role (<see cref="PadLayout"/>): with the Nintendo layout the east button is A.</summary>
     public event EventHandler<PadButton>? Pressed;
 
-    /// <summary>The right stick, every poll while it is tilted: how far to scroll (units, positive down / right) since the last poll.</summary>
+    /// <summary>The right stick, every poll while it is tilted: how fast to scroll (units a second, positive down / right); zeros once when it is let go.</summary>
     public event EventHandler<ScrollStep>? Scrolled;
 
     /// <summary>The game's <c>pad_layout</c> ("auto", "nintendo", "xbox"): with <see cref="Identity"/>, which physical button gives which role.</summary>
@@ -160,7 +160,7 @@ public sealed class GamepadInput : IDisposable
         {
             _held = buttons;
             _swallow = !_enabled;
-            _stickSince = default;
+            StickReleased();
             return;
         }
         var pressed = (ushort)(buttons & ~_held);
@@ -201,7 +201,7 @@ public sealed class GamepadInput : IDisposable
         var y = state.ThumbRY / 32767.0;
         if (Math.Max(Math.Abs(x), Math.Abs(y)) <= ScrollMotion.StickDeadZone)
         {
-            _stickSince = default;
+            StickReleased();
             return;
         }
         if (_stickSince == default)
@@ -210,10 +210,20 @@ public sealed class GamepadInput : IDisposable
         }
         var held = (now - _stickSince).TotalSeconds;
         // up on the stick scrolls up (back); right scrolls right (forward): XInput's Y is up positive
-        var step = new ScrollStep(-ScrollMotion.StickVelocity(x, held) * dt, ScrollMotion.StickVelocity(y, held) * dt);
+        // a speed, not a distance: the list moves on the render clock, however unevenly this timer ticks
+        var step = new ScrollStep(-ScrollMotion.StickVelocity(x, held), ScrollMotion.StickVelocity(y, held));
         if (step.X != 0 || step.Y != 0)
         {
             Scrolled?.Invoke(this, step);
+        }
+    }
+
+    private void StickReleased()
+    {
+        if (_stickSince != default)
+        {
+            _stickSince = default;
+            Scrolled?.Invoke(this, default); // let go: the list settles
         }
     }
 

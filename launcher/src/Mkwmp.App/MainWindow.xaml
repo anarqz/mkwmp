@@ -43,14 +43,14 @@
       </Button>
 
       <!-- 1: the friends panel, from the right, on any page -->
-      <Border x:Name="FriendsScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnFriendsScrim"
+      <Border x:Name="FriendsScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonUp="OnFriendsScrim"
               Visibility="{Binding IsFriendsOpen, Converter={StaticResource Conv.Visible}}" />
       <c:SlideHost x:Name="FriendsLayer" IsOpen="{Binding IsFriendsOpen}" Edge="Right" HorizontalAlignment="Right" Width="700">
         <v:FriendsPanel DataContext="{Binding FriendsPanel}" />
       </c:SlideHost>
 
       <!-- 2: a bottom sheet -->
-      <Border x:Name="SheetScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnSheetScrim"
+      <Border x:Name="SheetScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonUp="OnSheetScrim"
               Visibility="{Binding IsSheetOpen, Converter={StaticResource Conv.Visible}}" />
       <c:BottomSheet x:Name="SheetLayer" IsOpen="{Binding IsSheetOpen}" Content="{Binding Sheet}" />
 
@@ -64,7 +64,7 @@
            game setup's card opens it) and under the on-screen keyboard (its path box uses it). It brings the hint bar
            with it: the one below is under the modal's scrim. -->
       <Grid x:Name="PickerLayer">
-        <Border Background="{DynamicResource Brush.Dim}" MouseLeftButtonDown="OnPickerScrim"
+        <Border Background="{DynamicResource Brush.Dim}" MouseLeftButtonUp="OnPickerScrim"
                 Visibility="{Binding IsPickerOpen, Converter={StaticResource Conv.Visible}}" />
         <c:SlideHost IsOpen="{Binding IsPickerOpen}" Edge="Right" HorizontalAlignment="Right" Width="1180">
           <v:PickerSidebar DataContext="{Binding Picker}" />
