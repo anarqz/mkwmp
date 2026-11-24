@@ -369,6 +369,7 @@ public static class Strings
     public static string GameSettingsOwnedStartScreen => T("core.gs.owned_start_screen");
     public static string GameSettingsOwnedLogicHz => T("core.gs.owned_logic_hz");
     public static string GameSettingsOwnedFullscreen => T("core.gs.owned_fullscreen");
+    public static string GameLibsNoTools => T("core.gs.libs_no_tools");
     public static string GameSettingRefusedToggle => T("core.gs.refused_toggle");
     public static string GameSettingRefusedNumber => T("core.gs.refused_number");
     public static string GameSettingRefusedLine => T("core.gs.refused_line");
@@ -381,6 +382,10 @@ public static class Strings
     public static string GameSettingsFolderGone(string folder) => F("core.gs.folder_gone", ("folder", folder));
     public static string GameSettingsReadOnly(string file) => F("core.gs.read_only", ("file", file));
     public static string GameSettingsSaveFailed(string why) => F("core.gs.save_failed", ("why", why));
+    /// <summary>The optional libraries (DLSS, FSR 3.1, RenHDrum) the game's settings picked, downloaded by the launcher (RecompLibs).</summary>
+    public static string GameLibsFetching(string names, int percent) => F("core.gs.libs_fetching", ("names", names), ("percent", percent.ToString(CultureInfo.InvariantCulture)));
+    public static string GameLibsFailed(string names, string why) => F("core.gs.libs_failed", ("names", names), ("why", why));
+    public static string GameLibsReady(string names) => F("core.gs.libs_ready", ("names", names));
     public static string GameSettingsNotASetting(string id) => F("core.gs.not_a_setting", ("id", id));
     public static string GameSettingLocked(string label, string why) => F("core.gs.locked", ("label", label), ("why", why));
     public static string GameSettingRefused(string label, string value, string why) => F("core.gs.refused", ("label", label), ("value", value), ("why", why));

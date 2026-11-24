@@ -7,7 +7,7 @@ namespace Mkwmp.Core.Targets.MkwRecomp;
 
 /// <summary>
 /// mkw-recomp's own settings, as its menu shows them (runtime/core/base/cfg.c <c>metas</c>,
-/// runtime/ui/menu/settings_tabs.cpp; texts from i18n/ui/mkw.pot, mkw-recomp 0.1.15, 0.1.16 and 0.1.17):
+/// runtime/ui/menu/settings_tabs.cpp; texts from i18n/ui/mkw.pot, mkw-recomp 0.1.15 to 0.1.18):
 /// the Screen, Graphics, Sound, Controls, General and Advanced tabs. They live in <c>&lt;data dir&gt;/mkw.ini</c>
 /// (beside mkw.exe unless <c>game_dir</c> moved the installation; the same on Windows, under
 /// Proton and in the Linux build), one <c>key = value</c> line each, absent while at its default.
@@ -39,9 +39,9 @@ public static partial class RecompSettings
     /// <summary>
     /// The runtimes whose settings this table describes (others name or read some keys differently).
     /// 0.1.16-mkwmp is the fork's next build: upstream 0.1.16's menu, unchanged. 0.1.17 is upstream's next release:
-    /// 0.1.16's menu and its own new rows (<see cref="Has017Rows"/>).
+    /// 0.1.16's menu and its own new rows (<see cref="Has017Rows"/>); 0.1.18 has those and its own (<see cref="Has018Rows"/>).
     /// </summary>
-    public static readonly IReadOnlyList<string> Runtimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17"];
+    public static readonly IReadOnlyList<string> Runtimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17", "0.1.18"];
 
     /// <summary>
     /// The Logic rate row came right after upstream 0.1.15 (the fork's 0.1.15-mkwmp is built from
@@ -56,9 +56,17 @@ public static partial class RecompSettings
     /// 0.1.17's rows: DLSS / FSR 3.1 upscaling (its quality, the DLSS model, CAS), frame generation's engine, NVIDIA
     /// Reflex (#462); the keys with no menu row the launcher offers too: the shadow-map draws (#644) and the first
     /// controller to player 2 (#742). Not MKW_GPU_CLOCKS (#645): it is Linux's amdgpu only (vk_pstate.c, __linux__), and
-    /// MKWMP runs the Windows build, also under Proton.
+    /// MKWMP runs the Windows build, also under Proton; 0.1.18 makes it a known mkw.ini key, still Linux's sysfs only.
     /// </summary>
-    internal static bool Has017Rows(string version) => version is "0.1.17";
+    internal static bool Has017Rows(string version) => version is "0.1.17" || Has018Rows(version);
+
+    /// <summary>
+    /// 0.1.18's rows: HD vibration through RenHDrum (#803, a Controls row of the Windows build, the one MKWMP runs, also
+    /// under Proton); the keys with no menu row that its release asks players to try for #481: VRAM pressure eviction
+    /// (MKW_TEX_PRESSURE, #747) and the periodic VRAM line (MKW_VRAM_LOG). Not MKW_UDMABUF (#782: Linux's udmabuf) nor
+    /// MKW_PASS_HAZARDS (#791: a renderer experiment, off by default, with no text for players).
+    /// </summary>
+    internal static bool Has018Rows(string version) => version is "0.1.18";
 
     /// <summary>
     /// Where the setup puts the HDR tone mapper's programs (prepare.py <c>tonemap</c>, from 0.1.16).
@@ -87,7 +95,7 @@ public static partial class RecompSettings
         ["QUALITY"] = "graphics", ["ANISO"] = "graphics", ["TEX_QUALITY"] = "graphics", ["DETAIL_DISTANCE"] = "graphics", ["SHADOW_SIZE"] = "graphics",
         ["MENU_LANG"] = "language", ["LANG"] = "language", ["OPERATION_MODE"] = "language",
         ["VOLUME"] = "audio", ["AUDIO_CHANNELS"] = "audio", ["BACKGROUND_MUTE"] = "audio",
-        ["MOTION"] = "input", ["RUMBLE_STRENGTH"] = "input", ["RUMBLE_CURVE"] = "input", ["RUMBLE_TRIGGERS"] = "input", ["PAD_LAYOUT"] = "input",
+        ["MOTION"] = "input", ["RUMBLE_STRENGTH"] = "input", ["RUMBLE_CURVE"] = "input", ["RUMBLE_TRIGGERS"] = "input", ["RENHDRUM"] = "input", ["PAD_LAYOUT"] = "input",
         ["BUTTON_ICONS"] = "input", ["MENU_SHORTCUT"] = "input", ["MOUSE_SENS"] = "input", ["KEYBOARD_MOUSE"] = "input", ["STICK_DEADZONE"] = "input", ["SWITCH2"] = "input", ["PAD_P2"] = "input",
         ["DSU"] = "input", ["DSU_SERVER"] = "input", ["DSU_SLOT"] = "input",
         ["ASYNC_PREEMPT"] = "performance", ["REPLAY_ASYNC"] = "performance", ["FREE_CORES"] = "performance", ["TIMER_1MS"] = "performance",
@@ -96,7 +104,9 @@ public static partial class RecompSettings
         ["SHADER_MEMO"] = "performance", ["PIPE_MEMO"] = "performance", ["TEX_MEMO"] = "performance", ["DESC_TEMPLATE"] = "performance",
         ["PUSH_SKIP"] = "performance", ["SPLIT_DRAWS"] = "performance", ["VK_VALIDATION"] = "performance", ["VK_DYN_VERTEX"] = "performance",
         ["VK_SUBGROUP_PIN"] = "performance",
+        ["TEX_PRESSURE"] = "performance", // a key cfg.c gives no section (K): next to the other texture and memory rows
         ["TRACE"] = "diagnostics", ["FLIGHT"] = "diagnostics", ["FLIGHT_SPIKE_MS"] = "diagnostics",
+        ["VRAM_LOG"] = "diagnostics", // K too: with the other logs
         ["UPDATE_CHECK"] = "launcher", ["START_SCREEN"] = "launcher", ["DISCORD"] = "launcher", ["GB_MATURE"] = "launcher",
     };
 
@@ -293,11 +303,12 @@ public static partial class RecompSettings
             return values;
         }
         var file = FileValues(path);
+        var words = Has018Rows(install.Version!);
         foreach (var setting in schema.Settings)
         {
             if (file.TryGetValue(setting.Id.ToUpperInvariant(), out var value))
             {
-                values[setting.Id] = value;
+                values[setting.Id] = words && setting.Kind == GameSettingKind.Toggle ? YesNo(value, setting.Default) : value;
             }
         }
         var quality = schema.Find(Quality)!;
@@ -307,6 +318,24 @@ public static partial class RecompSettings
             values[Quality] = now;
         }
         return values;
+    }
+
+    /// <summary>
+    /// A yes/no setting as 0.1.18's cfg_bool reads it (#756): "0", "off", "false", "no" are 0 and "1", "on", "true", "yes"
+    /// are 1, in any case; another whole number is 1 unless it is 0; any other word gives the row's default.
+    /// </summary>
+    internal static string YesNo(string value, string @default)
+    {
+        var v = value.Trim();
+        if (v is "0" || v.Equals("off", StringComparison.OrdinalIgnoreCase) || v.Equals("false", StringComparison.OrdinalIgnoreCase) || v.Equals("no", StringComparison.OrdinalIgnoreCase))
+        {
+            return "0";
+        }
+        if (v is "1" || v.Equals("on", StringComparison.OrdinalIgnoreCase) || v.Equals("true", StringComparison.OrdinalIgnoreCase) || v.Equals("yes", StringComparison.OrdinalIgnoreCase))
+        {
+            return "1";
+        }
+        return long.TryParse(v, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var n) ? (n != 0 ? "1" : "0") : @default;
     }
 
     /// <summary>
@@ -468,6 +497,7 @@ public static partial class RecompSettings
     {
         var new016 = Has016Rows(version);
         var new017 = Has017Rows(version);
+        var new018 = Has018Rows(version);
         GameSetting[] hdr = !new016 ? [] :
         [
             GameSetting.Choice("hdr_tonemap", "HDR tone mapper",
@@ -644,6 +674,14 @@ public static partial class RecompSettings
                 "The first controller plays as player 2 and the keyboard as player 1, for local play with a keyboard and a controller. Leave it off online: MKWMP's racer is player 1, so the controller would only work in the menus.",
                 false, Live));
         }
+        if (new018)
+        {
+            // settings_tabs.cpp tab_controls: under Trigger vibration, Windows only (renhdrum_host_win.c), at the next start.
+            // Turning it on downloads renhdrum.dll beside mkw.exe (RecompLibs, as the game's own libs_sync).
+            controls.Insert(controls.FindIndex(s => s.Id == "rumble_triggers") + 1, GameSetting.Toggle("renhdrum", "HD vibration (RenHDrum)",
+                "Plays the game's own HD vibration on player 1's DualSense, Pro Controller, Xbox One S or Steam Controller through RenHDrum, downloaded from its official release when you turn it on. Applies at the next start.",
+                false, Restart));
+        }
         if (new016)
         {
             // settings_tabs.cpp tab_controls: between the stick dead zone and the mouse sensitivity
@@ -683,8 +721,8 @@ public static partial class RecompSettings
 
         GameSetting Adv(string group, GameSetting s) => s with { Group = group };
         var optimisation = "Optimisation: ";
-        var advanced = new[]
-        {
+        GameSetting[] advanced =
+        [
             Adv("Scheduling", GameSetting.Choice("async_preempt", "Virtual core preemption", "Lets a game thread interrupt another one on the same virtual core.",
                 "1", Restart, O("0", "Off"), O("1", "On"), O("2", "Inheritance only"))),
             Adv("Scheduling", GameSetting.Toggle("replay_async", "GPU frame prep on its own thread",
@@ -725,7 +763,25 @@ public static partial class RecompSettings
             Adv("Diagnostics", GameSetting.Toggle("flight", "Flight recorder", "Keeps a short history and saves it when a frame freezes.", false, Restart)),
             Adv("Diagnostics", GameSetting.Range("flight_spike_ms", "Freeze threshold", "Frame time that counts as a freeze.", 100, Restart, 20, 1000, 10, "ms")
                 with { VisibleWhen = When("flight", "1") }),
-        };
+        ];
+
+        if (new018)
+        {
+            // Keys with no menu row (cfg.c K), read once at start. MKW_TEX_PRESSURE=1: on, with its default idle line of
+            // 1800 submits (vk_tex_pressure.c; a larger number sets the line, which this row does not offer).
+            // MKW_VRAM_LOG=<frames>: the "mem: vram" line every that many presented frames (vk_mem_log.c); the release
+            // notes ask for 1800 with tex_pressure, for #481.
+            var memory = Array.FindLastIndex(advanced, s => s.Group == "Textures and memory");
+            advanced = [.. advanced[..(memory + 1)],
+                Adv("Textures and memory", GameSetting.Toggle("tex_pressure", "VRAM pressure eviction",
+                    "When the graphics card's memory runs low, takes out the textures that have not been used for a while, so the game does not slow down the longer you play. Off by default: mkw-recomp is still measuring whether it helps (its issue #481).",
+                    false, Restart)),
+                .. advanced[(memory + 1)..]];
+            advanced = [.. advanced,
+                Adv("Diagnostics", GameSetting.Choice("vram_log", "Video memory log",
+                    "Writes what fills the graphics card's memory to logs/mkw.log every 1800 frames (about 30 seconds at 60 fps). With VRAM pressure eviction, the measurement mkw-recomp asks for in its issue #481.",
+                    "", Restart, O("", "Off"), O("1800", "On")))];
+        }
 
         var schema = new GameSettingsSchema(
         [

@@ -99,7 +99,7 @@ public class GameSettingsTests
     {
         var (_, install, ini, _) = Game();
         GameSettingsSchema For(string version) => RecompSettings.Schema(install with { Version = version }, NoEnv)!;
-        Assert.Equal(["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17"], RecompSettings.Runtimes);
+        Assert.Equal(["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17", "0.1.18"], RecompSettings.Runtimes);
         string[] rows016 = ["hdr_tonemap", "hdr_peak", "hdr_white", "keyboard_mouse", "gb_mature"];
 
         // upstream 0.1.15: no Logic rate (it came right after that release) and none of 0.1.16's rows
@@ -112,12 +112,14 @@ public class GameSettingsTests
         Assert.All(rows016, id => Assert.Null(fork15.Find(id)));
         Assert.Equal(v15.Settings.Count() + 1, fork15.Settings.Count());
 
-        foreach (var version in new[] { "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17" })
+        foreach (var version in new[] { "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17", "0.1.18" })
         {
             var s = For(version);
             Assert.NotNull(s.Find("logic_hz"));
-            Assert.Equal(fork15.Settings.Count() + rows016.Length + (version == "0.1.17" ? Rows017.Length : 0), s.Settings.Count());
-            Assert.All(Rows017, id => Assert.Equal(version == "0.1.17", s.Find(id) is not null));
+            var has017 = version is "0.1.17" or "0.1.18";
+            Assert.Equal(fork15.Settings.Count() + rows016.Length + (has017 ? Rows017.Length : 0) + (version == "0.1.18" ? Rows018.Length : 0), s.Settings.Count());
+            Assert.All(Rows017, id => Assert.Equal(has017, s.Find(id) is not null));
+            Assert.All(Rows018, id => Assert.Equal(version == "0.1.18", s.Find(id) is not null));
             // cfg.c metas: defaults, and what is read only at start
             var tonemap = s.Find("hdr_tonemap")!;
             Assert.Equal((GameSettingKind.Choice, "vanilla", true, "HDR tone mapper"), (tonemap.Kind, tonemap.Default, tonemap.RequiresRestart, tonemap.Label));
@@ -177,6 +179,104 @@ public class GameSettingsTests
 
     /// <summary>0.1.17's new rows (settings_tabs.cpp tab_graphics, #462) and the two keys without a menu row (#644, #742).</summary>
     private static readonly string[] Rows017 = ["temporal", "temporal_quality", "dlss_preset", "cas", "cas_sharpness", "fg_engine", "reflex", "shadow_draws", "pad_p2"];
+
+    /// <summary>0.1.18's Controls row (RenHDrum, #803) and the two keys without a menu row its release asks players to try (#481).</summary>
+    private static readonly string[] Rows018 = ["renhdrum", "tex_pressure", "vram_log"];
+
+    /// <summary>0.1.18's keys that stay out: Linux's amdgpu clocks and udmabuf pools, and a renderer experiment.</summary>
+    private static readonly string[] NeverIn018 = ["gpu_clocks", "udmabuf", "pass_hazards"];
+
+    [Fact]
+    public void The_018_rows_are_the_game_s_with_their_places_sections_and_yes_no_words()
+    {
+        var (_, install, ini, _) = Game();
+        var v18 = install with { Version = "0.1.18" };
+        var s = RecompSettings.Schema(v18, NoEnv)!;
+        var renhdrum = s.Find("renhdrum")!;
+        Assert.Equal((GameSettingKind.Toggle, "0", true, "HD vibration (RenHDrum)"), (renhdrum.Kind, renhdrum.Default, renhdrum.RequiresRestart, renhdrum.Label));
+        var pressure = s.Find("tex_pressure")!;
+        Assert.Equal((GameSettingKind.Toggle, "0", true, "Textures and memory"), (pressure.Kind, pressure.Default, pressure.RequiresRestart, pressure.Group));
+        var vram = s.Find("vram_log")!;
+        Assert.Equal(("", true, "Diagnostics"), (vram.Default, vram.RequiresRestart, vram.Group));
+        Assert.Equal(["", "1800"], vram.Options.Select(o => o.Value));
+        // where the game's menu has RenHDrum: under Trigger vibration; the two keys with the rows of their kind
+        var controls = s.Categories.Single(c => c.Id == "controls").Settings.Select(x => x.Id).ToList();
+        Assert.Equal("renhdrum", controls[controls.IndexOf("rumble_triggers") + 1]);
+        var advanced = s.Categories.Single(c => c.Id == "advanced").Settings.ToList();
+        Assert.Equal("tex_pressure", advanced[advanced.FindLastIndex(x => x.Group == "Textures and memory")].Id);
+        Assert.Equal("vram_log", advanced[^1].Id);
+        // still never: Linux-only keys and the renderer experiment
+        Assert.All(NeverIn018, id => Assert.Null(s.Find(id)));
+        // none of them on 0.1.17
+        Assert.All(Rows018, id => Assert.Null(RecompSettings.Schema(install with { Version = "0.1.17" }, NoEnv)!.Find(id)));
+
+        // sections: [input] as cfg.c's row; the two K keys beside their kind
+        var target = new MkwRecompTarget("1.4.0") { RunningOverride = () => false };
+        RecompSettings.Write(target, v18, new Dictionary<string, string?> { ["renhdrum"] = "1", ["tex_pressure"] = "1", ["vram_log"] = "1800" }, NoEnv);
+        var text = File.ReadAllText(ini).Replace("\r\n", "\n", StringComparison.Ordinal);
+        Assert.Contains("[input]\nrenhdrum = 1\n", text, StringComparison.Ordinal);
+        Assert.Contains("[performance]\ntex_pressure = 1\n", text, StringComparison.Ordinal);
+        Assert.Contains("[diagnostics]\nvram_log = 1800\n", text, StringComparison.Ordinal);
+        var read = RecompSettings.Read(v18, NoEnv);
+        Assert.Equal(("1", "1", "1800"), (read["renhdrum"], read["tex_pressure"], read["vram_log"]));
+
+        // 0.1.18's cfg_bool (#756): off / false / no and on / true / yes, any case; a word it does not know is the default
+        File.WriteAllText(ini, "[launcher]\ndiscord = Off\nupdate_check = no\n[input]\nmotion = FALSE\nswitch2 = yes\nrumble_triggers = 2\ndsu = maybe\n");
+        read = RecompSettings.Read(v18, NoEnv);
+        Assert.Equal(("0", "0", "0", "1", "1", "0"), (read["discord"], read["update_check"], read["motion"], read["switch2"], read["rumble_triggers"], read["dsu"]));
+        // before 0.1.18 only "0" was false: the value is shown as the file has it
+        Assert.Equal("Off", RecompSettings.Read(install with { Version = "0.1.17" }, NoEnv)["discord"]);
+        Assert.Equal("1", RecompSettings.YesNo(" ON ", "0"));
+        Assert.Equal("0", RecompSettings.YesNo("-0", "1"));
+    }
+
+    [Fact]
+    public void The_libraries_are_the_ones_the_game_s_own_menu_would_download()
+    {
+        Func<string, string?> With(params (string Id, string Value)[] values) => id => values.FirstOrDefault(v => v.Id == id).Value;
+        Assert.Empty(RecompLibs.Wanted(With(("temporal", "off"), ("framegen", "off"), ("fg_engine", "flow"), ("renhdrum", "0")), nvidia: true));
+        Assert.Equal(["dlss"], RecompLibs.Wanted(With(("temporal", "dlss"), ("framegen", "off"), ("fg_engine", "dlss")), nvidia: true));
+        // DLSS's files only for an NVIDIA card: its licence's condition, as libs_sync
+        Assert.Empty(RecompLibs.Wanted(With(("temporal", "dlss"), ("framegen", "2"), ("fg_engine", "dlss")), nvidia: false));
+        Assert.Equal(["dlss", "dlssg"], RecompLibs.Wanted(With(("temporal", "dlss"), ("framegen", "auto"), ("fg_engine", "dlss")), nvidia: true));
+        Assert.Equal(["fsr3", "fsr3fg", "renhdrum"], RecompLibs.Wanted(With(("temporal", "fsr3"), ("framegen", "2"), ("fg_engine", "fsr3"), ("renhdrum", "1")), nvidia: false));
+        // the engine without frame generation needs nothing
+        Assert.Equal(["renhdrum"], RecompLibs.Wanted(With(("framegen", "off"), ("fg_engine", "fsr3"), ("renhdrum", "1")), nvidia: true));
+
+        // libs.tsv as 0.1.18 ships it: its Windows rows only, and never a path for a file name
+        const string Tsv = "feature\tos\tfile\tbytes\tsha256\turl\n"
+            + "dlss\twindows\tnvngx_dlss.dll\t58956912\td00b\thttps://x/nvngx_dlss.dll\n"
+            + "dlss\tlinux\tlibnvidia-ngx-dlss.so.310.9.16\t59481944\t3098\thttps://x/l\n"
+            + "renhdrum\twindows\trenhdrum.dll\t823808\tc685\thttps://x/renhdrum.dll\n"
+            + "fsr3\twindows\t..\\evil.dll\t1\t00\thttps://x/e\n";
+        Assert.Equal([("dlss", "nvngx_dlss.dll", 58956912L), ("renhdrum", "renhdrum.dll", 823808L)], RecompLibs.Table(Tsv));
+        Assert.Empty(RecompLibs.Table("not a table"));
+
+        // what is missing: the settings' pick, against the files beside mkw.exe; nothing for a runtime without libs.py
+        var (_, install, ini, _) = Game();
+        var v18 = install with { Version = "0.1.18" };
+        File.WriteAllText(ini, "[input]\nrenhdrum = 1\n[display]\ntemporal = dlss\n");
+        Assert.Empty(RecompLibs.Missing(v18, nvidia: true));
+        var prepare = Path.Combine(install.Root, "setup", "src", "tools", "prepare");
+        Directory.CreateDirectory(prepare);
+        File.WriteAllText(Path.Combine(prepare, "libs.tsv"), Tsv);
+        File.WriteAllText(Path.Combine(prepare, "libs.py"), "");
+        Assert.Equal(["nvngx_dlss.dll", "renhdrum.dll"], RecompLibs.Missing(v18, nvidia: true).Select(l => l.File));
+        Assert.Equal(["renhdrum.dll"], RecompLibs.Missing(v18, nvidia: false).Select(l => l.File));
+        Assert.Equal("NVIDIA DLSS, RenHDrum", RecompLibs.NamesOf(RecompLibs.Missing(v18, nvidia: true)));
+        File.WriteAllBytes(Path.Combine(install.Root, "renhdrum.dll"), [1]); // a file already there is kept, whatever it is
+        Assert.Equal(["nvngx_dlss.dll"], RecompLibs.Missing(v18, nvidia: true).Select(l => l.File));
+
+        // libs.py's events
+        Assert.Equal((5L, 10L), RecompLibs.Progress("progress 5 10"));
+        Assert.Null(RecompLibs.Progress("ready renhdrum.dll"));
+        Assert.Equal("nvngx_dlss.dll came damaged", RecompLibs.Error("error fetch nvngx_dlss.dll came damaged"));
+        Assert.Null(RecompLibs.Error("done"));
+        // the install's own Python and libs.py, with the features once each and this folder
+        var start = RecompLibs.Command(v18, ["fsr3", "fsr3", "fsr3fg"]);
+        Assert.Equal(RecompSetup.Python(v18), start.FileName);
+        Assert.Equal(["-I", Path.Combine(prepare, "libs.py"), "fetch", "--features", "fsr3,fsr3fg", "--dir", install.Root, "--os", "windows"], start.ArgumentList);
+    }
 
     [Fact]
     public void The_017_rows_are_the_game_s_with_its_values_defaults_and_places()

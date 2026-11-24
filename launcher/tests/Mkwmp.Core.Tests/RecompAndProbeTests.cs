@@ -39,13 +39,18 @@ public class RecompTests
         Assert.Contains("0.1.16-mkwmp.1", Recomp.ModRuntimes);
         Assert.Contains("0.1.16-mkwmp.1", Recomp.Supported);
         Assert.Contains(("0.1.16-mkwmp.1", "d04dc49a14618dce8385cdb1c3e61ba1bd62a2e5938ddf7dd216c926517cc72d"), Recomp.Known);
-        // the official 0.1.17, the pinned build again: its windows-x64 zip and its windows-x64-noavx2 zip
+        // the official 0.1.17, the first official release pinned again: its windows-x64 zip and its windows-x64-noavx2 zip
         Assert.Contains(("0.1.17", "48ede546a7da356d2319260b6f8ec1814c009bc8421c1b5b3c847d82b6be09ce"), Recomp.Known);
         Assert.Contains(("0.1.17", "e67d12344bab5bb4d2411e85265aa71cdaf814045d1adb7ae4b51f4fec871211"), Recomp.Known);
         Assert.Contains("0.1.17", Recomp.Supported);
         Assert.Contains("0.1.17", Recomp.ModRuntimes);
-        Assert.Equal("0.1.17", Recomp.Recommended);
-        Assert.Equal("https://github.com/adriadam10/mkw-recomp/releases/tag/v0.1.17", Recomp.Download);
+        // 0.1.18, the pinned build: its windows-x64 zip and its windows-x64-noavx2 zip
+        Assert.Contains(("0.1.18", "84874fe56ea156ee7e10095d9f1c70a3877a5c8f280feb43ecc5c9a94678ce06"), Recomp.Known);
+        Assert.Contains(("0.1.18", "38b545ce7f017183c8919f958311e3d6b6083c61326f27b95d4a6fcff4513f83"), Recomp.Known);
+        Assert.Contains("0.1.18", Recomp.Supported);
+        Assert.Contains("0.1.18", Recomp.ModRuntimes);
+        Assert.Equal("0.1.18", Recomp.Recommended);
+        Assert.Equal("https://github.com/adriadam10/mkw-recomp/releases/tag/v0.1.18", Recomp.Download);
         Assert.Equal(Recomp.Known.Length, Recomp.Known.Select(k => k.Sha256).Distinct().Count());
         Assert.All(Recomp.ModRuntimes, v => Assert.Contains(v, Recomp.Supported));
     }
@@ -133,6 +138,7 @@ public class RecompTests
         Assert.Null(Recomp.RebuildProblemFor(S("0.1.16-mkwmp.1"), Id15)); // .1 keeps that id: no rebuild
         Assert.Null(Recomp.RebuildProblemFor(S("0.1.17"), Id15)); // so does the official 0.1.17: the update from .1 keeps the game code
         Assert.NotNull(Recomp.RebuildProblemFor(S("0.1.17"), Id13));
+        Assert.Null(Recomp.RebuildProblemFor(S("0.1.18"), Id15)); // and 0.1.18: the update from 0.1.17 keeps it too
         Assert.Null(Recomp.RebuildProblemFor(S("0.1.10"), "anything")); // no id known for 0.1.10
         Assert.Null(Recomp.RebuildProblemFor(new RecompId(RecompKind.Unknown, null), Id13));
         Assert.Equal(Id15, Recomp.IdWord("C9BBCB75A9AC9A49\n"));

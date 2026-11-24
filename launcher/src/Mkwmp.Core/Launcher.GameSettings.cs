@@ -17,6 +17,10 @@ public sealed partial class Launcher
     private volatile GameSettingsView? _gameSettingsView;
     private string? _gameSettingsError;
 
+    /// <summary>What the download of the libraries the settings picked is doing (<see cref="FetchGameLibraries"/>), for the page's note; null when nothing.</summary>
+    private (string Text, bool Error)? _gameLibsNote;
+    private int _gameLibsRunning;
+
     public GameSettingsView GameSettings => _gameSettingsView ?? RefreshGameSettings().View;
 
     /// <summary>
@@ -40,6 +44,10 @@ public sealed partial class Launcher
             if (_gameSettingsError is { } error)
             {
                 view = view with { Note = error, NoteIsError = true };
+            }
+            else if (view.Note is null && _gameLibsNote is { } libs)
+            {
+                view = view with { Note = libs.Text, NoteIsError = libs.Error };
             }
             if (_gameSettingsView is { } old && ReferenceEquals(old.Schema, view.Schema) && old.Editable == view.Editable && old.Note == view.Note
                 && old.NoteIsError == view.NoteIsError && old.Changed.SetEquals(view.Changed) && old.Values.Count == view.Values.Count
@@ -242,6 +250,83 @@ public sealed partial class Launcher
     public Task ResetGameSettingsAsync() => ChangeGameSettingsAsync(
         schema => schema.Settings.Where(s => s.Locked is null).ToDictionary(s => s.Id, _ => (string?)null, StringComparer.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// After a write: the optional libraries the settings now pick and the install lacks (mkw-recomp 0.1.18's DLSS, FSR
+    /// 3.1, RenHDrum) are downloaded in the background, as the game's own menu does when they are picked there; the
+    /// settings page's note shows the progress, the failure (picking it again tries once more) or that they work at the
+    /// next start. One download at a time; a pick made meanwhile is fetched when it ends.
+    /// </summary>
+    private void FetchGameLibraries(IGameTarget target, GameInstall install)
+    {
+        if (target.MissingLibraries(install).Count == 0 || Interlocked.Exchange(ref _gameLibsRunning, 1) == 1)
+        {
+            return;
+        }
+        var names = Mkwmp.Core.Targets.MkwRecomp.RecompLibs.NamesOf(target.MissingLibraries(install));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                string? failed = null;
+                // again while the settings ask for more than came (a pick made during the download), never after a failure
+                while (failed is null && target.MissingLibraries(install) is { Count: > 0 } missing)
+                {
+                    names = Mkwmp.Core.Targets.MkwRecomp.RecompLibs.NamesOf(missing);
+                    Note($"game settings: downloading {string.Join(", ", missing.Select(l => l.File))} ({missing.Sum(l => l.Size) / 1_000_000} MB) for {names}");
+                    var shown = -1;
+                    void Show(double share)
+                    {
+                        var percent = (int)(share * 100);
+                        if (percent / 5 != shown / 5)
+                        {
+                            shown = percent;
+                            SetGameLibsNote((Strings.GameLibsFetching(names, percent), false));
+                        }
+                    }
+                    Show(0);
+                    failed = await target.FetchLibrariesAsync(install, missing, new ShareReport(Show), _life.Token).ConfigureAwait(false);
+                    Note(failed is null ? $"game settings: {names} downloaded" : $"game settings: {names} not downloaded: {failed}");
+                    SetGameLibsNote(failed is null ? (Strings.GameLibsReady(names), false) : (Strings.GameLibsFailed(names, failed), true));
+                    if (failed is null && target.MissingLibraries(install).Count == missing.Count)
+                    {
+                        break; // libs.py said done and the files are not there (another folder?): no loop
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // the launcher is closing
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                Note($"game settings: library download failed: {e.Message}");
+                SetGameLibsNote((Strings.GameLibsFailed(names, e.Message), true));
+            }
+            finally
+            {
+                Volatile.Write(ref _gameLibsRunning, 0);
+            }
+        });
+    }
+
+    private void SetGameLibsNote((string Text, bool Error)? note)
+    {
+        lock (_gate)
+        {
+            _gameLibsNote = note;
+        }
+        if (RefreshGameSettings().Changed)
+        {
+            RaiseChanged();
+        }
+    }
+
+    /// <summary>An <see cref="IProgress{T}"/> that reports on the reporting thread (Progress&lt;T&gt; would post to a context there is none of).</summary>
+    private sealed class ShareReport(Action<double> show) : IProgress<double>
+    {
+        public void Report(double value) => show(value);
+    }
+
     /// <summary>Off the caller's thread (the window's): the look at the game's processes and the file write.</summary>
     private Task ChangeGameSettingsAsync(Func<GameSettingsSchema, IReadOnlyDictionary<string, string?>> changes) => Task.Run(() =>
     {
@@ -263,6 +348,7 @@ public sealed partial class Launcher
                 var edits = changes(WithOnlineLocks(target, schema)!);
                 RefuseOnlineOwned(target, edits);
                 target.WriteGameSettings(install, edits);
+                FetchGameLibraries(target, install);
             }
             catch (Exception e) when (e is LauncherException or IOException or UnauthorizedAccessException)
             {

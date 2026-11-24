@@ -345,8 +345,8 @@ public class LauncherTests
         File.WriteAllBytes(Path.Combine(rig.Game, "mkw.exe"), "some other build"u8);
         await l.SaveSettingsAsync(l.Settings with { Slot = 2 });
         await l.FindGameAsync();
-        Assert.Equal("Unknown mkw-recomp: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp or 0.1.16 or 0.1.16-mkwmp or 0.1.16-mkwmp.1 or 0.1.17", l.PlayProblem);
-        Assert.Equal((TargetStatus.Unsupported, "GET 0.1.17"), (l.Game.Check!.Status, l.Game.Check.FixLabel));
+        Assert.Equal("Unknown mkw-recomp: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp or 0.1.16 or 0.1.16-mkwmp or 0.1.16-mkwmp.1 or 0.1.17 or 0.1.18", l.PlayProblem);
+        Assert.Equal((TargetStatus.Unsupported, "GET 0.1.18"), (l.Game.Check!.Status, l.Game.Check.FixLabel));
     }
 
     [Fact]

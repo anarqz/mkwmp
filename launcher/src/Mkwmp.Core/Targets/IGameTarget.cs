@@ -135,6 +135,16 @@ public interface IGameTarget
     void WriteGameSettings(GameInstall install, IReadOnlyDictionary<string, string?> changes) => MkwRecomp.RecompSettings.Write(this, install, changes);
 
     /// <summary>
+    /// The optional libraries the game's settings now ask for and the install lacks (mkw-recomp 0.1.18: DLSS, FSR 3.1,
+    /// RenHDrum, downloaded beside mkw.exe from their official sources); empty when none. Reads small files only.
+    /// </summary>
+    IReadOnlyList<MkwRecomp.GameLibrary> MissingLibraries(GameInstall install) => MkwRecomp.RecompLibs.Missing(install);
+
+    /// <summary>Downloads <paramref name="libraries"/> into the install, reporting the share done (0 to 1); null when they all came, else why not.</summary>
+    Task<string?> FetchLibrariesAsync(GameInstall install, IReadOnlyList<MkwRecomp.GameLibrary> libraries, IProgress<double>? progress, CancellationToken cancel) =>
+        MkwRecomp.RecompLibs.FetchAsync(install, libraries, progress, cancel);
+
+    /// <summary>
     /// The one build of this target's runtime that the launcher installs and updates itself
     /// (<see cref="RuntimeInstaller"/>), pinned in the launcher's source; null when the player
     /// installs the runtime themselves. Never "the newest release": see <see cref="RuntimeManifest"/>.

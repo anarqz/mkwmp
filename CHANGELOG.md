@@ -2,6 +2,13 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
+## 1.4.6 — unreleased
+
+- **mkw-recomp 0.1.18.** The launcher now installs Adrià's mkw-recomp 0.1.18 and updates an install of 0.1.17 it made in place: your game, its setup, saves, mods and settings stay, and the game code does not need rebuilding. 0.1.18 fixes the game closing silently on some Windows 11 PCs right after it starts (error 0xC0000409). 0.1.17 still plays online.
+- **DLSS, FSR 3.1 and RenHDrum download themselves.** Picking NVIDIA DLSS, AMD FSR 3.1 or their frame generation in Settings › Graphics, or HD vibration in Settings › Controls, now downloads the library it needs next to mkw.exe from NVIDIA's, AMD's or RenHDrum's official release, checked by mkw-recomp's own list. Settings shows the progress; it works at the game's next start. DLSS is downloaded only on a PC with an NVIDIA card. A library you already put there is kept.
+- **New game settings from mkw-recomp 0.1.18.** Settings › Controls: HD vibration (RenHDrum), the game's own two-band vibration on player 1's DualSense, Pro Controller, Xbox One S or Steam Controller (off by default). Settings › Advanced: VRAM pressure eviction and Video memory log, the two mkw-recomp asks players to try if the game gets slower the longer they play (its issue #481). Both are off by default.
+- **"off" and "no" in mkw.ini.** With mkw-recomp 0.1.18, a setting written by hand as off, false or no (or on, true, yes) shows as Off or On in Settings, as the game now reads it.
+
 ## 1.4.5 — 2026-11-22
 
 - **After a failed update, play offline.** When an update can't be downloaded or installed, the card now offers Try Again, Continue Offline and Quit. Continue Offline lets you play offline until you close the launcher; going online (signing in, friends, reports, the server list, and the game asking for a seat) waits for the update and says "Update MKWMP to play online". Try the Update Again is on Home, in the friends panel and in Settings, and the launcher asks again at its next start. Your server, PIN and choices are kept.

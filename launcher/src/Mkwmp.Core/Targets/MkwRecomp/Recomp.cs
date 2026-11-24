@@ -74,11 +74,11 @@ internal static class Recomp
     public const string Exe = "mkw.exe";
 
     /// <summary>The runtimes the game patch supports.</summary>
-    public static readonly string[] Supported = ["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17"];
+    public static readonly string[] Supported = ["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17", "0.1.18"];
 
     /// <summary>What the window recommends installing.</summary>
-    public const string Recommended = "0.1.17";
-    public const string Download = "https://github.com/adriadam10/mkw-recomp/releases/tag/v0.1.17";
+    public const string Recommended = "0.1.18";
+    public const string Download = "https://github.com/adriadam10/mkw-recomp/releases/tag/v0.1.18";
 
     /// <summary>mkw.exe SHA-256 per mkw-recomp release (mkw-recomp-&lt;v&gt;-windows-x64.zip).</summary>
     internal static readonly (string Version, string Sha256)[] Known =
@@ -99,6 +99,10 @@ internal static class Recomp
         // 0.1.17, official again: plugin API 4 (#743), DLSS / FSR 3.1 / Reflex (#462); its windows-x64 and noavx2 zips
         ("0.1.17", "48ede546a7da356d2319260b6f8ec1814c009bc8421c1b5b3c847d82b6be09ce"),
         ("0.1.17", "e67d12344bab5bb4d2411e85265aa71cdaf814045d1adb7ae4b51f4fec871211"),
+        // 0.1.18: the Windows 11 0xC0000409 exit fixed (its own setjmp/longjmp, #751), DLSS / FSR 3.1 / RenHDrum downloaded
+        // when picked (tools/prepare/libs.py); its windows-x64 and noavx2 zips
+        ("0.1.18", "84874fe56ea156ee7e10095d9f1c70a3877a5c8f280feb43ecc5c9a94678ce06"),
+        ("0.1.18", "38b545ce7f017183c8919f958311e3d6b6083c61326f27b95d4a6fcff4513f83"),
     ];
 
     /// <summary>MKWMP's mod folder name, under mkw-recomp's <c>mods/</c>.</summary>
@@ -106,9 +110,9 @@ internal static class Recomp
 
     /// <summary>
     /// The supported releases that load mods (MKW_MODS): plugin API 1 in 0.1.15, 3 in 0.1.15-mkwmp
-    /// and 0.1.16, 4 in the fork's 0.1.16-mkwmp and in 0.1.17. The mod asks the runtime which version it has and leaves out what is missing.
+    /// and 0.1.16, 4 in the fork's 0.1.16-mkwmp, in 0.1.17 and in 0.1.18. The mod asks the runtime which version it has and leaves out what is missing.
     /// </summary>
-    public static readonly string[] ModRuntimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17"];
+    public static readonly string[] ModRuntimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17", "0.1.18"];
 
     /// <summary>
     /// The game versions MKWMP plays on. The game patch also has guest-address tables for 1.0.0, but
@@ -132,6 +136,7 @@ internal static class Recomp
         ("0.1.16-mkwmp", "c9bbcb75a9ac9a49"), // 0.1.16's: an update from 0.1.15-mkwmp builds the game again
         ("0.1.16-mkwmp.1", "c9bbcb75a9ac9a49"), // only setup tools and mkw.exe changed: no rebuild from 0.1.16-mkwmp
         ("0.1.17", "c9bbcb75a9ac9a49"), // unchanged (check_release.py): the update from 0.1.16-mkwmp.1 keeps the game code
+        ("0.1.18", "c9bbcb75a9ac9a49"), // unchanged again: the update from 0.1.17 keeps the game code
     ];
 
     private static readonly string[] ModLibraries = ["mkwmp.dll", "libmkwmp.so", "mkwmp.so"];

@@ -12,7 +12,7 @@ namespace Mkwmp.Core.Tests;
 /// <summary>A release host inside the test: one file at one address, with Range, and the ways a download goes wrong.</summary>
 internal sealed class FakeReleaseHost : HttpMessageHandler
 {
-    public const string Url = "http://runtime.test/adriadam10/mkw-recomp/releases/download/v0.1.17/runtime.zip";
+    public const string Url = "http://runtime.test/adriadam10/mkw-recomp/releases/download/v0.1.18/runtime.zip";
 
     public byte[] File { get; set; } = [];
 
@@ -101,7 +101,7 @@ internal sealed class FakeReleaseHost : HttpMessageHandler
 /// <summary>A folder, a fake release and an installer on it. The "runtime" is a few small files; mkw.exe stand-ins are known to <see cref="Recomp"/> by hash.</summary>
 internal sealed class RuntimeRig : IDisposable
 {
-    public const string Pinned = "0.1.17";
+    public const string Pinned = "0.1.18";
 
     /// <summary>The pin before this one, whose manifest kept setup\ whole on an update.</summary>
     public const string PreviousPin = "0.1.15-mkwmp";
@@ -279,20 +279,20 @@ public class RuntimeManifestTests
         var m = RecompRuntime.For(v3: true);
         Assert.Same(RecompRuntime.Main, m);
         Assert.Null(m.Variant);
-        Assert.Equal("0.1.17", m.Label);
+        Assert.Equal("0.1.18", m.Label);
         Assert.Empty(m.Unsuitable);
-        Assert.Equal("0.1.17", m.Version);
+        Assert.Equal("0.1.18", m.Version);
         Assert.Equal("adriadam10/mkw-recomp", m.Repository);
-        Assert.Equal("v0.1.17", m.Tag);
-        Assert.Equal("mkw-recomp-0.1.17-windows-x64.zip", m.Asset);
-        Assert.Equal(221_694_058, m.Size);
-        Assert.Equal("1a569435f63cbfe0077b82ff620161ceb9f489808352b9a429aae72284619d4e", m.Sha256);
-        Assert.Equal("48ede546a7da356d2319260b6f8ec1814c009bc8421c1b5b3c847d82b6be09ce", m.ExecutableSha256);
-        Assert.Equal(740_533_976, m.InstalledSize);
+        Assert.Equal("v0.1.18", m.Tag);
+        Assert.Equal("mkw-recomp-0.1.18-windows-x64.zip", m.Asset);
+        Assert.Equal(221_949_886, m.Size);
+        Assert.Equal("ff655d6dc566d315c9f33f96b9b94b7dc7e9c1b383091ed36c7f35921b6444c8", m.Sha256);
+        Assert.Equal("84874fe56ea156ee7e10095d9f1c70a3877a5c8f280feb43ecc5c9a94678ce06", m.ExecutableSha256);
+        Assert.Equal(741_365_270, m.InstalledSize);
         Assert.Equal(3_500_000_000, m.SetupSpace);
-        Assert.Equal("https://github.com/adriadam10/mkw-recomp/tree/v0.1.17", m.Credit.SourceUrl.ToString());
+        Assert.Equal("https://github.com/adriadam10/mkw-recomp/tree/v0.1.18", m.Credit.SourceUrl.ToString());
         // The address names the tag and the file: no "latest", no API that lists releases.
-        Assert.Equal("https://github.com/adriadam10/mkw-recomp/releases/download/v0.1.17/mkw-recomp-0.1.17-windows-x64.zip", m.Url.ToString());
+        Assert.Equal("https://github.com/adriadam10/mkw-recomp/releases/download/v0.1.18/mkw-recomp-0.1.18-windows-x64.zip", m.Url.ToString());
         Assert.DoesNotContain("latest", m.Url.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("api.github.com", m.Url.ToString(), StringComparison.OrdinalIgnoreCase);
     }
@@ -304,16 +304,16 @@ public class RuntimeManifestTests
         var main = RecompRuntime.Main;
         Assert.Same(RecompRuntime.NoAvx2, m);
         Assert.Equal((main.Version, main.Repository, main.Tag), (m.Version, m.Repository, m.Tag));
-        Assert.Equal("mkw-recomp-0.1.17-windows-x64-noavx2.zip", m.Asset);
-        Assert.Equal(221_587_934, m.Size);
-        Assert.Equal("9dfbdaff20607973e4176e7f6265ff1495b342b228a6adbd266c0879c50bc3c3", m.Sha256);
-        Assert.Equal("e67d12344bab5bb4d2411e85265aa71cdaf814045d1adb7ae4b51f4fec871211", m.ExecutableSha256);
-        Assert.Equal(740_252_379, m.InstalledSize);
-        Assert.Equal("https://github.com/adriadam10/mkw-recomp/releases/download/v0.1.17/mkw-recomp-0.1.17-windows-x64-noavx2.zip", m.Url.ToString());
+        Assert.Equal("mkw-recomp-0.1.18-windows-x64-noavx2.zip", m.Asset);
+        Assert.Equal(221_839_821, m.Size);
+        Assert.Equal("7ce3148d23a2fe255ee36536bd24e027bc4313c54eff50a590e73cb33fa32ccc", m.Sha256);
+        Assert.Equal("38b545ce7f017183c8919f958311e3d6b6083c61326f27b95d4a6fcff4513f83", m.ExecutableSha256);
+        Assert.Equal(741_077_529, m.InstalledSize);
+        Assert.Equal("https://github.com/adriadam10/mkw-recomp/releases/download/v0.1.18/mkw-recomp-0.1.18-windows-x64-noavx2.zip", m.Url.ToString());
         // Both builds' mkw.exe are this version to the launcher; the main one does not run where this one is pinned.
         Assert.Contains((m.Version, m.ExecutableSha256), Recomp.Known);
         Assert.Equal([main.ExecutableSha256], m.Unsuitable);
-        Assert.Equal("0.1.17 (no AVX2)", m.Label);
+        Assert.Equal("0.1.18 (no AVX2)", m.Label);
         Assert.Equal((main.Preserved, main.Credit, main.FolderName, main.SetupSpace), (m.Preserved, m.Credit, m.FolderName, m.SetupSpace));
         Assert.True(m.SameLineage("0.1.16-mkwmp"));
     }
@@ -330,9 +330,11 @@ public class RuntimeManifestTests
         Assert.Same(m, new MkwRecompTarget("1.4.0").Runtime);
         Assert.True(m.SameLineage("0.1.15-mkwmp"));
         Assert.True(m.SameLineage("0.1.16-mkwmp"));
-        // the fork's last build, which this launcher installed before: updated in place to the official 0.1.17
+        // the fork's last build, which this launcher installed before: updated in place to the official release
         Assert.True(m.SameLineage("0.1.16-mkwmp.1"));
-        Assert.True(m.SameLineage("0.1.17"));
+        Assert.True(m.SameLineage("0.1.18"));
+        // an official 0.1.17 the launcher installed has its marker (Managed) and is updated; one installed by hand is not ours
+        Assert.False(m.SameLineage("0.1.17"));
         // an official release the player installed by hand stays theirs
         Assert.False(m.SameLineage("0.1.15"));
         Assert.False(m.SameLineage("0.1.16"));
@@ -902,7 +904,7 @@ public class RuntimeInstallerTests
     {
         using var main = new RuntimeRig();
         using var rig = RuntimeRig.NoAvx2Rig();
-        Assert.Equal("0.1.17 (no AVX2)", rig.Manifest.Label);
+        Assert.Equal("0.1.18 (no AVX2)", rig.Manifest.Label);
         // Installed on a processor with AVX2, then brought here.
         await main.Installer.InstallAsync(rig.Folder, null, null, default);
         rig.Put("profile/save.bin", "save");
@@ -996,7 +998,7 @@ public class LauncherRuntimeTests
         view = home.Launcher.Runtime;
         Assert.Equal(RuntimeState.Installed, view.State);
         Assert.Equal((RuntimeRig.Pinned, home.Files.Folder, false), (view.InstalledVersion, view.Folder, view.Foreign));
-        Assert.Equal("mkw-recomp 0.1.17 installed", view.Note);
+        Assert.Equal("mkw-recomp 0.1.18 installed", view.Note);
         Assert.False(view.Busy);
         // The window was shown each phase, with bytes.
         var seen = home.States.Select(s => s.State).Distinct().ToList();
@@ -1050,7 +1052,7 @@ public class LauncherRuntimeTests
         await home.Launcher.InstallRuntimeAsync(null, default);
 
         view = home.Launcher.Runtime;
-        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, "mkw-recomp updated to 0.1.17"), (view.State, view.InstalledVersion, view.Note));
+        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, "mkw-recomp updated to 0.1.18"), (view.State, view.InstalledVersion, view.Note));
         Assert.Equal(mine, home.Launcher.Settings.Game);
         Assert.Equal("new python",File.ReadAllText(Path.Combine(mine, "setup", "python", "python.exe")));
         Assert.Equal("save", File.ReadAllText(Path.Combine(mine, "profile", "save.bin")));
@@ -1062,7 +1064,7 @@ public class LauncherRuntimeTests
     {
         await using var home = new Home(f => f.ExistingInstall(RuntimeRig.NoAvx2Exe, Path.Combine(f.Root, "mine")), game: "mine");
         var view = home.Launcher.Runtime;
-        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, "0.1.17", (string?)null), (view.State, view.InstalledVersion, view.PinnedLabel, view.PinnedVariant));
+        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, "0.1.18", (string?)null), (view.State, view.InstalledVersion, view.PinnedLabel, view.PinnedVariant));
     }
 
     [Fact]
@@ -1071,12 +1073,12 @@ public class LauncherRuntimeTests
         await using var home = new Home(f => f.ExistingInstall(RuntimeRig.NewExe, Path.Combine(f.Root, "mine")), game: "mine", files: RuntimeRig.NoAvx2Rig);
         var mine = Path.Combine(home.Files.Root, "mine");
         var view = home.Launcher.Runtime;
-        Assert.Equal((RuntimeState.UpdateAvailable, RuntimeRig.Pinned, "0.1.17 (no AVX2)", mine), (view.State, view.InstalledVersion, view.PinnedLabel, view.Folder));
+        Assert.Equal((RuntimeState.UpdateAvailable, RuntimeRig.Pinned, "0.1.18 (no AVX2)", mine), (view.State, view.InstalledVersion, view.PinnedLabel, view.Folder));
 
         await home.Launcher.InstallRuntimeAsync(null, default);
 
         view = home.Launcher.Runtime;
-        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, "mkw-recomp updated to 0.1.17 (no AVX2)"), (view.State, view.InstalledVersion, view.Note));
+        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, "mkw-recomp updated to 0.1.18 (no AVX2)"), (view.State, view.InstalledVersion, view.Note));
         Assert.Equal(RuntimeRig.NoAvx2Exe, File.ReadAllBytes(Path.Combine(mine, "mkw.exe")));
         Assert.Equal("save", File.ReadAllText(Path.Combine(mine, "profile", "save.bin")));
     }

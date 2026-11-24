@@ -152,7 +152,7 @@ public sealed partial class DesignLauncher : ILauncher
     public GameView Game { get; private set; } = new(
         [new TargetInfo("mkw-recomp", "mkw-recomp", "the folder with mkw.exe",
             TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch) { GameVersions = ["1.8.0"] }],
-        new GameInstall("mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp\mkw.exe", "0.1.17", "1.8.0", null),
+        new GameInstall("mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp\mkw.exe", "0.1.18", "1.8.0", null),
         new TargetCheck(TargetStatus.Ready, null, null, null, null),
         DemoMod,
         false, false, null, false);

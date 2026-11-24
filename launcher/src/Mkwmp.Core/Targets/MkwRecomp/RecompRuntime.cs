@@ -61,31 +61,33 @@ public static class RecompRuntime
     public static RuntimeManifest For(bool v3) => v3 ? Main : NoAvx2;
 
     /// <summary>
-    /// The pinned build: the official mkw-recomp 0.1.17, the Windows zip (also what runs under Proton). It has
+    /// The pinned build: the official mkw-recomp 0.1.18, the Windows zip (also what runs under Proton). It has
     /// what the fork's 0.1.16-mkwmp.1 added (plugin API 4, upstream #743; the setup under Wine, #738; no SDL x11
-    /// driver under Proton, #739) and the same game id (c9bbcb75a9ac9a49), so an installed game keeps its compiled
-    /// code. Our fork's two unreleased Wine fixes are done without it: shadow storage by the launcher
-    /// (<see cref="RecompLaunchEnv"/>), the early XInput ask by the mod (native/probe/src/winepad.c).
+    /// driver under Proton, #739) and the same game id as 0.1.16 and 0.1.17 (c9bbcb75a9ac9a49), so an installed game
+    /// keeps its compiled code. 0.1.18 fixes the silent 0xC0000409 exit on Windows 11 at a guest thread's end (#751)
+    /// and downloads DLSS, FSR 3.1 and RenHDrum when they are picked (<see cref="RecompLibs"/>). Our fork's two
+    /// unreleased Wine fixes are done without it: shadow storage by the launcher (<see cref="RecompLaunchEnv"/>), the
+    /// early XInput ask by the mod (native/probe/src/winepad.c).
     /// </summary>
     public static RuntimeManifest Main { get; } = new()
     {
         Name = "mkw-recomp",
-        Version = "0.1.17",
+        Version = "0.1.18",
         Repository = "adriadam10/mkw-recomp",
-        Tag = "v0.1.17",
-        Asset = "mkw-recomp-0.1.17-windows-x64.zip",
-        Size = 221_694_058,
-        Sha256 = "1a569435f63cbfe0077b82ff620161ceb9f489808352b9a429aae72284619d4e",
+        Tag = "v0.1.18",
+        Asset = "mkw-recomp-0.1.18-windows-x64.zip",
+        Size = 221_949_886,
+        Sha256 = "ff655d6dc566d315c9f33f96b9b94b7dc7e9c1b383091ed36c7f35921b6444c8",
         Executable = Recomp.Exe,
-        ExecutableSha256 = "48ede546a7da356d2319260b6f8ec1814c009bc8421c1b5b3c847d82b6be09ce",
-        // 23,345 files under one "mkw-recomp/" folder; most of the size is setup/ (clang, zig, glslc, python).
-        InstalledSize = 740_533_976,
+        ExecutableSha256 = "84874fe56ea156ee7e10095d9f1c70a3877a5c8f280feb43ecc5c9a94678ce06",
+        // 23,349 files under one "mkw-recomp/" folder; most of the size is setup/ (clang, zig, glslc, python).
+        InstalledSize = 741_365_270,
         // Measured on an install of game 1.8.0 set up with "link" (the game's data is not copied):
         // spirv 1.80 GB, pipeline cache 0.49 GB, setup-work 0.37 GB, mkwgame.dll 0.23 GB, exefs,
         // sm86 and python's caches 0.07 GB: 2.96 GB, rounded up.
         SetupSpace = 3_500_000_000,
         // The fork's builds this launcher installed before (0.1.15-mkwmp ... 0.1.16-mkwmp.1): an install of one is
-        // updated in place to the official 0.1.17, keeping the game, its setup and the player's saves (Preserved). An
+        // updated in place to the official release, keeping the game, its setup and the player's saves (Preserved). An
         // official release installed by hand (0.1.16, say) is still the player's own and is left alone.
         LineageSuffix = "-mkwmp",
         FolderName = "mkw-recomp",
@@ -95,8 +97,9 @@ public static class RecompRuntime
             // 0.1.15-mkwmp to 0.1.16-mkwmp (setup\src is hashed into the setup's step keys and the game id,
             // launcher/docs/RECOMP_INTEGRATION.md, 1.5). An update compares its files one by one and replaces only
             // those that changed, with the backup and rollback of any other file. Files the zip does not hold are never
-            // touched: the DLSS and FSR 3.1 libraries a player puts next to mkw.exe (nvngx_dlss.dll,
-            // amd_fidelityfx_*_vk.dll; 0.1.17 ships none) stay.
+            // touched: the DLSS, FSR 3.1 and RenHDrum libraries next to mkw.exe (nvngx_dlss*.dll,
+            // amd_fidelityfx_*_vk.dll, renhdrum.dll; no release ships them: 0.1.18's libs.py and RecompLibs download
+            // them, or the player puts them there) stay.
             // the setup's state and work
             "setup-state.json", "setup.lock", "setup-work",
             // the player's settings, saves, mods and logs
@@ -110,7 +113,7 @@ public static class RecompRuntime
             CreditSummary,
             "mkw-recomp",
             new Uri("https://github.com/adriadam10/mkw-recomp"),
-            new Uri("https://github.com/adriadam10/mkw-recomp/tree/v0.1.17"),
+            new Uri("https://github.com/adriadam10/mkw-recomp/tree/v0.1.18"),
             "MIT",
             Notice,
             "licenses")
@@ -131,12 +134,12 @@ public static class RecompRuntime
     /// </summary>
     public static RuntimeManifest NoAvx2 { get; } = Main with
     {
-        Asset = "mkw-recomp-0.1.17-windows-x64-noavx2.zip",
-        Size = 221_587_934,
-        Sha256 = "9dfbdaff20607973e4176e7f6265ff1495b342b228a6adbd266c0879c50bc3c3",
-        ExecutableSha256 = "e67d12344bab5bb4d2411e85265aa71cdaf814045d1adb7ae4b51f4fec871211",
-        // 23,346 files: the main zip's, its own mkw.exe, and setup/cpu-level.
-        InstalledSize = 740_252_379,
+        Asset = "mkw-recomp-0.1.18-windows-x64-noavx2.zip",
+        Size = 221_839_821,
+        Sha256 = "7ce3148d23a2fe255ee36536bd24e027bc4313c54eff50a590e73cb33fa32ccc",
+        ExecutableSha256 = "38b545ce7f017183c8919f958311e3d6b6083c61326f27b95d4a6fcff4513f83",
+        // 23,350 files: the main zip's, its own mkw.exe, and setup/cpu-level.
+        InstalledSize = 741_077_529,
         Variant = "no AVX2",
         VariantKey = "core.runtime.variant_noavx2",
         // The main zip's mkw.exe needs AVX2: it would not start here.

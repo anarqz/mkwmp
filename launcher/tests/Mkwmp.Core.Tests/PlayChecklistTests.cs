@@ -9,9 +9,9 @@ public class PlayChecklistTests
 {
     private const string Folder = @"C:\Games\mkw-recomp";
     private static readonly TargetInfo Recomp = new("mkw-recomp", "mkw-recomp", "the one with mkw.exe", TargetCapabilities.Launch) { GameVersions = ["1.8.0"] };
-    private static readonly GameInstall Install = new("mkw-recomp", Folder, Folder + @"\mkw.exe", "0.1.17", "1.8.0", null);
+    private static readonly GameInstall Install = new("mkw-recomp", Folder, Folder + @"\mkw.exe", "0.1.18", "1.8.0", null);
     private static readonly IntegrationReport ModIn = new(IntegrationState.Installed, Strings.PatchState("mod_installed", "1.4.1"), []) { AsMod = true };
-    private static readonly RuntimeView Pinned = new(RuntimeState.Installed, "0.1.17", "0.1.17", Folder, false, 0, 0, 0, 0, null, 1, 1, null, null);
+    private static readonly RuntimeView Pinned = new(RuntimeState.Installed, "0.1.18", "0.1.18", Folder, false, 0, 0, 0, 0, null, 1, 1, null, null);
     private static readonly GameSetupView SetUp = GameSetupView.None with { Available = true, DumpPath = @"D:\MKW.nup", GameVersion = "1.8.0" };
 
     /// <summary>Everything in place, offline, the launcher up to date.</summary>
@@ -62,7 +62,7 @@ public class PlayChecklistTests
         // MKWMP's own build, older: updated in place; the build for another processor: the same, said so.
         var older = Ready() with { Runtime = Pinned with { State = RuntimeState.UpdateAvailable, InstalledVersion = "0.1.16-mkwmp" } };
         row = Row(older, CheckId.Runtime);
-        Assert.Equal((CheckState.Needed, Strings.RuntimeUpdateNeeded("mkw-recomp", "0.1.17"), "Update mkw-recomp"), (row.State, row.Status, row.Action!.Label));
+        Assert.Equal((CheckState.Needed, Strings.RuntimeUpdateNeeded("mkw-recomp", "0.1.18"), "Update mkw-recomp"), (row.State, row.Status, row.Action!.Label));
         var cpu = Ready() with { Runtime = Pinned with { State = RuntimeState.UpdateAvailable, PinnedVariant = "no AVX2" } };
         Assert.Contains("does not run on this processor", Row(cpu, CheckId.Runtime).Status, StringComparison.Ordinal);
 

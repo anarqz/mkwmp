@@ -346,13 +346,23 @@ Tabs, in order (`settings_tabs.cpp` `tab_order`): Screen, Graphics, Sound, Contr
 | Tab | Covered by `RecompSettings.cs` | Not covered |
 |---|---|---|
 | Screen | fullscreen, window_size, vk_present, picture_fit, aspect, hud_position, hdr | **the GPU row** (`gpu_index`); the note "in use: VSync" (needs the running game) |
-| Graphics | quality preset, aniso, tex_quality, detail_distance, shadow_size, resolution, upscaler, sharpness, operation_mode, fps, logic_hz, framegen, vrr, low_latency, perf_overlay | **Best settings for this PC** (`auto_set`) and its Undo |
+| Graphics | quality preset, aniso, tex_quality, detail_distance, shadow_size, resolution, upscaler, sharpness, operation_mode, fps, logic_hz, framegen, vrr, low_latency, perf_overlay; from 0.1.17 temporal, temporal_quality, dlss_preset, cas, cas_sharpness, fg_engine, reflex and the no-row shadow_draws | **Best settings for this PC** (`auto_set`) and its Undo |
 | Sound | volume, audio_channels, background_mute | |
-| Controls | pad_layout, button_icons, menu_shortcut, motion, rumble_strength, rumble_curve, rumble_triggers, switch2, dsu, dsu_server, dsu_slot, stick_deadzone, mouse_sens | **key and button bindings** (`binds_page.cpp`, the `bind_*` keys); per-player pad and battery rows |
+| Controls | pad_layout, button_icons, menu_shortcut, motion, rumble_strength, rumble_curve, rumble_triggers, switch2, dsu, dsu_server, dsu_slot, stick_deadzone, mouse_sens; from 0.1.17 the no-row pad_p2; from 0.1.18 renhdrum | **key and button bindings** (`binds_page.cpp`, the `bind_*` keys); per-player pad and battery rows |
 | General | lang, menu_lang, update_check, start_screen, discord | `lan` (left out on purpose) |
-| Advanced | the scheduling, shader, texture, fix, Vulkan and diagnostics rows | input_record, Open log folder, Copy system info, Reset all |
+| Advanced | the scheduling, shader, texture, fix, Vulkan and diagnostics rows; from 0.1.18 the no-row tex_pressure and vram_log (#481) | input_record, Open log folder, Copy system info, Reset all; 0.1.18's gpu_clocks and udmabuf (Linux only), pass_hazards (an experiment) |
 | Hacks | none, on purpose | |
 | Mods' tabs | none of MKWMP's since 1.4.3 (its MKWMP, Voice chat and Camera tabs and its options page are gone); the launcher sets everything and writes the mod's settings (`ModSettings.cs`, `Launcher.ModSettings.cs`) | |
+
+**Optional libraries (0.1.18).** No release ships DLSS, FSR 3.1 or RenHDrum (NVIDIA's licence forbids distributing
+DLSS's files on their own). 0.1.18's menu downloads them when its Graphics or Controls tab is drawn with a pick that
+needs them (`settings_tabs.cpp` `libs_sync`, `ui/launcher/libs_fetch.cpp`): `setup\python\python.exe -I
+setup\src\tools\prepare\libs.py fetch --features dlss,fsr3,... --dir <mkw.exe's folder>`, each file checked against
+the size and sha256 of `libs.tsv` and kept when already there. A pick made in the launcher never draws that tab, so
+the launcher runs the same command after it writes one (`RecompLibs.cs`, `Launcher.GameSettings.cs`
+`FetchGameLibraries`), with the same rule for the NVIDIA-only files (any NVIDIA display adapter; none listed counts
+as one, as `libs_sync` before its GPU list). The files are not in the zip, so an update of the runtime never touches
+them (`RecompRuntime.Preserved`).
 
 ### 2.4 The three missing settings, and what each needs
 
