@@ -516,9 +516,11 @@ def main() -> int:
         warn("old and new are the same file")
     v = probe.known.get(new.sha)
     if not v:
-        warn("the launcher does not know NEW's hash: add it to KNOWN (and SUPPORTED) in rust/client/src/recomp.rs")
+        warn("the launcher does not know NEW's hash: add it to KNOWN (and SUPPORTED) in rust/client/src/recomp.rs"
+             " and to Known (and Supported) in launcher/src/Mkwmp.Core/Targets/MkwRecomp/Recomp.cs, the list the WPF launcher uses")
     elif v not in probe.supported:
-        warn(f"the launcher knows NEW as {v} but refuses it: SUPPORTED in rust/client/src/recomp.rs")
+        warn(f"the launcher knows NEW as {v} but refuses it: SUPPORTED in rust/client/src/recomp.rs"
+             " and Supported in launcher/src/Mkwmp.Core/Targets/MkwRecomp/Recomp.cs")
     else:
         ok(f"the launcher accepts NEW ({v})")
 

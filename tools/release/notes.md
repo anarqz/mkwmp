@@ -1,3 +1,13 @@
+**mkwmp 1.4.6**: mkw-recomp 0.1.18, which fixes the game closing silently on some Windows 11 PCs, and DLSS, FSR 3.1 and HD vibration that download themselves.
+
+The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it. It then updates mkw-recomp 0.1.17 to 0.1.18 in place: the game code is not rebuilt.
+
+- **mkw-recomp 0.1.18** by Adrià. It fixes the game closing silently on some Windows 11 PCs right after it starts (error 0xC0000409). Your game, its setup, saves, mods and settings stay. 0.1.17 still plays online.
+- **DLSS, FSR 3.1 and HD vibration download themselves.** Picking NVIDIA DLSS, AMD FSR 3.1 or their frame generation in Settings › Graphics, or HD vibration in Settings › Controls, downloads the library it needs next to mkw.exe from its official source (NVIDIA, AMD or RenHDrum), checked against mkw-recomp's own list. It works at the game's next start. DLSS is downloaded only on a PC with an NVIDIA card. A library you already put there is kept.
+- **New game settings from 0.1.18.** Settings › Controls: HD vibration (RenHDrum), the game's two-band vibration on player 1's DualSense, Pro Controller, Xbox One S or Steam Controller. Settings › Advanced: VRAM pressure eviction and Video memory log, the two settings mkw-recomp asks players to try if the game gets slower the longer they play (its issue #481). All three are off by default.
+
+---
+
 **mkwmp 1.4.5**: after a failed update you can still play, offline.
 
 The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.

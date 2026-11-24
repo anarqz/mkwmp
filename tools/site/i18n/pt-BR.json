@@ -60,7 +60,7 @@
     "lead": "Aponte o MKWMP para a sua própria cópia de Mario Kart World para Nintendo Switch 2, versão 1.8.0, como .nup, .nx ou pasta. Ele faz o resto.",
     "section": "O que o launcher faz",
     "s1": "Baixa o mkw-recomp",
-    "s1c": "O mkw-recomp 0.1.17, a versão oficial, conferido pelo hash conhecido. Em um processador sem AVX2, ele escolhe a versão feita para isso.",
+    "s1c": "O mkw-recomp 0.1.18, a versão oficial, conferido pelo hash conhecido. Em um processador sem AVX2, ele escolhe a versão feita para isso.",
     "s2": "Usa a sua cópia",
     "s2c": "Ele lê a sua cópia onde ela está, ou faz uma cópia, como você preferir. Nada do jogo é baixado.",
     "s3": "Gera o jogo",
@@ -117,7 +117,7 @@
     "r1c": "B ou Guide volta para o jogo de onde você parou.",
     "r2": "Amigos sem sair do jogo",
     "r2c": "Veja quem está online e responda pedidos pelo overlay.",
-    "note": "O overlay precisa do mkw-recomp 0.1.17 com o mod MKWMP: o launcher configura os dois.",
+    "note": "O overlay precisa do mkw-recomp 0.1.18 com o mod MKWMP: o launcher configura os dois.",
     "shot_alt": "O overlay: o jogo pausado, encolhido dentro do bloco Jogar da tela inicial."
   },
   "mods": {
