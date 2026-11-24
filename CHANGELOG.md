@@ -2,7 +2,7 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
-## 1.4.6 — unreleased
+## 1.4.6 — 2026-11-24
 
 - **mkw-recomp 0.1.18.** The launcher now installs Adrià's mkw-recomp 0.1.18 and updates an install of 0.1.17 it made in place: your game, its setup, saves, mods and settings stay, and the game code does not need rebuilding. 0.1.18 fixes the game closing silently on some Windows 11 PCs right after it starts (error 0xC0000409). 0.1.17 still plays online.
 - **DLSS, FSR 3.1 and RenHDrum download themselves.** Picking NVIDIA DLSS, AMD FSR 3.1 or their frame generation in Settings › Graphics, or HD vibration in Settings › Controls, now downloads the library it needs next to mkw.exe from NVIDIA's, AMD's or RenHDrum's official release, checked by mkw-recomp's own list. Settings shows the progress; it works at the game's next start. DLSS is downloaded only on a PC with an NVIDIA card. A library you already put there is kept.
