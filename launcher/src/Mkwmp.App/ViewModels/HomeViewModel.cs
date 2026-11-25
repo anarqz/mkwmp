@@ -376,8 +376,8 @@ public sealed class HomeViewModel : PageViewModel
         _play.Image = Overlay ? Shell.OverlayThumb : Cover(Launcher.GameCover); // over a game its live picture wins; else the game's own cover, when there is one
         _play.Width = Overlay ? HomeTile.WideWidth : HomeTile.SquareWidth;
         _play.Subtitle = Problem is not null ? S["home.play_blocked"]
-            : game.Install is { } install ? string.IsNullOrEmpty(install.GameVersion) ? "Mario Kart World" : $"Mario Kart World {install.GameVersion}"
-            : Overlay ? "Mario Kart World"
+            : game.Install is { } install ? string.IsNullOrEmpty(install.GameVersion) ? "MKW" : $"MKW {install.GameVersion}"
+            : Overlay ? "MKW"
             : S["home.no_game"];
         _play.Badge = Overlay ? S["home.overlay.badge"] : Locked ? S["home.offline"] : session.Phase switch
         {

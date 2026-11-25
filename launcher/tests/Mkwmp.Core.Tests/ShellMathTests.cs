@@ -23,23 +23,23 @@ public class ShellMathTests
     }
 
     [Fact]
-    public void NintendoLayoutConfirmsWithTheRightButton()
+    public void SwitchLayoutConfirmsWithTheRightButton()
     {
-        // XInput's B is the east (right) button: with Nintendo it is A, confirm; the south one goes back
-        Assert.Equal(PadButton.A, PadLayout.ToRole(PadLayout.FromPosition("east")!.Value, FaceLayout.Nintendo));
-        Assert.Equal(PadButton.B, PadLayout.ToRole(PadLayout.FromPosition("south")!.Value, FaceLayout.Nintendo));
-        Assert.Equal(PadButton.X, PadLayout.ToRole(PadLayout.FromPosition("north")!.Value, FaceLayout.Nintendo));
-        Assert.Equal(PadButton.Y, PadLayout.ToRole(PadLayout.FromPosition("west")!.Value, FaceLayout.Nintendo));
+        // XInput's B is the east (right) button: with Switch it is A, confirm; the south one goes back
+        Assert.Equal(PadButton.A, PadLayout.ToRole(PadLayout.FromPosition("east")!.Value, FaceLayout.Switch));
+        Assert.Equal(PadButton.B, PadLayout.ToRole(PadLayout.FromPosition("south")!.Value, FaceLayout.Switch));
+        Assert.Equal(PadButton.X, PadLayout.ToRole(PadLayout.FromPosition("north")!.Value, FaceLayout.Switch));
+        Assert.Equal(PadButton.Y, PadLayout.ToRole(PadLayout.FromPosition("west")!.Value, FaceLayout.Switch));
         // the rest is the same
         foreach (var button in new[] { PadButton.LB, PadButton.RB, PadButton.Start, PadButton.Back, PadButton.Up, PadButton.Down, PadButton.Left, PadButton.Right })
         {
-            Assert.Equal(button, PadLayout.ToRole(button, FaceLayout.Nintendo));
+            Assert.Equal(button, PadLayout.ToRole(button, FaceLayout.Switch));
         }
     }
 
     [Theory]
-    [InlineData("nintendo", FaceLayout.Nintendo)]
-    [InlineData("Nintendo", FaceLayout.Nintendo)]
+    [InlineData("nintendo", FaceLayout.Switch)]
+    [InlineData("NINTENDO", FaceLayout.Switch)]
     [InlineData("xbox", FaceLayout.Xbox)]
     [InlineData("auto", FaceLayout.Xbox)]
     [InlineData("", FaceLayout.Xbox)]
@@ -48,7 +48,7 @@ public class ShellMathTests
 
     // The truth table (docs: launcher/docs/DESIGN.md, "Button layout"): for each controller as XInput and the game's
     // SDL3 see it, and each pad_layout value, the physical place (south, east) that confirms in the launcher. The game's
-    // A is at the same place: input_map.c, Nintendo east A, Xbox south A, auto Nintendo when the east button is labelled A.
+    // A is at the same place: input_map.c, Switch east A, Xbox south A, auto Switch when the east button is labelled A.
     // xinputA: where XInput's A button physically is on that controller.
     [Theory]
     // an Xbox controller on Windows (and the Steam Deck, the ROG Ally, any pad Proton shows the game: 28de:12fd)
@@ -70,7 +70,7 @@ public class ShellMathTests
     [InlineData("28de:11ff:switchpro", "east", "xbox", "south")]
     [InlineData("28de:11ff:joyconpair", "east", "auto", "east")]
     [InlineData("28de:11ff:joyconpair", "east", "xbox", "south")]
-    // a Nintendo controller XInput sees with its own ids (a Proton that passes them): labelled A on the right, no Steam swap
+    // a Switch controller XInput sees with its own ids (a Proton that passes them): labelled A on the right, no Steam swap
     [InlineData("057e:2009", "south", "auto", "east")]
     [InlineData("057e:2009", "south", "nintendo", "east")]
     [InlineData("057e:2009", "south", "xbox", "south")]
@@ -85,14 +85,14 @@ public class ShellMathTests
         var atEast = xinputA == "south" ? PadButton.B : PadButton.A;
         Assert.Equal(PadButton.A, PadLayout.ToRole(confirms == "south" ? atSouth : atEast, mapping));
         Assert.Equal(PadButton.B, PadLayout.ToRole(confirms == "south" ? atEast : atSouth, mapping));
-        // the game's A at that place, in the game's own terms (east A in its Nintendo layout, south A in Xbox)
-        Assert.Equal(confirms == "east" ? FaceLayout.Nintendo : FaceLayout.Xbox, mapping.Layout);
+        // the game's A at that place, in the game's own terms (east A in its Switch layout, south A in Xbox)
+        Assert.Equal(confirms == "east" ? FaceLayout.Switch : FaceLayout.Xbox, mapping.Layout);
         // the harness' --press east|south names places: the same roles
         Assert.Equal(PadButton.A, PadLayout.ToRole(PadLayout.FromPosition(confirms)!.Value, mapping.Layout));
     }
 
     [Fact]
-    public void SteamsNintendoSwapIsUndoneOnlyForItsVirtualPad()
+    public void SteamsSwitchSwapIsUndoneOnlyForItsVirtualPad()
     {
         Assert.True(PadLayout.SwapsFaceButtons(new PadIdentity(0x28DE, 0x11FF, "switchpro")));
         Assert.True(PadLayout.SwapsFaceButtons(new PadIdentity(0x28DE, 0x11FF, "joyconleft")));

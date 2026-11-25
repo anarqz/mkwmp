@@ -11,7 +11,7 @@ public partial class MainWindow
 {
     /// <summary>
     /// The window's buttons follow the game's Settings › Controls › Button layout, as the game applies
-    /// it to the controller in use (<see cref="PadLayout"/>): with Nintendo the right face button
+    /// it to the controller in use (<see cref="PadLayout"/>): with Switch the right face button
     /// confirms, with Xbox the bottom one, and Automatic picks as the game does. Read where the launcher
     /// said something changed (any thread: after the first read, the core's view is a field).
     /// </summary>

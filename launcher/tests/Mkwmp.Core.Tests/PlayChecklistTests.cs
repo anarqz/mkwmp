@@ -36,7 +36,7 @@ public class PlayChecklistTests
         Assert.Equal([CheckId.Runtime, CheckId.GameCopy, CheckId.GameVersion, CheckId.GameSetup, CheckId.MkwmpFiles, CheckId.LauncherUpdate, CheckId.Online], list.Items.Select(i => i.Id));
         Assert.All(list.Items.Take(6), i => Assert.Equal(CheckState.Ok, i.State));
         Assert.Equal(CheckState.NotApplicable, list.Find(CheckId.Online)!.State); // offline
-        Assert.Equal("Mario Kart World 1.8.0", list.Find(CheckId.GameVersion)!.Status);
+        Assert.Equal("MKW 1.8.0", list.Find(CheckId.GameVersion)!.Status);
         // A set-up game can always be set up again: a second button, asked for first.
         Assert.Equal(CheckActionKind.Rebuild, list.Find(CheckId.GameSetup)!.More!.Kind);
     }
@@ -78,7 +78,7 @@ public class PlayChecklistTests
     public void A_copy_that_is_not_1_8_0_is_needed_with_the_version_it_is_and_never_a_download()
     {
         var problem = Strings.RecompGameProblem("1.0.0", ["1.8.0"]);
-        Assert.Equal("MKWMP needs Mario Kart World 1.8.0: this copy of the game is 1.0.0", problem);
+        Assert.Equal("MKWMP needs MKW 1.8.0: this copy of the game is 1.0.0", problem);
         var facts = Ready() with
         {
             Game = Ready().Game with

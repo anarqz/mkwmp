@@ -50,7 +50,7 @@ public sealed class CoverArtTests
     [Fact]
     public void Block_linear_storage_is_read_in_the_console_s_order()
     {
-        // Inside a GOB (64 bytes by 8 rows): the Switch, and the Switch 2 with two bits of the offset swapped.
+        // Inside a GOB (64 bytes by 8 rows): the Switch, and the handheld console with two bits of the offset swapped.
         Assert.Equal((32, 16, 64, 256), (BlockLinear.Offset(16, 0, 256, 0, false), BlockLinear.Offset(0, 1, 256, 0, false), BlockLinear.Offset(0, 2, 256, 0, false), BlockLinear.Offset(32, 0, 256, 0, false)));
         Assert.Equal((64, 16, 32, 128, 256), (BlockLinear.Offset(16, 0, 256, 0, true), BlockLinear.Offset(0, 1, 256, 0, true), BlockLinear.Offset(0, 2, 256, 0, true), BlockLinear.Offset(0, 4, 256, 0, true), BlockLinear.Offset(32, 0, 256, 0, true)));
         // The next GOB to the right is a whole block further; the next row of GOBs is under it in the same block.
@@ -202,13 +202,13 @@ public sealed class CoverArtTests
 
         // Loose files, romfs/ one folder below what the setup was given; the files not packed.
         var dump = Path.Combine(root, "dump");
-        var layout = Path.Combine(dump, "Mario Kart World", "romfs", "Layout");
+        var layout = Path.Combine(dump, "MKW", "romfs", "Layout");
         Directory.CreateDirectory(layout);
         File.WriteAllBytes(Path.Combine(layout, "GameMenu_00_00.Nin_Ounce_NVN2.bntx"), Art());
         File.WriteAllBytes(Path.Combine(layout, "GameMenu_00_00.Nin_Ounce_NVN2.bntx.zs.changelist.json"), "{}"u8.ToArray());
         File.WriteAllBytes(Path.Combine(layout, "TitleLogo_00.Nin_Ounce_NVN2.blarc.zs"), SyntheticGame.Zs(Logo()));
         var loose = Install(Path.Combine(root, "game-loose"), dump);
-        Assert.Equal(Path.Combine(dump, "Mario Kart World", "romfs"), RecompCover.Source(loose));
+        Assert.Equal(Path.Combine(dump, "MKW", "romfs"), RecompCover.Source(loose));
         Assert.NotNull(target.CoverArt(loose, cache));
         Assert.Equal((255, 255, 255), At(RecompCover.Compose(RecompCover.Source(loose)!)!, 640, 288));
 
@@ -318,7 +318,7 @@ public sealed class CoverArtTests
 
 /// <summary>
 /// Files in the game's formats, written by the tests: a <c>.nup</c> package, a SARC archive, a BNTX
-/// texture file of the Switch 2 with ASTC 4x4 textures whose blocks are flat colours ("void extent"
+/// texture file of the handheld console with ASTC 4x4 textures whose blocks are flat colours ("void extent"
 /// blocks: 16 bytes that say one colour), and zstd frames. Each writer is the reverse of the reader
 /// it tests, written from the formats' public descriptions.
 /// </summary>

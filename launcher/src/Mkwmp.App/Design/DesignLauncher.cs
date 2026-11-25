@@ -125,7 +125,7 @@ public sealed partial class DesignLauncher : ILauncher
         Server = "https://mkw.example.net",
         Name = "Alex",
         Pin = "482913",
-        Game = @"C:\Games\Mario Kart World\mkw-recomp",
+        Game = @"C:\Games\MKW\mkw-recomp",
         AdultConsent = true,
         Ui = new UiSettings { SetupDone = true },
     };
@@ -152,14 +152,14 @@ public sealed partial class DesignLauncher : ILauncher
     public GameView Game { get; private set; } = new(
         [new TargetInfo("mkw-recomp", "mkw-recomp", "the folder with mkw.exe",
             TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch | TargetCapabilities.OwnLauncher) { GameVersions = ["1.8.0"] }],
-        new GameInstall("mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp\mkw.exe", "0.1.18", "1.8.0", null),
+        new GameInstall("mkw-recomp", @"C:\Games\MKW\mkw-recomp", @"C:\Games\MKW\mkw-recomp\mkw.exe", "0.1.18", "1.8.0", null),
         new TargetCheck(TargetStatus.Ready, null, null, null, null),
         DemoMod,
         false, false, null, false);
 
     /// <summary>The MKWMP mod, installed and verified: what an mkw-recomp that loads mods reports.</summary>
     private static readonly IntegrationReport DemoMod = new(IntegrationState.Installed, CoreStrings.PatchState("mod_installed", "1.4.0"),
-        [@"mods/mkwmp: v1.4.0 (C:\Games\Mario Kart World\mkw-recomp\mods\mkwmp)", "mkw.ini [launcher] mods: enabled", "files: 7 of 7 verified against v1.4.0"]) { AsMod = true };
+        [@"mods/mkwmp: v1.4.0 (C:\Games\MKW\mkw-recomp\mods\mkwmp)", "mkw.ini [launcher] mods: enabled", "files: 7 of 7 verified against v1.4.0"]) { AsMod = true };
 
     /// <summary><c>--state install-fails</c>: INSTALL ends with the error of a launcher that has no package for its version.</summary>
     private bool _installFails;
@@ -204,10 +204,10 @@ public sealed partial class DesignLauncher : ILauncher
             }
             return;
         }
-        var folder = @"C:\Games\Mario Kart World\mkw-recomp";
+        var folder = @"C:\Games\MKW\mkw-recomp";
         var bare = new GameInstall("mkw-recomp", folder, folder + @"\mkw.exe", DemoRuntime.Version, null, null);
         var ready = new TargetCheck(TargetStatus.Ready, null, null, null, null);
-        var noMod = new IntegrationReport(IntegrationState.Missing, CoreStrings.PatchState("missing"), [@"mods/mkwmp: not installed (C:\Games\Mario Kart World\mkw-recomp\mods\mkwmp)"]) { AsMod = true };
+        var noMod = new IntegrationReport(IntegrationState.Missing, CoreStrings.PatchState("missing"), [@"mods/mkwmp: not installed (C:\Games\MKW\mkw-recomp\mods\mkwmp)"]) { AsMod = true };
         switch (state)
         {
             case "crashed" or "crashed-solo" or "crashed-exit":
@@ -373,7 +373,7 @@ public sealed partial class DesignLauncher : ILauncher
                     Game = Game with
                     {
                         Integration = new IntegrationReport(IntegrationState.Damaged, CoreStrings.PatchState("damaged"),
-                            [@"mods/mkwmp: v1.4.1 (C:\Games\Mario Kart World\mkw-recomp\mods\mkwmp)", "mkw.ini [launcher] mods: enabled", "plugin/mkwmp.dll: another version, or changed", "files: 6 of 7 verified against v1.4.1"])
+                            [@"mods/mkwmp: v1.4.1 (C:\Games\MKW\mkw-recomp\mods\mkwmp)", "mkw.ini [launcher] mods: enabled", "plugin/mkwmp.dll: another version, or changed", "files: 6 of 7 verified against v1.4.1"])
                         { AsMod = true, LeftoverPatch = true },
                     };
                     Sync();
@@ -995,7 +995,7 @@ public sealed partial class DesignLauncher : ILauncher
         var crash = crashId is not null;
         var zip = crash ? $@"C:\Users\Alex\Desktop\mkwmp-crash-{crashId}.zip" : @"C:\Users\Alex\Desktop\mkwmp-bug-20261120-183245.zip";
         var title = crash ? "Crash: ACCESS_VIOLATION in mkwgame.dll+0x1a2f4c0 (4 players, host)" : "";
-        var text = crash ? "**Mario Kart World stopped unexpectedly.**\n\n- **Crash**: `ACCESS_VIOLATION in mkwgame.dll+0x1a2f4c0`\n" : "**What happened?**\n";
+        var text = crash ? "**MKW stopped unexpectedly.**\n\n- **Crash**: `ACCESS_VIOLATION in mkwgame.dll+0x1a2f4c0`\n" : "**What happened?**\n";
         var url = Mkwmp.Core.Diagnostics.BugReportBuilder.Url(crash ? "crash.yml" : "bug_report.yml", crash ? "crash" : "bug", title, crash ? "report" : "what", crash ? text : "");
         return new(crash, title, url, text, zip, true, null);
     }
@@ -1051,7 +1051,7 @@ public sealed partial class DesignLauncher : ILauncher
         ]),
         new("graphics", "Graphics", "Star",
         [
-            GameSetting.Choice("quality", "Quality", "Sets the settings below at once. Console looks like the Switch 2.", "console", true,
+            GameSetting.Choice("quality", "Quality", "Sets the settings below at once. Console looks like the handheld console.", "console", true,
                 new("low", "Low", new Dictionary<string, string> { ["tex_quality"] = "quarter", ["shadow_size"] = "1024" }),
                 new("console", "Console", new Dictionary<string, string> { ["tex_quality"] = "full", ["shadow_size"] = "console" }),
                 new("high", "High", new Dictionary<string, string> { ["tex_quality"] = "full", ["shadow_size"] = "4096" }),
@@ -1089,7 +1089,7 @@ public sealed partial class DesignLauncher : ILauncher
         new("controls", "Controls", "Gamepad",
         [
             GameSetting.Choice("pad_layout", "Button layout", "Which button confirms and accelerates, the same in the game and in this launcher.", "auto", false,
-                new("auto", "Automatic"), new("nintendo", "Nintendo (A right)"), new("xbox", "Xbox (A bottom)")),
+                new("auto", "Automatic"), new("nintendo", "Switch (A right)"), new("xbox", "Xbox (A bottom)")),
             GameSetting.Toggle("pad_p2", "First controller to player 2", "The first controller plays as player 2 and the keyboard as player 1.", false, false),
             GameSetting.Toggle("motion", "Motion controls", "Steering by tilting the controller.", true, false),
             GameSetting.Range("rumble_strength", "Vibration strength", "How strong the controller vibrates.", 130, false, 0, 300, 10, "%"),
@@ -1173,7 +1173,7 @@ public sealed partial class DesignLauncher : ILauncher
     private CancellationTokenSource? _runtimeInstall;
 
     public RuntimeView Runtime { get; private set; } = new(
-        RuntimeState.Installed, DemoRuntime.Version, DemoRuntime.Version, @"C:\Games\Mario Kart World\mkw-recomp", false,
+        RuntimeState.Installed, DemoRuntime.Version, DemoRuntime.Version, @"C:\Games\MKW\mkw-recomp", false,
         0, 0, 0, 0, null, DemoRuntime.Size, DemoRuntime.Size + DemoRuntime.InstalledSize + DemoRuntime.SetupSpace, null, DemoRuntime.Credit);
 
     /// <summary>For screenshots and trying things: the runtime as not installed, to update, or frozen mid-download.</summary>
@@ -1275,7 +1275,7 @@ public sealed partial class DesignLauncher : ILauncher
     }
 
     // ---- the game's setup (a pretend run of mkw-recomp's, with its real steps and their measured share of the time) ----
-    private const string DemoDump = @"D:\Games\Mario Kart World.nup";
+    private const string DemoDump = @"D:\Games\MKW.nup";
     private static readonly (string Step, double Seconds)[] DemoSetupSteps =
         [("check", 4), ("exefs", 6), ("romfs", 1), ("generate", 160), ("compile", 186), ("shaders", 80), ("warm", 76), ("cleanup", 24)];
 

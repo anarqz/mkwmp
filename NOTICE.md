@@ -40,7 +40,7 @@ License; its notice is below, is installed as `licenses/mkw-recomp-LICENSE` with
 the libraries it ships, and is shown in the launcher under About > Licenses. The fork adds entries
 to the plugin API and changes nothing else of the game's behaviour. mkw-recomp contains no game
 code or assets: it builds the game on the player's device from the player's own copy. MKWMP is not
-affiliated with or endorsed by mkw-recomp's author or by Nintendo.
+affiliated with or endorsed by mkw-recomp's author or by the game's publisher.
 
 ```
 MIT License
@@ -66,5 +66,5 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-Mario Kart World is Nintendo's. mkwmp ships none of the game's code or assets, and it is not
-affiliated with or endorsed by Nintendo.
+MKW belongs to its owner. mkwmp ships none of the game's code or assets, and it is not
+affiliated with or endorsed by the game's publisher.

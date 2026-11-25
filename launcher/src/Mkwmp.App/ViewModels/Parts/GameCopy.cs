@@ -28,7 +28,7 @@ public static class GameCopy
         return shell.Launcher.GameSetup is { Available: true, DumpPath: not null } && shell.Launcher.Game.Install is not null;
     }
 
-    /// <summary>"In use: D:\Games\Mario Kart World.nup, read where it is."; "" when no copy is on record.</summary>
+    /// <summary>"In use: D:\Games\MKW.nup, read where it is."; "" when no copy is on record.</summary>
     public static string InUse(ShellViewModel shell)
     {
         ArgumentNullException.ThrowIfNull(shell);

@@ -503,7 +503,7 @@ public class GameSettingsTests
     {
         const string Text =
             "\u00EF\u00BB\u00BF# my settings\n"
-            + "ROMFS = \"D:\\Jogos\\Mario Kart World.nsp\"\n"
+            + "ROMFS = \"D:\\Jogos\\MKW.nsp\"\n"
             + "some_future_key = 7\n"
             + "\n"
             + "[display]\n"
@@ -522,7 +522,7 @@ public class GameSettingsTests
             + "no equals here\n"
             + "audio_channels =";
         var values = RecompIni.Values(Text);
-        Assert.Equal("D:\\Jogos\\Mario Kart World.nsp", values["ROMFS"]);
+        Assert.Equal("D:\\Jogos\\MKW.nsp", values["ROMFS"]);
         Assert.Equal("0", values["FULLSCREEN"]);
         Assert.Equal("60", values["FPS"]); // the MKW_ prefix is optional
         Assert.Equal("80", values["VOLUME"]); // the later line wins
@@ -553,7 +553,7 @@ public class GameSettingsTests
     public void A_file_in_another_encoding_keeps_its_bytes()
     {
         // a path in Windows-1252 (not valid UTF-8)
-        var file = Encoding.Latin1.GetBytes("romfs = C:\\Jogos\\Mario\u00E7\u00E3o.nsp\r\n[display]\r\nfullscreen = 1\r\n");
+        var file = Encoding.Latin1.GetBytes("romfs = C:\\Jogos\\Cora\u00E7\u00E3o.nsp\r\n[display]\r\nfullscreen = 1\r\n");
         var (target, install, ini, _) = Game();
         File.WriteAllBytes(ini, file);
         IGameTarget t = target;

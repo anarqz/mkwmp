@@ -190,34 +190,34 @@ A and B above are roles. Which physical button gives them is the game's Settings
 it to the same controller (`Input/PadLayout.cs`, the only place that decides). The rule, from mkw-recomp 0.1.16
 (`runtime/input/input_map.c`, `input.c`; SDL3 reports face buttons by position):
 
-- **Nintendo**: the right (east) button is A: confirm in the launcher, A (accelerate, OK) in the game. The bottom
+- **Switch**: the right (east) button is A: confirm in the launcher, A (accelerate, OK) in the game. The bottom
   one is B (back).
 - **Xbox**: the bottom (south) button is A, the right one B.
-- **Automatic**: Nintendo when the controller's right button is labelled A (SDL's label: a Switch Pro Controller,
-  Joy-Con, Switch 2 controller), Xbox for every other controller (Xbox, PlayStation, Steam Deck, ROG Ally, generic).
+- **Automatic**: Switch when the controller's right button is labelled A (SDL's label: a Switch Pro Controller,
+  Joy-Con, handheld console controller), Xbox for every other controller (Xbox, PlayStation, Steam Deck, ROG Ally, generic).
 
 The launcher reads XInput, which names buttons by the Xbox labels (A south, B east), and identifies the
 controller as SDL does: `XInputGetCapabilitiesEx` (xinput1_4 ordinal 108) for its ids and, for Steam Input's
 virtual pad on Windows (28de:11ff), the real controller's type from the file in `SteamVirtualGamepadInfo`. With a
-Switch controller Steam's "Use Nintendo Button Layout" (its default) sends the button labelled A (east) as XInput's
+Switch controller Steam's Switch button-layout setting (its default) sends the button labelled A (east) as XInput's
 A; SDL swaps it back to its place (`SDL_joystick.c` `ShouldSwapFaceButtons`), and so does `PadLayout.Position`,
 so the swap is undone once, for both. Under Proton the virtual pad has other ids (28de:12fd) and SDL cannot tell it
 is Steam's: neither swaps, and both programs see the same buttons. Steam's own setting is not read: like SDL, the
 launcher assumes its default.
 
-| Controller (how it reaches the launcher) | Automatic | Nintendo | Xbox |
+| Controller (how it reaches the launcher) | Automatic | Switch | Xbox |
 | --- | --- | --- | --- |
 | Xbox controller (Windows) | bottom | right | bottom |
 | Steam Deck, ROG Ally, any pad under Proton (Steam's virtual pad, 28de:12fd) | bottom | right | bottom |
 | PlayStation controller (Steam Input on Windows) | bottom (cross) | right (circle) | bottom (cross) |
 | Switch Pro Controller / Joy-Con (Steam Input on Windows) | right (A) | right (A) | bottom (B) |
-| A controller with Nintendo's own ids in XInput | right (A) | right (A) | bottom (B) |
+| A Switch controller with its own ids in XInput | right (A) | right (A) | bottom (B) |
 
 The button that confirms in the launcher is the game's A in every cell. Controllers XInput does not see (a
-PlayStation or Switch controller without Steam, Switch 2 controllers over Bluetooth) work in the game only; the
-launcher is then used with the keyboard and mouse. Known limit: with Steam's "Use Nintendo Button Layout" turned off,
+PlayStation or Switch controller without Steam, handheld console controllers over Bluetooth) work in the game only; the
+launcher is then used with the keyboard and mouse. Known limit: with Steam's Switch button-layout setting turned off,
 SDL's swap is wrong for that controller, in the game and (on purpose, to stay the same) in the launcher. The log
-says what was decided: `input: button layout Nintendo, Steam's Nintendo buttons swapped back (pad_layout = auto,
+says what was decided: `input: button layout Switch, Steam's Switch buttons swapped back (pad_layout = auto,
 controller 28de:11ff (Steam: switchpro))`. Harness: `--pad-layout auto|nintendo|xbox`, `--pad-device vid:pid[:steamtype]`,
 `--press east|south` (places).
 
@@ -566,7 +566,7 @@ locked pane come by themselves). A single row or button: keep it, swap its icon 
 `Shell.ConfigureOnline()`.
 
 **Voice & Camera** is the one place that says what voice and camera are, in a card at its top: they work only inside
-Mario Kart World, in **private rooms**, with **friends added on the server** (never in public lobbies), with **up to
+MKW, in **private rooms**, with **friends added on the server** (never in public lobbies), with **up to
 4 friends** at a time, live and never recorded, the camera only for mutual friends. The launcher never opens a voice
 or camera session itself: the pane sets the switch, devices and volumes the game reads, and tests them locally.
 The pane is two sections built the same way (section 15, "A feature that can be off"): **Voice**: "Use voice in

@@ -104,7 +104,7 @@ public sealed class ModCard
 }
 
 /// <summary>
-/// "Get mods": GameBanana's Mario Kart World mods as a grid of cards, twenty a page, in an order or
+/// "Get mods": GameBanana's MKW mods as a grid of cards, twenty a page, in an order or
 /// from a search (the text field opens the on-screen keyboard). A on a card opens the mod's page.
 /// Nothing is hosted by MKWMP: the list, the pictures and the files come from GameBanana when asked.
 /// </summary>

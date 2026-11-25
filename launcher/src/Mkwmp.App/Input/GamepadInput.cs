@@ -46,7 +46,7 @@ public sealed class GamepadInput : IDisposable
         _timer.Tick += (_, _) => Poll();
     }
 
-    /// <summary>A role (<see cref="PadLayout"/>): with the Nintendo layout the east button is A.</summary>
+    /// <summary>A role (<see cref="PadLayout"/>): with the Switch layout the east button is A.</summary>
     public event EventHandler<PadButton>? Pressed;
 
     /// <summary>The right stick, every poll while it is tilted: how fast to scroll (units a second, positive down / right); zeros once when it is let go.</summary>

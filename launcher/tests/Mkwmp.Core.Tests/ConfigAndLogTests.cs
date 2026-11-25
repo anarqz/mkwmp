@@ -35,7 +35,7 @@ public class ConfigTests
             {
                 Name = "Ana",
                 Pin = "123456",
-                Game = @"C:\Games\Mario ""Kart"" World\mkw-recomp",
+                Game = @"C:\Games\MKW ""1.8.0"" dump\mkw-recomp",
                 Launch = false,
                 Seat = SeatMode.Online,
                 LocalPort = 5000,

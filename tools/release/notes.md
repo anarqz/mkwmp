@@ -61,7 +61,7 @@ The launcher updates itself from 1.4.x: accept the update when it offers it, the
 - **mkw-recomp: the official 0.1.17** by Adrià, in place of MKWMP's build: what online play needed is now in it. Your game, saves, mods and settings stay.
 - **New game settings from 0.1.17**: AI upscaling (NVIDIA DLSS on RTX cards or AMD FSR 3.1), upscaling quality, frame generation, NVIDIA Reflex, shadow map, and "first controller to player 2". All off by default. DLSS and FSR 3.1 need their libraries next to mkw.exe, which mkw-recomp does not ship.
 - **Steam Deck and Linux**: the controller is found at start and NVIDIA cards no longer crash at loading under Proton (both handled by the launcher and the mod now); the overlay comes to the front on KDE Plasma.
-- **Controls**: the launcher and the game agree on the button layout (Nintendo, Xbox, Automatic), and mkw-recomp's own menu shortcut never takes your overlay shortcut's buttons.
+- **Controls**: the launcher and the game agree on the button layout (Switch, Xbox, Automatic), and mkw-recomp's own menu shortcut never takes your overlay shortcut's buttons.
 
 ---
 
@@ -73,7 +73,7 @@ The launcher updates itself from 1.4.0 and 1.4.1: accept the update when it offe
 - **Set the game up again.** Rebuild the game from your copy from Settings › Game or the checklist (saves, mods and settings stay). The launcher also notices when your copy changed since it was set up and asks you to set it up again.
 - **Choose the button that opens MKWMP in the game.** Settings › Game › Overlay Shortcut: Guide or Select + Start (as before), Guide, Select + Start, hold Select, hold Start, L3 + R3, LB + RB + Start, Select + LB, Select + RB. Each choice says what it may clash with (Guide opens Steam's menu or Xbox Game Bar). On a Steam Deck, hold Select is a good pick.
 - **Smoother, faster scrolling, and touch.** About a third faster per wheel step with a smooth glide, touchpads in small steps, the right stick scrolls; drag and flick lists with a finger.
-- **Nintendo button layout in the launcher too**: with the game's Nintendo layout, the right button confirms.
+- **Switch button layout in the launcher too**: with the game's Switch layout, the right button confirms.
 - **Contrast**: the dark theme stands out more, and Settings › Appearance › Contrast sets it.
 - **Mods list**: one compact line per mod with its size, a switch on each row, and Turn All Off / Turn All Back On.
 - **Credits**: Settings › About links to mkw-recomp, its creator Adrià, its license and the source of MKWMP's build.
@@ -176,7 +176,7 @@ For people hosting a server: `mkwmp admin reports`, `close-report` and `delete-r
 
 ---
 
-**From 1.0.0** (**mkwmp 1.0.0**: online races, battles and friend rooms for Mario Kart World on community servers, with lobby voice chat.)
+**From 1.0.0** (**mkwmp 1.0.0**: online races, battles and friend rooms for MKW on community servers, with lobby voice chat.)
 
 Download one zip and unzip it anywhere:
 

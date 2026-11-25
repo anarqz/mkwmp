@@ -86,7 +86,7 @@ public sealed class Avatar : Control
 
         static string Second(string s)
         {
-            // "MarioFan" → "MF"; "luna" → "L"
+            // "KartFan" → "KF"; "luna" → "L"
             for (var i = 1; i < s.Length; i++)
             {
                 if (char.IsUpper(s[i]) || char.IsDigit(s[i]))

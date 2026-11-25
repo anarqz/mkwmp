@@ -606,7 +606,7 @@ followed by the standard permission and warranty paragraphs. The zip carries it 
 | Place | Text |
 |---|---|
 | About (`ShellViewModel.AboutText`, a fourth line, with a "Licenses" button) | `The game runs on mkw-recomp by Adrià and its contributors (MIT License) - https://github.com/adriadam10/mkw-recomp` |
-| Setup screen, under the title, before the player picks the dump | `RecompRuntime.CreditSummary` as it is: "The game runs on mkw-recomp, a static recompilation of Mario Kart World by Adrià and its contributors (MIT License). MKWMP installs its own build of it, with the additions online play needs. mkw-recomp builds the game from your own copy, on your device; MKWMP is not affiliated with mkw-recomp or with Nintendo." |
+| Setup screen, under the title, before the player picks the dump | `RecompRuntime.CreditSummary` as it is: "The game runs on mkw-recomp, a static recompilation of MKW by Adrià and its contributors (MIT License). MKWMP installs its own build of it, with the additions online play needs. mkw-recomp builds the game from your own copy, on your device; MKWMP is not affiliated with mkw-recomp or with the game's publisher." |
 | Setup screen, the install step | `Installing mkw-recomp 0.1.15-mkwmp (github.com/anarqz/mkw-recomp, a fork of github.com/adriadam10/mkw-recomp)` |
 | "Licenses" view (About) | the full MIT text (`RecompRuntime.Notice`) and a button that opens `<runtime>\licenses\` |
 | `NOTICE.md` at the repo root, a new section "mkw-recomp" | below |
@@ -624,7 +624,7 @@ Copyright (c) 2026 Adrià; its full text is installed as licenses/mkw-recomp-LIC
 the launcher under About > Licenses. The fork adds entries to the plugin API and changes nothing
 else of the game's behaviour. mkw-recomp contains no game code or assets: it builds the game on the
 player's device from the player's own copy. MKWMP is not affiliated with or endorsed by mkw-recomp's
-author or by Nintendo.
+author or by the game's publisher.
 ```
 
 ### What else a copy of the zip carries

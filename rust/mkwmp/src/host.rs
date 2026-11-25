@@ -199,7 +199,7 @@ fn random_hex(n: usize) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// The host names the game connects to (it still asks for Nintendo's names;
+/// The host names the game connects to (it still asks for the official names;
 /// the patch redirects the connection). Same profile as the built-in
 /// certificate: RSA 2048, self-signed, its own CA.
 pub const LOBBY_CERT_NAMES: [&str; 3] = ["*.lp1.t.npln.srv.nintendo.net", "gamesync.npln.nintendo.net", "localhost"];

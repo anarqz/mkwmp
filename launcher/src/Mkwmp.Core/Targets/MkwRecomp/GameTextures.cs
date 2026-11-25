@@ -209,7 +209,7 @@ internal static class GameTextures
     /// </summary>
     public static RgbaImage? Texture(ReadOnlySpan<byte> bntx, Func<string, bool>? isIt = null)
     {
-        // "BNTX" ...; at 0x20 the container: the platform ("NX  " on the Switch, "Ounc" on the Switch 2), i32 texture
+        // "BNTX" ...; at 0x20 the container: the platform ("NX  " on the Switch, "Ounc" on the handheld console), i32 texture
         // count, u64 where the table of texture pointers is. A texture ("BRTI"): u8 dimension at 0x11 (2 = 2D), u32
         // format at 0x1C, u32 width, height, depth, layers at 0x24, u32 log2 of the block height at 0x34, u64 name
         // (u16 length + text) at 0x60, u64 table of level pointers at 0x70.
@@ -280,7 +280,7 @@ internal static class GameTextures
 /// <summary>
 /// The console GPU's "block linear" texture storage, undone: a level is stored as GOBs (64 bytes by 8
 /// rows, 512 bytes), stacked 2^n high into blocks that fill the level row by row
-/// (public descriptions: deko3d, Ryujinx's BlockLinearLayout). Inside a GOB the Switch 2 orders the
+/// (public descriptions: deko3d, Ryujinx's BlockLinearLayout). Inside a GOB the handheld console orders the
 /// bytes differently from the Switch (it swaps two bits of the offset; mkw-recomp's
 /// runtime/gfx/nvn/tex/tex_deswizzle.c documents both).
 /// </summary>

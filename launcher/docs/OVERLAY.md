@@ -2,7 +2,7 @@
 
 In the game, the player's overlay shortcut (Settings › Game, "In-Game Overlay"; by default the Guide button, or
 Select+Start, or Select held for a second: section 2.1) brings the MKWMP launcher over the game
-the way the Switch 2's HOME button does: the picture the game was showing shrinks into the Play tile of Home, the
+the way the handheld console's HOME button does: the picture the game was showing shrinks into the Play tile of Home, the
 player looks at friends or settings, and "back to the game" grows the thumbnail back to the full screen.
 mkw-recomp's own menu does not open on that button.
 
@@ -153,7 +153,7 @@ Game controls (no control map of MKW is in this repo; this is the console's defa
 be confirmed live): the face buttons, both bumpers and triggers while driving (items, drift/hop), Plus to pause,
 Minus in menus; stick presses have no driving role. So a combination built on Select or Start is held
 back from the game only as long as it is incomplete, a bumper alone passes at once, and L3 or R3 alone passes at
-once. Nothing here depends on the face buttons, so the Nintendo / Xbox layout swap (A and B, X and Y exchanged by
+once. Nothing here depends on the face buttons, so the Switch / Xbox layout swap (A and B, X and Y exchanged by
 mkw-recomp's `pad_layout` or by the launcher's own pad layout) does not touch any entry.
 
 How it travels: client.toml `[ui] overlay_shortcut = "<name>"`; `OverlayBridge.Shortcut` (set by
@@ -360,8 +360,7 @@ suspended: home says "the game is running" either way.
 
 ### Quit Game
 
-In overlay mode the dock has "Quit Game" and the Power menu lists it above "Quit MKWMP"; both ask first ("Quit Mario
-Kart World? Progress since the last save is lost.", plus the seat sentence when a server is set). Then
+In overlay mode the dock has "Quit Game" and the Power menu lists it above "Quit MKWMP"; both ask first ("Quit MKW? Progress since the last save is lost.", plus the seat sentence when a server is set). Then
 (`OverlayController.QuitGameAsync`):
 
 1. `OverlayBridge.ReturnToGame(OverlayReturn.Quit)`: the mod's wait ends with `"action":"quit"` and it calls the

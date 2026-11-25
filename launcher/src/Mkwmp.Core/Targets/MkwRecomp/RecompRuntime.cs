@@ -46,9 +46,9 @@ public static class RecompRuntime
 
     /// <summary>What the window says wherever mkw-recomp is installed or named (About, the install step).</summary>
     public const string CreditSummary =
-        "The game runs on mkw-recomp, a static recompilation of Mario Kart World by Adrià and its contributors (MIT License). "
+        "The game runs on mkw-recomp, a static recompilation of MKW by Adrià and its contributors (MIT License). "
         + "MKWMP installs its official release. mkw-recomp builds the game from your own "
-        + "copy, on your device; MKWMP is not affiliated with mkw-recomp or with Nintendo.";
+        + "copy, on your device; MKWMP is not affiliated with mkw-recomp or with Switch.";
 
     /// <summary>
     /// The pinned build for this machine's processor: <see cref="Main"/> when it has what x86-64-v3 asks

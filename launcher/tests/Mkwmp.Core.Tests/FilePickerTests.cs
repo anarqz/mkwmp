@@ -214,7 +214,7 @@ public sealed class FilePickerTests
         var root = Rig.NewFolder("list");
         var browser = new FileBrowser(new FileHost());
         var target = new MkwRecompTarget("1.4.0");
-        Touch(root, "Mario Kart World.nup");
+        Touch(root, "MKW.nup");
         Touch(root, "OTHER.NX");
         Touch(root, "readme.txt");
         Touch(root, "mkw.exe");
@@ -230,7 +230,7 @@ public sealed class FilePickerTests
         // The game copy: folders (the one that holds a copy is marked), then the packages, by name the way people count.
         var copies = browser.List(root, target.GameCopyFilter);
         Assert.Equal(
-            ["dump", "saves", "カート ñ 日本語", "Mario Kart World.nup", "OTHER.NX", "track2.nup", "track10.nup"],
+            ["dump", "saves", "カート ñ 日本語", "MKW.nup", "OTHER.NX", "track2.nup", "track10.nup"],
             copies.Entries.Select(e => e.Name).ToArray());
         Assert.Equal(["dump"], copies.Entries.Where(e => e.IsFolder && e.Match).Select(e => e.Name).ToArray());
         Assert.All(copies.Entries.Where(e => !e.IsFolder), e => Assert.True(e.Match && e.Type == FileType.Package && e.Size == 1));
@@ -415,12 +415,12 @@ public sealed class FilePickerTests
     [Fact]
     public void The_last_folder_of_each_purpose_is_kept_in_the_settings_file()
     {
-        var folders = PickerFolders.Empty.With("game_copy", @"D:\Dumps\Mario Kart").With("game_folder", "Z:\\home\\deck\\Games");
-        Assert.Equal(@"D:\Dumps\Mario Kart", folders["game_copy"]);
+        var folders = PickerFolders.Empty.With("game_copy", @"D:\Dumps\MKW").With("game_folder", "Z:\\home\\deck\\Games");
+        Assert.Equal(@"D:\Dumps\MKW", folders["game_copy"]);
         Assert.Equal("", folders["never_used"]);
         // Value equality: the settings are saved only when something changed.
-        Assert.Equal(folders, PickerFolders.Empty.With("game_folder", "Z:\\home\\deck\\Games").With("game_copy", @"D:\Dumps\Mario Kart"));
-        Assert.Same(folders, folders.With("game_copy", @"D:\Dumps\Mario Kart"));
+        Assert.Equal(folders, PickerFolders.Empty.With("game_folder", "Z:\\home\\deck\\Games").With("game_copy", @"D:\Dumps\MKW"));
+        Assert.Same(folders, folders.With("game_copy", @"D:\Dumps\MKW"));
         Assert.NotEqual(folders, folders.With("game_copy", @"E:\"));
         Assert.Equal(new LauncherSettings { Picker = folders }, new LauncherSettings { Picker = folders.With("x", "") });
         Assert.NotEqual(new LauncherSettings(), new LauncherSettings { Picker = folders });
@@ -434,7 +434,7 @@ public sealed class FilePickerTests
         // client.toml: [picker], beside the launcher (portable), read back as it was written.
         var config = new ClientConfig { Settings = new LauncherSettings { Name = "Ana", Picker = folders } };
         var toml = config.ToToml();
-        Assert.Contains("\n[picker]\ngame_copy = \"D:\\\\Dumps\\\\Mario Kart\"\ngame_folder = \"Z:\\\\home\\\\deck\\\\Games\"\n", toml, StringComparison.Ordinal);
+        Assert.Contains("\n[picker]\ngame_copy = \"D:\\\\Dumps\\\\MKW\"\ngame_folder = \"Z:\\\\home\\\\deck\\\\Games\"\n", toml, StringComparison.Ordinal);
         Assert.Equal(folders, ClientConfig.Parse(toml).Settings.Picker);
         Assert.True(config.SameAs(ClientConfig.Parse(toml)));
         // Nothing is written until the picker was used; a file without the table, or with odd things in it, loads.

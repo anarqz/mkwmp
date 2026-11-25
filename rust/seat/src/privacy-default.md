@@ -1,6 +1,6 @@
 # Privacy policy
 
-This is the default policy of an MKWMP server. The person who hosts this server runs it, not Nintendo
+This is the default policy of an MKWMP server. The person who hosts this server runs it, not the game's publisher
 and not the MKWMP project, and should replace this text with their own (`[privacy] file` in the
 server's config).
 

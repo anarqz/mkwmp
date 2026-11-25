@@ -233,8 +233,8 @@ public class SetupProgressTests
         Assert.Null(p.Error);
 
         // The detail is the rest of the line, spaces included.
-        Assert.True(p.Line(@"error space 25.0 GB, 3.1 GB free in C:\Games\Mario Kart", S(4)));
-        Assert.Equal(("space", @"25.0 GB, 3.1 GB free in C:\Games\Mario Kart"), p.Error);
+        Assert.True(p.Line(@"error space 25.0 GB, 3.1 GB free in C:\Games\MKW", S(4)));
+        Assert.Equal(("space", @"25.0 GB, 3.1 GB free in C:\Games\MKW"), p.Error);
         Assert.True(p.Line("error cancelled", S(4)));
         Assert.Equal(("cancelled", ""), p.Error);
 

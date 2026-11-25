@@ -1,7 +1,7 @@
 {
-  "_comment": "Steam library artwork for the MKWMP shortcut: MKWMP's own art (original, no Nintendo IP), in this repository under tools/linux/art and made by launcher/tools/make_art.py. Only links are stored here: the installer downloads them on the player's machine at install time. If a link is gone, the installer falls back to SteamGridDB's public search (POST https://www.steamgriddb.com/api/public/search/main/games, no key) and picks the first asset that is not nsfw/humor/epilepsy/animated, language en or none, official style first, upvotes-downvotes as the tie-break; and if that fails too, it installs without artwork.",
+  "_comment": "Steam library artwork for the MKWMP shortcut: MKWMP's own art (original, no third-party IP), in this repository under tools/linux/art and made by launcher/tools/make_art.py. Only links are stored here: the installer downloads them on the player's machine at install time. If a link is gone, the installer falls back to SteamGridDB's public search (POST https://www.steamgriddb.com/api/public/search/main/games, no key) and picks the first asset that is not nsfw/humor/epilepsy/animated, language en or none, official style first, upvotes-downvotes as the tie-break; and if that fails too, it installs without artwork.",
   "steamgriddb_game_id": 5483943,
-  "search_term": "Mario Kart World",
+  "search_term": "MKW",
   "assets": {
     "grid": {
       "steam_file": "<appid>p.png",

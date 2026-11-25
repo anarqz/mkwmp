@@ -15,7 +15,7 @@ public enum FaceLayout
     Xbox,
 
     /// <summary>A on the right (east), B at the bottom: as on a Switch.</summary>
-    Nintendo,
+    Switch,
 }
 
 /// <summary>
@@ -54,21 +54,21 @@ public readonly record struct PadIdentity(ushort VendorId, ushort ProductId, str
 /// <summary>
 /// How the launcher reads its controller so that it does what the game does: the layout in effect
 /// (the setting, with "auto" decided as the game decides it) and whether Steam's face buttons are
-/// swapped back to their places first (as SDL does for a Nintendo controller under Steam Input).
+/// swapped back to their places first (as SDL does for a Switch controller under Steam Input).
 /// </summary>
 public readonly record struct PadMapping(FaceLayout Layout, bool SwapFaceButtons)
 {
-    public override string ToString() => SwapFaceButtons ? $"{Layout}, Steam's Nintendo buttons swapped back" : Layout.ToString();
+    public override string ToString() => SwapFaceButtons ? $"{Layout}, Steam's Switch buttons swapped back" : Layout.ToString();
 }
 
 /// <summary>
 /// The one place where a physical face button becomes a role, so the whole window (and the hint
 /// bar's letters, which name roles) does what the game does with the same press. The rule, the
-/// game's (mkw-recomp input_map.c, SDL3 positional buttons): Nintendo makes the right (east) button A,
-/// Xbox the bottom (south) one; Automatic is Nintendo for a controller whose right button is labelled
+/// game's (mkw-recomp input_map.c, SDL3 positional buttons): Switch makes the right (east) button A,
+/// Xbox the bottom (south) one; Automatic is Switch for a controller whose right button is labelled
 /// A (Switch Pro Controller, Joy-Con) and Xbox for every other. XInput names the buttons by their
 /// Xbox labels: its A is the south button, B east, X west, Y north, except on Steam Input's virtual pad
-/// for a Nintendo controller, where Steam ("Use Nintendo Button Layout", its default) sends the
+/// for a Switch controller, where Steam (its Switch button-layout setting, on by default) sends the
 /// button labelled A, the east one, as XInput's A: SDL swaps those back, and so does
 /// <see cref="Position"/>. The other buttons (shoulders, Start, Back, the D-pad) are the same in
 /// every layout. Plain code, no WPF: the tests link this file.
@@ -80,14 +80,14 @@ public static class PadLayout
 
     public const ushort ValveVendor = 0x28DE;
     public const ushort SteamVirtualProduct = 0x11FF;
-    public const ushort NintendoVendor = 0x057E;
+    public const ushort SwitchVendor = 0x057E;
 
     /// <summary>The environment variable with the path of Steam's virtual pad list (SDL_steam_virtual_gamepad.c).</summary>
     public const string SteamVirtualGamepadInfoVariable = "SteamVirtualGamepadInfo";
 
     /// <summary>
     /// The layout for the game setting's value with no controller known: "auto" is Xbox then, as
-    /// it is in the game for any controller that is not labelled as a Nintendo one.
+    /// it is in the game for any controller that is not labelled as a Switch one.
     /// </summary>
     public static FaceLayout FromSetting(string? value) => Resolve(value, PadIdentity.Unknown).Layout;
 
@@ -95,30 +95,30 @@ public static class PadLayout
     public static PadMapping Resolve(string? setting, PadIdentity pad)
     {
         var value = setting?.Trim();
-        var layout = string.Equals(value, "nintendo", StringComparison.OrdinalIgnoreCase) ? FaceLayout.Nintendo
+        var layout = string.Equals(value, "nintendo", StringComparison.OrdinalIgnoreCase) ? FaceLayout.Switch
             : string.Equals(value, "xbox", StringComparison.OrdinalIgnoreCase) ? FaceLayout.Xbox
-            : NintendoLabels(pad) ? FaceLayout.Nintendo : FaceLayout.Xbox;
+            : SwitchLabels(pad) ? FaceLayout.Switch : FaceLayout.Xbox;
         return new PadMapping(layout, SwapsFaceButtons(pad));
     }
 
     /// <summary>
     /// The controller's right button is labelled A (SDL_GetGamepadButtonLabel(EAST) == A, the game's
     /// "auto" test): a Switch Pro Controller or Joy-Con, by Steam's type for its virtual pad, else by
-    /// Nintendo's vendor id (not the GameCube adapter or controller, whose A is at the bottom).
+    /// the vendor id of Switch controllers (not the GameCube adapter or controller, whose A is at the bottom).
     /// </summary>
-    public static bool NintendoLabels(PadIdentity pad)
+    public static bool SwitchLabels(PadIdentity pad)
     {
         if (pad.SteamType is { Length: > 0 } type)
         {
-            return IsNintendoType(type);
+            return IsSwitchType(type);
         }
-        return pad.VendorId == NintendoVendor && pad.ProductId is not (0x0337 or 0x2073);
+        return pad.VendorId == SwitchVendor && pad.ProductId is not (0x0337 or 0x2073);
     }
 
     /// <summary>SDL's ShouldSwapFaceButtons: Steam's virtual pad standing for a Switch Pro Controller or Joy-Con.</summary>
-    public static bool SwapsFaceButtons(PadIdentity pad) => pad.IsSteamVirtual && IsNintendoType(pad.SteamType);
+    public static bool SwapsFaceButtons(PadIdentity pad) => pad.IsSteamVirtual && IsSwitchType(pad.SteamType);
 
-    private static bool IsNintendoType(string? type) => type?.Trim().TrimStart('+', '-').ToLowerInvariant() is
+    private static bool IsSwitchType(string? type) => type?.Trim().TrimStart('+', '-').ToLowerInvariant() is
         "switchpro" or "joyconleft" or "joyconright" or "joyconpair";
 
     /// <summary>Where the XInput button <paramref name="xinput"/> is on the controller (named as <see cref="FromPosition"/> names positions).</summary>
@@ -135,7 +135,7 @@ public static class PadLayout
     public static PadButton ToRole(PadButton xinput, PadMapping mapping) => ToRole(Position(xinput, mapping.SwapFaceButtons), mapping.Layout);
 
     /// <summary>The role of the button at <paramref name="position"/> (south A, east B, west X, north Y) in <paramref name="layout"/>.</summary>
-    public static PadButton ToRole(PadButton position, FaceLayout layout) => layout != FaceLayout.Nintendo ? position : position switch
+    public static PadButton ToRole(PadButton position, FaceLayout layout) => layout != FaceLayout.Switch ? position : position switch
     {
         PadButton.B => PadButton.A, // east confirms
         PadButton.A => PadButton.B, // south goes back

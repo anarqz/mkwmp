@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. After a crash the launcher shows **Mario Kart World stopped unexpectedly**; its **Report** button opens this form with the first box filled in, and saves a zip on your Desktop. **Drag that zip into the last box**: it is what lets us find where the game crashed.
+        Thanks for reporting. After a crash the launcher shows **MKW stopped unexpectedly**; its **Report** button opens this form with the first box filled in, and saves a zip on your Desktop. **Drag that zip into the last box**: it is what lets us find where the game crashed.
         **Never paste your PIN, a ticket or a launcher token** into this issue. The zip has them removed.
   - type: textarea
     id: report

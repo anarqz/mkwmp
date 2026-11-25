@@ -8,8 +8,8 @@
 
 ### Race online. On your terms.
 
-**Mario Kart World online on your PC.** Community online servers for [mkw-recomp](https://github.com/adriadam10/mkw-recomp),<br>
-with a launcher to match: it sets the game up from your own copy of the Nintendo Switch 2 game,<br>
+**MKW online on your PC.** Community online servers for [mkw-recomp](https://github.com/adriadam10/mkw-recomp),<br>
+with a launcher to match: it sets the game up from your own copy of the handheld console game,<br>
 plays offline right away, and takes you online with friends, voice chat and mods.
 
 <br>
@@ -34,7 +34,7 @@ plays offline right away, and takes you online with friends, voice chat and mods
 </div>
 
 > [!NOTE]
-> MKWMP is an independent, open-source community project, **not affiliated with or endorsed by Nintendo**, and it doesn't use Nintendo's servers. You need your **own copy of Mario Kart World** for Nintendo Switch 2. MKWMP ships none of the game's code or assets and never downloads the game. Mario Kart World, Nintendo and Nintendo Switch 2 are trademarks of Nintendo. See [Interoperability and legal notes](docs/LEGAL.md).
+> MKWMP is an independent, open-source community project, **not affiliated with or endorsed by the game's publisher**, and it doesn't use the official servers. You need your **own copy of MKW** for the handheld console. MKWMP ships none of the game's code or assets and never downloads the game. All trademarks belong to their owners. See [Interoperability and legal notes](docs/LEGAL.md).
 
 <p align="center">
   <picture>
@@ -64,7 +64,7 @@ plays offline right away, and takes you online with friends, voice chat and mods
 <td width="33%" valign="top">
 <img src="site/assets/art/step-game.webp" width="72" alt=""><br>
 <b>Set up in one go</b><br>
-Point it at your copy of Mario Kart World (.nup, .nx or a folder). The launcher downloads the official <a href="https://github.com/adriadam10/mkw-recomp">mkw-recomp</a>, builds the game from your copy and installs the MKWMP mod.
+Point it at your copy of MKW (.nup, .nx or a folder). The launcher downloads the official <a href="https://github.com/adriadam10/mkw-recomp">mkw-recomp</a>, builds the game from your copy and installs the MKWMP mod.
 </td>
 <td width="33%" valign="top">
 <img src="site/assets/art/step-online.webp" width="72" alt=""><br>
@@ -115,7 +115,7 @@ After a crash, the launcher saves the logs (no PIN or keys) and opens a prefille
 
 ## Get started
 
-You need your own copy of **Mario Kart World** for Nintendo Switch 2, **version 1.8.0**, as a `.nup`, an `.nx` or a folder.
+You need your own copy of **MKW** for the handheld console, **version 1.8.0**, as a `.nup`, an `.nx` or a folder.
 
 ### Windows
 
@@ -273,7 +273,7 @@ Everything else, including running the two parts separately under systemd and tr
 
 - The **launcher** takes a seat on the server you picked (or waits in its queue) and hands the game a ticket signed with the server's Ed25519 key.
 - The **MKWMP mod**, loaded by mkw-recomp, points the game's online services at that server's lobby and trusts the lobby's own certificate. It doesn't modify the game's files.
-- The **lobby** is a from-scratch reimplementation of the online services Mario Kart World expects (MKWMP never connects to Nintendo's servers): sign-in, matchmaking across any number of lobbies, sessions, match results, friend rooms, and a TURN relay for players who can't reach each other directly.
+- The **lobby** is a from-scratch reimplementation of the online services MKW expects (MKWMP never connects to the official servers): sign-in, matchmaking across any number of lobbies, sessions, match results, friend rooms, and a TURN relay for players who can't reach each other directly.
 - **Beholder** is the server directory: public servers announce themselves, and the launcher and the website list them.
 
 The full picture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -367,7 +367,7 @@ Requests that help obtain or copy games, keys or firmware, unlock paid content o
 
 ## Credits and license
 
-- Built on **[mkw-recomp](https://github.com/adriadam10/mkw-recomp)**, a static recompilation of Mario Kart World by [Adrià](https://github.com/adriadam10), released under the MIT License. MKWMP installs the official release.
+- Built on **[mkw-recomp](https://github.com/adriadam10/mkw-recomp)**, a static recompilation of MKW by [Adrià](https://github.com/adriadam10), released under the MIT License. MKWMP installs the official release.
 - Third-party components and their licenses: [NOTICE.md](NOTICE.md). The art in this repository is MKWMP's own.
 
 MKWMP is free software under the **GNU General Public License, version 3 or later**. See [LICENSE](LICENSE).

@@ -1,4 +1,4 @@
-mkwmp {version} for Windows: online play for Mario Kart World on community servers
+mkwmp {version} for Windows: online play for MKW on community servers
 https://github.com/anarqz/mkwmp
 
 1. Keep this "mkwmp" folder anywhere you like (for example in Documents). The launcher is portable:

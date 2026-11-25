@@ -87,7 +87,7 @@ public partial class MainWindow
         Dir(home, ".local", "share", "Steam", "steamapps", "common", "Proton 10.0");
         Dir(downloads, "mkwmp");
         Dir(downloads, "Screenshots 2026");
-        Make(downloads, "Mario Kart World 1.8.0.nup", 7_800_000, nup, daysAgo: 12);
+        Make(downloads, "MKW 1.8.0.nup", 7_800_000, nup, daysAgo: 12);
         Make(downloads, "holiday photos.zip", 3_600_000, daysAgo: 40);
         Make(downloads, "mkw-recomp-0.1.16-mkwmp.zip", 5_200_000, daysAgo: 2);
         Make(downloads, "notes.txt", 1_900, daysAgo: 1);
@@ -97,13 +97,13 @@ public partial class MainWindow
         Dir(card, "roms");
         Dir(card, "Emulation");
         var dumps = Dir(card, "Dumps");
-        var loose = Dir(dumps, "Mario Kart World [1.8.0]");
+        var loose = Dir(dumps, "MKW [1.8.0]");
         Dir(loose, "romfs");
         Make(Dir(loose, "exefs"), "main", 6_100_000);
         Dir(dumps, "saves backup");
         Dir(dumps, "カート ワールド");
-        Make(dumps, "Mario Kart World 1.8.0.nup", 7_800_000, nup, daysAgo: 12);
-        Make(dumps, "Mario Kart World (old).nx", 6_900_000, [.. "NXAR"u8, 0, 0, 0, 0], daysAgo: 150);
+        Make(dumps, "MKW 1.8.0.nup", 7_800_000, nup, daysAgo: 12);
+        Make(dumps, "MKW (old).nx", 6_900_000, [.. "NXAR"u8, 0, 0, 0, 0], daysAgo: 150);
         Make(dumps, "readme.txt", 640, daysAgo: 150);
         Dir(root, "mnt", "games");
         File.WriteAllText(

@@ -15,7 +15,7 @@
 #      (MKWMP 1.3 and older, ~/mkwmp): your name, its PIN and your server carry over;
 #   3. adds the Steam shortcut "MKWMP" (or updates the one it added before), forces a Proton version on it,
 #      and gives it a gamepad layout on the Steam Deck. A shortcut an older MKWMP installer made
-#      ("Mario Kart World (MKWMP)", the old Linux launcher) is removed; no other shortcut is touched;
+#      (under its old names, or the old Linux launcher) is removed; no other shortcut is touched;
 #   4. downloads MKWMP's own library artwork (capsules, hero, logo, icon) from the repository: the links are in
 #      artwork.json (tools/linux/art/); SteamGridDB's public search is the fallback when a link is gone.
 #
@@ -907,7 +907,7 @@ def art_download(given, version=None):
     except (OSError, ValueError) as e:
         say(f"artwork: the list of links could not be read ({e})")
         listed = {}
-    term, game_id = listed.get("search_term", "Mario Kart World"), listed.get("steamgriddb_game_id", 5483943)
+    term, game_id = listed.get("search_term", "MKW"), listed.get("steamgriddb_game_id", 5483943)
     for slot in ART_SLOTS:
         url = ((listed.get("assets") or {}).get(slot) or {}).get("url")
         for source in ("link", "search"):

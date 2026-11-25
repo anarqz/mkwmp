@@ -60,7 +60,7 @@ public static class BugReportBuilder
         var b = new StringBuilder();
         var r = crash.Record;
         var dev = devRuntime is null ? null : $"DEVELOPMENT build, mkw.exe {devRuntime} ({Targets.MkwRecomp.Recomp.DevExeSetting})";
-        b.Append("**Mario Kart World stopped unexpectedly.**\n\n");
+        b.Append("**MKW stopped unexpectedly.**\n\n");
         Row(b, "Crash", crash.What);
         Row(b, "Crash id", crash.Id);
         Row(b, "Time (UTC)", crash.Time.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture));

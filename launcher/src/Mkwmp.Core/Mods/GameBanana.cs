@@ -36,7 +36,7 @@ public sealed record GbImage(string Small, string Full);
 public sealed record GbDetails(GbMod Mod, string Text, string License, string Ratings, IReadOnlyList<GbFile> Files, IReadOnlyList<GbImage> Images);
 
 /// <summary>
-/// GameBanana's Mario Kart World mods (launcher/docs/MODS.md): the list in an order, a search, a mod's
+/// GameBanana's MKW mods (launcher/docs/MODS.md): the list in an order, a search, a mod's
 /// page and the download of one of its files. The public apiv11, no key; what mkw-recomp's own start
 /// screen asks (tools/mod/gamebanana.py there), with the same manners: a User-Agent of ours, answers kept
 /// ten minutes (in memory and in the launcher's <c>cache\gamebanana\</c>), at most sixty requests a minute,
@@ -46,7 +46,7 @@ public sealed record GbDetails(GbMod Mod, string Text, string License, string Ra
 /// </summary>
 public sealed partial class GameBanana
 {
-    /// <summary>Mario Kart World on GameBanana.</summary>
+    /// <summary>MKW on GameBanana.</summary>
     public const int Game = 22152;
     public const int PerPage = 20;
 

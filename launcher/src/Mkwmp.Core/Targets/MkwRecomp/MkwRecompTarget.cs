@@ -7,7 +7,7 @@ using Mkwmp.Core.Updates;
 namespace Mkwmp.Core.Targets.MkwRecomp;
 
 /// <summary>
-/// mkw-recomp (the static recompilation of Mario Kart World): the folder with mkw.exe. On a
+/// mkw-recomp (the static recompilation of MKW): the folder with mkw.exe. On a
 /// runtime that loads mods (<see cref="Recomp.ModRuntimes"/>) MKWMP gets in as the MKWMP mod
 /// (<c>mods/mkwmp</c>, see <see cref="Mod"/>): the launcher installs it from its package, turns it
 /// on in mkw.ini and takes the older game patch out. On an older runtime it is the game patch the

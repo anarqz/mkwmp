@@ -389,7 +389,7 @@ public static partial class RecompSettings
     private static partial Regex Figures();
 
     private static readonly HashSet<string> Names = new(StringComparer.Ordinal)
-        { "FPS", "HDR", "CPU", "AMD FSR 1", "Nintendo", "Xbox", "PlayStation", "PsychoV35", "VSync", "NVIDIA DLSS", "AMD FSR 3.1", "MKW Recomp", "J", "K", "L", "M" };
+        { "FPS", "HDR", "CPU", "AMD FSR 1", "Switch", "Xbox", "PlayStation", "PsychoV35", "VSync", "NVIDIA DLSS", "AMD FSR 3.1", "MKW Recomp", "J", "K", "L", "M" };
 
     /// <summary>An option whose label is a figure, a product's name or a language's own name is not translated.</summary>
     private static bool Translatable(GameSetting setting, GameSettingOption option) =>
@@ -536,7 +536,7 @@ public static partial class RecompSettings
         var graphics = new List<GameSetting>
         {
             GameSetting.Choice(Quality, "Quality",
-                "Sets the four settings below at once. Console looks like the Switch 2; Low and Medium are lighter for the graphics card, High and Very high sharper. Changing one of them makes it Custom. The internal resolution is what changes the frame rate most.",
+                "Sets the four settings below at once. Console looks like the handheld console; Low and Medium are lighter for the graphics card, High and Very high sharper. Changing one of them makes it Custom. The internal resolution is what changes the frame rate most.",
                 "console", Restart,
                 Preset("low", "Low", "game", "quarter", "1", "1024"), Preset("medium", "Medium", "game", "half", "1.5", "2048"),
                 Preset("console", "Console", "game", "full", "2", "console"), Preset("high", "High", "8", "full", "3", "4096"),
@@ -548,7 +548,7 @@ public static partial class RecompSettings
                 "Detail of the game's own textures. Half and Quarter skip their finest levels: less memory traffic on the graphics card, blurrier surfaces up close. Impact on frame rate: low.",
                 "full", Restart, O("full", "Full"), O("half", "Half"), O("quarter", "Quarter")),
             GameSetting.Choice("detail_distance", "Detail distance",
-                "How far objects keep their detailed models before switching to simpler ones. Console is the Switch 2's. Impact on frame rate: low.",
+                "How far objects keep their detailed models before switching to simpler ones. Console matches the handheld console. Impact on frame rate: low.",
                 "2", Restart, O("1", "Low"), O("1.5", "Medium"), O("2", "Console"), O("3", "High"), O("4", "Very high")),
             GameSetting.Choice("shadow_size", "Shadow quality",
                 "Size of the map the game draws shadows from. Smaller is lighter for the graphics card, with blurrier shadow edges. Console is 3072 docked and 2048 handheld. Impact on frame rate: low.",
@@ -643,11 +643,11 @@ public static partial class RecompSettings
         var controls = new List<GameSetting>
         {
             GameSetting.Choice("pad_layout", "Button layout",
-                "Which button confirms and accelerates, the same in the game and in this launcher. Nintendo: the right one (A on a Switch controller, B on an Xbox controller). Xbox: the bottom one (A on an Xbox controller, cross on a PlayStation controller, B on a Switch controller). Automatic: Nintendo for Switch controllers, Xbox for all others. The other of the two goes back.",
-                "auto", Live, O("auto", "Automatic"), O("nintendo", "Nintendo (A right)"), O("xbox", "Xbox (A bottom)")),
+                "Which button confirms and accelerates, the same in the game and in this launcher. Switch: the right one (A on a Switch controller, B on an Xbox controller). Xbox: the bottom one (A on an Xbox controller, cross on a PlayStation controller, B on a Switch controller). Automatic: Switch for Switch controllers, Xbox for all others. The other of the two goes back.",
+                "auto", Live, O("auto", "Automatic"), O("nintendo", "Switch (A right)"), O("xbox", "Xbox (A bottom)")),
             GameSetting.Choice("button_icons", "Button icons",
                 "Which buttons the game's prompts show. Automatic follows the device you used last: the controller's own buttons (Xbox or PlayStation), or your keys and mouse. The icons follow your remapped buttons.",
-                "auto", Live, O("auto", "Automatic"), O("nintendo", "Nintendo"), O("xbox", "Xbox"), O("playstation", "PlayStation"), O("keyboard", "Keyboard")),
+                "auto", Live, O("auto", "Automatic"), O("nintendo", "Switch"), O("xbox", "Xbox"), O("playstation", "PlayStation"), O("keyboard", "Keyboard")),
             GameSetting.Choice("menu_shortcut", "Menu shortcut",
                 "Which controller input opens the game's own menu (Start + Select or the Guide button). Keyboard: F1 or Esc. With the Guide button, turn off 'Guide button focuses Steam' in Steam and 'Allow your controller to open Game Bar' in Windows.",
                 "minus_plus", Live, O("minus_plus", "Start + Select"), O("guide", "Guide button")),
@@ -655,7 +655,7 @@ public static partial class RecompSettings
             GameSetting.Range("rumble_strength", "Vibration strength", "How strong the controller vibrates.", 130, Live, 0, 300, 10, "%"),
             GameSetting.Range("rumble_curve", "Vibration curve", "Lower values make weak vibration stronger.", 0.6, Live, 0.2, 1.5, 0.05),
             GameSetting.Toggle("rumble_triggers", "Trigger vibration (Xbox)", "Vibrates the triggers of an Xbox controller too.", false, Live),
-            GameSetting.Toggle("switch2", "Switch 2 controllers (Bluetooth)",
+            GameSetting.Toggle("switch2", "Handheld console controllers (Bluetooth)",
                 "Joy-Con 2 and Pro Controller 2 over Bluetooth. To pair one, hold its Sync button with the game open.", false, Restart),
             GameSetting.Toggle("dsu", "Motion from a DSU server",
                 "The gyro of a controller that gives none to the game, such as one in XInput mode, read from a Cemuhook / DSU server (DS4Windows, BetterJoy...).",

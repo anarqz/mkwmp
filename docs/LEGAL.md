@@ -1,8 +1,8 @@
 # Interoperability and legal notes
 
-MKWMP is an unofficial, community-made online service for the mkw-recomp PC runtime of Mario Kart World. It is
-not affiliated with, endorsed by or sponsored by Nintendo. Mario Kart World, Nintendo, Nintendo Switch 2 and related
-names are Nintendo's trademarks; MKWMP uses them only to say which game it works with.
+MKWMP is an unofficial, community-made online service for the mkw-recomp PC runtime of MKW. It is
+not affiliated with, endorsed by or sponsored by the game's publisher. All trademarks belong to their owners; MKWMP
+names the game only to say which game it works with.
 
 This page describes what the project is and is not. It is not legal advice.
 
@@ -18,7 +18,7 @@ This page describes what the project is and is not. It is not legal advice.
 
 ## What you need, and what MKWMP doesn't do
 
-- You need your **own legally obtained copy** of Mario Kart World for Nintendo Switch 2, already set up with mkw-recomp, which is a separate
+- You need your **own legally obtained copy** of MKW for the handheld console, already set up with mkw-recomp, which is a separate
   project.
 - MKWMP does **not** obtain, dump, decrypt or distribute games, and it doesn't explain how to. It doesn't provide
   or ask for keys or firmware.
@@ -28,7 +28,7 @@ This page describes what the project is and is not. It is not legal advice.
 ## Where it connects
 
 - The game patch sends the game's online connections to the **MKWMP server the player picked** (the official one,
-  or one they or a friend host). MKWMP's components do not connect to Nintendo's servers.
+  or one they or a friend host). MKWMP's components do not connect to the official servers.
 - The game still asks for its usual server names. The patch resolves them to the MKWMP server, and that server's
   own certificate, which only the patched game trusts, answers for those names.
 - The launcher talks to that MKWMP server and to GitHub (signed updates and the project's star count).
@@ -46,7 +46,7 @@ These are refused as issues and pull requests:
 
 - anything that helps obtain, copy or decrypt games, keys or firmware, or links to pirated copies;
 - unlocking paid or not-yet-released content, or getting around purchases or entitlements;
-- connecting to Nintendo's own online services, or using Nintendo accounts or credentials;
+- connecting to the official online services, or using official accounts or credentials;
 - cheats that affect other players.
 
 ## Rights holders

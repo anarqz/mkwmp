@@ -97,7 +97,7 @@ folder or a `.nup`) and `mod.json`, and the page then enables the mod (`mods_pol
 
 `tools/mod/gamebanana.py` (the page is `runtime/ui/launcher/mods_browse.cpp`):
 
-- **API**: GameBanana's public `https://gamebanana.com/apiv11`, no key. Mario Kart World is **game 22152** (:47).
+- **API**: GameBanana's public `https://gamebanana.com/apiv11`, no key. MKW is **game 22152** (:47).
 - **List**: `Mod/Index?_aFilters[Generic_Game]=22152&_nPage=&_nPerpage=20&_sSort=` with
   `Generic_MostDownloaded`, `Generic_Newest`, `Generic_MostLiked` (:51, :304-306). **Search**:
   `Util/Search/Results?_sSearchString=&_idGameRow=22152&_sModelName=Mod` (:308-310).

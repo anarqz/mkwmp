@@ -1,4 +1,4 @@
-// The GameChat camera of Mario Kart World 1.8.0, fed by MKWMP (research/docs/CAMERA-RE.md): the player's webcam, or a
+// The GameChat camera of MKW 1.8.0, fed by MKWMP (research/docs/CAMERA-RE.md): the player's webcam, or a
 // test pattern, shown above the kart, and the other players' pictures above theirs. Plugin backend only, 1.8.0 only,
 // and only on a runtime with plugin API 3 (native_image_create / native_image_touch): anything less and nothing is
 // overridden, so the runtime's own "no chat is ever started" stubs stay.

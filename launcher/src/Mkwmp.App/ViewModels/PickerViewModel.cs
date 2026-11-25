@@ -729,7 +729,7 @@ public sealed class PickerViewModel : LayerViewModel
         return Short(_files.Display(folder));
     }
 
-    /// <summary>The end of a path, for a second line ("…\Games\Mario Kart").</summary>
+    /// <summary>The end of a path, for a second line ("…\Games\MKW").</summary>
     private static string Short(string path)
     {
         const int Max = 24;

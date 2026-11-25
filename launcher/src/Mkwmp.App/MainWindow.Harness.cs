@@ -197,7 +197,7 @@ public partial class MainWindow
         {
             var picture = App.Option(args, "--overlay-frame") switch
             {
-                "none" => Overlay.OverlayArt.Placeholder("Mario Kart World 1.8.0", _vm.S["home.overlay.placeholder"]),
+                "none" => Overlay.OverlayArt.Placeholder("MKW 1.8.0", _vm.S["home.overlay.placeholder"]),
                 { } png => Overlay.OverlayArt.Load(png) ?? Overlay.OverlayArt.SyntheticGame(),
                 null => Overlay.OverlayArt.SyntheticGame(),
             };
@@ -276,7 +276,7 @@ public partial class MainWindow
                 _ = _vm.PickLanguageAsync();
                 break;
             case "message":
-                _ = _vm.MessageAsync("The game is set up", "Mario Kart World 1.8.0 is ready on this device.");
+                _ = _vm.MessageAsync("The game is set up", "MKW 1.8.0 is ready on this device.");
                 break;
             // the crash screen (with --state crashed | crashed-solo | crashed-exit it is already up: the launcher offers it
             // by itself) and the card after Report / "Found a bug?"; nothing is opened or copied from a screenshot
@@ -302,7 +302,7 @@ public partial class MainWindow
                 break;
             case "gamecopy-mode":
                 // "Use another copy of the game", after the pick: how the game takes it (ViewModels/Parts/GameCopy.cs)
-                _ = Choice.AskAsync(_vm, _vm.S["gamecopy.mode_title"], _vm.S.Format("gamecopy.mode_body", ("path", @"D:\Games\Mario Kart World\dump")),
+                _ = Choice.AskAsync(_vm, _vm.S["gamecopy.mode_title"], _vm.S.Format("gamecopy.mode_body", ("path", @"D:\Games\MKW\dump")),
                 [
                     new ChoiceOption("link", _vm.S["gamecopy.link"], _vm.S["gamecopy.link_caption"]),
                     new ChoiceOption("copy", _vm.S["gamecopy.copy"], _vm.S["gamecopy.copy_caption"]),

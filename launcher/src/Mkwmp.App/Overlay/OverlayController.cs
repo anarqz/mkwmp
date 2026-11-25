@@ -425,7 +425,7 @@ internal sealed class OverlayController : IDisposable
     private System.Windows.Media.Imaging.BitmapSource Placeholder()
     {
         var install = _shell.Launcher.Game.Install;
-        var title = string.IsNullOrEmpty(install?.GameVersion) ? "Mario Kart World" : $"Mario Kart World {install.GameVersion}";
+        var title = string.IsNullOrEmpty(install?.GameVersion) ? "MKW" : $"MKW {install.GameVersion}";
         return OverlayArt.Placeholder(title, _shell.S["home.overlay.placeholder"]);
     }
 

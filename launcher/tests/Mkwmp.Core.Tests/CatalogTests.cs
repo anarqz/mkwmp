@@ -60,7 +60,7 @@ public sealed partial class CatalogTests
     {
         var english = Read("en");
         var catalog = Read(locale);
-        string[] names = ["MKWMP", "mkw-recomp", "Mario Kart World"];
+        string[] names = ["MKWMP", "mkw-recomp", "MKW"];
         Assert.Empty(catalog.Where(p => names.Any(n => english[p.Key].Contains(n, StringComparison.Ordinal) && !p.Value.Contains(n, StringComparison.Ordinal)))
             .Select(p => p.Key));
     }

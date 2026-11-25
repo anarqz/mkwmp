@@ -1,4 +1,4 @@
-/* mkwmp-camera.dll (Linux: libmkwmp-camera.so): the player's webcam for the GameChat camera of Mario Kart World 1.8.0
+/* mkwmp-camera.dll (Linux: libmkwmp-camera.so): the player's webcam for the GameChat camera of MKW 1.8.0
  * (the probe's camera.c shows it above the kart). The probe loads the library from the mod's folder the first time the
  * camera is turned on or its settings are shown, so a broken camera driver cannot stop the game from starting, and
  * drives it through this C ABI.

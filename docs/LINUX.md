@@ -1,6 +1,6 @@
 # MKWMP on SteamOS and Linux
 
-MKWMP (online play for Mario Kart World under mkw-recomp) on Linux is the Windows launcher run by Proton, as one Steam shortcut. The launcher installs
+MKWMP (online play for MKW under mkw-recomp) on Linux is the Windows launcher run by Proton, as one Steam shortcut. The launcher installs
 mkw-recomp's Windows build in its own folder and starts the game as its child, so the launcher, the
 game and the overlay are one Steam app in one Proton prefix. `tools/linux/install-mkwmp.sh` sets all
 of it up.
@@ -112,8 +112,8 @@ What it does, in order; nothing is written before everything that can refuse has
    artwork is renamed to the new id, its Proton prefix `compatdata/<old id>` is moved to the new id
    (when the new one does not exist), its `CompatToolMapping` entry goes to the new id, and the two
    old files are removed from the folder. `--uninstall` removes it under either id.
-   **Older MKWMP shortcuts are removed** in the same edit: an entry named "Mario Kart World
-   (MKWMP)" or "Mario Kart World (debug)", or whose program is the old Linux launcher (a file named
+   **Older MKWMP shortcuts are removed** in the same edit: an entry under one of the old shortcut names
+   (`LEGACY_NAMES` in the script), or whose program is the old Linux launcher (a file named
    `mkwmp-launcher`, no `.exe`), and that is not this install's own. Their grid artwork (copied to
    `*.bak-mkwmp-<time>` first) and their `CompatToolMapping` entries go too; their folders and
    prefixes are not touched. Each one is listed, also by `--dry-run`. Nothing else matches: on
@@ -217,7 +217,7 @@ Game Mode for the controller, or keyboard and mouse.
 ## 3. Artwork
 
 No picture is in this repository or in a release. `tools/linux/artwork.json` holds links only: five
-pictures of SteamGridDB's game 5483943 ("Mario Kart World"), picked by hand. The script reads the
+pictures of SteamGridDB's game 5483943 ("MKW"), picked by hand. The script reads the
 `artwork.json` beside itself, else the repository's, downloads each link on the player's machine
 (plain GET, 30 s, three tries), accepts only PNG or JPEG (an icon may be ICO) by the file's first
 bytes, and writes them as Steam looks them up, in `userdata/<id>/config/grid/`:
@@ -370,7 +370,7 @@ started from a shell with Proton 11.0 inside Steam Linux Runtime 4 with the shor
   cancel), so a physical keyboard could not type a path. Fixed 2026-11-20 (`MainWindow.OnKeyboardKey`):
   while the on-screen keyboard is open, a physical keyboard types into it (any character, `\` and
   `[ ]` too), Backspace erases, Enter is OK, Esc cancels; the hint bar then shows Esc and Enter.
-  Checked on the machine: the picker's path box, `/run/media/deck/SN01T/MarioKartWorld/MKW [ROM]`
+  Checked on the machine: the picker's path box, `/run/media/deck/SN01T/MKW/MKW [ROM]`
   typed and opened. The pad still uses the keys on screen.
 - `close_to_tray = true` is the default; under gamescope there is no tray to come back from.
 - **Repaint.** Seen once in a device test: after a click the window kept the frame before it (PLAY

@@ -773,7 +773,7 @@ public sealed class ModsTests : IDisposable
            {"_idRow": 1882164, "_sFile": "perf_v1.zip", "_nFilesize": {{PerfZip.Length}}, "_tsDateAdded": 1794178534, "_sDownloadUrl": "https://gamebanana.com/dl/1882164", "_sMd5Checksum": "{{md5}}", "_sAvResult": "{{scan}}", "_sVersion": "1.0.0", "_sDescription": "Initial release"},
            {"_idRow": 1882999, "_sFile": "perf_v1_1.zip", "_nFilesize": 10, "_tsDateAdded": 1794190000, "_sMd5Checksum": "", "_sAvResult": "clean", "_sVersion": "1.1.0", "_sDescription": ""}
          ],
-         "_aSubmitter": {"_sName": "lintu!"}, "_aGame": {"_idRow": {{game}}, "_sName": "Mario Kart World"}, "_aCategory": {"_sName": "Other/Misc"} }
+         "_aSubmitter": {"_sName": "lintu!"}, "_aGame": {"_idRow": {{game}}, "_sName": "MKW"}, "_aCategory": {"_sName": "Other/Misc"} }
         """;
 
     private static readonly byte[] PerfZip = MakeZip(("perf/romfs/Layout/Title.bin", "faster"));

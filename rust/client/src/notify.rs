@@ -35,7 +35,7 @@ impl Event {
     pub fn text(&self) -> (String, String) {
         match self.kind {
             Kind::Online => (format!("{} is online", self.name), "Your friend just opened MKWMP.".into()),
-            Kind::Playing => (format!("{} is playing", self.name), "Your friend is in Mario Kart World online.".into()),
+            Kind::Playing => (format!("{} is playing", self.name), "Your friend is in MKW online.".into()),
             Kind::Request => (
                 format!("{} wants to be your friend", self.name),
                 "Open MKWMP to accept or decline.".into(),
