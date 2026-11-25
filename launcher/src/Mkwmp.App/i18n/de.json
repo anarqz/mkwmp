@@ -673,8 +673,6 @@
   "core.gs.refused_line": "eine Zeile, ohne Leerzeichen oder Anführungszeichen drumherum",
   "core.gs.refused_form": "nicht in der Form, die diese Einstellung erwartet",
   "home.mods": "Mods",
-  "home.mods_on": "Aktive Mods: {n}",
-  "home.mods_updates": "Updates: {n}",
   "mods.title": "Mods",
   "mods.installed": "Im Spiel",
   "mods.empty": "Noch keine Mods. Hol dir eine von GameBanana, über einen Link oder aus einer Datei.",

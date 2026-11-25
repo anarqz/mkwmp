@@ -5,8 +5,8 @@
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              xmlns:mods="clr-namespace:Mkwmp.App.Views.Mods"
              x:Name="Self" Focusable="False">
-  <!-- DataContext: ModsViewModel. The mods in the game, one compact line each (A opens one, X or its switch turns it
-       on and off, Y turns them all off and back on), then the three ways to get one. -->
+  <!-- DataContext: ModsViewModel. The three ways to get a mod, then the mods in the game, one compact line each (A opens one,
+       X or its switch turns it on and off, Y turns them all off and back on). -->
   <UserControl.Resources>
     <!-- A mod's line: icon, name with version and author small beside it, chips, size. The switch is its own focus stop beside it. -->
     <Style x:Key="ModLine" TargetType="Button">
@@ -76,7 +76,16 @@
           </Grid>
         </Border>
         <StackPanel Visibility="{Binding Supported, Converter={StaticResource Conv.Visible}}">
-          <Grid>
+          <!-- the ways to get a mod first (the store above all), then the mods in the game -->
+          <c:SectionHeader Text="{Binding S[mods.add]}" />
+          <!-- the page opens here, on the store, at its top -->
+          <c:SettingsRow Label="{Binding S[mods.get]}" Caption="{Binding S[mods.get.caption]}" Icon="{StaticResource Icon.Search}" Kind="Chevron" input:FocusNav.IsDefault="True"
+                         Command="{Binding BrowseCommand}" />
+          <c:SettingsRow Label="{Binding S[mods.link]}" Caption="{Binding S[mods.link.caption]}" Icon="{StaticResource Icon.Globe}" Kind="Chevron"
+                         Command="{Binding LinkCommand}" />
+          <c:SettingsRow Label="{Binding S[mods.file]}" Caption="{Binding S[mods.file.caption]}" Icon="{StaticResource Icon.File}" Kind="Chevron"
+                         Command="{Binding FileCommand}" />
+          <Grid Margin="0,40,0,0">
             <c:SectionHeader Text="{Binding S[mods.installed]}" />
             <!-- "Turn all off" / "Turn all back on" (Y too): never MKWMP's own or a locked mod -->
             <c:ConsoleButton Kind="Secondary" Icon="{StaticResource Icon.Power}" Content="{Binding AllLabel}" Command="{Binding AllCommand}"
@@ -91,8 +100,7 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
-                  <!-- the page opens on the first mod, not on "Turn all off" above it -->
-                  <Button Style="{StaticResource ModLine}" Command="{Binding OpenCommand}" AutomationProperties.Name="{Binding Name}" input:FocusNav.IsDefault="True">
+                  <Button Style="{StaticResource ModLine}" Command="{Binding OpenCommand}" AutomationProperties.Name="{Binding Name}">
                     <Grid>
                       <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -135,13 +143,6 @@
           </StackPanel>
           <TextBlock Text="{Binding S[mods.restart]}" Style="{StaticResource Text.Caption}" Margin="20,18,20,0" />
 
-          <c:SectionHeader Text="{Binding S[mods.add]}" Margin="0,40,0,0" />
-          <c:SettingsRow Label="{Binding S[mods.get]}" Caption="{Binding S[mods.get.caption]}" Icon="{StaticResource Icon.Search}" Kind="Chevron"
-                         Command="{Binding BrowseCommand}" />
-          <c:SettingsRow Label="{Binding S[mods.link]}" Caption="{Binding S[mods.link.caption]}" Icon="{StaticResource Icon.Globe}" Kind="Chevron"
-                         Command="{Binding LinkCommand}" />
-          <c:SettingsRow Label="{Binding S[mods.file]}" Caption="{Binding S[mods.file.caption]}" Icon="{StaticResource Icon.File}" Kind="Chevron"
-                         Command="{Binding FileCommand}" />
         </StackPanel>
       </StackPanel>
     </c:SmoothScrollViewer>

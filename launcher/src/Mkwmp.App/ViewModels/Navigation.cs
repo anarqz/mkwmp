@@ -114,6 +114,9 @@ public sealed class Navigator : ObservableObject
 
     public bool CanGoBack => _stack.Count > 1;
 
+    /// <summary>The page under <see cref="Current"/>: where <see cref="GoBack"/> leads; null on the bottom page.</summary>
+    public PageViewModel? Previous => _stack.Count > 1 ? _stack[^2] : null;
+
     /// <summary>How <see cref="Current"/> was reached (the transition's direction).</summary>
     public NavKind LastKind { get; private set; }
 

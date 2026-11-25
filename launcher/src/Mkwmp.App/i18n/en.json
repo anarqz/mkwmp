@@ -689,8 +689,6 @@
   "core.gs.refused_line": "one line, without spaces or quotes around it",
   "core.gs.refused_form": "not in the form this setting takes",
   "home.mods": "Mods",
-  "home.mods_on": "Mods on: {n}",
-  "home.mods_updates": "Updates: {n}",
   "mods.title": "Mods",
   "mods.installed": "In the Game",
   "mods.empty": "No mods yet. Get one from GameBanana, a link or a file.",

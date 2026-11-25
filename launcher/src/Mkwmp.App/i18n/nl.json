@@ -673,8 +673,6 @@
   "core.gs.refused_line": "één regel, zonder spaties of aanhalingstekens eromheen",
   "core.gs.refused_form": "niet in de vorm die deze instelling verwacht",
   "home.mods": "Mods",
-  "home.mods_on": "Mods aan: {n}",
-  "home.mods_updates": "Updates: {n}",
   "mods.title": "Mods",
   "mods.installed": "In het spel",
   "mods.empty": "Nog geen mods. Haal er een van GameBanana, via een link of uit een bestand.",

@@ -21,6 +21,7 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
           <Grid>
             <TextBox Text="{Binding Query, UpdateSourceTrigger=LostFocus}" MaxLength="80" FontSize="30" Padding="72,0,24,0"
@@ -30,7 +31,12 @@
           </Grid>
           <c:ConsoleButton Grid.Column="1" Margin="18,0,0,0" MinWidth="330" Content="{Binding SortText}" Command="{Binding SortCommand}"
                            IsEnabled="{Binding IsSearching, Converter={StaticResource Conv.Not}}" />
-          <c:ConsoleButton Grid.Column="2" Margin="18,0,0,0" Icon="{StaticResource Icon.Eye}" Content="{Binding MatureText}" Command="{Binding MatureCommand}" />
+          <!-- mature pictures: an eye alone (open: shown; crossed out: blurred), its words in the tooltip -->
+          <c:ConsoleButton Grid.Column="2" Margin="18,0,0,0" MinWidth="0" Width="96" Padding="0" Icon="{Binding MatureIcon, Converter={StaticResource Conv.Icon}}"
+                           Command="{Binding MatureCommand}" ToolTip="{Binding MatureHint}" AutomationProperties.Name="{Binding MatureHint}" />
+          <!-- the player's own mods -->
+          <c:ConsoleButton Grid.Column="3" Margin="18,0,0,0" MinWidth="0" Padding="26,0" Icon="{StaticResource Icon.Package}" Content="{Binding S[mods.title]}"
+                           Command="{Binding MyModsCommand}" />
         </Grid>
         <TextBlock Text="{Binding S[mods.browse.note]}" Style="{StaticResource Text.Caption}" FontSize="23" Margin="16,10,16,18" />
 

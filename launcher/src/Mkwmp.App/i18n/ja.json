@@ -673,8 +673,6 @@
   "core.gs.refused_line": "1行で、前後にスペースや引用符を付けません",
   "core.gs.refused_form": "この設定の形式に合っていません",
   "home.mods": "Mod",
-  "home.mods_on": "有効な Mod：{n}",
-  "home.mods_updates": "アップデート：{n}",
   "mods.title": "Mod",
   "mods.installed": "ゲームに入っているMod",
   "mods.empty": "Modはまだありません。GameBanana、リンク、またはファイルから入手してください。",

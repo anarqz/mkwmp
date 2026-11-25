@@ -91,8 +91,8 @@ public sealed class HomeTile : ObservableObject
 }
 
 /// <summary>
-/// Home: the carousel (Play Online, Mods, What's New with the update), the session's status under it, and
-/// the dock (Play, the checklist, Friends, Settings...: nothing the carousel has). PLAY is the Rust launcher's
+/// Home: the carousel (Play Online, Get Mods, the checklist, What's New with the update), the session's status under it,
+/// and the dock (Play, Friends, the player's Mods, Settings...: nothing the carousel has). PLAY is the Rust launcher's
 /// PLAY / STOP; when something blocks it, A on it explains what and leads to the place that fixes it. Without a
 /// server (<see cref="Locked"/>) the launcher is a shell for the game: "Play" starts it offline, and the dock's
 /// Friends button is "Configure online" with a lock (Settings › Online).
@@ -100,7 +100,8 @@ public sealed class HomeTile : ObservableObject
 public sealed class HomeViewModel : PageViewModel
 {
     private readonly HomeTile _play;
-    private readonly HomeTile _mods;
+    private readonly HomeTile _store;
+    private readonly HomeTile _checklist;
     private readonly HomeTile _update;
     private HomeTile? _selected;
 
@@ -147,13 +148,27 @@ public sealed class HomeViewModel : PageViewModel
                 Shell.Navigate(Routes.Checklist);
             }
         });
-        ChecklistCommand = new RelayCommand(() => Shell.Navigate(Routes.Checklist));
+        // the checklist; while the runtime downloads or the game is set up, that work's card (what the Game card did)
+        ChecklistCommand = new RelayCommand(() =>
+        {
+            if (Shell.IsGameWorking)
+            {
+                Shell.ShowGameWork();
+            }
+            else
+            {
+                Shell.Navigate(Routes.Checklist);
+            }
+        });
+        StoreCommand = new RelayCommand(() => Shell.Navigate(new ModBrowserViewModel(Shell)));
 
-        // Friends and the game's folder are in the dock (Friends, the checklist): the carousel has Play, Mods and What's New
+        // Four big cards (players' feedback, 2026-11-25): Play, the mod store, the checklist, What's New. Friends and the
+        // player's own mod list are in the dock.
         _play = new HomeTile("play", "Icon.Kart", "#0", () => PlayCommand.Execute(null));
-        _mods = new HomeTile("mods", "Icon.Package", "#3", () => ModsCommand.Execute(null));
+        _store = new HomeTile("store", "Icon.Search", "#3", () => StoreCommand.Execute(null));
+        _checklist = new HomeTile("checklist", "Icon.Check", "#2", () => ChecklistCommand.Execute(null));
         _update = new HomeTile("update", "Icon.Download", "#5", () => UpdateCommand.Execute(null));
-        Tiles = [_play, _mods, _update];
+        Tiles = [_play, _store, _checklist, _update];
         Refresh();
     }
 
@@ -261,8 +276,17 @@ public sealed class HomeViewModel : PageViewModel
 
     public ICommand SettingsCommand { get; }
 
-    /// <summary>The game's mods (launcher/docs/MODS.md): the Mods tile.</summary>
+    /// <summary>The player's mods (launcher/docs/MODS.md): the dock's Mods button.</summary>
     public ICommand ModsCommand { get; }
+
+    /// <summary>The dock's Mods: with a game in use, and not over a running one (nothing of a game changes while it runs).</summary>
+    public bool ShowMods => !Overlay && Launcher.Game.Install is not null;
+
+    /// <summary>Its dot: GameBanana has an update for one of the player's mods.</summary>
+    public bool ModsHaveUpdates => Launcher.Mods.Updates.Count > 0;
+
+    /// <summary>The Get Mods card: GameBanana's mods of the game (the mod store).</summary>
+    public ICommand StoreCommand { get; }
 
     public ICommand FullscreenCommand { get; }
 
@@ -271,14 +295,8 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>A click on the status line: the checklist, when something blocks PLAY.</summary>
     public ICommand StatusCommand { get; }
 
-    /// <summary>"Checklist" in the dock: the play checklist ("Ready to Play").</summary>
+    /// <summary>The Checklist card: the play checklist ("Ready to Play"); while the game's setup works, its card.</summary>
     public ICommand ChecklistCommand { get; }
-
-    /// <summary>The dock's checklist button: not over a running game.</summary>
-    public bool ShowChecklist => !Overlay;
-
-    /// <summary>Its dot: something blocks PLAY.</summary>
-    public bool ChecklistNeeds => !Launcher.Checklist.Ready;
 
     public override IReadOnlyList<Hint> Hints => Overlay
         ?
@@ -312,7 +330,7 @@ public sealed class HomeViewModel : PageViewModel
         Shell.PropertyChanged += OnShellChanged;
         if (!Launcher.Mods.Loaded)
         {
-            _ = Launcher.RefreshModsAsync(); // the Mods tile's count: read off the window's thread, shown when it comes
+            _ = Launcher.RefreshModsAsync(); // the dock Mods' dot (an update on GameBanana): read off the window's thread
         }
         Refresh();
         RaiseAll();
@@ -391,14 +409,24 @@ public sealed class HomeViewModel : PageViewModel
             },
         };
 
-        // Mods: how many are on (the list is read once home shows: OnEnter), and the updates GameBanana has for them
-        var mods = Launcher.Mods;
-        _mods.Title = S["home.mods"];
-        _mods.Subtitle = game.Install is null ? S["home.no_game"]
-            : mods is { Loaded: true, Supported: true } ? S.Format("home.mods_on", ("n", Number(mods.OnNow)))
-            : "";
-        _mods.Badge = mods.Updates.Count > 0 ? S.Format("home.mods_updates", ("n", Number(mods.Updates.Count))) : "";
+        // Get Mods: the mod store (GameBanana); the player's own list is the dock's Mods
+        _store.Title = S["mods.get"];
+        _store.Subtitle = "GameBanana";
 
+        // The checklist: ready, or what blocks PLAY first; while the runtime downloads or the game is set up, that work live
+        var ready = Launcher.Checklist.Ready;
+        _checklist.Title = S["home.checklist"];
+        _checklist.Subtitle = Shell.GameWorkShort is { } working ? Shell.GameWorkTitle + " · " + working
+            : ready ? S["checklist.ready"]
+            : Launcher.PlayProblem ?? S["home.game_attention"];
+        _checklist.Progress = Shell.GameWorkProgress;
+        _checklist.Badge = game.Searching ? S["home.game_searching"]
+            : Shell.GameWorkPhase is GameWorkPhase.Runtime or GameWorkPhase.Setup ? Shell.GameWorkPercent
+            : Shell.GameWorkPhase is GameWorkPhase.RuntimeFailed or GameWorkPhase.SetupFailed ? S["gamework.state.failed"]
+            : Shell.GameWorkPhase == GameWorkPhase.UpdateNeeded ? S["gamework.state.update"]
+            : ready ? S["home.game_ready"]
+            : S["gamework.state.needed"];
+        _checklist.Alert = !ready && !Busy && !Overlay;
         // What's New, and the update: what it is doing in the subtitle, a badge that stands out while it waits, the strip while it downloads
         var update = Launcher.Update;
         _update.Title = S["home.update"];

@@ -673,8 +673,6 @@
   "core.gs.refused_line": "одна строка, без пробелов и кавычек по краям",
   "core.gs.refused_form": "не в том виде, который принимает эта настройка",
   "home.mods": "Моды",
-  "home.mods_on": "Включено модов: {n}",
-  "home.mods_updates": "Обновления: {n}",
   "mods.title": "Моды",
   "mods.installed": "В игре",
   "mods.empty": "Модов пока нет. Возьми мод с GameBanana, по ссылке или из файла.",

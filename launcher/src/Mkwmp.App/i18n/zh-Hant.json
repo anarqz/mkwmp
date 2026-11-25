@@ -673,8 +673,6 @@
   "core.gs.refused_line": "只能一行，前後不可有空格或引號",
   "core.gs.refused_form": "不符合這項設定的格式",
   "home.mods": "模組",
-  "home.mods_on": "已啟用模組：{n}",
-  "home.mods_updates": "更新：{n}",
   "mods.title": "模組",
   "mods.installed": "遊戲中的模組",
   "mods.empty": "還沒有模組。可以從 GameBanana、連結或檔案取得。",

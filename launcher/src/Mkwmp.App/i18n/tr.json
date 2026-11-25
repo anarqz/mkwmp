@@ -673,8 +673,6 @@
   "core.gs.refused_line": "tek satır; çevresinde boşluk veya tırnak olmadan",
   "core.gs.refused_form": "bu ayarın kabul ettiği biçimde değil",
   "home.mods": "Modlar",
-  "home.mods_on": "Açık modlar: {n}",
-  "home.mods_updates": "Güncellemeler: {n}",
   "mods.title": "Modlar",
   "mods.installed": "Oyunda",
   "mods.empty": "Henüz mod yok. GameBanana'dan, bir bağlantıdan ya da bir dosyadan mod al.",

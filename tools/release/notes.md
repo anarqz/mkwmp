@@ -1,8 +1,11 @@
-**mkwmp 1.4.8**: mkw-recomp's start screen is yours again.
+**mkwmp 1.4.8**: mkw-recomp's start screen is yours again, and Home has four cards.
 
 The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.
 
 - **mkw-recomp's start screen is no longer locked on Skip** (Settings › General). It is back to mkw-recomp's default, Automatic: starting mkw.exe yourself on a PC shows it again, and you can pick Always, Automatic or Skip. Play from the launcher still goes straight into the game.
+- **Home: four cards.** Play, Get Mods (the mod store), Checklist (ready to play, or what is in the way) and What's New. The bar has Mods again, your own mod list, with a dot when one of your mods has an update; the checklist moved to its card.
+- **Mods page.** The ways to get a mod are at the top, above your mods.
+- **Get Mods page.** A Mods button goes to your own mods, and the mature-pictures button is an eye (crossed out while they are blurred).
 
 ---
 **mkwmp 1.4.7**: mkw-recomp 0.1.18 is required, the launcher now updates an mkw-recomp you installed yourself, and Home is tidier.

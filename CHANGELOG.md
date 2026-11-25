@@ -5,6 +5,9 @@ What changed in each MKWMP release, newest first. The launcher shows this file o
 ## 1.4.8 — 2026-11-25
 
 - **mkw-recomp's start screen is yours again.** Settings › General › "mkw-recomp start screen" is no longer locked on Skip. It is back to mkw-recomp's own default, Automatic, which shows the screen when you start mkw.exe yourself on a PC, and you can pick Always, Automatic or Skip. The launcher turns it back once (older launchers had kept it on Skip); after that it is your choice. Play from the launcher still goes straight into the game.
+- **Home: four cards.** Play, Get Mods (the mod store, straight to GameBanana), Checklist (ready to play, or what is in the way, with the mkw-recomp download or the game's setup live on it) and What's New. The bar below has Mods again, your own mod list, with a dot when GameBanana has an update for one of your mods; the checklist moved from the bar to its card.
+- **Mods page.** Get Mods, Install from a Link and Install from a File are now at the top, above your mods, and the page opens on Get Mods.
+- **Get Mods page.** A Mods button takes you to your own mods (back to the list when you came from it), and the mature-pictures button is an eye: open when they are shown, crossed out when they are blurred.
 
 ## 1.4.7 — 2026-11-25
 

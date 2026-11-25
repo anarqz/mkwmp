@@ -673,8 +673,6 @@
   "core.gs.refused_line": "jeden wiersz, bez spacji i cudzysłowów na początku i końcu",
   "core.gs.refused_form": "nie ma postaci, jakiej wymaga to ustawienie",
   "home.mods": "Mody",
-  "home.mods_on": "Włączone mody: {n}",
-  "home.mods_updates": "Aktualizacje: {n}",
   "mods.title": "Mody",
   "mods.installed": "W grze",
   "mods.empty": "Nie ma jeszcze modów. Weź jakiś z GameBanana, z linku albo z pliku.",

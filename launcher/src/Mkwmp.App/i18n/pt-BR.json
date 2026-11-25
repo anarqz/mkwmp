@@ -730,8 +730,6 @@
   "core.gs.refused_line": "uma linha só, sem espaços nem aspas em volta",
   "core.gs.refused_form": "não está no formato que esta configuração aceita",
   "home.mods": "Mods",
-  "home.mods_on": "Mods ligados: {n}",
-  "home.mods_updates": "Atualizações: {n}",
   "mods.title": "Mods",
   "mods.installed": "No jogo",
   "mods.empty": "Nenhum mod ainda. Pegue um no GameBanana, por um link ou de um arquivo.",

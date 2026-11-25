@@ -673,8 +673,6 @@
   "core.gs.refused_line": "必须是一行，两端不带空格或引号",
   "core.gs.refused_form": "不符合此设置要求的格式",
   "home.mods": "模组",
-  "home.mods_on": "已启用模组：{n}",
-  "home.mods_updates": "更新：{n}",
   "mods.title": "模组",
   "mods.installed": "游戏中的模组",
   "mods.empty": "还没有模组。可以从 GameBanana、链接或文件获取。",

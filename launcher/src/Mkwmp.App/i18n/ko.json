@@ -673,8 +673,6 @@
   "core.gs.refused_line": "앞뒤에 공백이나 따옴표가 없는 한 줄이어야 함",
   "core.gs.refused_form": "이 설정에 맞는 형식이 아님",
   "home.mods": "모드",
-  "home.mods_on": "켜진 모드: {n}",
-  "home.mods_updates": "업데이트: {n}",
   "mods.title": "모드",
   "mods.installed": "게임에 설치된 모드",
   "mods.empty": "아직 모드가 없습니다. GameBanana, 링크 또는 파일에서 가져오세요.",

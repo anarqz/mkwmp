@@ -125,6 +125,18 @@ public sealed class ModBrowserViewModel : PageViewModel
         SearchCommand = new RelayCommand(() => Load(1));
         SortCommand = RelayCommand.Async(PickSortAsync);
         MatureCommand = RelayCommand.Async(PickMatureAsync);
+        // the player's own mods: back to the list when the store was opened from it, else the list opens
+        MyModsCommand = new RelayCommand(() =>
+        {
+            if (Shell.Nav.Previous is ModsViewModel)
+            {
+                Shell.Nav.GoBack();
+            }
+            else
+            {
+                Shell.Navigate(Routes.Mods);
+            }
+        });
         NextCommand = new RelayCommand(() => Load(_page + 1), () => !_loading && _page < _pages);
         PreviousCommand = new RelayCommand(() => Load(_page - 1), () => !_loading && _page > 1);
         Load(1);
@@ -164,6 +176,15 @@ public sealed class ModBrowserViewModel : PageViewModel
     public string SortText => S[SortKey(_sort)];
 
     public string MatureText => Launcher.Mods.ShowMature ? S["mods.browse.mature.show"] : S["mods.browse.mature.blur"];
+
+    /// <summary>The mature-content button is an eye alone: open while the pictures are shown, crossed out while blurred.</summary>
+    public string MatureIcon => Launcher.Mods.ShowMature ? "Icon.Eye" : "Icon.EyeOff";
+
+    /// <summary>"Mature Content: Blurred": the eye's tooltip and its name for a screen reader.</summary>
+    public string MatureHint => S["mods.browse.mature"] + ": " + MatureText;
+
+    /// <summary>The player's own mods (the Mods page).</summary>
+    public ICommand MyModsCommand { get; }
 
     public string PageText => S.Format("mods.browse.page", ("page", _page.ToString(CoreStrings.Culture)), ("pages", _pages.ToString(CoreStrings.Culture)));
 
