@@ -2,6 +2,10 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
+## 1.4.8 — 2026-11-25
+
+- **mkw-recomp's start screen is yours again.** Settings › General › "mkw-recomp start screen" is no longer locked on Skip. It is back to mkw-recomp's own default, Automatic, which shows the screen when you start mkw.exe yourself on a PC, and you can pick Always, Automatic or Skip. The launcher turns it back once (older launchers had kept it on Skip); after that it is your choice. Play from the launcher still goes straight into the game.
+
 ## 1.4.7 — 2026-11-25
 
 - **mkw-recomp 0.1.18 is required.** MKWMP now runs only on mkw-recomp 0.1.18: Play is refused on any earlier version, and the MKWMP mod turns itself off on one too, also when the game is started outside the launcher.

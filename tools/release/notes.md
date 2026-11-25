@@ -1,3 +1,10 @@
+**mkwmp 1.4.8**: mkw-recomp's start screen is yours again.
+
+The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.
+
+- **mkw-recomp's start screen is no longer locked on Skip** (Settings › General). It is back to mkw-recomp's default, Automatic: starting mkw.exe yourself on a PC shows it again, and you can pick Always, Automatic or Skip. Play from the launcher still goes straight into the game.
+
+---
 **mkwmp 1.4.7**: mkw-recomp 0.1.18 is required, the launcher now updates an mkw-recomp you installed yourself, and Home is tidier.
 
 The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.
