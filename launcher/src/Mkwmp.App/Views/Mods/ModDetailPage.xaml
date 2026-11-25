@@ -5,14 +5,23 @@
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              xmlns:mods="clr-namespace:Mkwmp.App.Views.Mods"
              Focusable="False">
-  <!-- DataContext: ModDetailViewModel. One installed mod: its switch, its own options (the game settings' rows), what it is, uninstall. -->
-  <Grid>
+  <!-- DataContext: ModDetailViewModel. One installed mod, in the drawer over the list of mods (MainWindow.xaml, DrawerLayer):
+       its switch, its own options (the game settings' rows), what it is. Uninstall is Y in the drawer's hint bar, which
+       has the bottom 112 units. -->
+  <Border Background="{DynamicResource Brush.Background}" CornerRadius="30,0,0,30">
+  <Grid Margin="0,0,0,112">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
-    <c:PageHeader Title="{Binding Title}" Icon="{Binding Icon, Converter={StaticResource Conv.Icon}}" />
-    <c:SmoothScrollViewer Grid.Row="1" Padding="16,26,24,60" EdgePadding="110" input:FocusNav.IsGroup="True" HorizontalAlignment="Center" Width="1300">
+    <Grid Height="{StaticResource Metric.HeaderHeight}" Margin="44,0,44,0">
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,10,0,0">
+        <c:Icon Data="{Binding Icon, Converter={StaticResource Conv.Icon}}" Width="48" Height="48" StrokeThickness="1.8" Foreground="{DynamicResource Brush.Text}" />
+        <TextBlock Text="{Binding Title}" Style="{StaticResource Text.Title}" FontWeight="Regular" Margin="18,0,0,0" TextTrimming="CharacterEllipsis" MaxWidth="800" />
+      </StackPanel>
+      <Border Height="1.5" VerticalAlignment="Bottom" Background="{DynamicResource Brush.Rule}" />
+    </Grid>
+    <c:SmoothScrollViewer Grid.Row="1" Padding="40,26,48,40" EdgePadding="110" input:FocusNav.IsGroup="True">
       <StackPanel>
         <Border Style="{StaticResource Card}" Margin="0,0,0,26" Visibility="{Binding Note, Converter={StaticResource Conv.Visible}}">
           <Grid>
@@ -68,9 +77,8 @@
         <c:SettingsRow Label="{Binding S[mods.detail.size]}" Value="{Binding Size}" Kind="Value" Focusable="False" />
         <c:SettingsRow Label="{Binding S[mods.detail.source]}" Value="{Binding Source}" Kind="Chevron" Icon="{StaticResource Icon.Globe}" Command="{Binding PageCommand}"
                        Visibility="{Binding HasPage, Converter={StaticResource Conv.Visible}}" />
-        <c:SettingsRow Label="{Binding S[mods.detail.uninstall]}" Icon="{StaticResource Icon.Trash}" Command="{Binding UninstallCommand}" Margin="0,26,0,0"
-                       Visibility="{Binding CanUninstall, Converter={StaticResource Conv.Visible}}" />
       </StackPanel>
     </c:SmoothScrollViewer>
   </Grid>
+  </Border>
 </UserControl>

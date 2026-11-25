@@ -392,7 +392,7 @@ public sealed class ModPageViewModel : PageViewModel
         }).ConfigureAwait(true);
         if (id is not null && ReferenceEquals(Shell.Page, this))
         {
-            Shell.Navigate(new ModDetailViewModel(Shell, id)); // its switch and its options, right away
+            Shell.OpenDrawer(new ModDetailViewModel(Shell, id)); // its switch and its options, right away, over the store
         }
     }
 }

@@ -176,12 +176,13 @@ public partial class MainWindow : Window
     /// <summary>The layer that has the input now: modal, sheet, friends panel, else the page.</summary>
     private FrameworkElement ActiveRoot =>
         _vm.IsKeyboardOpen ? KeyboardLayer : _vm.IsPickerOpen ? PickerLayer
-        : _vm.IsModalOpen ? ModalLayer : _vm.IsSheetOpen ? SheetLayer : _vm.IsFriendsOpen ? FriendsLayer : BaseLayer;
+        : _vm.IsModalOpen ? ModalLayer : _vm.IsSheetOpen ? SheetLayer : _vm.IsDrawerOpen ? DrawerLayer : _vm.IsFriendsOpen ? FriendsLayer : BaseLayer;
 
     private int DepthOf(FrameworkElement? root) =>
-        ReferenceEquals(root, KeyboardLayer) ? 5
-        : ReferenceEquals(root, PickerLayer) ? 4
-        : ReferenceEquals(root, ModalLayer) ? 3 : ReferenceEquals(root, SheetLayer) ? 2 : ReferenceEquals(root, FriendsLayer) ? 1 : 0;
+        ReferenceEquals(root, KeyboardLayer) ? 6
+        : ReferenceEquals(root, PickerLayer) ? 5
+        : ReferenceEquals(root, ModalLayer) ? 4 : ReferenceEquals(root, SheetLayer) ? 3 : ReferenceEquals(root, DrawerLayer) ? 2
+        : ReferenceEquals(root, FriendsLayer) ? 1 : 0;
 
     private void OnShellPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -191,7 +192,7 @@ public partial class MainWindow : Window
                 ApplyFullscreen();
                 break;
             case nameof(ShellViewModel.Modal) or nameof(ShellViewModel.Sheet) or nameof(ShellViewModel.IsFriendsOpen) or nameof(ShellViewModel.Keyboard)
-                or nameof(ShellViewModel.IsPickerOpen):
+                or nameof(ShellViewModel.IsPickerOpen) or nameof(ShellViewModel.IsDrawerOpen):
                 Dispatcher.BeginInvoke(DispatcherPriority.Loaded, SyncFocus);
                 break;
             case nameof(ShellViewModel.InputKind):
@@ -262,6 +263,14 @@ public partial class MainWindow : Window
         if (Tap.IsTap((DependencyObject)sender))
         {
             _vm.CancelPicker();
+        }
+    }
+
+    private void OnDrawerScrim(object sender, MouseButtonEventArgs e)
+    {
+        if (Tap.IsTap((DependencyObject)sender))
+        {
+            _vm.CloseDrawer();
         }
     }
 

@@ -96,6 +96,7 @@ public sealed partial class ShellViewModel
             CloseKeyboard();
             CancelPicker();
             CloseSheet();
+            CloseDrawer();
             IsFriendsOpen = false;
             DismissModal();
             if (Page is not HomeViewModel)

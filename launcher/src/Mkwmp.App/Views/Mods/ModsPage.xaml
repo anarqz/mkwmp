@@ -5,9 +5,25 @@
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              xmlns:mods="clr-namespace:Mkwmp.App.Views.Mods"
              x:Name="Self" Focusable="False">
-  <!-- DataContext: ModsViewModel. The three ways to get a mod, then the mods in the game, one compact line each (A opens one,
-       X or its switch turns it on and off, Y turns them all off and back on). -->
+  <!-- DataContext: ModsViewModel. One line of the three ways to get a mod, "Installed" with its filter chips, then the mods in
+       the game, one compact line each (A opens its drawer, X or its switch turns it on and off, Y turns them all off and back on). -->
   <UserControl.Resources>
+    <!-- the first line: Get Mods, From Link, From Zip -->
+    <Style x:Key="GetLine" TargetType="c:ConsoleButton" BasedOn="{StaticResource {x:Type c:ConsoleButton}}">
+      <Setter Property="Height" Value="76" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="30,0" />
+      <Setter Property="FontSize" Value="26" />
+    </Style>
+    <!-- a small button on a mod's line -->
+    <Style x:Key="RowAction" TargetType="c:ConsoleButton" BasedOn="{StaticResource {x:Type c:ConsoleButton}}">
+      <Setter Property="Height" Value="56" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="22,0" />
+      <Setter Property="FontSize" Value="22" />
+      <Setter Property="Margin" Value="14,0,0,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
     <!-- A mod's line: icon, name with version and author small beside it, chips, size. The switch is its own focus stop beside it. -->
     <Style x:Key="ModLine" TargetType="Button">
       <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -20,7 +36,6 @@
         <Setter.Value>
           <ControlTemplate TargetType="Button">
             <Grid Background="Transparent" Height="84">
-              <Border x:Name="Rule" BorderBrush="{DynamicResource Brush.Rule}" BorderThickness="0,0,0,1.5" />
               <Border x:Name="Hover" CornerRadius="12" Margin="-10,2" Background="{DynamicResource Brush.Hover}" Visibility="Collapsed" />
               <c:FocusRing IsActive="{TemplateBinding IsFocused}" CornerRadius="12" Margin="-10,-3" Fill="{DynamicResource Brush.Focus.Fill}" />
               <ContentPresenter Margin="20,0,16,0" VerticalAlignment="Center" RecognizesAccessKey="False" />
@@ -32,7 +47,6 @@
               <Trigger Property="IsFocused" Value="True">
                 <Setter Property="Panel.ZIndex" Value="1" />
                 <Setter TargetName="Hover" Property="Visibility" Value="Collapsed" />
-                <Setter TargetName="Rule" Property="Margin" Value="0,0,0,-11" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -62,7 +76,7 @@
     </Grid.RowDefinitions>
     <c:PageHeader Title="{Binding S[mods.title]}" Icon="{StaticResource Icon.Package}" />
     <c:Spinner Grid.Row="1" Width="72" Height="72" Visibility="{Binding Loading, Converter={StaticResource Conv.Visible}}" />
-    <c:SmoothScrollViewer Grid.Row="1" Padding="16,26,24,60" EdgePadding="110" input:FocusNav.IsGroup="True" HorizontalAlignment="Center" Width="1300"
+    <c:SmoothScrollViewer Grid.Row="1" Padding="16,30,24,60" EdgePadding="110" input:FocusNav.IsGroup="True" HorizontalAlignment="Center" Width="1300"
                           Visibility="{Binding Loading, Converter={StaticResource Conv.Visible}, ConverterParameter=!}">
       <StackPanel>
         <Border Style="{StaticResource Card}" Margin="0,0,0,26" Visibility="{Binding Note, Converter={StaticResource Conv.Visible}}">
@@ -76,30 +90,62 @@
           </Grid>
         </Border>
         <StackPanel Visibility="{Binding Supported, Converter={StaticResource Conv.Visible}}">
-          <!-- the ways to get a mod first (the store above all), then the mods in the game -->
-          <c:SectionHeader Text="{Binding S[mods.add]}" />
-          <!-- the page opens here, on the store, at its top -->
-          <c:SettingsRow Label="{Binding S[mods.get]}" Caption="{Binding S[mods.get.caption]}" Icon="{StaticResource Icon.Search}" Kind="Chevron" input:FocusNav.IsDefault="True"
-                         Command="{Binding BrowseCommand}" />
-          <c:SettingsRow Label="{Binding S[mods.link]}" Caption="{Binding S[mods.link.caption]}" Icon="{StaticResource Icon.Globe}" Kind="Chevron"
-                         Command="{Binding LinkCommand}" />
-          <c:SettingsRow Label="{Binding S[mods.file]}" Caption="{Binding S[mods.file.caption]}" Icon="{StaticResource Icon.File}" Kind="Chevron"
-                         Command="{Binding FileCommand}" />
-          <Grid Margin="0,40,0,0">
-            <c:SectionHeader Text="{Binding S[mods.installed]}" />
-            <!-- "Turn all off" / "Turn all back on" (Y too): never MKWMP's own or a locked mod -->
-            <c:ConsoleButton Kind="Secondary" Icon="{StaticResource Icon.Power}" Content="{Binding AllLabel}" Command="{Binding AllCommand}"
-                             HorizontalAlignment="Right" VerticalAlignment="Top" Height="58" MinWidth="0" Padding="22,0" FontSize="24" Margin="0,30,0,0"
-                             Visibility="{Binding HasAll, Converter={StaticResource Conv.Visible}}" />
+          <!-- one line for the three ways to get a mod: the store, wide (the page opens on it), then a link, then a file -->
+          <Grid input:FocusNav.IsGroup="True">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <c:ConsoleButton Style="{StaticResource GetLine}" Kind="Primary" Icon="{StaticResource Icon.Search}" Content="{Binding S[mods.get]}"
+                             Command="{Binding BrowseCommand}" HorizontalAlignment="Stretch" input:FocusNav.IsDefault="True" />
+            <c:ConsoleButton Grid.Column="1" Style="{StaticResource GetLine}" Kind="Secondary" Icon="{StaticResource Icon.Globe}" Content="{Binding S[mods.from.link]}"
+                             Command="{Binding LinkCommand}" Margin="16,0,0,0" />
+            <c:ConsoleButton Grid.Column="2" Style="{StaticResource GetLine}" Kind="Secondary" Icon="{StaticResource Icon.File}" Content="{Binding S[mods.from.zip]}"
+                             Command="{Binding FileCommand}" Margin="16,0,0,0" />
           </Grid>
-          <ItemsControl x:Name="RowsHost" ItemsSource="{Binding Rows}" Focusable="False">
+          <!-- "Installed", the chips that filter it on the same line. "Turn all off" / "Turn all back on" is Y in the hint bar. -->
+          <Grid>
+            <c:SectionHeader Text="{Binding S[mods.installed]}" Margin="0,32,0,0" />
+            <!-- centred on the header's text: 32 above it, 34 high, then 16 and the rule -->
+            <ItemsControl ItemsSource="{Binding Filters}" Focusable="False" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,8"
+                          input:FocusNav.IsGroup="True" Visibility="{Binding HasFilters, Converter={StaticResource Conv.Visible}}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <c:ConsoleButton Content="{Binding Label}" Command="{Binding SelectCommand}" Height="54" MinWidth="0" Padding="24,0" FontSize="22" Margin="10,0,0,0"
+                                   Visibility="{Binding IsVisible, Converter={StaticResource Conv.Visible}}">
+                    <c:ConsoleButton.Style>
+                      <Style TargetType="c:ConsoleButton" BasedOn="{StaticResource {x:Type c:ConsoleButton}}">
+                        <Setter Property="Kind" Value="Secondary" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                            <Setter Property="Kind" Value="Primary" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </c:ConsoleButton.Style>
+                  </c:ConsoleButton>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </Grid>
+          <ItemsControl x:Name="RowsHost" ItemsSource="{Binding Rows}" Focusable="False" Grid.IsSharedSizeScope="True">
             <ItemsControl.ItemTemplate>
               <DataTemplate>
                 <Grid>
+                  <!-- the buttons' columns are as wide on every line (the sizes and the switches line up) -->
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="ModActions" />
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
+                  <!-- the line's rule, under its buttons and switch too -->
+                  <Border Grid.ColumnSpan="3" BorderBrush="{DynamicResource Brush.Rule}" BorderThickness="0,0,0,1.5" />
                   <Button Style="{StaticResource ModLine}" Command="{Binding OpenCommand}" AutomationProperties.Name="{Binding Name}">
                     <Grid>
                       <Grid.ColumnDefinitions>
@@ -114,23 +160,25 @@
                         <Run Text="{Binding Name, Mode=OneWay}" /><Run Text="   " FontSize="21" /><Run Text="{Binding Detail, Mode=OneWay}" FontSize="21" Foreground="{DynamicResource Brush.TextMuted}" />
                       </TextBlock>
                       <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="6,0,0,0">
-                        <Border Style="{StaticResource ModChip}" Background="{DynamicResource Brush.AccentSoft}" BorderThickness="0"
-                                Visibility="{Binding HasUpdate, Converter={StaticResource Conv.Visible}}">
-                          <TextBlock Text="{Binding S[mods.chip.update]}" Style="{StaticResource ModChipText}" Foreground="{DynamicResource Brush.Accent}" />
-                        </Border>
                         <Border Style="{StaticResource ModChip}" Visibility="{Binding ShowsCode, Converter={StaticResource Conv.Visible}}">
                           <TextBlock Text="{Binding S[mods.chip.code]}" Style="{StaticResource ModChipText}" />
-                        </Border>
-                        <Border Style="{StaticResource ModChip}" Visibility="{Binding ShowsOptions, Converter={StaticResource Conv.Visible}}">
-                          <TextBlock Text="{Binding S[mods.chip.options]}" Style="{StaticResource ModChipText}" />
                         </Border>
                       </StackPanel>
                       <TextBlock Grid.Column="3" Text="{Binding Size}" Style="{StaticResource Text.Base}" FontSize="23" Foreground="{DynamicResource Brush.TextMuted}"
                                  MinWidth="112" TextAlignment="Right" Margin="18,0,0,0" />
                     </Grid>
                   </Button>
+                  <!-- the line's own buttons, each a stop: Update (GameBanana has a newer file), Options (its drawer, as A on the line) -->
+                  <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <c:ConsoleButton Style="{StaticResource RowAction}" Kind="Outline" Icon="{StaticResource Icon.Download}"
+                                     Content="{Binding S[mods.chip.update]}" Command="{Binding UpdateCommand}"
+                                     Visibility="{Binding HasUpdate, Converter={StaticResource Conv.Visible}}" />
+                    <c:ConsoleButton Style="{StaticResource RowAction}" Kind="Secondary"
+                                     Content="{Binding S[mods.chip.options]}" Command="{Binding OpenCommand}"
+                                     Visibility="{Binding ShowsOptions, Converter={StaticResource Conv.Visible}}" />
+                  </StackPanel>
                   <!-- its own stop: Right from the line, A flips it; locked where the mod is (MKWMP's own, a code mod, the game running) -->
-                  <c:ToggleSwitch Grid.Column="1" Margin="30,0,14,0" VerticalAlignment="Center" IsChecked="{Binding IsOn}" IsEnabled="{Binding CanToggle}"
+                  <c:ToggleSwitch Grid.Column="2" Margin="24,0,14,0" VerticalAlignment="Center" IsChecked="{Binding IsOn}" IsEnabled="{Binding CanToggle}"
                                   AutomationProperties.Name="{Binding SwitchName}" ToolTip="{Binding SwitchName}" />
                 </Grid>
               </DataTemplate>
@@ -141,6 +189,8 @@
                    RenderOptions.BitmapScalingMode="HighQuality" IsHitTestVisible="False" />
             <TextBlock Text="{Binding S[mods.empty]}" Style="{StaticResource Text.Caption}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="1000" />
           </StackPanel>
+          <TextBlock Text="{Binding S[mods.filter.none]}" Style="{StaticResource Text.Caption}" Margin="20,24,20,0"
+                     Visibility="{Binding IsFilteredEmpty, Converter={StaticResource Conv.Visible}}" />
           <TextBlock Text="{Binding S[mods.restart]}" Style="{StaticResource Text.Caption}" Margin="20,18,20,0" />
 
         </StackPanel>

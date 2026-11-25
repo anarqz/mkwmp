@@ -227,16 +227,21 @@ MKWMP's own mod ships none: its settings are the launcher's pages (Voice & Camer
 
 - **Home dock › Mods** (not a Settings category: it is a place with its own list and store, like Friends; and
   Settings › Game stays about the install). Hidden over a running game.
-- **Mods**: the installed mods, a compact line each (name, version and author, chips, size, a switch: A opens one, X or Right then A switches it; Y or the button over the list turns them all off and back on), then Get Mods, Install from a Link, Install from a File.
-- **A mod**: its switch, problems, an update, its options, what it is, Uninstall.
+- **Mods**: one line of Get Mods (wide), From Link, From Zip; then "Installed" with its chips (All, On, Off, and
+  Updates while there is one), then the mods, a compact line each (name, version and author, a Code chip, size,
+  Update and Options buttons where they apply, a switch: A opens its drawer, X or Right then A switches it; Y
+  turns them all off and back on).
+- **A mod**: a drawer from the right over the list (`ShellViewModel.OpenDrawer`, its own hint bar): its switch,
+  problems, an update, its options, what it is; Y uninstalls, B closes it. Installing from the store, a link or a
+  file opens the new mod's drawer.
 - **Get Mods**: search (the on-screen keyboard), the order, Mature Content, a grid of cards, pages.
   **A GameBanana mod**: pictures, files with Install, the description, "Open on GameBanana".
 - **Install from a Link**: a field (the on-screen keyboard pastes) and Download and Install.
 - View models: `ViewModels/ModsViewModel.cs`, `ModBrowserViewModel.cs`; views: `Views/Mods/`.
   `ModInstaller.RunAsync` is the one install flow (progress, which of several, replace, the code question).
 
-Harness: `shot.ps1 out.png --page mods`, `--page mods/browse`, `--page mods/link`, `--page mods --press down,down,a`
-(a mod with options), `--page mods/browse --press down,a` (a GameBanana mod). The demo's mods are made up and
+Harness: `shot.ps1 out.png --page mods`, `--page mods/browse`, `--page mods/link`, `--page mods --press down,down,down,a`
+(a mod's drawer), `--page mods/browse --press down,a` (a GameBanana mod). The demo's mods are made up and
 have no pictures.
 
 ### 2.6 Tests

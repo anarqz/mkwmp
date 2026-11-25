@@ -328,8 +328,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>A panel from the side is open (friends, the file picker): it has its own hint bar, the page's shows no buttons.</summary>
-    public bool IsSidePanelOpen => _isFriendsOpen || IsPickerOpen;
+    /// <summary>A panel from the side is open (friends, the file picker, a page's drawer): it has its own hint bar, the page's shows no buttons.</summary>
+    public bool IsSidePanelOpen => _isFriendsOpen || IsPickerOpen || IsDrawerOpen;
 
     public void ToggleFriends() => IsFriendsOpen = !IsFriendsOpen;
 
@@ -420,6 +420,10 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         {
             Hints = sheet.Hints ?? [new Hint(PadButton.B, S["hint.close"]), new Hint(PadButton.A, S["hint.ok"])];
         }
+        else if (_drawer is { } drawer)
+        {
+            Hints = drawer.Hints ?? [new Hint(PadButton.B, S["hint.back"]), new Hint(PadButton.A, S["hint.ok"])];
+        }
         else if (_isFriendsOpen)
         {
             Hints = FriendsPanel.Hints ?? [new Hint(PadButton.B, S["hint.close"]), new Hint(PadButton.A, S["hint.ok"])];
@@ -479,6 +483,18 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
                 CloseSheet();
             }
             return true;
+        }
+        if (_drawer is { } drawer)
+        {
+            if (drawer.OnButton(button))
+            {
+                return true;
+            }
+            if (button == PadButton.B)
+            {
+                CloseDrawer();
+            }
+            return true; // the page under it waits
         }
         if (_isFriendsOpen)
         {
@@ -610,6 +626,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         Page?.OnStateChanged();
         FriendsPanel.OnStateChanged();
         _sheet?.OnStateChanged();
+        _drawer?.OnStateChanged();
         _modal?.OnStateChanged();
         WatchUpdate(); // a download that finished behind another page (ShellViewModel.Update.cs)
         WatchGameWork(); // the game's download or setup ended behind another page; its update after a launcher update (ShellViewModel.GameWork.cs)

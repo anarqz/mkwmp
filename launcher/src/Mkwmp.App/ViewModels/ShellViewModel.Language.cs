@@ -79,6 +79,7 @@ public sealed partial class ShellViewModel
         Nav.Rebuild();
         RaiseAll();
         FriendsPanel.OnStateChanged();
+        _drawer?.OnStateChanged();
         RefreshHints();
         LanguageChanged?.Invoke(this, EventArgs.Empty);
     }

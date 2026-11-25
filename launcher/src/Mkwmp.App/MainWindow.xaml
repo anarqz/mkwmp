@@ -57,6 +57,17 @@
         </Grid>
       </c:SlideHost>
 
+      <!-- 1b: a page's drawer (ShellViewModel.Drawer.cs), from the right over the dimmed page: one mod over the list of
+           mods. Its hint bar is inside the panel, as the friends panel's. -->
+      <Border x:Name="DrawerScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonUp="OnDrawerScrim"
+              Visibility="{Binding IsDrawerOpen, Converter={StaticResource Conv.Visible}}" />
+      <c:SlideHost x:Name="DrawerLayer" IsOpen="{Binding IsDrawerOpen}" Edge="Right" HorizontalAlignment="Right" Width="1020">
+        <Grid>
+          <ContentControl Content="{Binding Drawer}" Focusable="False" />
+          <c:HintBar InPanel="True" />
+        </Grid>
+      </c:SlideHost>
+
       <!-- 2: a bottom sheet -->
       <Border x:Name="SheetScrim" Background="{DynamicResource Brush.Dim}" MouseLeftButtonUp="OnSheetScrim"
               Visibility="{Binding IsSheetOpen, Converter={StaticResource Conv.Visible}}" />

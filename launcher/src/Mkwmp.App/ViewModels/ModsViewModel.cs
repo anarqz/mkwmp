@@ -125,6 +125,32 @@ public static class ModInstaller
         return true;
     }
 
+    /// <summary>
+    /// Installs the newer file GameBanana has for an installed mod, in its place (the old folder kept as the
+    /// backup), on or off as it was. Nothing when there is no update for it.
+    /// </summary>
+    public static async Task UpdateAsync(ShellViewModel shell, string id)
+    {
+        ArgumentNullException.ThrowIfNull(shell);
+        var launcher = shell.Launcher;
+        if (launcher.Mods.Find(id) is not { Source: { GameBananaMod: > 0 } source } mod || !launcher.Mods.Updates.TryGetValue(id, out var file))
+        {
+            return;
+        }
+        await RunAsync(shell, async (progress, cancel) =>
+        {
+            var details = await launcher.ModPageAsync(source.GameBananaMod, cancel).ConfigureAwait(true);
+            var newest = details.Files.FirstOrDefault(f => f.Id == file.Id) ?? throw new LauncherException(CoreStrings.GameBananaNotThisGame);
+            return await launcher.DownloadModAsync(details, newest, progress, cancel).ConfigureAwait(true);
+        }, new ModInstallRequest("")
+        {
+            Name = mod.Id,
+            Replace = true, // an update: the old folder is kept as the backup
+            Enable = false, // on or off as it was
+            Source = new ModSource(source.Url, source.GameBananaMod, file.Id, file.Version, file.Added),
+        }).ConfigureAwait(true);
+    }
+
     /// <summary>The risk of any mod, asked before one is fetched from the network. True: go on.</summary>
     public static Task<bool> AskAsync(ShellViewModel shell, string name)
     {
@@ -145,6 +171,7 @@ public sealed class ModRow : ObservableObject
         Mod = mod;
         HasUpdate = update;
         OpenCommand = new RelayCommand(Open);
+        UpdateCommand = RelayCommand.Async(() => ModInstaller.UpdateAsync(_shell, Mod.Id), () => HasUpdate && _shell.Launcher.Mods.Editable);
     }
 
     public GameMod Mod { get; private set; }
@@ -167,10 +194,14 @@ public sealed class ModRow : ObservableObject
 
     public string Icon => Mod.Managed ? "Icon.Lock" : Mod.HasPlugin ? "Icon.Program" : "Icon.Package";
 
-    /// <summary>The chips of the row: GameBanana has a newer file; it runs or patches code; it declares options.</summary>
+    /// <summary>The quiet chip of the row: it runs or patches code.</summary>
     public bool ShowsCode => !Mod.Managed && (Mod.HasPlugin || Mod.ChangesCode);
 
+    /// <summary>The row's "Options" button: the mod declares options (it opens the mod's panel, as A on the row does).</summary>
     public bool ShowsOptions => !Mod.Managed && Mod.HasOptions;
+
+    /// <summary>The row's "Update" button: GameBanana has a newer file.</summary>
+    public ICommand UpdateCommand { get; }
 
     /// <summary>The row's switch (Settings' own): on, off, or locked where it is (MKWMP's own, a code mod, the game running).</summary>
     public bool IsOn
@@ -208,7 +239,7 @@ public sealed class ModRow : ObservableObject
         }
         else
         {
-            _shell.Navigate(new ModDetailViewModel(_shell, Mod.Id));
+            _shell.OpenDrawer(new ModDetailViewModel(_shell, Mod.Id)); // over the list, which stays where it was
         }
     }
 
@@ -240,14 +271,58 @@ public sealed class ModRow : ObservableObject
     }
 }
 
+/// <summary>One of the chips over the list of mods: which of them it shows.</summary>
+public sealed class ModFilter : ObservableObject
+{
+    private bool _isSelected;
+    private bool _isVisible = true;
+
+    internal ModFilter(string key, string label, Action<ModFilter> select)
+    {
+        Key = key;
+        Label = label;
+        SelectCommand = new RelayCommand(() => select(this));
+    }
+
+    /// <summary>all, on, off, updates.</summary>
+    public string Key { get; }
+
+    public string Label { get; }
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        internal set => Set(ref _isSelected, value);
+    }
+
+    /// <summary>"Updates" shows only while GameBanana has a newer file for one of them.</summary>
+    public bool IsVisible
+    {
+        get => _isVisible;
+        internal set => Set(ref _isVisible, value);
+    }
+
+    public ICommand SelectCommand { get; }
+
+    internal bool Shows(GameMod mod, bool update) => Key switch
+    {
+        "on" => mod.Enabled,
+        "off" => !mod.Enabled,
+        "updates" => update,
+        _ => true,
+    };
+}
+
 /// <summary>
-/// Mods (the Home dock): the mods in the game, each on or off, and the three ways to get one: GameBanana,
-/// a link, a file. A on a mod opens it (its switch, its options, uninstall); X switches it from the list.
+/// Mods (the Home dock): the three ways to get a mod in one line (GameBanana, a link, a file), then the
+/// mods in the game, each on or off, filtered by the chips beside "Installed". A on a mod opens its drawer
+/// (its switch, its options, uninstall); X switches it from the list; Y turns them all off and back on.
 /// Everything is the target's (<see cref="ILauncher.Mods"/>): nothing here knows a game.
 /// </summary>
 public sealed class ModsViewModel : PageViewModel
 {
     private ModRow? _focused;
+    private ModFilter _filter;
 
     public ModsViewModel(ShellViewModel shell)
         : base(shell)
@@ -256,12 +331,24 @@ public sealed class ModsViewModel : PageViewModel
         LinkCommand = new RelayCommand(() => Shell.Navigate(new ModLinkViewModel(Shell)), () => View.Supported);
         FileCommand = RelayCommand.Async(FromFileAsync, () => View.Supported);
         AllCommand = RelayCommand.Async(AllAsync, () => HasAll);
+        Filters =
+        [
+            new ModFilter("all", S["mods.filter.all"], Select),
+            new ModFilter("on", S["mods.on"], Select),
+            new ModFilter("off", S["mods.off"], Select),
+            new ModFilter("updates", S["mods.filter.updates"], Select),
+        ];
+        _filter = Filters[0];
+        _filter.IsSelected = true;
         Sync();
     }
 
     private ModsView View => Launcher.Mods;
 
     public ObservableCollection<ModRow> Rows { get; } = [];
+
+    /// <summary>The chips beside "Installed": All, On, Off, Updates.</summary>
+    public IReadOnlyList<ModFilter> Filters { get; }
 
     public bool Loading => !View.Loaded;
 
@@ -270,7 +357,14 @@ public sealed class ModsViewModel : PageViewModel
     /// <summary>Why nothing can be changed (the game runs), or why there is no list (no game, a game that takes no mods).</summary>
     public string Note => View.Loaded ? View.Note ?? "" : "";
 
-    public bool IsEmpty => Supported && Rows.All(r => r.Mod.Managed);
+    /// <summary>No mod of the player's in the game (MKWMP's own aside).</summary>
+    public bool IsEmpty => Supported && View.Mods.All(m => m.Managed);
+
+    /// <summary>The chips are worth showing: there are mods of the player's to sort.</summary>
+    public bool HasFilters => !IsEmpty;
+
+    /// <summary>The chip chosen hides every mod.</summary>
+    public bool IsFilteredEmpty => !IsEmpty && Rows.Count == 0;
 
     public ICommand BrowseCommand { get; }
 
@@ -392,12 +486,33 @@ public sealed class ModsViewModel : PageViewModel
         RefreshHints();
     }
 
-    /// <summary>The rows follow the list, each kept while its mod is there (the focus stays where it is).</summary>
+    private void Select(ModFilter filter)
+    {
+        if (ReferenceEquals(filter, _filter))
+        {
+            return;
+        }
+        _filter.IsSelected = false;
+        _filter = filter;
+        filter.IsSelected = true;
+        Sync();
+        Raise(nameof(IsFilteredEmpty));
+    }
+
+    /// <summary>The rows follow the list and the chip, each kept while its mod is there (the focus stays where it is).</summary>
     private void Sync()
     {
         var view = View;
+        var updates = Filters[^1];
+        updates.IsVisible = view.Updates.Count > 0;
+        if (!updates.IsVisible && ReferenceEquals(_filter, updates))
+        {
+            _filter.IsSelected = false;
+            _filter = Filters[0]; // the last update is in: back to all of them
+            _filter.IsSelected = true;
+        }
         // MKWMP's own first: a reference row, not one of the player's mods
-        var mods = view.Mods.OrderByDescending(m => m.Managed).ToList();
+        var mods = view.Mods.Where(m => _filter.Shows(m, view.Updates.ContainsKey(m.Id))).OrderByDescending(m => m.Managed).ToList();
         for (var i = Rows.Count - 1; i >= 0; i--)
         {
             if (!mods.Any(m => m.Id == Rows[i].Id))
@@ -435,30 +550,36 @@ public sealed class ModsViewModel : PageViewModel
         if (path is not null && await ModInstaller.RunAsync(Shell, (_, _) => Task.FromResult(path), new ModInstallRequest(path)).ConfigureAwait(true) is { } id
             && ReferenceEquals(Shell.Page, this))
         {
-            Shell.Navigate(new ModDetailViewModel(Shell, id)); // its switch and its options, right away
+            Shell.OpenDrawer(new ModDetailViewModel(Shell, id)); // its switch and its options, right away
         }
     }
 }
 
 /// <summary>
-/// One installed mod: its switch, the options it declares (drawn with the game settings' own rows and
-/// saved to its settings file), what it is and where it came from, an update when GameBanana has a newer
-/// file, and Uninstall.
+/// One installed mod, in the drawer over the page (<see cref="ShellViewModel.OpenDrawer"/>): its switch, the
+/// options it declares (drawn with the game settings' own rows and saved to its settings file), what it is
+/// and where it came from, an update when GameBanana has a newer file. Y uninstalls it, B closes the drawer.
 /// </summary>
-public sealed class ModDetailViewModel : PageViewModel
+public sealed class ModDetailViewModel : LayerViewModel
 {
     private readonly string _id;
     private GameSettingsSchema? _rowsSchema;
 
     public ModDetailViewModel(ShellViewModel shell, string id)
-        : base(shell)
     {
+        Shell = shell ?? throw new ArgumentNullException(nameof(shell));
         _id = id;
-        UninstallCommand = RelayCommand.Async(UninstallAsync, () => CanChange);
+        UninstallCommand = RelayCommand.Async(UninstallAsync, () => CanChange && CanUninstall);
         PageCommand = new RelayCommand(() => Links.Open(Shell, Mod?.Source?.Url), () => Mod?.Source?.Url is not null);
-        UpdateCommand = RelayCommand.Async(UpdateAsync, () => HasUpdate && Launcher.Mods.Editable);
+        UpdateCommand = RelayCommand.Async(() => ModInstaller.UpdateAsync(Shell, _id), () => HasUpdate && Launcher.Mods.Editable);
         SyncRows();
     }
+
+    public ShellViewModel Shell { get; }
+
+    public Strings S => Shell.S;
+
+    private ILauncher Launcher => Shell.Launcher;
 
     private GameMod? Mod => Launcher.Mods.Find(_id);
 
@@ -553,9 +674,32 @@ public sealed class ModDetailViewModel : PageViewModel
 
     public ICommand UpdateCommand { get; }
 
-    public override PageViewModel? Recreate() => Mod is null ? null : new ModDetailViewModel(Shell, _id);
+    /// <summary>Y uninstalls (when it can be), B closes the drawer.</summary>
+    public override IReadOnlyList<Hint> Hints
+    {
+        get
+        {
+            var hints = new List<Hint>();
+            if (CanUninstall && CanChange)
+            {
+                hints.Add(new Hint(PadButton.Y, S["mods.detail.uninstall"]));
+            }
+            hints.Add(new Hint(PadButton.B, S["hint.back"]));
+            hints.Add(new Hint(PadButton.A, S["hint.ok"]));
+            return hints;
+        }
+    }
 
-    public override void OnLeave()
+    public override bool OnButton(PadButton button)
+    {
+        if (button == PadButton.Y && CanUninstall && CanChange)
+        {
+            UninstallCommand.Execute(null);
+        }
+        return button is not PadButton.B; // Y and RB are not the friends panel's while the drawer is open
+    }
+
+    public override void OnClosed()
     {
         foreach (var row in OptionRows)
         {
@@ -565,13 +709,14 @@ public sealed class ModDetailViewModel : PageViewModel
 
     public override void OnStateChanged()
     {
-        if (Mod is null && ReferenceEquals(Shell.Page, this))
+        if (Mod is null)
         {
-            Shell.GoBack(); // uninstalled (here, or under the launcher's feet)
+            Shell.CloseDrawer(this); // uninstalled (here, or under the launcher's feet)
             return;
         }
         SyncRows();
         base.OnStateChanged();
+        Shell.RefreshHints(); // Uninstall comes and goes with the game running
     }
 
     /// <summary>The option rows: built once per schema, refreshed in place after (as Settings › Game settings does).</summary>
@@ -615,26 +760,6 @@ public sealed class ModDetailViewModel : PageViewModel
         }
     }
 
-    private async Task UpdateAsync()
-    {
-        if (Mod is not { Source: { GameBananaMod: > 0 } source } mod || !Launcher.Mods.Updates.TryGetValue(_id, out var file))
-        {
-            return;
-        }
-        GbDetails? details = null;
-        await ModInstaller.RunAsync(Shell, async (progress, cancel) =>
-        {
-            details = await Launcher.ModPageAsync(source.GameBananaMod, cancel).ConfigureAwait(true);
-            var newest = details.Files.FirstOrDefault(f => f.Id == file.Id) ?? throw new LauncherException(CoreStrings.GameBananaNotThisGame);
-            return await Launcher.DownloadModAsync(details, newest, progress, cancel).ConfigureAwait(true);
-        }, new ModInstallRequest("")
-        {
-            Name = mod.Id,
-            Replace = true, // an update: the old folder is kept as the backup
-            Enable = false, // on or off as it was
-            Source = new ModSource(source.Url, source.GameBananaMod, file.Id, file.Version, file.Added),
-        }).ConfigureAwait(true);
-    }
 }
 
 /// <summary>"Install from a link": the address of an archive, typed or pasted (the on-screen keyboard pastes), downloaded and installed.</summary>
@@ -683,7 +808,7 @@ public sealed class ModLinkViewModel : PageViewModel
         if (id is not null && ReferenceEquals(Shell.Page, this))
         {
             Shell.GoBack();
-            Shell.Navigate(new ModDetailViewModel(Shell, id)); // its options, right away
+            Shell.OpenDrawer(new ModDetailViewModel(Shell, id)); // its options, right away, over the list
         }
     }
 }
