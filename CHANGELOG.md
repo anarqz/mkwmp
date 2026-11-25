@@ -2,6 +2,14 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
+## 1.4.7 — 2026-11-25
+
+- **mkw-recomp 0.1.18 is required.** MKWMP now runs only on mkw-recomp 0.1.18: Play is refused on any earlier version, and the MKWMP mod turns itself off on one too, also when the game is started outside the launcher.
+- **Your own mkw-recomp is updated too, where it is.** If you picked an mkw-recomp you installed yourself (0.1.15, 0.1.16 or 0.1.17), the launcher now updates it to 0.1.18 in that same folder, like the one it installs. Your game, its setup, saves, mods and settings stay, the game code does not need rebuilding, and the files it replaces are kept in .mkwmp-backup. Before, such an install stayed on 0.1.17 and said "your own build, one MKWMP supports".
+- **The update is not optional.** When mkw-recomp is not 0.1.18, the launcher opens the update card by itself and runs it (only the download can wait). It asks again whenever the version goes wrong, also while it is open, and Play opens the update instead of the checklist. If mkw-recomp's own updater moves an install the launcher keeps to a release MKWMP does not know, the launcher puts 0.1.18 back in the same folder.
+- **mkw-recomp's update check is on again.** Settings › General › "mkw-recomp update check" is no longer locked off. The launcher turns it back on once (older launchers had switched it off), and after that it is your choice.
+- **Open mkw-recomp.** Settings › Game has a new row that opens mkw-recomp's own start screen instead of the game: its settings, game files, mods and tools.
+- **Home: Play, Mods, What's New.** The cards are now Play, Mods (how many are on, and the updates GameBanana has for them) and What's New. Friends and the Game card are gone from the cards: Friends and the checklist are in the bar below, which no longer has Mods and Updates. While a new MKWMP is on its way, the What's New card says so with a pink badge (New, the download's percentage, Ready or Failed) and a progress bar, and opens the update.
 ## 1.4.6 — 2026-11-24
 
 - **mkw-recomp 0.1.18.** The launcher now installs Adrià's mkw-recomp 0.1.18 and updates an install of 0.1.17 it made in place: your game, its setup, saves, mods and settings stay, and the game code does not need rebuilding. 0.1.18 fixes the game closing silently on some Windows 11 PCs right after it starts (error 0xC0000409). 0.1.17 still plays online.

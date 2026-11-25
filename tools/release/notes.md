@@ -1,3 +1,15 @@
+**mkwmp 1.4.7**: mkw-recomp 0.1.18 is required, the launcher now updates an mkw-recomp you installed yourself, and Home is tidier.
+
+The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.
+
+- **mkw-recomp 0.1.18 is required.** MKWMP runs only on mkw-recomp 0.1.18. Play is refused on an earlier version, and the MKWMP mod turns itself off on one, also when the game is started outside the launcher.
+- **Your own mkw-recomp is updated too, where it is.** If you picked an mkw-recomp you installed yourself (0.1.15, 0.1.16 or 0.1.17), the launcher now brings it to 0.1.18 in that same folder. Your game, its setup, saves, mods and settings stay, and the game code is not rebuilt. Before, such an install stayed on 0.1.17.
+- **The update is not optional.** When mkw-recomp is not 0.1.18, the launcher opens the update card by itself and runs it; Play opens it too. It asks again whenever the version goes wrong, also when mkw-recomp's own updater moved it.
+- **mkw-recomp's update check is on again** (Settings › General). The launcher turns it back on once; after that it is your choice.
+- **Open mkw-recomp.** A new row in Settings › Game opens mkw-recomp's own start screen instead of the game: its settings, game files, mods and tools.
+- **Home: Play, Mods, What's New.** The cards are Play, Mods and What's New; Friends and the checklist stay in the bar below, which no longer has Mods and Updates. A new MKWMP shows on the What's New card with a pink badge (New, the download's percentage, Ready or Failed) and a progress bar, and the card opens the update.
+
+---
 **mkwmp 1.4.6**: mkw-recomp 0.1.18, which fixes the game closing silently on some Windows 11 PCs, and DLSS, FSR 3.1 and HD vibration that download themselves.
 
 The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it. It then updates mkw-recomp 0.1.17 to 0.1.18 in place: the game code is not rebuilt.
