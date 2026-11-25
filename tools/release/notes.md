@@ -1,3 +1,13 @@
+**mkwmp 1.4.9**: a roomier Mods page, with filters and a mod panel beside the list.
+
+The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.
+
+- **Get Mods, From Link and From Zip in one line** at the top of Mods, so your list starts right under them.
+- **Filters**: "Installed" has chips for All, On, Off, and Updates while one of your mods has one.
+- **Update and Options on each mod's line**, where they apply. Turn All Off is Y in the bottom bar.
+- **A mod opens beside the list**: its switch, options and details slide in from the right; Y uninstalls it, B closes it. A mod you just installed opens there too.
+
+---
 **mkwmp 1.4.8**: mkw-recomp's start screen is yours again, and Home has four cards.
 
 The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.
