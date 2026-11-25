@@ -653,7 +653,6 @@
   "core.gs.next_start": "Le modifiche valgono dal prossimo avvio del gioco.",
   "core.gs.tonemap_missing": "I suoi programmi vengono creati dalla configurazione. Configura di nuovo il gioco (lo fa un aggiornamento) per aggiungerli.",
   "core.gs.locked_env": "Impostata dalla variabile d'ambiente {name}",
-  "core.gs.owned_start_screen": "Tenuta su Salta da MKWMP: è il launcher a configurare il gioco e ad avviarlo",
   "core.gs.owned_logic_hz": "Bloccata a 60 quando sei online: in una gara tutti i giocatori devono far girare il gioco alla stessa frequenza.",
   "core.gs.owned_fullscreen": "Tenuta attiva da MKWMP su SteamOS: lì il gioco occupa sempre tutto lo schermo",
   "core.gs.folder_gone": "La cartella del gioco non c'è più: {folder}",

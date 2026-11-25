@@ -574,6 +574,11 @@ public sealed record LauncherSettings
     /// (<c>update_check = 0</c> in mkw.ini), was given back its default (on) once. Afterwards the player's choice stays.
     /// </summary>
     public bool RecompUpdateCheckRestored { get; init; }
+    /// <summary>
+    /// <c>recomp_start_screen_restored = true</c>: mkw-recomp's start screen, which launchers up to 1.4.7 kept on Skip
+    /// (<c>start_screen = skip</c> in mkw.ini, locked), was given back its default (Automatic) once. Afterwards the player's choice stays.
+    /// </summary>
+    public bool RecompStartScreenRestored { get; init; }
     public SeatMode Seat { get; init; } = SeatMode.Start;
     public int LocalPort { get; init; } = 47820;
     public bool AutoUpdate { get; init; } = true;

@@ -653,7 +653,6 @@
   "core.gs.next_start": "變更會在遊戲下次啟動時套用。",
   "core.gs.tonemap_missing": "它的程式是在初始設定時產生的。請重新進行遊戲的初始設定（更新時會自動進行）來加入它們。",
   "core.gs.locked_env": "由環境變數 {name} 設定",
-  "core.gs.owned_start_screen": "由 MKWMP 保持為「略過」：啟動器會負責遊戲的初始設定並啟動遊戲",
   "core.gs.owned_logic_hz": "線上時鎖定為 60：同一場比賽中的每位玩家都必須以相同的頻率執行遊戲。",
   "core.gs.owned_fullscreen": "在 SteamOS 上由 MKWMP 保持開啟：遊戲在那裡一律以全螢幕顯示",
   "core.gs.folder_gone": "遊戲的資料夾不見了：{folder}",

@@ -653,7 +653,6 @@
   "core.gs.next_start": "Änderungen gelten ab dem nächsten Start des Spiels.",
   "core.gs.tonemap_missing": "Seine Programme erzeugt die Einrichtung. Richte das Spiel erneut ein (ein Update erledigt das), um sie hinzuzufügen.",
   "core.gs.locked_env": "Durch die Umgebungsvariable {name} festgelegt",
-  "core.gs.owned_start_screen": "Von MKWMP auf Überspringen gehalten: Der Launcher richtet das Spiel ein und startet es",
   "core.gs.owned_logic_hz": "Online auf 60 festgelegt: Alle Spieler eines Rennens müssen das Spiel mit derselben Rate ausführen.",
   "core.gs.owned_fullscreen": "Von MKWMP unter SteamOS eingeschaltet gehalten: Das Spiel füllt dort immer den Bildschirm",
   "core.gs.folder_gone": "Der Ordner des Spiels ist weg: {folder}",

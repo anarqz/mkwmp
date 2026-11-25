@@ -176,33 +176,45 @@ public sealed partial class Launcher
     }
 
     /// <summary>
-    /// Once per launcher: mkw-recomp's own update check goes back to its default (on). Launchers up to 1.4.6 wrote
-    /// <c>update_check = 0</c> into mkw.ini and locked the row; that 0 was theirs, not the player's, so it is taken out
-    /// (the game's default is on). Then <see cref="LauncherSettings.RecompUpdateCheckRestored"/> is set, and whatever the
-    /// player picks afterwards stays. Not while the game runs (it holds mkw.ini): the next look tries again.
+    /// mkw-recomp settings older launchers kept for themselves, with the value they wrote into mkw.ini (and locked), and
+    /// the flag that says it was given back: <c>update_check = 0</c> (up to 1.4.6) and <c>start_screen = skip</c> (up to
+    /// 1.4.7). Neither is the launcher's any more: each goes back to mkw-recomp's default once (on; Automatic).
+    /// </summary>
+    private static readonly (string Id, string[] Written, Func<LauncherSettings, bool> Done, Func<LauncherSettings, LauncherSettings> MarkDone)[] Released =
+    [
+        (RecompSettings.UpdateCheck, ["0", "off", "false", "no"], s => s.RecompUpdateCheckRestored, s => s with { RecompUpdateCheckRestored = true }),
+        (RecompSettings.StartScreen, ["skip"], s => s.RecompStartScreenRestored, s => s with { RecompStartScreenRestored = true }),
+    ];
+
+    /// <summary>
+    /// Once per launcher and setting (<see cref="Released"/>): a value an older launcher wrote and locked is taken out of
+    /// mkw.ini, so mkw-recomp's default is back; the flag is then set, and whatever the player picks afterwards stays. Not
+    /// while the game runs (it holds mkw.ini): the next look tries again.
     /// </summary>
     private void RestoreRecompUpdateCheck(IGameTarget target, GameInstall install)
     {
-        if (Settings.RecompUpdateCheckRestored || install.TargetId != MkwRecompTarget.TargetId || target.IsRunning(install))
+        var pending = Released.Where(r => !r.Done(Settings)).ToList();
+        if (pending.Count == 0 || install.TargetId != MkwRecompTarget.TargetId || target.IsRunning(install))
         {
             return;
         }
         try
         {
-            if (target.ReadGameSettings(install).TryGetValue(RecompSettings.UpdateCheck, out var value)
-                && value.Trim().Trim('"').ToLowerInvariant() is "0" or "off" or "false" or "no")
+            var values = target.ReadGameSettings(install);
+            var edits = pending.Where(r => values.TryGetValue(r.Id, out var v) && r.Written.Contains(v.Trim().Trim('"').ToLowerInvariant()))
+                .ToDictionary(r => r.Id, _ => (string?)null, StringComparer.OrdinalIgnoreCase);
+            if (edits.Count > 0)
             {
-                target.WriteGameSettings(install, new Dictionary<string, string?> { [RecompSettings.UpdateCheck] = null });
-                Note($"game settings: {RecompSettings.UpdateCheck} back to mkw-recomp's default (on): MKWMP no longer keeps it off");
+                target.WriteGameSettings(install, edits);
+                Note($"game settings: {string.Join(", ", edits.Keys)} back to mkw-recomp's default: MKWMP no longer keeps them");
             }
-            EditConfig(c => c with { Settings = c.Settings with { RecompUpdateCheckRestored = true } }, wakeFriends: false);
+            EditConfig(c => c with { Settings = pending.Aggregate(c.Settings, (s, r) => r.MarkDone(s)) }, wakeFriends: false);
         }
         catch (Exception e) when (e is LauncherException or IOException or UnauthorizedAccessException)
         {
-            Note($"game settings: {RecompSettings.UpdateCheck} not restored yet: {e.Message}");
+            Note($"game settings: older launchers' values not restored yet: {e.Message}");
         }
     }
-
     /// <summary>The overlay's shortcut changed in Settings: the game's settings follow it now, when the game is closed.</summary>
     private void OverlayShortcutChanged()
     {

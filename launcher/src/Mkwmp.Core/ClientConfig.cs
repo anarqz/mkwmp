@@ -168,6 +168,7 @@ internal sealed record ClientConfig
             Launch = launch,
             LaunchChosen = chosen,
             RecompUpdateCheckRestored = Bool(t, "recomp_update_check_restored", false),
+            RecompStartScreenRestored = Bool(t, "recomp_start_screen_restored", false),
             Seat = string.Equals(Str(t, "seat", "start"), "online", StringComparison.OrdinalIgnoreCase) ? SeatMode.Online : SeatMode.Start,
             LocalPort = Int(t, "local_port", d.LocalPort, 1, 65535),
             AutoUpdate = Bool(t, "update", true),
@@ -277,6 +278,10 @@ internal sealed record ClientConfig
         if (s.RecompUpdateCheckRestored)
         {
             Line(b, "recomp_update_check_restored", true);
+        }
+        if (s.RecompStartScreenRestored)
+        {
+            Line(b, "recomp_start_screen_restored", true);
         }
         Line(b, "seat", s.Seat == SeatMode.Online ? "online" : "start");
         Line(b, "local_port", s.LocalPort);

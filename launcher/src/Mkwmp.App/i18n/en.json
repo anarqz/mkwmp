@@ -669,7 +669,6 @@
   "core.gs.next_start": "Changes apply the next time the game starts.",
   "core.gs.tonemap_missing": "Its programs are made by the setup. Set the game up again (an update does it) to add them.",
   "core.gs.locked_env": "Set by the environment variable {name}",
-  "core.gs.owned_start_screen": "Kept on Skip by MKWMP: the launcher sets the game up and starts it",
   "core.gs.owned_logic_hz": "Locked to 60 while online: every player in a race must run the game at the same rate.",
   "core.gs.owned_fullscreen": "Kept on by MKWMP on SteamOS: the game always fills the screen there",
   "core.gs.folder_gone": "The game's folder is gone: {folder}",

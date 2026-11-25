@@ -445,9 +445,11 @@ becomes "run the driver", not a message.
 **The game**: keep `mkw.exe --play`. It bypasses the start screen whatever `mkw.ini` says. Also write, once, under
 `[launcher]` in `mkw.ini`, and lock in the Game settings page:
 
-- `start_screen = skip`: for a player who starts mkw.exe by hand or from Steam. It is not a guarantee: the screen
-  still opens when the game is not set up, the dump is gone, another version set the folder up, a code mod is to be
-  built, the last run ended in a fatal, or View/Select is held (`launcher.cpp` `console_start`).
+- `start_screen`: no longer written (1.4.8, the user's rule: the player's, default Automatic, which does not skip on a
+  desktop). Launchers up to 1.4.7 wrote `skip` and locked it; the launcher takes that out once
+  (`recomp_start_screen_restored` in client.toml). PLAY is unaffected: `mkw.exe --play` never shows the screen. Even
+  `skip` was no guarantee: the screen still opens when the game is not set up, the dump is gone, another version set the
+  folder up, a code mod is to be built, the last run ended in a fatal, or View/Select is held (`launcher.cpp` `console_start`).
 - `update_check`: no longer written (1.4.7). Launchers up to 1.4.6 wrote `0`; the launcher takes that out once (`recomp_update_check_restored` in client.toml), so mkw-recomp's default (on) is back.
 
 **The menu**: the overlay is what a pad opens; mkw-recomp's menu stays reachable with F1/Esc and through the
@@ -462,7 +464,7 @@ tests in `GameSetupTests.cs`):
 - Done from the list above: every precondition (the CPU check with .NET's `Avx2`/`Fma`/`Bmi2.IsSupported`), the command,
   the lines, `warm.log`'s count, the three codes of the start screen, cancel by killing the process tree, the notice
   when the lock is held (no line for 10 s at the start), the "ready" test (`RecompSetup.Status`, with the linked copy
-  that moved as `DumpMissing`), `start_screen = skip` written and locked (`update_check` left to the player from 1.4.7).
+  that moved as `DumpMissing`), nothing of mkw-recomp's own settings written or locked (`update_check` the player's from 1.4.7, `start_screen` from 1.4.8).
 - Time left: the steps are weighed in seconds of the PC of 1.6 (check 4, exefs 6, romfs 1 linked or 900 copied,
   generate 160, compile 186, shaders 80 beside a build or 266 alone, warm 76, cleanup 24), skipped steps leave the
   total, and what remains is scaled by how long the finished steps really took here.

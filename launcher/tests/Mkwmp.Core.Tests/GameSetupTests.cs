@@ -653,42 +653,27 @@ public class SetupGateTests
     }
 
     [Fact]
-    public void The_launcher_keeps_mkw_recomps_start_screen_skipped_and_leaves_its_updater_to_the_player()
+    public void The_launcher_leaves_mkw_recomps_start_screen_and_updater_to_the_player()
     {
         using var rig = new SetupRig();
         IGameTarget t = rig.Target;
         var schema = t.GameSettings(rig.Install)!;
-        // The start screen: shown, and locked with the reason. The update check is the player's, on by default (2026-11-25).
-        Assert.Contains("MKWMP", schema.Find("start_screen")!.Locked, StringComparison.Ordinal);
+        // Neither is locked (the user's rule, 2026-11-25): mkw-recomp's defaults, the start screen Automatic (it does not skip) and the update check on.
+        Assert.Null(schema.Find("start_screen")!.Locked);
         Assert.Null(schema.Find("update_check")!.Locked);
-        Assert.Equal("1", schema.Find("update_check")!.Default);
+        Assert.Equal(("auto", "1"), (schema.Find("start_screen")!.Default, schema.Find("update_check")!.Default));
         Assert.Null(schema.Find("volume")!.Locked);
-        t.WriteGameSettings(rig.Install, new Dictionary<string, string?> { ["update_check"] = "0" }); // the player may turn it off
+        t.WriteGameSettings(rig.Install, new Dictionary<string, string?> { ["start_screen"] = "always", ["update_check"] = "0" }); // the player may pick either
 
+        // An install or a setup writes nothing of them: the player's file stays as it is.
         var ini = Path.Combine(rig.Game, "mkw.ini");
-        File.WriteAllText(ini, "# my settings\n[launcher]\nupdate_check = 1\nmods = mkwmp\n\n[audio]\nvolume = 80\n");
-        Assert.Equal(["start_screen = skip"], t.ApplyOwnedSettings(rig.Install));
-        Assert.Equal("# my settings\n[launcher]\nupdate_check = 1\nmods = mkwmp\nstart_screen = skip\n\n[audio]\nvolume = 80\n", File.ReadAllText(ini));
-        var values = t.ReadGameSettings(rig.Install);
-        Assert.Equal(("1", "skip", "80"), (values["update_check"], values["start_screen"], values["volume"]));
-        Assert.Empty(t.ApplyOwnedSettings(rig.Install)); // already so: the file is not written again
-
-        // The player (or mkw-recomp's own menu) changed the start screen: put right at the next install or setup, never while the game runs.
-        File.WriteAllText(ini, "[launcher]\nupdate_check = 0\nstart_screen = auto\n");
-        rig.Running = true;
+        const string Mine = "# my settings\n[launcher]\nupdate_check = 0\nstart_screen = always\nmods = mkwmp\n\n[audio]\nvolume = 80\n";
+        File.WriteAllText(ini, Mine);
         Assert.Empty(t.ApplyOwnedSettings(rig.Install));
-        Assert.Contains("start_screen = auto", File.ReadAllText(ini), StringComparison.Ordinal);
-        rig.Running = false;
-        Assert.Equal(["start_screen = skip"], t.ApplyOwnedSettings(rig.Install));
-        Assert.Contains("update_check = 0", File.ReadAllText(ini), StringComparison.Ordinal); // the player's choice stays
-        // No file yet: one is made, with the start screen only.
+        Assert.Equal(Mine, File.ReadAllText(ini));
         File.Delete(ini);
-        Assert.Single(t.ApplyOwnedSettings(rig.Install));
-        Assert.Equal("[launcher]\nstart_screen = skip\n", File.ReadAllText(ini));
-        // Resetting everything leaves it.
-        t.WriteGameSettings(rig.Install, schema.Settings.Where(s => s.Locked is null).ToDictionary(s => s.Id, _ => (string?)null));
-        Assert.Contains("start_screen = skip", File.ReadAllText(ini), StringComparison.Ordinal);
-
+        Assert.Empty(t.ApplyOwnedSettings(rig.Install));
+        Assert.False(File.Exists(ini)); // no file is made for them
         // The player's own upstream install is theirs: nothing locked, nothing written.
         File.WriteAllBytes(Path.Combine(rig.Game, "mkw.exe"), Rig.TestModExe);
         File.Delete(ini);
@@ -735,8 +720,10 @@ public class SetupDriverTests
         Assert.Contains("exit code 0", log, StringComparison.Ordinal);
         Assert.Contains("result: done, game 1.8.0", log, StringComparison.Ordinal);
         // The settings the launcher keeps were written with it.
-        Assert.DoesNotContain("update_check", File.ReadAllText(Path.Combine(rig.Game, "mkw.ini")), StringComparison.Ordinal); // the player's: left at its default
-        Assert.Contains("start_screen = skip", File.ReadAllText(Path.Combine(rig.Game, "mkw.ini")), StringComparison.Ordinal);
+        // Nothing of mkw-recomp's own settings is written with it: the update check and the start screen are the player's.
+        var setIni = Path.Combine(rig.Game, "mkw.ini");
+        Assert.True(!File.Exists(setIni) || !File.ReadAllText(setIni).Contains("update_check", StringComparison.Ordinal));
+        Assert.True(!File.Exists(setIni) || !File.ReadAllText(setIni).Contains("start_screen", StringComparison.Ordinal));
         // The player's copy was only named: same bytes, same time, and no second copy of it anywhere.
         Assert.Equal(dumpBefore.Item1, File.ReadAllBytes(rig.Dump));
         Assert.Equal(dumpBefore.Item2, File.GetLastWriteTimeUtc(rig.Dump));
@@ -1161,9 +1148,10 @@ public class LauncherGameSetupTests
         // From Running straight to Done: never "needs setup" again in between.
         var after = states.SkipWhile(s => s.State != GameSetupState.Running).SkipWhile(s => s.State == GameSetupState.Running).ToList();
         Assert.All(after, s => Assert.Equal(GameSetupState.Done, s.State));
-        // mkw-recomp's start screen is skipped, in the game's own file and in the view; its update check is the player's, on.
-        Assert.Equal(("1", "skip"), (home.Launcher.GameSettings.Value("update_check"), home.Launcher.GameSettings.Value("start_screen")));
+        // mkw-recomp's update check and start screen are the player's, at its defaults (on; Automatic), and not locked.
+        Assert.Equal(("1", "auto"), (home.Launcher.GameSettings.Value("update_check"), home.Launcher.GameSettings.Value("start_screen")));
         Assert.Null(home.Launcher.GameSettings.Schema!.Find("update_check")!.Locked);
+        Assert.Null(home.Launcher.GameSettings.Schema!.Find("start_screen")!.Locked);
     }
 
     [Fact]
@@ -1400,12 +1388,11 @@ public class LauncherGameSetupTests
         await launcher.InstallRuntimeAsync(null, default);
 
         Assert.Equal(RuntimeState.Installed, launcher.Runtime.State);
-        // The file the zip shipped is kept, with the setting the launcher owns added; mkw-recomp's update check stays on.
+        // The file the zip shipped is kept as it is: mkw-recomp's update check and start screen stay at its defaults.
         var ini = File.ReadAllText(files.At("mkw.ini"));
-        Assert.StartsWith("shipped = 1\n", ini, StringComparison.Ordinal);
-        Assert.Contains("[launcher]\nstart_screen = skip\n", ini, StringComparison.Ordinal);
-        Assert.DoesNotContain("update_check", ini, StringComparison.Ordinal);
+        Assert.Equal("shipped = 1\n", ini);
         Assert.Null(launcher.GameSettings.Schema!.Find("update_check")!.Locked);
+        Assert.Null(launcher.GameSettings.Schema!.Find("start_screen")!.Locked);
         // The next thing in the player's way is the setup, with their own game.
         var view = launcher.GameSetup;
         Assert.Equal((GameSetupState.NeedsSetup, GameSetupReason.NotSetUp, true), (view.State, view.Reason, view.NeedsDump));

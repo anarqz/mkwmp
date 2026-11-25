@@ -653,7 +653,6 @@
   "core.gs.next_start": "Değişiklikler oyunun bir sonraki başlatılışında geçerli olur.",
   "core.gs.tonemap_missing": "Programlarını kurulum üretir. Bunları eklemek için oyunu yeniden kur (bir güncelleme de bunu yapar).",
   "core.gs.locked_env": "{name} ortam değişkeni tarafından ayarlanmış",
-  "core.gs.owned_start_screen": "MKWMP tarafından Atla'da tutulur: oyunu başlatıcı kurar ve başlatır",
   "core.gs.owned_logic_hz": "Çevrimiçiyken 60'a kilitlenir: bir yarıştaki her oyuncu oyunu aynı hızda çalıştırmalıdır.",
   "core.gs.owned_fullscreen": "SteamOS'ta MKWMP tarafından açık tutulur: oyun orada her zaman tüm ekranı kaplar",
   "core.gs.folder_gone": "Oyunun klasörü yok: {folder}",

@@ -653,7 +653,6 @@
   "core.gs.next_start": "Los cambios se aplican la próxima vez que se inicie el juego.",
   "core.gs.tonemap_missing": "Sus programas los crea la preparación. Prepara el juego de nuevo (una actualización lo hace) para añadirlos.",
   "core.gs.locked_env": "Fijado por la variable de entorno {name}",
-  "core.gs.owned_start_screen": "MKWMP lo mantiene en Omitir: el launcher prepara el juego y lo inicia",
   "core.gs.owned_logic_hz": "Bloqueado en 60 mientras juegas en línea: todos los jugadores de una carrera deben ejecutar el juego a la misma frecuencia.",
   "core.gs.owned_fullscreen": "MKWMP lo mantiene activado en SteamOS: allí el juego siempre ocupa toda la pantalla",
   "core.gs.folder_gone": "La carpeta del juego ya no está: {folder}",

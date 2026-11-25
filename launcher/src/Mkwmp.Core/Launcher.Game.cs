@@ -101,7 +101,7 @@ public sealed partial class Launcher
         });
         if (install is not null)
         {
-            RestoreRecompUpdateCheck(_targets.Get(Settings.Target), install); // once: the update check MKWMP used to keep off
+            RestoreRecompUpdateCheck(_targets.Get(Settings.Target), install); // once: the update check and start screen MKWMP used to keep
         }
         FollowGameSettings();
         if (install is not null)

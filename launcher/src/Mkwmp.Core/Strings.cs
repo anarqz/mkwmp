@@ -366,7 +366,7 @@ public static class Strings
     public static string GameSettingsNextStart => T("core.gs.next_start");
     public static string GameSettingsTonemapMissing => T("core.gs.tonemap_missing");
 
-    public static string GameSettingsOwnedStartScreen => T("core.gs.owned_start_screen");
+
     public static string GameSettingsOwnedLogicHz => T("core.gs.owned_logic_hz");
     public static string GameSettingsOwnedFullscreen => T("core.gs.owned_fullscreen");
     public static string GameLibsNoTools => T("core.gs.libs_no_tools");

@@ -196,14 +196,6 @@ public static partial class RecompSettings
         });
     }
 
-    /// <summary>
-    /// The settings MKWMP keeps for an mkw-recomp it installs and sets up itself
-    /// (<see cref="RecompSetup.Drives"/>), with the reason the window shows on the locked row.
-    /// <c>update_check</c> is the player's again (on by default, 2026-11-25): a release mkw-recomp's own updater brings
-    /// that is not the pinned one is refused before PLAY and put back by the launcher's update. <c>start_screen = skip</c>: a game
-    /// started by hand or from Steam goes straight in, as it does from the launcher
-    /// (<c>mkw.exe --play</c> never shows that screen, whatever this says).
-    /// </summary>
     /// <summary>mkw-recomp's pad shortcut for its own menu: <c>minus_plus</c> (Minus and Plus held together, Select+Start on an Xbox pad) or <c>guide</c>.</summary>
     public const string MenuShortcut = "menu_shortcut";
 
@@ -221,10 +213,17 @@ public static partial class RecompSettings
     /// <summary>mkw-recomp's own update check (on by default). MKWMP no longer keeps it off: see Launcher.RestoreRecompUpdateCheck.</summary>
     internal const string UpdateCheck = "update_check";
 
-    internal static (string Id, string Value, string Why)[] Owned =>
-    [
-        ("start_screen", "skip", Strings.GameSettingsOwnedStartScreen),
-    ];
+    /// <summary>mkw-recomp's start screen (<c>auto</c> by default). MKWMP no longer keeps it on Skip (2026-11-25): PLAY starts <c>mkw.exe --play</c>, which never shows it.</summary>
+    internal const string StartScreen = "start_screen";
+
+    /// <summary>
+    /// The settings MKWMP keeps for an mkw-recomp it installs and sets up itself (<see cref="RecompSetup.Drives"/>), with the
+    /// reason the window shows on the locked row. None any more (the user's rule, 2026-11-25): the update check (1.4.7) and
+    /// the start screen (1.4.8) are the player's, at mkw-recomp's defaults. A release mkw-recomp's own updater brings that
+    /// is not the pin is refused before PLAY and put back by the launcher's update; PLAY starts <c>mkw.exe --play</c>, which
+    /// never shows the start screen whatever it says. The values older launchers wrote go once: Launcher.RestoreRecompUpdateCheck.
+    /// </summary>
+    internal static (string Id, string Value, string Why)[] Owned => [];
 
     /// <summary>
     /// Writes <see cref="Owned"/> into mkw.ini when they are not there yet. Nothing happens for an

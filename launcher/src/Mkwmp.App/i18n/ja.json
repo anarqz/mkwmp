@@ -653,7 +653,6 @@
   "core.gs.next_start": "変更は、次にゲームを起動したときに反映されます。",
   "core.gs.tonemap_missing": "必要なプログラムはセットアップで作られます。追加するには、ゲームをもう一度セットアップしてください（アップデートでも行われます）。",
   "core.gs.locked_env": "環境変数 {name} で設定されています",
-  "core.gs.owned_start_screen": "MKWMPが「スキップ」に固定しています：ゲームのセットアップと起動はランチャーが行います",
   "core.gs.owned_logic_hz": "オンライン中は60に固定されます。レースに参加する全員が、同じ頻度でゲームを動かす必要があります。",
   "core.gs.owned_fullscreen": "SteamOSではMKWMPがオンに固定しています：ゲームは常に画面全体に表示されます",
   "core.gs.folder_gone": "ゲームのフォルダーがなくなっています：{folder}",

@@ -653,7 +653,6 @@
   "core.gs.next_start": "Wijzigingen gelden de volgende keer dat het spel start.",
   "core.gs.tonemap_missing": "De programma's ervan worden door de setup gemaakt. Doorloop de setup van het spel opnieuw (een update doet dat) om ze toe te voegen.",
   "core.gs.locked_env": "Ingesteld door de omgevingsvariabele {name}",
-  "core.gs.owned_start_screen": "Door MKWMP op Overslaan gehouden: de launcher verzorgt de setup van het spel en start het",
   "core.gs.owned_logic_hz": "Online vergrendeld op 60: elke speler in een race moet het spel op dezelfde frequentie draaien.",
   "core.gs.owned_fullscreen": "Door MKWMP aan gehouden op SteamOS: het spel vult daar altijd het hele scherm",
   "core.gs.folder_gone": "De map van het spel is verdwenen: {folder}",

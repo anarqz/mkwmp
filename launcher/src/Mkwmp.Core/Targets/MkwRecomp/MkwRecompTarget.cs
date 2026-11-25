@@ -127,7 +127,7 @@ public sealed class MkwRecompTarget : IGameTarget
     {
         ArgumentNullException.ThrowIfNull(install);
         ArgumentNullException.ThrowIfNull(request);
-        // Before the setup: its own start screen is never the one to offer an update or to open in the launcher's place.
+        // Before the setup: the settings the launcher keeps (none today: RecompSettings.Owned).
         ApplyOwnedSettings(install);
         var result = await RecompSetup.RunAsync(
             install,
@@ -517,7 +517,7 @@ public sealed class MkwRecompTarget : IGameTarget
 
     /// <summary>
     /// mkw-recomp's own start screen (Settings › Game, "Open mkw-recomp"): <c>mkw.exe --launcher</c> with
-    /// <c>MKW_START_SCREEN=always</c>, which wins over the <c>start_screen = skip</c> the launcher keeps in mkw.ini (cfg.c
+    /// <c>MKW_START_SCREEN=always</c>, which wins over whatever <c>start_screen</c> mkw.ini has (Automatic skips it under Steam's Big Picture; cfg.c
     /// <c>raw_get</c>; runtime/ui/launcher/README.md: skipped, the screen does what Play does). <c>MKW_LAUNCHED</c> and
     /// <c>MKW_NO_LAUNCHER</c> would skip it (main.c <c>want_launcher</c>), so they are taken out. The rest of the game's
     /// environment is Play's: its Play button starts the game with the MKWMP mod as the player has it.

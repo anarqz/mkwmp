@@ -653,7 +653,6 @@
   "core.gs.next_start": "Zmiany zadziałają przy następnym uruchomieniu gry.",
   "core.gs.tonemap_missing": "Jego programy powstają podczas przygotowania gry. Przygotuj grę ponownie (robi to aktualizacja), aby je dodać.",
   "core.gs.locked_env": "Ustawione przez zmienną środowiskową {name}",
-  "core.gs.owned_start_screen": "MKWMP trzyma tu „Pomiń”: launcher sam przygotowuje grę i ją uruchamia",
   "core.gs.owned_logic_hz": "Zablokowane na 60 podczas gry online: każdy gracz w wyścigu musi mieć grę działającą z tą samą częstotliwością.",
   "core.gs.owned_fullscreen": "MKWMP trzyma to włączone w SteamOS: gra zawsze wypełnia tam cały ekran",
   "core.gs.folder_gone": "Folder gry zniknął: {folder}",
