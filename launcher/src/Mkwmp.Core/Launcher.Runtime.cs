@@ -7,7 +7,7 @@ namespace Mkwmp.Core;
 /// The game's runtime, installed by the launcher: the selected target's pinned build
 /// (<see cref="IGameTarget.Runtime"/>), through <see cref="RuntimeInstaller"/>. The launcher never
 /// looks for a newer release than the pinned one, and never installs over an install that is
-/// not MKWMP's build.
+/// not MKWMP's build or an earlier official release it updates from (<see cref="RuntimeManifest.UpdatesFrom"/>).
 /// </summary>
 public sealed partial class Launcher
 {

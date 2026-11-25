@@ -187,20 +187,26 @@ public sealed partial class ShellViewModel
     }
 
     /// <summary>
-    /// A launcher update brought a newer runtime, or the game must be set up again for the one
-    /// that is there (and the copy it was built from is still where it was): the launcher does it
-    /// now, in a card that holds the screen. Once per run, after the welcome, never over a game,
-    /// and never over another card (that one first: the next change of state asks again).
+    /// The runtime is not the one MKWMP runs on (a launcher update brought a newer pin, the player's own install is an
+    /// earlier release, or mkw-recomp's own updater moved it), or the game must be set up again for the one that is
+    /// there (and the copy it was built from is still where it was): the launcher does it now, in a card that holds
+    /// the screen. After the welcome, never over a game, and never over another card (that one first: the next change
+    /// of state asks again). Once each time the runtime goes wrong: a failed or postponed update is asked again only
+    /// after the runtime was right once more (PLAY then leads back to the card: <see cref="NeedsRuntimeUpdate"/>).
     /// </summary>
     private void OfferGameUpdate(GameWorkPhase phase)
     {
+        var again = phase == GameWorkPhase.SetupNeeded && !Launcher.GameSetup.NeedsDump
+            && Launcher.GameSetup.Reason is GameSetupReason.RuntimeChanged or GameSetupReason.Unfinished or GameSetupReason.GameMismatch;
+        if (_gameUpdateOffered && phase is not (GameWorkPhase.UpdateNeeded or GameWorkPhase.Runtime or GameWorkPhase.RuntimeFailed) && !again)
+        {
+            _gameUpdateOffered = false; // right again: the next time it goes wrong, the card comes again
+        }
         if (_gameUpdateOffered || !AutoGameUpdate || !Launcher.Settings.Ui.SetupDone || Page is SetupViewModel || _modal is not null
             || GameRuns || Launcher.Session.Busy || IsOverlay)
         {
             return;
         }
-        var again = phase == GameWorkPhase.SetupNeeded && !Launcher.GameSetup.NeedsDump
-            && Launcher.GameSetup.Reason is GameSetupReason.RuntimeChanged or GameSetupReason.Unfinished or GameSetupReason.GameMismatch;
         if (phase == GameWorkPhase.UpdateNeeded || again)
         {
             _gameUpdateOffered = true;
@@ -208,6 +214,10 @@ public sealed partial class ShellViewModel
             ShowGameWork(driving: true);
         }
     }
+
+    /// <summary>The runtime must be updated (or its update failed) before PLAY: PLAY opens the update's card, which does it, not the checklist.</summary>
+    public bool NeedsRuntimeUpdate => GameWorkPhase is GameWorkPhase.UpdateNeeded
+        || (GameWorkPhase == GameWorkPhase.RuntimeFailed && Launcher.Game.Install is not null && Launcher.Runtime is { PinnedVersion: { } want } runtime && runtime.InstalledVersion != want);
 
     /// <summary>False: the launcher never starts the game's update by itself (the screenshot harness, which shows the state it was asked for).</summary>
     public bool AutoGameUpdate { get; set; } = true;

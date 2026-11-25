@@ -365,7 +365,7 @@ public static class Strings
     public static string GameSettingsRunning => T("core.gs.game_is_running");
     public static string GameSettingsNextStart => T("core.gs.next_start");
     public static string GameSettingsTonemapMissing => T("core.gs.tonemap_missing");
-    public static string GameSettingsOwnedUpdateCheck => T("core.gs.owned_update_check");
+
     public static string GameSettingsOwnedStartScreen => T("core.gs.owned_start_screen");
     public static string GameSettingsOwnedLogicHz => T("core.gs.owned_logic_hz");
     public static string GameSettingsOwnedFullscreen => T("core.gs.owned_fullscreen");
@@ -531,6 +531,8 @@ public static class Strings
     public static string RecompCloseForVoice => T("core.recomp.close_for_voice");
     public static string RecompStartNoProcess => T("core.recomp.start_no_process");
     public static string RecompCloseGameFirst => T("core.recomp.close_game_first");
+    public static string OwnLauncherNone => T("core.own_launcher.none");
+    public static string OwnLauncherOpened(string name) => F("core.own_launcher.opened", ("name", name));
     public static string RecompCloseForMod => T("core.recomp.close_for_mod");
 
     public static string RecompProblemOther(string? version, string supported) => F("core.recomp.problem_other", ("version", version), ("supported", supported));

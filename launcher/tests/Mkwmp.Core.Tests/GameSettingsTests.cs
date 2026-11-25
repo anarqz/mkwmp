@@ -152,8 +152,8 @@ public class GameSettingsTests
             Assert.All(s.Settings, x => Assert.Equal(x.Default, x.Normalize(x.Default)));
             // a game set up before 0.1.16 has no tone mapper programs yet: the row is locked, as the game greys it out
             Assert.Equal(RecompSettings.TonemapMissing, tonemap.Locked);
-            // the pinned 0.1.16-mkwmp is one the launcher installs and sets up: it keeps mkw-recomp's updater and start screen
-            string[] owned = version == RecompRuntime.Pinned.Version ? ["update_check", "start_screen"] : [];
+            // the pinned release is one the launcher installs and sets up: it keeps mkw-recomp's start screen (the update check is the player's)
+            string[] owned = version == RecompRuntime.Pinned.Version ? ["start_screen"] : [];
             Assert.All(owned, id => Assert.NotNull(s.Find(id)!.Locked));
             Assert.All(s.Settings.Where(x => x.Id != "hdr_tonemap" && !owned.Contains(x.Id)), x => Assert.Null(x.Locked));
         }

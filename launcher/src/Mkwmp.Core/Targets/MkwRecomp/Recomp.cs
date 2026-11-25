@@ -73,8 +73,12 @@ internal static class Recomp
 {
     public const string Exe = "mkw.exe";
 
-    /// <summary>The runtimes the game patch supports.</summary>
-    public static readonly string[] Supported = ["0.1.10", "0.1.12", "0.1.13", "0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17", "0.1.18"];
+    /// <summary>
+    /// The one runtime MKWMP runs on: the pinned release (<see cref="RecompRuntime.Pinned"/>), nothing lower (the user's rule,
+    /// 2026-11-25). An earlier release is refused before PLAY, and the launcher updates it in place where it can
+    /// (<see cref="RuntimeManifest.UpdatesFrom"/>); the mod refuses it too (backend_plugin.c).
+    /// </summary>
+    public static readonly string[] Supported = ["0.1.18"];
 
     /// <summary>What the window recommends installing.</summary>
     public const string Recommended = "0.1.18";
@@ -108,11 +112,8 @@ internal static class Recomp
     /// <summary>MKWMP's mod folder name, under mkw-recomp's <c>mods/</c>.</summary>
     public const string Mod = "mkwmp";
 
-    /// <summary>
-    /// The supported releases that load mods (MKW_MODS): plugin API 1 in 0.1.15, 3 in 0.1.15-mkwmp
-    /// and 0.1.16, 4 in the fork's 0.1.16-mkwmp, in 0.1.17 and in 0.1.18. The mod asks the runtime which version it has and leaves out what is missing.
-    /// </summary>
-    public static readonly string[] ModRuntimes = ["0.1.15", "0.1.15-mkwmp", "0.1.16", "0.1.16-mkwmp", "0.1.16-mkwmp.1", "0.1.17", "0.1.18"];
+    /// <summary>The supported releases that load mods (MKW_MODS): 0.1.18 only, plugin API 4.</summary>
+    public static readonly string[] ModRuntimes = ["0.1.18"];
 
     /// <summary>
     /// The game versions MKWMP plays on. The game patch also has guest-address tables for 1.0.0, but
@@ -144,6 +145,18 @@ internal static class Recomp
     public static string RebuildProblem => Strings.RecompRebuild;
 
     public static string SupportedList => string.Join(" or ", Supported);
+
+    /// <summary>
+    /// Tests only: earlier releases taken as supported (value: whether it loads mods), so the fixtures of older games (the
+    /// winmm.dll patch on 0.1.10, the mod on 0.1.15) still exercise that code. Never filled outside the test project.
+    /// </summary>
+    internal static ConcurrentDictionary<string, bool> TestSupported { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Whether MKWMP runs on this release (<see cref="Supported"/>).</summary>
+    internal static bool IsSupported(string version) => Supported.Contains(version) || TestSupported.ContainsKey(version);
+
+    /// <summary>Whether this supported release loads the MKWMP mod (<see cref="ModRuntimes"/>).</summary>
+    internal static bool LoadsMods(string version) => ModRuntimes.Contains(version) || TestSupported.GetValueOrDefault(version);
 
     /// <summary>Tests' stand-ins for a real mkw.exe (sha256 → version); never filled outside the test project.</summary>
     internal static ConcurrentDictionary<string, string> TestExes { get; } = new(StringComparer.Ordinal);
@@ -202,7 +215,7 @@ internal static class Recomp
             // A release is itself even when listed; only a build no release has is a developer's.
             null when IsDevExe(hash) => new RecompId(RecompKind.Supported, RecompRuntime.Pinned.Version) { DevSha256 = hash },
             null => new RecompId(RecompKind.Unknown, null),
-            _ when Supported.Contains(version) => new RecompId(RecompKind.Supported, version),
+            _ when IsSupported(version) => new RecompId(RecompKind.Supported, version),
             _ => new RecompId(RecompKind.Other, version),
         };
     }
@@ -322,7 +335,7 @@ internal static class Recomp
     /// leftover <c>mods = mkwmp</c> on an older runtime does not count: nothing would load it.
     /// </summary>
     public static string? ActiveMod(string game) =>
-        Identify(game) is { Kind: RecompKind.Supported, Version: { } v } && ModRuntimes.Contains(v) ? ModDir(game) : null;
+        Identify(game) is { Kind: RecompKind.Supported, Version: { } v } && LoadsMods(v) ? ModDir(game) : null;
 
     /// <summary>
     /// The MKWMP mod's folder when mkw-recomp (0.1.15+) loads it, by the same rule as the probe:

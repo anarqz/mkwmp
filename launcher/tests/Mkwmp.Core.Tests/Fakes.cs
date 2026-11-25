@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Mkwmp.Core.Targets;
 using Mkwmp.Core.Targets.MkwRecomp;
 using Mkwmp.Core.Updates;
 
@@ -220,10 +221,19 @@ internal sealed class Rig : IAsyncDisposable
     public static readonly byte[] TestExe = "mkwmp test mkw.exe"u8.ToArray();
     public static readonly byte[] TestModExe = "mkwmp test mkw.exe with mods"u8.ToArray();
 
+    /// <summary>The release <see cref="TestExe"/> stands for (no mods: the winmm.dll patch), and <see cref="TestModExe"/>'s.</summary>
+    public const string LegacyVersion = "0.1.10", LegacyModVersion = "0.1.15";
+
+    /// <summary>The pin, without the earlier releases it updates in place: the fixtures' runtimes are not updates here.</summary>
+    public static RuntimeManifest PinWithoutUpdates => RecompRuntime.Pinned with { UpdatesFrom = [] };
+
     static Rig()
     {
-        Recomp.TestExes[Updater.Sha256Hex(TestExe)] = Recomp.Supported[0];
-        Recomp.TestExes[Updater.Sha256Hex(TestModExe)] = Recomp.ModRuntimes[0];
+        // MKWMP runs on 0.1.18 only; these older games still exercise the winmm.dll patch and the mod on an earlier runtime.
+        Recomp.TestSupported[LegacyVersion] = false;
+        Recomp.TestSupported[LegacyModVersion] = true;
+        Recomp.TestExes[Updater.Sha256Hex(TestExe)] = LegacyVersion;
+        Recomp.TestExes[Updater.Sha256Hex(TestModExe)] = LegacyModVersion;
     }
 
     /// <param name="executable">What the launcher takes for its own executable (null: none, as under a test host).</param>
@@ -262,6 +272,7 @@ internal sealed class Rig : IAsyncDisposable
             Version = "1.4.0",
             Executable = executable,
             Targets = [Target],
+            Runtime = PinWithoutUpdates,
             BindLocalApi = false, // as if the port were bound
             BackgroundLoops = false,
             Tick = TimeSpan.FromMilliseconds(40),

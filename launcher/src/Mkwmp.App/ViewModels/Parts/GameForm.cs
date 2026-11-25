@@ -37,7 +37,17 @@ public sealed class GameForm : ObservableObject
         UninstallCommand = RelayCommand.Async(UninstallAsync, () => CanUninstall);
         RebuildCommand = RelayCommand.Async(() => GameRebuild.AskAsync(_shell), () => GameRebuild.CanRun(_shell));
         ChecklistCommand = new RelayCommand(() => _shell.Navigate(Routes.Checklist));
+        OwnLauncherCommand = RelayCommand.Async(() => Launcher.OpenGameLauncherAsync(), () => CanOpenOwnLauncher);
     }
+
+    /// <summary>"Open mkw-recomp": the runtime's own start screen, without the game.</summary>
+    public ICommand OwnLauncherCommand { get; }
+
+    /// <summary>The row shows for a target with a start screen of its own, once its install is found.</summary>
+    public bool HasOwnLauncher => Found && Target is { } t && t.Capabilities.HasFlag(TargetCapabilities.OwnLauncher);
+
+    /// <summary>Not while PLAY holds the game, a setup runs or the runtime is being installed (the core says why when pressed anyway).</summary>
+    public bool CanOpenOwnLauncher => HasOwnLauncher && CanChange && !Launcher.Runtime.Busy && !Game.Working;
 
     /// <summary>"Set up the game again" (asks first).</summary>
     public ICommand RebuildCommand { get; }

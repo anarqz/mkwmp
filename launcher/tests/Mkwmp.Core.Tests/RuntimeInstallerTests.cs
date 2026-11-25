@@ -109,7 +109,11 @@ internal sealed class RuntimeRig : IDisposable
     public static readonly byte[] NewExe = "mkw.exe of the pinned fork build"u8.ToArray();
     public static readonly byte[] OldForkExe = "mkw.exe of an older fork build"u8.ToArray();
     public static readonly byte[] PreviousPinExe = "mkw.exe of the previous pin, 0.1.15-mkwmp"u8.ToArray();
-    public static readonly byte[] UpstreamExe = "mkw.exe of upstream 0.1.15"u8.ToArray();
+    /// <summary>An official release the mod never ran on (no plugin API): the player's own, never updated.</summary>
+    public static readonly byte[] UpstreamExe = "mkw.exe of upstream 0.1.13"u8.ToArray();
+
+    /// <summary>The official 0.1.17 installed by hand (no marker): updated in place to the pin.</summary>
+    public static readonly byte[] OfficialExe = "mkw.exe of upstream 0.1.17, installed by hand"u8.ToArray();
 
     /// <summary>The fork's last build, which the launcher pinned before the official 0.1.17 (a point release of the fork).</summary>
     public static readonly byte[] ForkPointExe = "mkw.exe of the fork's 0.1.16-mkwmp.1"u8.ToArray();
@@ -123,7 +127,8 @@ internal sealed class RuntimeRig : IDisposable
         Recomp.TestExes[Updater.Sha256Hex(NoAvx2Exe)] = Pinned;
         Recomp.TestExes[Updater.Sha256Hex(OldForkExe)] = "0.1.14-mkwmp";
         Recomp.TestExes[Updater.Sha256Hex(PreviousPinExe)] = PreviousPin;
-        Recomp.TestExes[Updater.Sha256Hex(UpstreamExe)] = "0.1.15";
+        Recomp.TestExes[Updater.Sha256Hex(UpstreamExe)] = "0.1.13";
+        Recomp.TestExes[Updater.Sha256Hex(OfficialExe)] = "0.1.17";
         Recomp.TestExes[Updater.Sha256Hex(ForkPointExe)] = "0.1.16-mkwmp.1";
     }
 
@@ -333,11 +338,14 @@ public class RuntimeManifestTests
         // the fork's last build, which this launcher installed before: updated in place to the official release
         Assert.True(m.SameLineage("0.1.16-mkwmp.1"));
         Assert.True(m.SameLineage("0.1.18"));
-        // an official 0.1.17 the launcher installed has its marker (Managed) and is updated; one installed by hand is not ours
-        Assert.False(m.SameLineage("0.1.17"));
-        // an official release the player installed by hand stays theirs
-        Assert.False(m.SameLineage("0.1.15"));
-        Assert.False(m.SameLineage("0.1.16"));
+        // an official release the mod ran on, installed by hand, is updated in place too: the launcher runs only the pinned one
+        Assert.True(m.SameLineage("0.1.15"));
+        Assert.True(m.SameLineage("0.1.16"));
+        Assert.True(m.SameLineage("0.1.17"));
+        Assert.True(RecompRuntime.NoAvx2.SameLineage("0.1.17"));
+        // one without the plugin API stays the player's
+        Assert.False(m.SameLineage("0.1.13"));
+        Assert.False(m.SameLineage("0.1.10"));
         Assert.False(m.SameLineage("0.1.16-mkwmpx"));
         Assert.False(m.SameLineage("0.1.16-mkwmp."));
         Assert.False(m.SameLineage(null));
@@ -822,7 +830,7 @@ public class RuntimeInstallerTests
         var e = await Assert.ThrowsAsync<LauncherException>(() => rig.Install());
 
         Assert.Contains("MKWMP did not install", e.Message, StringComparison.Ordinal);
-        Assert.Contains(upstream ? "mkw-recomp 0.1.15," : "MKWMP does not know", e.Message, StringComparison.Ordinal);
+        Assert.Contains(upstream ? "mkw-recomp 0.1.13," : "MKWMP does not know", e.Message, StringComparison.Ordinal);
         Assert.Empty(rig.Host.Requests);
         Assert.Equal(before, rig.Snapshot());
 
@@ -1020,7 +1028,7 @@ public class LauncherRuntimeTests
         var theirs = Path.Combine(home.Files.Root, "theirs");
         var before = home.Files.Snapshot(theirs);
         var view = home.Launcher.Runtime;
-        Assert.Equal((RuntimeState.Installed, "0.1.15", true), (view.State, view.InstalledVersion, view.Foreign));
+        Assert.Equal((RuntimeState.Installed, "0.1.13", true), (view.State, view.InstalledVersion, view.Foreign));
         Assert.Equal(home.Files.Folder, view.Folder); // where ours would go: not their folder
 
         // Over it: refused, whoever asks.
@@ -1057,6 +1065,51 @@ public class LauncherRuntimeTests
         Assert.Equal("new python",File.ReadAllText(Path.Combine(mine, "setup", "python", "python.exe")));
         Assert.Equal("save", File.ReadAllText(Path.Combine(mine, "profile", "save.bin")));
         Assert.False(Directory.Exists(home.Files.Folder)); // nothing went to the default folder
+    }
+
+    [Fact]
+    public async Task An_official_release_installed_by_hand_is_updated_in_place_to_the_pin()
+    {
+        // The player picked their own mkw-recomp 0.1.17 folder (no marker): it was "your own build" and stayed on 0.1.17.
+        await using var home = new Home(f => f.ExistingInstall(RuntimeRig.OfficialExe, Path.Combine(f.Root, "theirs")), game: "theirs");
+        var theirs = Path.Combine(home.Files.Root, "theirs");
+        Assert.Null(RuntimeInstaller.ManagedVersion(theirs));
+        var view = home.Launcher.Runtime;
+        Assert.Equal((RuntimeState.UpdateAvailable, "0.1.17", RuntimeRig.Pinned, theirs, false), (view.State, view.InstalledVersion, view.PinnedVersion, view.Folder, view.Foreign));
+        // MKWMP runs on 0.1.18 only: PLAY is refused, and the checklist's way out is the update in place, not a second install
+        Assert.NotNull(home.Launcher.PlayProblem);
+        Assert.Equal(TargetStatus.Unsupported, home.Launcher.Game.Check!.Status);
+        var row = home.Launcher.Checklist.Find(CheckId.Runtime)!;
+        Assert.Equal((CheckState.Needed, Strings.RuntimeUpdateNeeded("mkw-recomp", "0.1.18")), (row.State, row.Status));
+        Assert.Equal(CheckActionKind.InstallRuntime, row.Action!.Kind);
+        Assert.Contains("Update", row.Action.Label, StringComparison.Ordinal);
+        Assert.False(home.Launcher.Checklist.Ready);
+
+        await home.Launcher.InstallRuntimeAsync(null, default);
+
+        view = home.Launcher.Runtime;
+        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned, "mkw-recomp updated to 0.1.18"), (view.State, view.InstalledVersion, view.Note));
+        Assert.Equal(theirs, home.Launcher.Settings.Game);
+        Assert.Equal(RuntimeRig.NewExe, File.ReadAllBytes(Path.Combine(theirs, "mkw.exe")));
+        Assert.Equal("save", File.ReadAllText(Path.Combine(theirs, "profile", "save.bin")));
+        Assert.Equal(RuntimeRig.Pinned, RuntimeInstaller.ManagedVersion(theirs)); // ours from now on: the next pin updates it too
+        Assert.False(Directory.Exists(home.Files.Folder)); // nothing went to the default folder
+
+        // mkw-recomp's own updater (on again) moves it to a release MKWMP does not know: refused, and put back where it is
+        File.WriteAllBytes(Path.Combine(theirs, "mkw.exe"), "mkw.exe of a newer mkw-recomp than MKWMP knows"u8.ToArray());
+        await home.Launcher.FindGameAsync();
+        view = home.Launcher.Runtime;
+        Assert.Equal((RuntimeState.UpdateAvailable, (string?)null, theirs, false), (view.State, view.InstalledVersion, view.Folder, view.Foreign));
+        Assert.NotNull(home.Launcher.PlayProblem);
+        Assert.Equal(CheckActionKind.InstallRuntime, home.Launcher.Checklist.Find(CheckId.Runtime)!.Action!.Kind);
+
+        await home.Launcher.InstallRuntimeAsync(null, default);
+
+        Assert.Equal((RuntimeState.Installed, RuntimeRig.Pinned), (home.Launcher.Runtime.State, home.Launcher.Runtime.InstalledVersion));
+        Assert.Equal(RuntimeRig.NewExe, File.ReadAllBytes(Path.Combine(theirs, "mkw.exe")));
+        Assert.Equal(theirs, home.Launcher.Settings.Game);
+        Assert.Equal("save", File.ReadAllText(Path.Combine(theirs, "profile", "save.bin")));
+        Assert.False(Directory.Exists(home.Files.Folder)); // still the player's own folder, never the default one
     }
 
     [Fact]

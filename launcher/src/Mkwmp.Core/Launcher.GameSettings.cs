@@ -1,5 +1,6 @@
 // Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
 using Mkwmp.Core.Targets;
+using Mkwmp.Core.Targets.MkwRecomp;
 
 namespace Mkwmp.Core;
 
@@ -171,6 +172,34 @@ public sealed partial class Launcher
         {
             Note($"game settings: the overlay's values not written: {e.Message}");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Once per launcher: mkw-recomp's own update check goes back to its default (on). Launchers up to 1.4.6 wrote
+    /// <c>update_check = 0</c> into mkw.ini and locked the row; that 0 was theirs, not the player's, so it is taken out
+    /// (the game's default is on). Then <see cref="LauncherSettings.RecompUpdateCheckRestored"/> is set, and whatever the
+    /// player picks afterwards stays. Not while the game runs (it holds mkw.ini): the next look tries again.
+    /// </summary>
+    private void RestoreRecompUpdateCheck(IGameTarget target, GameInstall install)
+    {
+        if (Settings.RecompUpdateCheckRestored || install.TargetId != MkwRecompTarget.TargetId || target.IsRunning(install))
+        {
+            return;
+        }
+        try
+        {
+            if (target.ReadGameSettings(install).TryGetValue(RecompSettings.UpdateCheck, out var value)
+                && value.Trim().Trim('"').ToLowerInvariant() is "0" or "off" or "false" or "no")
+            {
+                target.WriteGameSettings(install, new Dictionary<string, string?> { [RecompSettings.UpdateCheck] = null });
+                Note($"game settings: {RecompSettings.UpdateCheck} back to mkw-recomp's default (on): MKWMP no longer keeps it off");
+            }
+            EditConfig(c => c with { Settings = c.Settings with { RecompUpdateCheckRestored = true } }, wakeFriends: false);
+        }
+        catch (Exception e) when (e is LauncherException or IOException or UnauthorizedAccessException)
+        {
+            Note($"game settings: {RecompSettings.UpdateCheck} not restored yet: {e.Message}");
         }
     }
 

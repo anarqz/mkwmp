@@ -203,7 +203,7 @@ setup\src\tools\prepare\prepare.py --game <data> --runtime <folder of mkw.exe> -
 `version`, `done`, `error <code> <detail>`). A setup is needed when `setup-state.json` has no
 `port` or another one than the installed runtime's (`mkw.exe --play` skips mkw-recomp's own check
 of it), when `mkwgame.dll` is missing or `mkwgame.id` is another runtime's, or when a linked copy
-is gone. The launcher keeps `update_check = 0` and `start_screen = skip` in `mkw.ini`
+is gone. The launcher keeps `start_screen = skip` in `mkw.ini` (and, up to 1.4.6, `update_check = 0`)
 (`RecompSettings.Owned`). Details, timings and the Proton notes: `RECOMP_INTEGRATION.md` 3.1.
 
 ### An emulator, concretely

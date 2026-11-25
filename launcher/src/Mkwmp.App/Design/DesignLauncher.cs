@@ -151,7 +151,7 @@ public sealed partial class DesignLauncher : ILauncher
 
     public GameView Game { get; private set; } = new(
         [new TargetInfo("mkw-recomp", "mkw-recomp", "the folder with mkw.exe",
-            TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch) { GameVersions = ["1.8.0"] }],
+            TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch | TargetCapabilities.OwnLauncher) { GameVersions = ["1.8.0"] }],
         new GameInstall("mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp", @"C:\Games\Mario Kart World\mkw-recomp\mkw.exe", "0.1.18", "1.8.0", null),
         new TargetCheck(TargetStatus.Ready, null, null, null, null),
         DemoMod,
@@ -405,6 +405,9 @@ public sealed partial class DesignLauncher : ILauncher
                 break;
             case "uptodate":
                 Change(() => Update = new UpdateView(UpdateState.UpToDate, null, null, 0, null, CoreStrings.UpToDate));
+                break;
+            case "update-downloading":
+                Change(() => Update = Update with { State = UpdateState.Downloading, Progress = 0.42, Remaining = TimeSpan.FromSeconds(20), Status = "Downloading 1.4.1…" });
                 break;
             case "update-ready":
                 Change(() => Update = Update with { State = UpdateState.ReadyToInstall, Progress = 1, Status = "Version 1.4.1 is downloaded and ready to install" });
@@ -712,6 +715,12 @@ public sealed partial class DesignLauncher : ILauncher
         Change(() => Game = Game with { Searching = true });
         await Pause(1200).ConfigureAwait(false);
         Change(() => Game = Game with { Searching = false });
+    }
+
+    public async Task OpenGameLauncherAsync()
+    {
+        await Pause(300).ConfigureAwait(false);
+        Change(() => Game = Game with { Note = CoreStrings.OwnLauncherOpened("mkw-recomp"), NoteIsError = false });
     }
 
     public async Task<bool> ChooseGameFolderAsync(string folder)

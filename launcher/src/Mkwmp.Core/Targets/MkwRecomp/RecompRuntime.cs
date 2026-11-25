@@ -87,9 +87,12 @@ public static class RecompRuntime
         // sm86 and python's caches 0.07 GB: 2.96 GB, rounded up.
         SetupSpace = 3_500_000_000,
         // The fork's builds this launcher installed before (0.1.15-mkwmp ... 0.1.16-mkwmp.1): an install of one is
-        // updated in place to the official release, keeping the game, its setup and the player's saves (Preserved). An
-        // official release installed by hand (0.1.16, say) is still the player's own and is left alone.
+        // updated in place to the official release, keeping the game, its setup and the player's saves (Preserved).
         LineageSuffix = "-mkwmp",
+        // An official release installed by hand that the MKWMP mod ran on (0.1.15 to 0.1.17) is updated in place too:
+        // players who picked their own install were left on 0.1.17 (fixed in MKWMP 1.4.7). All three have 0.1.18's
+        // game id (c9bbcb75a9ac9a49): the game code stays. Older releases have no plugin API and are left alone.
+        UpdatesFrom = ["0.1.15", "0.1.16", "0.1.17"],
         FolderName = "mkw-recomp",
         Preserved =
         [

@@ -34,6 +34,9 @@ public sealed class MkwRecompTarget : IGameTarget
     /// <summary>Tests: whether the game "runs", instead of looking for a real mkw.exe process.</summary>
     internal Func<bool>? RunningOverride { get; set; }
 
+    /// <summary>Tests: what mkw-recomp's own start screen would be started with, instead of starting it.</summary>
+    internal Action<ProcessStartInfo>? OwnLauncherOverride { get; set; }
+
     public string Id => TargetId;
 
     public string DisplayName => "mkw-recomp";
@@ -44,7 +47,7 @@ public sealed class MkwRecompTarget : IGameTarget
     public IReadOnlyList<string> GameVersions => Recomp.Games;
 
     public TargetCapabilities Capabilities =>
-        TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch;
+        TargetCapabilities.Friends | TargetCapabilities.VoiceChat | TargetCapabilities.Camera | TargetCapabilities.FriendRooms | TargetCapabilities.Launch | TargetCapabilities.OwnLauncher;
 
     public IReadOnlyList<PackageAsset> PackageAssets =>
     [
@@ -508,6 +511,42 @@ public sealed class MkwRecompTarget : IGameTarget
             ? new ProcessStartInfo(install.Executable, "--play")
             // /S: cmd takes off exactly the outer quotes, so the command arrives as the player wrote it.
             : new ProcessStartInfo(Environment.GetEnvironmentVariable("ComSpec") is { Length: > 0 } cmd ? cmd : "cmd.exe", $"/S /C \"{command}\"") { CreateNoWindow = true };
+        GameEnvironment(start, install);
+        return Start(start);
+    }
+
+    /// <summary>
+    /// mkw-recomp's own start screen (Settings › Game, "Open mkw-recomp"): <c>mkw.exe --launcher</c> with
+    /// <c>MKW_START_SCREEN=always</c>, which wins over the <c>start_screen = skip</c> the launcher keeps in mkw.ini (cfg.c
+    /// <c>raw_get</c>; runtime/ui/launcher/README.md: skipped, the screen does what Play does). <c>MKW_LAUNCHED</c> and
+    /// <c>MKW_NO_LAUNCHER</c> would skip it (main.c <c>want_launcher</c>), so they are taken out. The rest of the game's
+    /// environment is Play's: its Play button starts the game with the MKWMP mod as the player has it.
+    /// </summary>
+    public void OpenOwnLauncher(GameInstall install)
+    {
+        ArgumentNullException.ThrowIfNull(install);
+        SyncWineOverride(install.Root);
+        var start = new ProcessStartInfo(install.Executable, "--launcher") { WorkingDirectory = install.Root, UseShellExecute = false };
+        GameEnvironment(start, install);
+        start.Environment.Remove("MKW_LAUNCHED");
+        start.Environment.Remove("MKW_NO_LAUNCHER");
+        start.Environment[StartScreen] = "always";
+        _note($"{DisplayName}: its own start screen: {install.Executable} --launcher, {StartScreen}=always");
+        if (OwnLauncherOverride is { } test)
+        {
+            test(start);
+            return;
+        }
+        // The screen runs the game in a process of its own when Play is pressed: nothing here waits for either.
+        using var screen = Start(start);
+    }
+
+    /// <summary>The environment variable of mkw-recomp's <c>start_screen</c> setting (<c>auto</c>, <c>always</c>, <c>skip</c>).</summary>
+    internal const string StartScreen = "MKW_START_SCREEN";
+
+    /// <summary>What every start of mkw.exe gets from the launcher: Wine's full screen, controller and shadow storage, a developer build's mark.</summary>
+    private void GameEnvironment(ProcessStartInfo start, GameInstall install)
+    {
         start.WorkingDirectory = install.Root;
         start.UseShellExecute = false;
         foreach (var (name, value, why) in RecompLaunchEnv.For(Platform.WineHost.Detected, Environment.GetEnvironmentVariable, RecompSettings.IniValues(install)))
@@ -522,6 +561,15 @@ public sealed class MkwRecompTarget : IGameTarget
             }
             _note($"game environment: {name}={value ?? "(removed)"} ({why})");
         }
+        if (install.DevSha256 is { } dev)
+        {
+            start.Environment[RecompLaunchEnv.DevRecomp] = "1";
+            _note($"game environment: {RecompLaunchEnv.DevRecomp}=1 (development mkw.exe {dev}, {Recomp.DevExeSetting})");
+        }
+    }
+
+    private static GameProcess Start(ProcessStartInfo start)
+    {
         try
         {
             return System.Diagnostics.Process.Start(start) is { } process ? new GameProcess(process) : throw new LauncherException(Strings.RecompStartFailed(Strings.RecompStartNoProcess));

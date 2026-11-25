@@ -43,6 +43,12 @@ public static class RecompLaunchEnv
     public const string AllowSteamVirtualGamepad = "SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD";
     public const string Shadow = "MKW_SHADOW";
 
+    /// <summary>
+    /// Set for a developer's mkw.exe the launcher accepts as the pinned one (<c>[dev] recomp_exe_sha256</c>): the mod runs only
+    /// on mkw-recomp 0.1.18 by the version the runtime reports, and a test build may report another (backend_plugin.c).
+    /// </summary>
+    public const string DevRecomp = "MKWMP_DEV_RECOMP";
+
     /// <summary>SteamOS (Steam sets <c>SteamOS=1</c> there) or a gamescope session (Game Mode, or gamescope run by hand).</summary>
     public static bool SteamOsOrGamescope(Func<string, string?> env)
     {

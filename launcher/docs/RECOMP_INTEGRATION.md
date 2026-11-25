@@ -59,7 +59,7 @@ changed. That is the launcher's "make this install current" operation after ever
 | What `--play` skips besides the window | The "set up again after an update" check (`port`), the code-mod rebuild, the mods merge, the save backup before a new mod set, the last-run notice, the GPU check. The launcher must do the first; the rest is section 2. |
 | Runtime versus generated | The zip holds `mkw.exe`, `SDL3.dll`, `libopus-0.dll`, `libusb-1.0.dll`, `setup\` and `licenses\`, nothing else (`fork: tools/build/release.py` `windows`, `dist.py` `WIN_DLLS`; zip listing). Everything else in a game folder is made on the player's machine: section 1.8. |
 | `setup\` on a runtime update | `setup\` is runtime, not player data. `setup\src` and `setup\lib` belong to one mkw.exe: the step keys hash `setup\src`, and the game id comes from `setup\src\runtime\cpu\*.h`. An update that keeps an old `setup\src` builds a game the new mkw.exe refuses. Compare every file of the zip, `setup\` included. |
-| The in-app updater | It asks `releases/latest` of `anarqz/mkw-recomp` (`fork: tools/prepare/update.py` `REPO`). A player who opens mkw.exe directly is offered the next fork release and leaves the pin. Write `update_check = 0`. |
+| The in-app updater | It asks `releases/latest` of `anarqz/mkw-recomp` (`fork: tools/prepare/update.py` `REPO`). A player who opens mkw.exe directly is offered the next release and leaves the pin. Up to MKWMP 1.4.6 the launcher wrote `update_check = 0`; from 1.4.7 the check is the player's again (on by default) and a release that is not the pin is refused before PLAY and put back by the launcher's update (`RuntimeManifest.UpdatesFrom`, the marker). |
 | Game id of the pin | `c0dd6cf12c07c23a` (recomputed here from the tag's headers and found in the zip's mkw.exe; matches `Recomp.GameIds`). The 0.1.16-rc line is `c9bbcb75a9ac9a49`: the bump to it recompiles the game for every player. |
 | The setup's own downloads | One: NVIDIA's CUDA 12.8 `nvdisasm` and `ptxas` (126 MB on Windows, pinned by sha256) from `developer.download.nvidia.com`, by `spec.py`, to build the shader decoder's spec in `<game>\sm86\`. Nothing of the game. |
 | Credits | mkw-recomp's `LICENSE`: `MIT License`, `Copyright (c) 2026 Adrià`. Section 4. |
@@ -321,7 +321,7 @@ Two UIs, both Dear ImGui: the start screen (its own SDL window, `fork: runtime/u
 | Play; before it: rebuild when a code mod changed, `mods_merge_sync`, `mods_before_play` (copies `save\` to `save-before-mods\<time>\` when the mod list changed, then writes `mods_played`) | PLAY with `mkw.exe --play`, which skips all three | The MKWMP mod has no `romfs\` and no code (`mod.json`: title, version, `has_plugin`), so merge and rebuild do nothing for it. For players with other mods: run `python -I setup\src\tools\mod\merge.py --game G --romfs R --enable <mods> --choices G\mods\choices.json` and check `mods\.rebuild` before PLAY, or state that other mods are managed in mkw-recomp. The save backup is a few lines to port |
 | Profile chip, Profiles page (`launcher_players.cpp`: players under `profile\players`, `MKW_PLAYER`) | the launcher's own profile (gamertag) | mkw-recomp players are not shown. One player is the default; nothing needed for stage 1 |
 | Controllers seen, with battery | the launcher reads XInput for itself | a list is cosmetic; not needed |
-| Update card (`launcher_update.cpp`) | replaced by `RuntimeInstaller` | write `update_check = 0` and lock it |
+| Update card (`launcher_update.cpp`) | replaced by `RuntimeInstaller` | left on (1.4.7): what it installs is refused unless it is the pin, and updated back |
 | Last run notice (`launcher_lastrun.cpp`: `lastrun.py --game G --version V` prints `clean`, `known N`, `fixed N vX`, `crash`) | bug-report zip has the logs | optional: run the same script after the game exits with a non-zero code (a fatal exits 70, `fork: runtime/cpu/dispatch.c` `rt_fatal`) |
 | GPU warning (`list_gpus`, `vk_gpu_report`: Vulkan 1.3, extensions, queue) | none | section 2.4 |
 | Desktop shortcut, Add to Steam (`steam.py`), library art | none | the launcher is the shortcut; stage 3 |
@@ -448,7 +448,7 @@ becomes "run the driver", not a message.
 - `start_screen = skip`: for a player who starts mkw.exe by hand or from Steam. It is not a guarantee: the screen
   still opens when the game is not set up, the dump is gone, another version set the folder up, a code mod is to be
   built, the last run ended in a fatal, or View/Select is held (`launcher.cpp` `console_start`).
-- `update_check = 0`: so the fork's updater never moves the runtime off the pin.
+- `update_check`: no longer written (1.4.7). Launchers up to 1.4.6 wrote `0`; the launcher takes that out once (`recomp_update_check_restored` in client.toml), so mkw-recomp's default (on) is back.
 
 **The menu**: the overlay is what a pad opens; mkw-recomp's menu stays reachable with F1/Esc and through the
 overlay's "Game settings (mkw-recomp)" button on API 4. Stage 1 needs it for bindings and live settings.
@@ -462,7 +462,7 @@ tests in `GameSetupTests.cs`):
 - Done from the list above: every precondition (the CPU check with .NET's `Avx2`/`Fma`/`Bmi2.IsSupported`), the command,
   the lines, `warm.log`'s count, the three codes of the start screen, cancel by killing the process tree, the notice
   when the lock is held (no line for 10 s at the start), the "ready" test (`RecompSetup.Status`, with the linked copy
-  that moved as `DumpMissing`), `update_check = 0` and `start_screen = skip` written and locked.
+  that moved as `DumpMissing`), `start_screen = skip` written and locked (`update_check` left to the player from 1.4.7).
 - Time left: the steps are weighed in seconds of the PC of 1.6 (check 4, exefs 6, romfs 1 linked or 900 copied,
   generate 160, compile 186, shaders 80 beside a build or 266 alone, warm 76, cleanup 24), skipped steps leave the
   total, and what remains is scaled by how long the finished steps really took here.

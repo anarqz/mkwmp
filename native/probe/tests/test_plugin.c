@@ -160,7 +160,7 @@ int main(int argc, char **argv) {
     assert(!dlsym(so, "mkw_mod_page"));                            // no options page: the launcher sets everything
 
     MkwPluginApi api = {
-        .size = sizeof api, .version = MKW_PLUGIN_API_VERSION, .port_version = "test", .game_version = "1.8.0",
+        .size = sizeof api, .version = MKW_PLUGIN_API_VERSION, .port_version = "0.1.18", .game_version = "1.8.0",
         .game_id = "00", .mod_dir = dir, .mod_name = "mkwmp",
         .log = fake_log, .cfg_get = fake_cfg_get, .guest_modules = fake_guest_modules,
         .guest_symbol = fake_guest_symbol, .module_base = fake_module_base,
@@ -179,6 +179,16 @@ int main(int argc, char **argv) {
     message = NULL;
     assert(init(&short_api, MKW_PLUGIN_API_VERSION, &message) != 0 && message && g_n_overrides == 0);
     printf("short table declined: %s\n", message);
+    // an earlier mkw-recomp (0.1.17): declined, nothing registered; unless the launcher says it is a development build
+    MkwPluginApi older = api;
+    older.port_version = "0.1.17";
+    message = NULL;
+    unsetenv("MKWMP_DEV_RECOMP");
+    assert(init(&older, MKW_PLUGIN_API_VERSION, &message) != 0 && message && strstr(message, "0.1.18") && g_n_overrides == 0);
+    printf("older mkw-recomp declined: %s\n", message);
+    older.port_version = NULL;
+    message = NULL;
+    assert(init(&older, MKW_PLUGIN_API_VERSION, &message) != 0 && message && g_n_overrides == 0);
 
     // the real thing, as a version 1 runtime gives it (no mod settings: the table ends with the overlay)
     MkwPluginApi v1 = api;

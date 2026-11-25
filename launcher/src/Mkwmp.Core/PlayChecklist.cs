@@ -188,20 +188,22 @@ public sealed class PlayChecklist : IEquatable<PlayChecklist>
                 : Row(CheckId.Runtime, title, Strings.F("core.check.runtime.missing", ("name", name), ("version", pinned)), CheckState.Needed,
                     Act(CheckActionKind.InstallRuntime, "core.check.do.install_runtime", name));
         }
+        if (runtime.State == RuntimeState.UpdateAvailable)
+        {
+            // An earlier release the launcher updates in place (MKWMP's build, or an official one installed by hand), or the
+            // build for another processor (no AVX2). Before the gate below: such an install is refused for its version,
+            // and the way out is this update, never a second install beside it.
+            var status = runtime.InstalledVersion == runtime.PinnedVersion
+                ? Strings.F("core.check.runtime.cpu", ("name", name), ("version", pinned))
+                : Strings.RuntimeUpdateNeeded(name, pinned);
+            return Row(CheckId.Runtime, title, status, CheckState.Needed, Act(CheckActionKind.InstallRuntime, "core.check.do.update_runtime", name));
+        }
         if (f.Game.Check is { Status: TargetStatus.Missing or TargetStatus.Unsupported } check && check.Gate != TargetGate.GameVersion)
         {
             // Not a build MKWMP runs on: the player's own is never replaced, MKWMP's goes beside it.
             return Row(CheckId.Runtime, title, check.Problem ?? Strings.SetGameFolder(f.FolderHint), CheckState.Needed, runtime.State == RuntimeState.Unavailable
                 ? Act(CheckActionKind.ChooseGameFolder, "core.check.do.folder")
                 : runtime.Foreign ? Act(CheckActionKind.InstallRuntime, "core.check.do.install_ours") : Act(CheckActionKind.InstallRuntime, "core.check.do.install_runtime", name));
-        }
-        if (runtime.State == RuntimeState.UpdateAvailable)
-        {
-            // MKWMP's build, another version, or the build for another processor (no AVX2): updated in place.
-            var status = runtime.InstalledVersion == runtime.PinnedVersion
-                ? Strings.F("core.check.runtime.cpu", ("name", name), ("version", pinned))
-                : Strings.RuntimeUpdateNeeded(name, pinned);
-            return Row(CheckId.Runtime, title, status, CheckState.Needed, Act(CheckActionKind.InstallRuntime, "core.check.do.update_runtime", name));
         }
         if (runtime.State == RuntimeState.Failed && runtime.Note is { } note)
         {

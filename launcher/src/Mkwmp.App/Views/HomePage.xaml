@@ -41,7 +41,7 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.ItemTemplate>
           <DataTemplate>
-            <c:Tile Title="{Binding Title}" Subtitle="{Binding Subtitle}" Badge="{Binding Badge}" Progress="{Binding Progress}"
+            <c:Tile Title="{Binding Title}" Subtitle="{Binding Subtitle}" Badge="{Binding Badge}" Progress="{Binding Progress}" Alert="{Binding Alert}"
                     Seed="{Binding Seed}" Icon="{Binding IconKey, Converter={StaticResource Conv.Icon}}"
                     Image="{Binding Image}" Width="{Binding Width}"
                     Command="{Binding Command}" GotFocus="OnTileFocus" LostFocus="OnTileBlur" />
@@ -138,13 +138,11 @@
         <!-- Friends; without a server: the same button with a lock, to Settings › Online -->
         <c:DockButton Icon="{Binding FriendsIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding FriendsLabel}" Tint="#FFF08A1A"
                       HasDot="{Binding HasRequests}" Command="{Binding FriendsCommand}" />
-        <c:DockButton Icon="{StaticResource Icon.Download}" Label="{Binding S[home.updates]}" Tint="#FFE2498A"
-                      HasDot="{Binding HasUpdate}" Command="{Binding UpdateCommand}" />
+
         <c:DockButton Icon="{Binding FullscreenIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding FullscreenLabel}" Tint="#FF0E9DB8"
                       Command="{Binding FullscreenCommand}"
                       Visibility="{Binding CanSwitchFullscreen, Converter={StaticResource Conv.Visible}}" />
-        <c:DockButton Icon="{StaticResource Icon.Package}" Label="{Binding S[home.mods]}" Tint="#FF2F9E5B" Command="{Binding ModsCommand}"
-                      Visibility="{Binding ShowMods, Converter={StaticResource Conv.Visible}}" />
+
         <c:DockButton Icon="{StaticResource Icon.Settings}" Label="{Binding S[home.settings]}" Command="{Binding SettingsCommand}" />
         <!-- over a game: ends the game itself (it asks first), not only the launcher -->
         <c:DockButton Icon="{StaticResource Icon.Exit}" Label="{Binding S[home.overlay.quit]}" Tint="#FFE5484D" Command="{Binding QuitGameCommand}"

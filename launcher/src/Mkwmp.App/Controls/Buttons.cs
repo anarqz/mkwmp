@@ -103,7 +103,7 @@ public sealed class DockButton : Button
 /// <summary>
 /// A card of the home carousel: an <see cref="Image"/>, or generated gradient art (from
 /// <see cref="Seed"/>, else the title) with an <see cref="Icon"/>; a title and subtitle on it, an
-/// optional <see cref="Badge"/> (top right) and <see cref="Progress"/> strip (0..1, NaN hides it).
+/// optional <see cref="Badge"/> (top right; in the pink of updates while <see cref="Alert"/>) and <see cref="Progress"/> strip (0..1, NaN hides it).
 /// </summary>
 public sealed class Tile : Button
 {
@@ -114,6 +114,7 @@ public sealed class Tile : Button
     public static readonly DependencyProperty SeedProperty = Dp.Register<Tile, string>(nameof(Seed), "", (d, _) => ((Tile)d).UpdateArt());
     public static readonly DependencyProperty BadgeProperty = Dp.Register<Tile, string>(nameof(Badge), "");
     public static readonly DependencyProperty ProgressProperty = Dp.Register<Tile, double>(nameof(Progress), double.NaN);
+    public static readonly DependencyProperty AlertProperty = Dp.Register<Tile, bool>(nameof(Alert), false);
     public static readonly DependencyProperty ArtProperty = Dp.Register<Tile, Brush?>(nameof(Art), null);
     public static readonly DependencyProperty CardClipProperty = Dp.Register<Tile, Geometry?>(nameof(CardClip), null);
 
@@ -160,6 +161,13 @@ public sealed class Tile : Button
     {
         get => (double)GetValue(ProgressProperty);
         set => SetValue(ProgressProperty, value);
+    }
+
+    /// <summary>Something waits for the player here (an update): the badge is drawn in pink with a white ring, not white.</summary>
+    public bool Alert
+    {
+        get => (bool)GetValue(AlertProperty);
+        set => SetValue(AlertProperty, value);
     }
 
     /// <summary>The brush behind the icon; generated unless set.</summary>

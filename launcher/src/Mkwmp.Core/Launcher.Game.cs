@@ -99,6 +99,10 @@ public sealed partial class Launcher
                 _integration = integration;
             }
         });
+        if (install is not null)
+        {
+            RestoreRecompUpdateCheck(_targets.Get(Settings.Target), install); // once: the update check MKWMP used to keep off
+        }
         FollowGameSettings();
         if (install is not null)
         {
@@ -167,6 +171,50 @@ public sealed partial class Launcher
         return true;
     }
 
+    public async Task OpenGameLauncherAsync()
+    {
+        var s = Settings;
+        var target = _targets.Get(s.Target);
+        (string Text, bool IsError) note;
+        try
+        {
+            if (!target.Capabilities.HasFlag(TargetCapabilities.OwnLauncher))
+            {
+                throw new LauncherException(Strings.OwnLauncherNone);
+            }
+            if (SessionHoldsGame)
+            {
+                throw new LauncherException(Strings.PressStopFirst);
+            }
+            if (SetupRunning)
+            {
+                throw new LauncherException(Strings.SetupRunning);
+            }
+            if (Runtime.Busy)
+            {
+                throw new LauncherException(Strings.RuntimeBusy(target.DisplayName));
+            }
+            if (GameFinder.Detect(target, s.Game) is not { } install)
+            {
+                throw new LauncherException(Strings.SetGameFolder(target.FolderHint));
+            }
+            await Task.Run(() =>
+            {
+                if (target.IsRunning(install))
+                {
+                    throw new LauncherException(Strings.RecompCloseGameFirst);
+                }
+                target.OpenOwnLauncher(install);
+            }).ConfigureAwait(false);
+            note = (Strings.OwnLauncherOpened(target.DisplayName), false);
+        }
+        catch (LauncherException e)
+        {
+            note = (e.Message, true);
+        }
+        Note($"{target.DisplayName}: open its own start screen: {note.Text}");
+        Mutate(() => _gameNote = note);
+    }
     /// <summary>INSTALL: turn the integration on, save, install or repair it.</summary>
     public Task InstallIntegrationAsync() => IntegrationJobAsync(async () =>
     {

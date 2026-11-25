@@ -13,46 +13,39 @@ public class RecompTests
     [Fact]
     public void Only_supported_releases_pass()
     {
+        // MKWMP runs on mkw-recomp 0.1.18 and nothing lower (2026-11-25): the launcher's gate and the mod's (backend_plugin.c)
+        Assert.Equal(["0.1.18"], Recomp.Supported);
+        Assert.Equal(["0.1.18"], Recomp.ModRuntimes);
+        Assert.Equal(Recomp.Recommended, RecompRuntime.Pinned.Version);
         var unknown = Recomp.IdentifyBytes("not mkw.exe"u8);
         Assert.Equal(RecompKind.Unknown, unknown.Kind);
         Assert.False(unknown.Ok);
-        Assert.Contains("0.1.13", unknown.Problem, StringComparison.Ordinal);
-        Assert.Contains("0.1.11: MKWMP needs 0.1.10 or 0.1.12 or 0.1.13 or 0.1.15 or 0.1.15-mkwmp or 0.1.16 or 0.1.16-mkwmp", new RecompId(RecompKind.Other, "0.1.11").Problem, StringComparison.Ordinal);
+        Assert.Equal("Unknown mkw-recomp: MKWMP needs 0.1.18", unknown.Problem);
+        Assert.Contains("0.1.17: MKWMP needs 0.1.18", new RecompId(RecompKind.Other, "0.1.17").Problem, StringComparison.Ordinal);
         Assert.Equal(RecompKind.Unknown, Recomp.IdentifyBytes([]).Kind);
-        var ok = new RecompId(RecompKind.Supported, "0.1.10");
+        var ok = new RecompId(RecompKind.Supported, "0.1.18");
         Assert.True(ok.Ok);
         Assert.Null(ok.Problem);
-        Assert.Equal("mkw-recomp 0.1.10: supported by this MKWMP.", ok.Explain);
-        Assert.All(Recomp.Supported, v => Assert.Contains(Recomp.Known, k => k.Version == v)); // every supported release has a known hash
+        Assert.Equal("mkw-recomp 0.1.18: supported by this MKWMP.", ok.Explain);
         Assert.All(Recomp.Known, k => Assert.Equal(64, k.Sha256.Length));
-        Assert.Contains(Recomp.Recommended, Recomp.Supported);
-        Assert.EndsWith(Recomp.Recommended, Recomp.Download, StringComparison.Ordinal);
-        // upstream 0.1.16: the mkw.exe of mkw-recomp-0.1.16-windows-x64.zip (zip sha256 e5d26c2f...8288), which loads mods
-        Assert.Contains(("0.1.16", "e1829a08a7e24ab0f54425fd5e6a400a6fe5c54798757a80a104268e6c18e029"), Recomp.Known);
-        Assert.Contains("0.1.16", Recomp.Supported);
-        Assert.Contains("0.1.16", Recomp.ModRuntimes);
-        // the fork's 0.1.16-mkwmp, the pinned build: its windows-x64 zip and its windows-x64-noavx2 zip
-        Assert.Contains(("0.1.16-mkwmp", "73997d10f8cca878e9654b174c194833053a529ec04ff3b03be587c1e592eb8f"), Recomp.Known);
-        Assert.Contains(("0.1.16-mkwmp", "0bceb91d6156af779f5fad48963908fc39e4bf0d477f826e0d7106ec4605a34f"), Recomp.Known);
-        Assert.Contains("0.1.16-mkwmp", Recomp.Supported);
-        Assert.Contains("0.1.16-mkwmp", Recomp.ModRuntimes);
-        Assert.Contains("0.1.16-mkwmp.1", Recomp.ModRuntimes);
-        Assert.Contains("0.1.16-mkwmp.1", Recomp.Supported);
-        Assert.Contains(("0.1.16-mkwmp.1", "d04dc49a14618dce8385cdb1c3e61ba1bd62a2e5938ddf7dd216c926517cc72d"), Recomp.Known);
-        // the official 0.1.17, the first official release pinned again: its windows-x64 zip and its windows-x64-noavx2 zip
+        Assert.Equal(Recomp.Known.Length, Recomp.Known.Select(k => k.Sha256).Distinct().Count());
+        Assert.Equal("https://github.com/adriadam10/mkw-recomp/releases/tag/v0.1.18", Recomp.Download);
+        // 0.1.18: its windows-x64 zip and its windows-x64-noavx2 zip, both supported
+        foreach (var hash in new[] { "84874fe56ea156ee7e10095d9f1c70a3877a5c8f280feb43ecc5c9a94678ce06", "38b545ce7f017183c8919f958311e3d6b6083c61326f27b95d4a6fcff4513f83" })
+        {
+            Assert.Contains(("0.1.18", hash), Recomp.Known);
+            Assert.Equal((RecompKind.Supported, "0.1.18"), (Recomp.IdentifyHash(hash).Kind, Recomp.IdentifyHash(hash).Version));
+        }
+        // every earlier release is still recognised by its mkw.exe (so the launcher can update it in place), and refused
+        foreach (var (version, hash) in Recomp.Known.Where(k => k.Version != "0.1.18" && !Recomp.TestSupported.ContainsKey(k.Version)))
+        {
+            var id = Recomp.IdentifyHash(hash);
+            Assert.Equal((RecompKind.Other, version), (id.Kind, id.Version));
+            Assert.False(id.Ok);
+            Assert.Contains("MKWMP needs 0.1.18", id.Problem, StringComparison.Ordinal);
+        }
         Assert.Contains(("0.1.17", "48ede546a7da356d2319260b6f8ec1814c009bc8421c1b5b3c847d82b6be09ce"), Recomp.Known);
         Assert.Contains(("0.1.17", "e67d12344bab5bb4d2411e85265aa71cdaf814045d1adb7ae4b51f4fec871211"), Recomp.Known);
-        Assert.Contains("0.1.17", Recomp.Supported);
-        Assert.Contains("0.1.17", Recomp.ModRuntimes);
-        // 0.1.18, the pinned build: its windows-x64 zip and its windows-x64-noavx2 zip
-        Assert.Contains(("0.1.18", "84874fe56ea156ee7e10095d9f1c70a3877a5c8f280feb43ecc5c9a94678ce06"), Recomp.Known);
-        Assert.Contains(("0.1.18", "38b545ce7f017183c8919f958311e3d6b6083c61326f27b95d4a6fcff4513f83"), Recomp.Known);
-        Assert.Contains("0.1.18", Recomp.Supported);
-        Assert.Contains("0.1.18", Recomp.ModRuntimes);
-        Assert.Equal("0.1.18", Recomp.Recommended);
-        Assert.Equal("https://github.com/adriadam10/mkw-recomp/releases/tag/v0.1.18", Recomp.Download);
-        Assert.Equal(Recomp.Known.Length, Recomp.Known.Select(k => k.Sha256).Distinct().Count());
-        Assert.All(Recomp.ModRuntimes, v => Assert.Contains(v, Recomp.Supported));
     }
 
     [Fact]

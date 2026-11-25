@@ -107,6 +107,10 @@
             <!-- the play checklist: everything PLAY needs, its state, a button to fix each -->
             <c:SettingsRow Label="{Binding S[settings.game.check_row]}" Kind="Chevron" Icon="{StaticResource Icon.Check}"
                            Value="{Binding Game.ChecklistState}" Command="{Binding Game.ChecklistCommand}" Caption="{Binding S[settings.game.check_caption]}" />
+            <!-- mkw-recomp's own start screen (mkw.exe with its launcher flag), not the game: its settings, files, mods and tools -->
+            <c:SettingsRow Label="{Binding S[settings.game.own_launcher_row]}" Kind="Chevron" Icon="{StaticResource Icon.Program}"
+                           Command="{Binding Game.OwnLauncherCommand}" Caption="{Binding S[settings.game.own_launcher_caption]}"
+                           Visibility="{Binding Game.HasOwnLauncher, Converter={StaticResource Conv.Visible}}" />
 
             <c:SectionHeader Text="{Binding Game.FilesTitle}" />
             <TextBlock Text="{Binding Game.FilesCaption}" Style="{StaticResource Note}" />

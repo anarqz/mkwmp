@@ -89,7 +89,7 @@ int main(int argc, char **argv) {
     if (!init) { fprintf(stderr, "no mkw_plugin_init\n"); return 1; }
 
     MkwPluginApi api = {
-        .size = sizeof api, .version = MKW_PLUGIN_API_VERSION, .port_version = "test", .game_version = "1.8.0",
+        .size = sizeof api, .version = MKW_PLUGIN_API_VERSION, .port_version = "0.1.18", .game_version = "1.8.0",
         .game_id = "00", .mod_dir = argv[2], .mod_name = "mkwmp",
         .log = fake_log, .cfg_get = fake_cfg_get, .guest_modules = fake_guest_modules,
         .guest_symbol = fake_guest_symbol, .module_base = fake_module_base,

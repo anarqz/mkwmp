@@ -43,7 +43,7 @@ internal static class Mod
 
     /// <summary>A runtime that loads mods: the integration there is the mod.</summary>
     public static bool Capable(string game) =>
-        Recomp.Identify(game) is { Kind: RecompKind.Supported, Version: { } v } && Recomp.ModRuntimes.Contains(v);
+        Recomp.Identify(game) is { Kind: RecompKind.Supported, Version: { } v } && Recomp.LoadsMods(v);
 
     public static string Dir(string game) => Path.Combine(Recomp.DataDir(game), "mods", Recomp.Mod);
 

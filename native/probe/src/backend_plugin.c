@@ -55,6 +55,10 @@
 #include <stdio.h>
 #include <string.h>
 
+// The one mkw-recomp the mod runs on (launcher/src/Mkwmp.Core/Targets/MkwRecomp/Recomp.cs, Supported): its plugin API's
+// port_version, exactly.
+#define MKWMP_RECOMP_VERSION "0.1.18"
+
 RtApi g_rt;
 
 static const MkwPluginApi *g_api;
@@ -244,6 +248,21 @@ MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_vers
               api->port_version ? api->port_version : "?", (unsigned)api_version, (unsigned)api->size,
               api->game_version ? api->game_version : "?", api->mod_name ? api->mod_name : "?",
               api->mod_dir ? api->mod_dir : "(none)");
+    // MKWMP runs on one mkw-recomp only (the launcher's pin, Recomp.Supported): an earlier release is refused, so a
+    // player who starts the game outside the launcher is never online on it. A developer's build the launcher accepts
+    // ([dev] recomp_exe_sha256) may report another version: the launcher sets MKWMP_DEV_RECOMP=1 for it.
+    if (!api->port_version || strcmp(api->port_version, MKWMP_RECOMP_VERSION) != 0) {
+        char dev[8];
+        if (plat_getenv("MKWMP_DEV_RECOMP", dev, sizeof dev) && !strcmp(dev, "1")) {
+            mkwmp_log("plugin: mkw-recomp %s is not %s: accepted as a development build (MKWMP_DEV_RECOMP=1)",
+                      api->port_version ? api->port_version : "?", MKWMP_RECOMP_VERSION);
+        } else {
+            char reason[160];
+            snprintf(reason, sizeof reason, "MKWMP needs mkw-recomp %s (this is %s): update it with the MKWMP launcher",
+                     MKWMP_RECOMP_VERSION, api->port_version ? api->port_version : "unknown");
+            return refuse(message, reason);
+        }
+    }
     // Crash records (crash.h): <game folder>\mkwmp-crash.log and a minidump, for the launcher to offer as a report.
     // The runtime is up already, so its fault handler comes after ours: ours only remembers what that one may repair.
     crash_install(NULL, 0);

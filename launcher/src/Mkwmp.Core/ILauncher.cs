@@ -142,6 +142,13 @@ public interface ILauncher : IAsyncDisposable
 
     // Game folder and integration (Infinity's picker pattern: explicit, saved choice, launcher folder, look-around)
     Task FindGameAsync();
+
+    /// <summary>
+    /// Settings › Game, "Open mkw-recomp": the runtime's own start screen, not the game (<see cref="Targets.IGameTarget.OpenOwnLauncher"/>).
+    /// Refused while PLAY holds the game, while the game runs, and while a setup or the runtime's install runs. Never
+    /// throws: the outcome is <see cref="GameView.Note"/>.
+    /// </summary>
+    Task OpenGameLauncherAsync();
     /// <summary>False when the folder is not an install of any known target.</summary>
     Task<bool> ChooseGameFolderAsync(string folder);
     Task InstallIntegrationAsync();
@@ -562,6 +569,11 @@ public sealed record LauncherSettings
     /// Only then is a <c>launch = false</c> kept on SteamOS, where the launcher once wrote it as its default.
     /// </summary>
     public bool LaunchChosen { get; init; }
+    /// <summary>
+    /// <c>recomp_update_check_restored = true</c>: mkw-recomp's own update check, which launchers up to 1.4.6 kept off
+    /// (<c>update_check = 0</c> in mkw.ini), was given back its default (on) once. Afterwards the player's choice stays.
+    /// </summary>
+    public bool RecompUpdateCheckRestored { get; init; }
     public SeatMode Seat { get; init; } = SeatMode.Start;
     public int LocalPort { get; init; } = 47820;
     public bool AutoUpdate { get; init; } = true;

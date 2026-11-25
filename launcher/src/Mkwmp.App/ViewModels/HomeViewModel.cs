@@ -19,6 +19,7 @@ public sealed class HomeTile : ObservableObject
     private double _progress = double.NaN;
     private System.Windows.Media.ImageSource? _image;
     private double _width = SquareWidth;
+    private bool _alert;
 
     /// <summary>A tile is a square; one with a game's picture is as wide as the picture (16:9).</summary>
     public const double SquareWidth = 372;
@@ -80,20 +81,26 @@ public sealed class HomeTile : ObservableObject
         get => _width;
         set => Set(ref _width, value);
     }
+
+    /// <summary>Something waits for the player here (an update): the badge stands out.</summary>
+    public bool Alert
+    {
+        get => _alert;
+        set => Set(ref _alert, value);
+    }
 }
 
 /// <summary>
-/// Home: the carousel (Play Online, Friends, Game, What's New), the session's status under it, and
-/// the dock. PLAY is the Rust launcher's PLAY / STOP; when something blocks it, A on it explains
-/// what and leads to the place that fixes it. Without a server (<see cref="Locked"/>) the launcher
-/// is a shell for the game: "Play" starts it offline, and the Friends tile and dock button are
-/// "Configure online" with a lock (Settings › Online).
+/// Home: the carousel (Play Online, Mods, What's New with the update), the session's status under it, and
+/// the dock (Play, the checklist, Friends, Settings...: nothing the carousel has). PLAY is the Rust launcher's
+/// PLAY / STOP; when something blocks it, A on it explains what and leads to the place that fixes it. Without a
+/// server (<see cref="Locked"/>) the launcher is a shell for the game: "Play" starts it offline, and the dock's
+/// Friends button is "Configure online" with a lock (Settings › Online).
 /// </summary>
 public sealed class HomeViewModel : PageViewModel
 {
     private readonly HomeTile _play;
-    private readonly HomeTile _friends;
-    private readonly HomeTile _game;
+    private readonly HomeTile _mods;
     private readonly HomeTile _update;
     private HomeTile? _selected;
 
@@ -115,18 +122,18 @@ public sealed class HomeViewModel : PageViewModel
                 Shell.OpenFriends();
             }
         });
-        GameCommand = new RelayCommand(() =>
+        // What's New; while an update is on its way or waits, its card (what the dock's Updates button did)
+        UpdateCommand = new RelayCommand(() =>
         {
-            if (Shell.HasGameWork)
+            if (UpdatePending)
             {
-                Shell.ShowGameWork(); // a download or the setup runs, failed or is needed: its card, not the settings
+                Shell.ShowUpdateModal();
             }
             else
             {
-                Shell.OpenSettings("game");
+                Shell.Navigate(new WhatsNewViewModel(Shell));
             }
         });
-        UpdateCommand = new RelayCommand(Shell.ShowUpdateModal);
         SettingsCommand = new RelayCommand(() => Shell.OpenSettings());
         ModsCommand = new RelayCommand(() => Shell.Navigate(Routes.Mods));
         FullscreenCommand = RelayCommand.Async(() => Shell.SetFullscreenAsync(!Shell.IsFullscreen));
@@ -142,12 +149,11 @@ public sealed class HomeViewModel : PageViewModel
         });
         ChecklistCommand = new RelayCommand(() => Shell.Navigate(Routes.Checklist));
 
+        // Friends and the game's folder are in the dock (Friends, the checklist): the carousel has Play, Mods and What's New
         _play = new HomeTile("play", "Icon.Kart", "#0", () => PlayCommand.Execute(null));
-        _friends = new HomeTile("friends", "Icon.Friends", "#3", () => FriendsCommand.Execute(null));
-        _game = new HomeTile("game", "Icon.Folder", "#2", () => GameCommand.Execute(null));
-        // What's New: the changelog page, with the update (when there is one) as its banner
-        _update = new HomeTile("update", "Icon.Download", "#5", () => Shell.Navigate(new WhatsNewViewModel(Shell)));
-        Tiles = [_play, _friends, _game, _update];
+        _mods = new HomeTile("mods", "Icon.Package", "#3", () => ModsCommand.Execute(null));
+        _update = new HomeTile("update", "Icon.Download", "#5", () => UpdateCommand.Execute(null));
+        Tiles = [_play, _mods, _update];
         Refresh();
     }
 
@@ -235,7 +241,8 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>The Steam Deck's Game Mode has one full-screen window: nothing to switch.</summary>
     public bool CanSwitchFullscreen => !Desktop.DesktopEnvironment.IsGameMode && !Overlay; // over a game the window covers the game
 
-    public bool HasUpdate => Launcher.Update.State is UpdateState.Available or UpdateState.Downloading or UpdateState.ReadyToInstall or UpdateState.Failed;
+    /// <summary>An update on its way or waiting: the What's New tile opens its card and its badge stands out.</summary>
+    private bool UpdatePending => Launcher.Update.State is UpdateState.Available or UpdateState.Downloading or UpdateState.ReadyToInstall or UpdateState.Failed or UpdateState.Restarting;
 
     public bool HasRequests => !Locked && Launcher.Friends.Incoming.Count > 0;
 
@@ -249,17 +256,13 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>The friends panel; Settings › Online while there is no server.</summary>
     public ICommand FriendsCommand { get; }
 
-    public ICommand GameCommand { get; }
-
+    /// <summary>The What's New tile: the update's card while one is pending, else What's New.</summary>
     public ICommand UpdateCommand { get; }
 
     public ICommand SettingsCommand { get; }
 
-    /// <summary>The game's mods (launcher/docs/MODS.md).</summary>
+    /// <summary>The game's mods (launcher/docs/MODS.md): the Mods tile.</summary>
     public ICommand ModsCommand { get; }
-
-    /// <summary>Mods in the dock: with a game in use, and not over a running one (nothing of a game changes while it runs).</summary>
-    public bool ShowMods => !Overlay && Launcher.Game.Install is not null;
 
     public ICommand FullscreenCommand { get; }
 
@@ -307,6 +310,10 @@ public sealed class HomeViewModel : PageViewModel
     {
         Shell.PropertyChanged -= OnShellChanged;
         Shell.PropertyChanged += OnShellChanged;
+        if (!Launcher.Mods.Loaded)
+        {
+            _ = Launcher.RefreshModsAsync(); // the Mods tile's count: read off the window's thread, shown when it comes
+        }
         Refresh();
         RaiseAll();
     }
@@ -362,7 +369,6 @@ public sealed class HomeViewModel : PageViewModel
         var server = Launcher.Server;
         var game = Launcher.Game;
         var session = Launcher.Session;
-        var friends = Launcher.Friends;
 
         // Play Online: the game and its version; the seats of the server (or where the player is in it)
         _play.Title = PlayLabel;
@@ -385,37 +391,15 @@ public sealed class HomeViewModel : PageViewModel
             },
         };
 
-        // Friends; without a server the same tile is "Configure online" (it keeps its place and the focus)
-        _friends.IconKey = Locked ? "Icon.Lock" : "Icon.Friends";
-        _friends.Title = Locked ? Shell.OnlineLockLabel : S["home.friends"];
-        _friends.Subtitle = Locked ? S[Shell.OnlineBlockedByUpdate ? "core.update_to_play_online" : "home.configure_sub"]
-            : !Launcher.Profile.SignedIn ? S["home.friends_signin"]
-            : !friends.Loaded ? S["home.friends_loading"]
-            : S.Format("home.friends_online", ("n", Number(friends.OnlineCount)));
-        _friends.Badge = !Locked && friends.Incoming.Count > 0 ? "+" + Number(friends.Incoming.Count) : "";
+        // Mods: how many are on (the list is read once home shows: OnEnter), and the updates GameBanana has for them
+        var mods = Launcher.Mods;
+        _mods.Title = S["home.mods"];
+        _mods.Subtitle = game.Install is null ? S["home.no_game"]
+            : mods is { Loaded: true, Supported: true } ? S.Format("home.mods_on", ("n", Number(mods.OnNow)))
+            : "";
+        _mods.Badge = mods.Updates.Count > 0 ? S.Format("home.mods_updates", ("n", Number(mods.Updates.Count))) : "";
 
-        // Game: which way of running the game (the target) and whether MKWMP is in it
-        _game.Title = S["home.game"];
-        var targetId = game.Install?.TargetId ?? Launcher.Settings.Target;
-        var targetName = game.Targets.FirstOrDefault(t => string.Equals(t.Id, targetId, StringComparison.OrdinalIgnoreCase))?.DisplayName ?? targetId;
-        _game.Subtitle = game.Install is { } found ? string.IsNullOrEmpty(found.Version) ? targetName : $"{targetName} {found.Version}" : S["home.no_game"];
-        if (Shell.GameWorkShort is { } working)
-        {
-            // a download or the setup, live: what it is on the tile, how far under it, and the strip
-            _game.Title = Shell.GameWorkTitle;
-            _game.Subtitle = working;
-        }
-        _game.Progress = Shell.GameWorkProgress;
-        _game.Badge = game.Searching ? S["home.game_searching"]
-            : Shell.GameWorkPhase is GameWorkPhase.Runtime or GameWorkPhase.Setup ? Shell.GameWorkPercent
-            : Shell.GameWorkPhase is GameWorkPhase.RuntimeFailed or GameWorkPhase.SetupFailed ? S["gamework.state.failed"]
-            : Shell.GameWorkPhase == GameWorkPhase.UpdateNeeded ? S["gamework.state.update"]
-            : Shell.GameWorkPhase == GameWorkPhase.SetupNeeded ? S["home.game_setup"]
-            : game.Working ? S["home.game_working"]
-            : game.Install is null ? S["home.game_setup"]
-            : game.Check is { Status: not TargetStatus.Ready } || game.Integration is { Ok: false } ? S["home.game_attention"]
-            : S["home.game_ready"];
-
+        // What's New, and the update: what it is doing in the subtitle, a badge that stands out while it waits, the strip while it downloads
         var update = Launcher.Update;
         _update.Title = S["home.update"];
         _update.Subtitle = update.State switch
@@ -428,10 +412,18 @@ public sealed class HomeViewModel : PageViewModel
             UpdateState.Failed => S["update.failed"],
             _ => S.Format("home.update_current", ("version", Launcher.Version)),
         };
-        _update.Badge = update.State switch { UpdateState.Available => S["home.update_new"], UpdateState.ReadyToInstall => S["home.update_ready_badge"], _ => "" };
+        _update.Badge = update.State switch
+        {
+            UpdateState.Available => S["home.update_new"],
+            UpdateState.Downloading => update.Progress is >= 0 and <= 1 ? Number((int)Math.Round(update.Progress * 100)) + "%" : S["home.update_new"],
+            UpdateState.ReadyToInstall => S["home.update_ready_badge"],
+            UpdateState.Failed => S["gamework.state.failed"],
+            _ => "",
+        };
+        _update.Alert = UpdatePending;
+        _update.IconKey = UpdatePending ? "Icon.Download" : "Icon.Star";
         _update.Progress = update.State == UpdateState.Downloading ? update.Progress : double.NaN;
     }
-
     // ── PLAY ──
 
     private Task TogglePlayAsync()
@@ -445,6 +437,12 @@ public sealed class HomeViewModel : PageViewModel
         if (Busy)
         {
             return Launcher.StopAsync();
+        }
+        if (Launcher.PlayProblem is not null && Shell.NeedsRuntimeUpdate)
+        {
+            // MKWMP runs on one mkw-recomp: the update's card, which puts it in place (it was offered at start; here it is again)
+            Shell.ShowGameWork(driving: true);
+            return Task.CompletedTask;
         }
         if (Launcher.PlayProblem is not null)
         {

@@ -613,10 +613,10 @@
                              VerticalAlignment="Top" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" LineHeight="29" LineStackingStrategy="BlockLineHeight" MaxHeight="62"
                              Visibility="{Binding Subtitle, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource Conv.Visible}}" />
                 </Grid>
-                <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,22,22,0" Height="44" CornerRadius="22"
+                <Border x:Name="BadgePill" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,22,22,0" Height="44" CornerRadius="22"
                         Background="#F2FFFFFF" Padding="18,0"
                         Visibility="{Binding Badge, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource Conv.Visible}}">
-                  <TextBlock Text="{TemplateBinding Badge}" Foreground="#FF2B2B2B" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
+                  <TextBlock x:Name="BadgeText" Text="{TemplateBinding Badge}" Foreground="#FF2B2B2B" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
                 </Border>
                 <Grid x:Name="Strip" Height="8" VerticalAlignment="Bottom" Margin="32,0,32,16"
                       Visibility="{Binding Progress, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource Conv.Visible}}">
@@ -635,6 +635,13 @@
             <Border x:Name="Shade" CornerRadius="{StaticResource Radius.Tile}" Background="#14000000" Visibility="Collapsed" />
           </Grid>
           <ControlTemplate.Triggers>
+            <!-- an update waits: the badge in the pink of updates (the dock's old Updates button), with a white ring so it reads on any tile -->
+            <Trigger Property="Alert" Value="True">
+              <Setter TargetName="BadgePill" Property="Background" Value="#FFE2498A" />
+              <Setter TargetName="BadgePill" Property="BorderBrush" Value="White" />
+              <Setter TargetName="BadgePill" Property="BorderThickness" Value="3" />
+              <Setter TargetName="BadgeText" Property="Foreground" Value="White" />
+            </Trigger>
             <DataTrigger Binding="{Binding Image, RelativeSource={RelativeSource Self}, Converter={StaticResource Conv.Visible}}" Value="Visible">
               <Setter TargetName="Photo" Property="Visibility" Value="Visible" />
               <Setter TargetName="PhotoScrim" Property="Visibility" Value="Visible" />

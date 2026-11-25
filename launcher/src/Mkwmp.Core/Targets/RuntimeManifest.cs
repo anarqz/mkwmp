@@ -59,6 +59,12 @@ public sealed record RuntimeManifest
     /// </summary>
     public required string LineageSuffix { get; init; }
 
+    /// <summary>
+    /// Earlier official releases that an install made by hand is updated from, in place, like one of the lineage: the
+    /// launcher runs only <see cref="Version"/>, so an install of one of these is not left behind for being the player's.
+    /// </summary>
+    public IReadOnlyList<string> UpdatesFrom { get; init; } = [];
+
     /// <summary>The folder name under the launcher's data folder for the default location.</summary>
     public required string FolderName { get; init; }
 
@@ -124,8 +130,8 @@ public sealed record RuntimeManifest
     internal Uri? UrlOverride { get; init; }
 
     /// <summary>
-    /// Whether an install of <paramref name="version"/> is one this launcher may update in place: this very version, or
-    /// a build of the lineage, which ends in <see cref="LineageSuffix"/> or in it and a point release ("0.1.16-mkwmp",
+    /// Whether an install of <paramref name="version"/> is one this launcher may update in place: this very version, one of
+    /// <see cref="UpdatesFrom"/>, or a build of the lineage, which ends in <see cref="LineageSuffix"/> or in it and a point release ("0.1.16-mkwmp",
     /// "0.1.16-mkwmp.1"; never "0.1.16-mkwmpx").
     /// </summary>
     public bool SameLineage(string? version)
@@ -134,7 +140,7 @@ public sealed record RuntimeManifest
         {
             return false;
         }
-        if (version == Version)
+        if (version == Version || UpdatesFrom.Contains(version, StringComparer.Ordinal))
         {
             return true;
         }

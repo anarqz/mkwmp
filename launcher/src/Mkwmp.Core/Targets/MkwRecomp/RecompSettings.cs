@@ -199,8 +199,8 @@ public static partial class RecompSettings
     /// <summary>
     /// The settings MKWMP keeps for an mkw-recomp it installs and sets up itself
     /// (<see cref="RecompSetup.Drives"/>), with the reason the window shows on the locked row.
-    /// <c>update_check = 0</c>: mkw-recomp's own updater follows its repository's newest release and
-    /// would replace the one build this MKWMP is made for. <c>start_screen = skip</c>: a game
+    /// <c>update_check</c> is the player's again (on by default, 2026-11-25): a release mkw-recomp's own updater brings
+    /// that is not the pinned one is refused before PLAY and put back by the launcher's update. <c>start_screen = skip</c>: a game
     /// started by hand or from Steam goes straight in, as it does from the launcher
     /// (<c>mkw.exe --play</c> never shows that screen, whatever this says).
     /// </summary>
@@ -218,9 +218,11 @@ public static partial class RecompSettings
     public static string MenuShortcutFor(Overlay.OverlayShortcut shortcut) =>
         shortcut == Overlay.OverlayShortcut.Guide ? "minus_plus" : "guide";
 
+    /// <summary>mkw-recomp's own update check (on by default). MKWMP no longer keeps it off: see Launcher.RestoreRecompUpdateCheck.</summary>
+    internal const string UpdateCheck = "update_check";
+
     internal static (string Id, string Value, string Why)[] Owned =>
     [
-        ("update_check", "0", Strings.GameSettingsOwnedUpdateCheck),
         ("start_screen", "skip", Strings.GameSettingsOwnedStartScreen),
     ];
 

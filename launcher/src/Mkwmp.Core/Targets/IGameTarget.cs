@@ -58,6 +58,13 @@ public interface IGameTarget
     bool IsRunning(GameInstall install);
 
     /// <summary>
+    /// Opens the runtime's own start screen instead of the game (<see cref="TargetCapabilities.OwnLauncher"/>): the player's
+    /// way to its own pages. Not a game session: the launcher holds no seat for it. Throws <see cref="LauncherException"/>
+    /// when it does not start; the default: this target has none.
+    /// </summary>
+    void OpenOwnLauncher(GameInstall install) => throw new LauncherException(Strings.OwnLauncherNone);
+
+    /// <summary>
     /// The process ids of this target's running game, as this process sees them (under Wine: this
     /// prefix's): the window looks for the game's window with them. Empty when not running or not known.
     /// </summary>
@@ -287,6 +294,8 @@ public enum TargetCapabilities
     FriendRooms = 8,
     /// <summary>The launcher can start the game itself (else: "start it from Steam / the emulator").</summary>
     Launch = 16,
+    /// <summary>The runtime has a start screen of its own (mkw-recomp's: its settings, game files, mods, tools) the launcher can open: <see cref="IGameTarget.OpenOwnLauncher"/>.</summary>
+    OwnLauncher = 32,
 }
 
 /// <summary>A found install. <paramref name="Version"/> is the runtime's (mkw-recomp 0.1.15-mkwmp), <paramref name="GameVersion"/> the game's (1.8.0).</summary>

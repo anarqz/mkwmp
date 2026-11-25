@@ -188,10 +188,13 @@ public class CrashReportTests
         var logs = Path.Combine(game, "logs");
         Directory.CreateDirectory(logs);
         File.WriteAllText(Path.Combine(logs, "mkw.log"), string.Concat(Enumerable.Range(0, 120000).Select(i => $"line {i:000000} of the run, some text to make it long\n")) + "FATAL: access violation (0xc0000005) at host 0x1 (mkwgame+0x10)\n");
+        // older runs, dated before the crash's session (SaveZip: the 12 h before the crash at 2026-11-20 20:13:03 UTC), not
+        // before today: dated from the clock, a run 3 days old fell inside that session once the fixture was 3 days old
+        var sessionStart = new DateTime(2026, 11, 20, 20, 13, 3, DateTimeKind.Utc).AddHours(-12);
         for (var i = 1; i <= 6; i++)
         {
             File.WriteAllText(Path.Combine(logs, $"mkw.{i}.log"), $"run {i} ago\n");
-            File.SetLastWriteTimeUtc(Path.Combine(logs, $"mkw.{i}.log"), DateTime.UtcNow.AddDays(-i));
+            File.SetLastWriteTimeUtc(Path.Combine(logs, $"mkw.{i}.log"), sessionStart.AddDays(-i));
         }
         File.WriteAllText(Path.Combine(logs, "warm.log"), "warm\n");
         File.WriteAllText(Path.Combine(game, "setup-state.json"), "{\"port\":\"0.1.15-mkwmp\"}");

@@ -355,6 +355,7 @@ public sealed class ModInstallTests
             UpdateApi = FakeGitHub.Api,
             ReleaseKeys = [FakeGitHub.TestKey],
             Targets = [new MkwRecompTarget(V) { RunningOverride = () => false }],
+            Runtime = Rig.PinWithoutUpdates,
             BindLocalApi = false,
             BackgroundLoops = false,
             Headless = true,
