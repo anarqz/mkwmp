@@ -1,4 +1,5 @@
 // Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
+using System.IO;
 using Mkwmp.Core;
 
 using CoreStrings = Mkwmp.Core.Strings;
@@ -18,7 +19,8 @@ namespace Mkwmp.App.Design;
 /// made-up Nextendo friends: two requests, friends who play, are online or offline (two favourites), a request sent
 /// and two players met in a race; one player is blocked. Every action works on that list, and nothing leaves the PC.
 /// <c>--state nx-nofriends</c>: nobody yet; <c>--state nx-loading</c>: the list has not come; <c>--state nx-error</c>:
-/// Nextendo does not answer.
+/// Nextendo does not answer. The player and some of these people have a profile picture (a made-up one, drawn here
+/// into the temp folder: no network), some only Nextendo's colour behind their initials, the others neither.
 /// </para>
 /// </summary>
 public sealed partial class DesignLauncher
@@ -221,4 +223,82 @@ public sealed partial class DesignLauncher
         v with { Friends = [.. v.Friends.Select(f => f.Pid == pid ? f with { Favorite = favorite } : f)], Note = null });
 
     public Task RefreshNextendoFriendsAsync() => Task.CompletedTask;
+
+    // ── profile pictures ──
+
+    private const long DemoOwnPid = 1800000001;
+
+    /// <summary>Who has a picture in the demo (its two colours), and who only a colour.</summary>
+    private static readonly Dictionary<long, (string Color, string? Figure)> DemoLooks = new()
+    {
+        [DemoOwnPid] = ("#2f6fed", "#ffd9a0"),
+        [1800000011] = ("#7b3ff2", "#ffe3f1"), // Luna
+        [1800000012] = ("#e4572e", null), // Kai: a colour, no picture
+        [1800000013] = ("#1f9d6b", "#fff4c2"), // Mateus
+        [1800000014] = ("#f2c14e", null), // Sofia: a light colour
+        [1800000015] = ("#d7263d", "#ffffff"), // Rin
+        [1800000017] = ("#0e7c86", "#d8f6ff"), // Bea (offline: dimmed)
+        [1800000021] = ("#3a2a6a", "#ffcf99"), // Nico asks
+        [1800000022] = ("#c2185b", null), // Yuki
+        [1800000041] = ("#455a64", "#ffe0b2"), // Dario, met in a race
+    };
+
+    private static readonly Dictionary<long, string?> DemoPictures = [];
+
+    public NextendoAvatar NextendoAvatarOf(long pid)
+    {
+        if (!NextendoActive || !DemoLooks.TryGetValue(pid, out var look))
+        {
+            return NextendoAvatar.None;
+        }
+        lock (DemoPictures)
+        {
+            if (!DemoPictures.TryGetValue(pid, out var path))
+            {
+                DemoPictures[pid] = path = look.Figure is null ? null : DemoPicture(pid, look.Color, look.Figure);
+            }
+            return new NextendoAvatar(path, look.Color);
+        }
+    }
+
+    public NextendoAvatar NextendoOwnAvatar => NextendoAvatarOf(DemoOwnPid);
+
+    /// <summary>A 256×256 PNG in the temp folder: a plain figure on a colour that gets darker downwards. Null when it cannot be written (the disc then shows the initials).</summary>
+    private static string? DemoPicture(long pid, string back, string figure)
+    {
+        const int Side = 256;
+        static (int R, int G, int B) Rgb(string hex) => (Convert.ToInt32(hex[1..3], 16), Convert.ToInt32(hex[3..5], 16), Convert.ToInt32(hex[5..7], 16));
+        var (bg, fg) = (Rgb(back), Rgb(figure));
+        var pixels = new byte[Side * Side * 4];
+        for (var y = 0; y < Side; y++)
+        {
+            for (var x = 0; x < Side; x++)
+            {
+                var shade = 1.0 - (0.35 * y / Side);
+                var (dx, dy) = (x - 128.0, y - 100.0);
+                var head = (dx * dx) + (dy * dy) < 46 * 46;
+                var (sx, sy) = ((x - 128.0) / 84, (y - 250.0) / 86);
+                var body = (sx * sx) + (sy * sy) < 1;
+                var (r, g, b) = head || body ? fg : ((int)(bg.R * shade), (int)(bg.G * shade), (int)(bg.B * shade));
+                var at = ((y * Side) + x) * 4;
+                (pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3]) = ((byte)b, (byte)g, (byte)r, 255);
+            }
+        }
+        try
+        {
+            var folder = Path.Combine(Path.GetTempPath(), "mkwmp-demo-avatars");
+            Directory.CreateDirectory(folder);
+            var file = Path.Combine(folder, $"demo-{pid % 1000}.png");
+            var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(
+                System.Windows.Media.Imaging.BitmapSource.Create(Side, Side, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null, pixels, Side * 4)));
+            using var stream = File.Create(file);
+            encoder.Save(stream);
+            return file;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            return null;
+        }
+    }
 }

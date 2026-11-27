@@ -16,6 +16,15 @@ public sealed record NextendoFriend(long Pid, string Name, string FriendCode, Fr
 /// <param name="Account">Their id on the game's servers (16 lowercase hex digits); "" while Nextendo does not say it. Never shown.</param>
 public sealed record NextendoPerson(long Pid, string Name, string FriendCode, string Account = "");
 
+/// <summary>How the window draws someone on Nextendo Network (<see cref="ILauncher.NextendoAvatarOf"/>).</summary>
+/// <param name="Path">Their profile picture, a JPEG or PNG file on this PC (its name changes when the picture does); null: none, or not here yet.</param>
+/// <param name="Color">The colour Nextendo puts behind their picture, "#rrggbb"; "" when it gave none. For the disc with their initials, while there is no picture.</param>
+public sealed record NextendoAvatar(string? Path, string Color)
+{
+    /// <summary>No picture and no colour: the window's own disc.</summary>
+    public static NextendoAvatar None { get; } = new(null, "");
+}
+
 /// <summary>The friends of the linked Nextendo account, for the window (<see cref="ILauncher.NextendoFriends"/>).</summary>
 /// <param name="Enabled">PLAY goes to Nextendo Network with a linked account: friends are Nextendo's (else an MKWMP server's, or locked).</param>
 /// <param name="Loaded">False until the first list arrives.</param>

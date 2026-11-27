@@ -58,6 +58,15 @@ internal sealed class FakeNextendo : HttpMessageHandler
     /// </summary>
     public Func<string, string, HttpResponseMessage?>? More { get; set; }
 
+    /// <summary>
+    /// <c>GET /api/avatar?pid=…</c>, the public picture route (NextendoAvatarsTests.cs): what answers for that pid
+    /// (null: 404, as when nothing is set). It is asked without a sign-in: a call that carries one fails the test.
+    /// </summary>
+    public Func<long, HttpResponseMessage?>? Avatar { get; set; }
+
+    /// <summary>The pid of every picture asked for, in order.</summary>
+    public List<long> AvatarsAsked { get; } = [];
+
     public int Grants => _grants;
 
     public int Count(string request)
@@ -141,6 +150,11 @@ internal sealed class FakeNextendo : HttpMessageHandler
                 case ("GET", "/api/online-status"):
                     Assert.StartsWith("nx2", bearer, StringComparison.Ordinal); // asked with the game token, never the access token
                     return Json(200, Refuse.Length == 0 ? new { allow = true, reason = "" } : new { allow = false, reason = Refuse });
+                case ("GET", "/api/avatar"):
+                    Assert.Null(request.Headers.Authorization); // a public route: no token ever goes with a picture
+                    var who = long.Parse(HttpUtility.ParseQueryString(uri.Query)["pid"]!, System.Globalization.CultureInfo.InvariantCulture);
+                    AvatarsAsked.Add(who);
+                    return Avatar?.Invoke(who) ?? new HttpResponseMessage(HttpStatusCode.NotFound);
                 default:
                     if (More is null)
                     {

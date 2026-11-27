@@ -10,6 +10,12 @@ internal sealed record NextendoFriendList(IReadOnlyList<NextendoFriend> Friends,
     public const int Most = 500;
 
     /// <summary>
+    /// How Nextendo draws each of them (friends, requests, sent), by pid: the colour behind their picture and what
+    /// tells that the picture changed (Net/NextendoAvatars.cs). Not part of who is in the lists.
+    /// </summary>
+    public IReadOnlyDictionary<long, NextendoLook> Looks { get; init; } = new Dictionary<long, NextendoLook>();
+
+    /// <summary>
     /// <c>{friends:[…], requests:[…], sent:[…]}</c>; null when it is not that. <c>sent</c> may be missing (an older
     /// server): none then. Entries without a usable <c>pid</c> are skipped, and nobody is listed twice.
     /// </summary>
@@ -21,18 +27,21 @@ internal sealed record NextendoFriendList(IReadOnlyList<NextendoFriend> Friends,
         }
         var list = new List<NextendoFriend>();
         var seen = new HashSet<long>();
+        var looks = new Dictionary<long, NextendoLook>();
         foreach (var entry in friends.EnumerateArray())
         {
             if (Friend(entry) is { } friend && seen.Add(friend.Pid) && list.Count < Most)
             {
                 list.Add(friend);
+                looks[friend.Pid] = NextendoLook.Of(entry);
             }
         }
-        return new NextendoFriendList(list, People(v, "requests") ?? [], People(v, "sent") ?? []);
+        return new NextendoFriendList(list, People(v, "requests", looks) ?? [], People(v, "sent", looks) ?? []) { Looks = looks };
     }
 
     /// <summary>The array under <paramref name="key"/> as people (an entry may be an object, or a bare pid); null when there is no such array.</summary>
-    public static IReadOnlyList<NextendoPerson>? People(JsonElement? v, string key)
+    /// <param name="looks">Takes how Nextendo draws each of them (an entry that is an object; one already there stays).</param>
+    public static IReadOnlyList<NextendoPerson>? People(JsonElement? v, string key, Dictionary<long, NextendoLook>? looks = null)
     {
         if (v.At(key) is not { ValueKind: JsonValueKind.Array } entries)
         {
@@ -48,6 +57,10 @@ internal sealed record NextendoFriendList(IReadOnlyList<NextendoFriend> Friends,
             if (person is not null && seen.Add(person.Pid) && people.Count < Most)
             {
                 people.Add(person);
+                if (entry.ValueKind == JsonValueKind.Object)
+                {
+                    looks?.TryAdd(person.Pid, NextendoLook.Of(entry));
+                }
             }
         }
         return people;

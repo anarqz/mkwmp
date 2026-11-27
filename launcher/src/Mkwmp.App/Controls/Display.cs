@@ -15,6 +15,11 @@ public enum AvatarPresence { None, Online, Playing, Offline }
 /// A player as a disc: initials on a colour hashed from <see cref="DisplayName"/> (or an
 /// <see cref="Image"/>), a presence dot, and an optional <see cref="Count"/> above it. Size it with
 /// Width/Height. Not a focus stop: wrap it in a <c>Button Style="{StaticResource AvatarButton}"</c>.
+/// <para>
+/// On Nextendo Network a player has a profile picture: <see cref="Picture"/> is its file (decoded off this thread,
+/// <see cref="AvatarImages"/>), and <see cref="Color"/> the colour Nextendo puts behind it, which the disc takes
+/// while the picture is not there. Without either it is the disc it always was.
+/// </para>
 /// </summary>
 public sealed class Avatar : Control
 {
@@ -24,6 +29,8 @@ public sealed class Avatar : Control
     public static readonly DependencyProperty ImageProperty = Dp.Register<Avatar, ImageSource?>(nameof(Image), null);
     public static readonly DependencyProperty InitialsProperty = Dp.Register<Avatar, string>(nameof(Initials), "");
     public static readonly DependencyProperty DiscProperty = Dp.Register<Avatar, Brush?>(nameof(Disc), null);
+    public static readonly DependencyProperty PictureProperty = Dp.Register<Avatar, string?>(nameof(Picture), null, (d, _) => ((Avatar)d).LoadPicture());
+    public static readonly DependencyProperty ColorProperty = Dp.Register<Avatar, string>(nameof(Color), "", (d, _) => ((Avatar)d).Update());
 
     public Avatar()
     {
@@ -56,6 +63,51 @@ public sealed class Avatar : Control
         set => SetValue(ImageProperty, value);
     }
 
+    /// <summary>A picture file (JPEG or PNG) shown instead of the initials once it is decoded; null or one that cannot be read: the initials.</summary>
+    public string? Picture
+    {
+        get => (string?)GetValue(PictureProperty);
+        set => SetValue(PictureProperty, value);
+    }
+
+    /// <summary>"#rrggbb" for the disc behind the initials; "": the colour of the name.</summary>
+    public string Color
+    {
+        get => (string)GetValue(ColorProperty);
+        set => SetValue(ColorProperty, value ?? "");
+    }
+
+    protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        if (e.Property == WidthProperty && !string.IsNullOrEmpty(Picture))
+        {
+            LoadPicture(); // a larger disc takes a sharper picture
+        }
+    }
+
+    private async void LoadPicture()
+    {
+        var path = Picture;
+        if (string.IsNullOrEmpty(path))
+        {
+            Image = null;
+            return;
+        }
+        var pixels = !double.IsNaN(Width) && Width > 100 ? AvatarImages.Large : AvatarImages.Small;
+        if (AvatarImages.Cached(path, pixels) is { } ready)
+        {
+            Image = ready;
+            return;
+        }
+        // what is shown stays meanwhile: the initials, or the picture this one replaces
+        var image = await AvatarImages.LoadAsync(path, pixels).ConfigureAwait(true);
+        if (Picture == path)
+        {
+            Image = image;
+        }
+    }
+
     /// <summary>Derived from the name (one or two letters).</summary>
     public string Initials
     {
@@ -73,7 +125,7 @@ public sealed class Avatar : Control
     private void Update()
     {
         var name = DisplayName.Trim();
-        Disc = GeneratedArt.Disc(name);
+        Disc = AvatarImages.Disc(Color) ?? GeneratedArt.Disc(name);
         var parts = name.Split([' ', '_', '-', '.'], StringSplitOptions.RemoveEmptyEntries);
         Initials = parts.Length switch
         {

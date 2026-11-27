@@ -33,7 +33,7 @@
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <c:Avatar DisplayName="{Binding Name}" Width="72" Height="72" />
+        <c:Avatar DisplayName="{Binding Name}" Width="72" Height="72" Color="{Binding Color}" Picture="{Binding Picture}" />
         <StackPanel Grid.Column="1" Margin="20,0,12,0" VerticalAlignment="Center">
           <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="30" />
           <TextBlock Text="{Binding Note}" Style="{StaticResource Text.Small}" FontSize="22" TextTrimming="CharacterEllipsis" />
@@ -57,7 +57,7 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <c:Avatar DisplayName="{Binding Name}" Presence="{Binding Presence}" Width="72" Height="72" />
+          <c:Avatar DisplayName="{Binding Name}" Presence="{Binding Presence}" Width="72" Height="72" Color="{Binding Color}" Picture="{Binding Picture}" />
           <TextBlock Grid.Column="1" Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="30" Margin="20,0,12,0" VerticalAlignment="Center" />
           <TextBlock x:Name="State" Grid.Column="2" Text="{Binding StateText}" Style="{StaticResource Text.Base}" FontSize="24" FontWeight="SemiBold"
                      Foreground="{DynamicResource Brush.TextFaint}" VerticalAlignment="Center" Margin="0,0,6,0" />
@@ -83,7 +83,7 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <c:Avatar DisplayName="{Binding Name}" Presence="{Binding Presence}" Width="72" Height="72" />
+          <c:Avatar DisplayName="{Binding Name}" Presence="{Binding Presence}" Width="72" Height="72" Color="{Binding Color}" Picture="{Binding Picture}" />
           <StackPanel Grid.Column="1" Margin="20,0,12,0" VerticalAlignment="Center">
             <DockPanel LastChildFill="False">
               <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="30" TextTrimming="CharacterEllipsis" MaxWidth="290" />
@@ -115,7 +115,7 @@
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <c:Avatar DisplayName="{Binding Name}" Width="72" Height="72" Opacity="0.7" />
+        <c:Avatar DisplayName="{Binding Name}" Width="72" Height="72" Opacity="0.7" Color="{Binding Color}" Picture="{Binding Picture}" />
         <StackPanel Grid.Column="1" Margin="20,0,12,0" VerticalAlignment="Center">
           <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="30" TextTrimming="CharacterEllipsis" />
           <TextBlock Text="{Binding Note}" Style="{StaticResource Text.Small}" FontSize="22" TextTrimming="CharacterEllipsis" />
@@ -133,7 +133,7 @@
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <c:Avatar DisplayName="{Binding Name}" Width="72" Height="72" Opacity="0.7" />
+        <c:Avatar DisplayName="{Binding Name}" Width="72" Height="72" Opacity="0.7" Color="{Binding Color}" Picture="{Binding Picture}" />
         <StackPanel Grid.Column="1" Margin="20,0,12,0" VerticalAlignment="Center">
           <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="30" />
           <TextBlock Text="{Binding Note}" Style="{StaticResource Text.Small}" FontSize="22" />

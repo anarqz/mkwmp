@@ -13,8 +13,24 @@ namespace Mkwmp.App.ViewModels;
 public abstract class FriendsRow : ObservableObject
 {
     private bool _isDefault;
+    private string? _picture;
+    private string _color = "";
 
     protected FriendsRow(string key) => Key = key;
+
+    /// <summary>On Nextendo: the person's profile picture (a file), when it is here; null: the disc with their initials.</summary>
+    public string? Picture
+    {
+        get => _picture;
+        set => Set(ref _picture, value);
+    }
+
+    /// <summary>On Nextendo: the colour behind their picture, "#rrggbb"; "": the colour of the name.</summary>
+    public string Color
+    {
+        get => _color;
+        set => Set(ref _color, value);
+    }
 
     /// <summary>What makes it the same line after the list changed ("friend:Luna").</summary>
     public string Key { get; }
@@ -550,7 +566,7 @@ public sealed class FriendsPanelViewModel : LayerViewModel
             section("requests", S.Format("friends.section.requests", ("n", Count(nx.Incoming.Count))));
             foreach (var request in nx.Incoming)
             {
-                wanted.Add(("nxin:" + Id(request.Pid), () => new FriendRequestRow(NameOf(request), S["friends.wants"], Accept, Decline, request.Pid), _ => { }));
+                wanted.Add(("nxin:" + Id(request.Pid), () => new FriendRequestRow(NameOf(request), S["friends.wants"], Accept, Decline, request.Pid), row => Draw(row, request.Pid)));
             }
         }
         if (nx.Friends.Count > 0)
@@ -566,6 +582,7 @@ public sealed class FriendsPanelViewModel : LayerViewModel
                     line.StateText = NextendoStateText(friend);
                     line.FriendCode = friend.FriendCode;
                     line.Favorite = friend.Favorite;
+                    Draw(line, friend.Pid);
                 }));
             }
         }
@@ -574,7 +591,7 @@ public sealed class FriendsPanelViewModel : LayerViewModel
             section("sent", S.Format("friends.section.sent", ("n", Count(nx.Sent.Count))));
             foreach (var asked in nx.Sent)
             {
-                wanted.Add(("nxout:" + Id(asked.Pid), () => new NextendoPersonRow("nxout:" + Id(asked.Pid), asked, NameOf(asked), S["friends.sent"], null, _ => { }), _ => { }));
+                wanted.Add(("nxout:" + Id(asked.Pid), () => new NextendoPersonRow("nxout:" + Id(asked.Pid), asked, NameOf(asked), S["friends.sent"], null, _ => { }), row => Draw(row, asked.Pid)));
             }
         }
         if (nx.Recent.Count > 0)
@@ -582,9 +599,16 @@ public sealed class FriendsPanelViewModel : LayerViewModel
             section("met", S.Format("friends.nx.section.met", ("n", Count(nx.Recent.Count))));
             foreach (var met in nx.Recent)
             {
-                wanted.Add(("nxmet:" + Id(met.Pid), () => new NextendoPersonRow("nxmet:" + Id(met.Pid), met, NameOf(met), met.FriendCode, S["friends.add"], AddMet), _ => { }));
+                wanted.Add(("nxmet:" + Id(met.Pid), () => new NextendoPersonRow("nxmet:" + Id(met.Pid), met, NameOf(met), met.FriendCode, S["friends.add"], AddMet), row => Draw(row, met.Pid)));
             }
         }
+    }
+
+    /// <summary>The person's Nextendo picture and colour on their line (the picture arrives a moment after the list).</summary>
+    private void Draw(FriendsRow row, long pid)
+    {
+        var look = Launcher.NextendoAvatarOf(pid);
+        (row.Picture, row.Color) = (look.Path, look.Color);
     }
 
     private static string NameOf(NextendoPerson who) => who.Name.Length > 0 ? who.Name : who.FriendCode.Length > 0 ? who.FriendCode : CoreStrings.NextendoSomeone;

@@ -316,7 +316,7 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <c:Avatar DisplayName="{Binding NextendoName}" Width="116" Height="116" />
+          <c:Avatar DisplayName="{Binding NextendoName}" Width="116" Height="116" Picture="{Binding NextendoPicture}" />
           <StackPanel Grid.Column="1" Margin="28,0,28,0" VerticalAlignment="Center">
             <TextBlock Text="{Binding NextendoSignedIn}" Style="{StaticResource Text.Title}" TextTrimming="CharacterEllipsis" />
             <StackPanel Orientation="Horizontal" Visibility="{Binding HasNextendoFriendCode, Converter={StaticResource Conv.Visible}}">

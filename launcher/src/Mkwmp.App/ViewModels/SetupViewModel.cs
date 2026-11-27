@@ -226,6 +226,9 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
 
     public string NextendoName => Nextendo.Username;
 
+    /// <summary>The account's own profile picture on Nextendo (a file), once it is here; null: the disc with its initials.</summary>
+    public string? NextendoPicture => Launcher.NextendoOwnAvatar.Path;
+
     public string NextendoFriendCode => Nextendo.FriendCode;
 
     public bool HasNextendoFriendCode => Nextendo.FriendCode.Length > 0;

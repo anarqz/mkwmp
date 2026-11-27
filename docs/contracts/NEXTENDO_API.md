@@ -163,9 +163,14 @@ not, and the id on the game's servers, for friends Nextendo told an id for.
 | favourite | `POST /api/friends/favorite {"pid":N,"favorite":bool}` |
 | blocked, met | `GET /api/friends/blocked`, `GET /api/recent-players` (when the panel opens, at most once a minute) |
 | presence | `POST /api/presence {"status":1|2,"app_id":"","app_detail":"","platform":"app"}` (scope `presence`) |
+| pictures | `GET /api/avatar?pid=N`, **without** a token (Nextendo's public route: a 256×256 JPEG, `Cache-Control: public, max-age=300`, no validator). Each entry of the lists says `color` (behind the picture) and `avatar` (the chosen icon); the launcher keeps only the colour and a hash of both as the picture's change key |
 
 - No push channel: the list is polled every 30 s (10 s for a minute after an action), backing off 30 s → 5 min on
   failures; a 429's `Retry-After` is obeyed and nothing is asked before it is over.
+- Pictures (launcher only: the discs of the friends panel, the top bar and the account card): the list stays `images=0`;
+  one picture at a time, only when it is missing, when the entry's `avatar`/`color` changed, or after a day (the
+  player's own: an hour). Kept in `cache\nextendo-avatars` beside the launcher (JPEG/PNG only, 2 MB each, 50 MB in
+  all, named by hashes: no pid on disk), deleted when the account is unlinked. No blocked player's picture is asked.
 - Presence: status 1 while the launcher runs, status 2 with `app_id = 0400c3f00006e000` while the game runs, repeated
   every 60 s (Nextendo forgets it after 90 s); status 0 once on exit, unlink, a switch to MKWMP servers, or when
   `[nextendo] show_online = false` (client.toml; default on).

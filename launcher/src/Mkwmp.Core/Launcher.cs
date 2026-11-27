@@ -110,6 +110,10 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         _nextendo = new NextendoAccount(_nextendoApi, vault, _clock);
         _nxFriends = new NextendoRoster(_nextendo, _nextendoApi, _clock);
         _nxPresence = new NextendoPresence(_nextendo, _nextendoApi, _clock);
+        // Pictures are asked without the sign-in and never followed to another site (Launcher.NextendoAvatars.cs).
+        _avatarHttp = http is null ? new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan } : null;
+        _nxAvatars = new NextendoAvatars(_avatarHttp ?? _http, _userAgent, Path.Combine(launcherFolder, CacheFolderName, NextendoAvatars.FolderName), _clock, Log.Note);
+        _nxAvatars.Changed += RaiseChanged;
         // An account client.toml names without its sign-in beside it (the file was copied from another PC, or the
         // sign-in deleted) is not linked here: the choice of network stays, and on Nextendo the window asks to sign in.
         if (_config.Nextendo.Linked && !vault.Exists)
@@ -765,6 +769,9 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         _local.Dispose();
         _nxFriends.Dispose();
         _nxPresence.Dispose();
+        _nxAvatars.Changed -= RaiseChanged;
+        _nxAvatars.Dispose();
+        _avatarHttp?.Dispose();
         _nextendo.Dispose();
         _devices.Dispose();
         _http.Dispose();

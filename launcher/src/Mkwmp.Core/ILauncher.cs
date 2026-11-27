@@ -455,6 +455,17 @@ public interface ILauncher : IAsyncDisposable
     /// <summary>The friends panel (or the blocked list) is on screen: the list is asked for now, with the players met lately and the blocked ones.</summary>
     Task RefreshNextendoFriendsAsync() => Task.CompletedTask;
 
+    /// <summary>
+    /// How someone of <see cref="NextendoFriends"/> is drawn: their Nextendo profile picture once it is on this PC,
+    /// and the colour Nextendo puts behind it. <see cref="NextendoAvatar.None"/> off Nextendo (the window then draws
+    /// its own disc, as it always did). Cheap: it reads no file and asks nothing; <see cref="Changed"/> says when a
+    /// picture arrived.
+    /// </summary>
+    NextendoAvatar NextendoAvatarOf(long pid) => NextendoAvatar.None;
+
+    /// <summary>The same for the linked account itself, while PLAY goes to Nextendo Network.</summary>
+    NextendoAvatar NextendoOwnAvatar => NextendoAvatar.None;
+
 // The console-style overlay (launcher/docs/OVERLAY.md)
     /// <summary>The game asks for the launcher over it (<c>Requested</c>); the window answers with <c>ReturnToGame</c>.</summary>
     Overlay.OverlayBridge OverlayBridge { get; }

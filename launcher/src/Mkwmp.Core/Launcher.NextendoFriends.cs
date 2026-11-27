@@ -153,6 +153,7 @@ public sealed partial class Launcher
         await _nxFriends.ResetAsync().ConfigureAwait(false);
         var off = NextendoFriendsView.Off;
         Mutate(() => (_nxList, _nxRecent, _nxRecentShown, _nxBlocked, _nxNote, _nxNoteIsPoll, _nxBusy, _nxFailing) = (null, off.Recent, off.Recent, off.Blocked, null, false, false, false));
+        ForgetNextendoAvatars();
     }
 
     /// <summary>Asks Nextendo for the list once, shows it, and notifies what is new in it. How long until the next look.</summary>
@@ -175,7 +176,7 @@ public sealed partial class Launcher
         {
             return TimeSpan.FromSeconds(1); // the answer for an account that was left meanwhile is nobody's
         }
-        var failed = false;
+        var (failed, looks) = (false, false);
         Mutate(() =>
         {
             if (poll.Error is { } error)
@@ -189,9 +190,13 @@ public sealed partial class Launcher
                 return;
             }
             _nxFailing = false;
-            if (poll.List is { } list && !SameList(_nxList, list))
+            if (poll.List is { } list)
             {
-                _nxList = list;
+                looks = FollowLooks(list); // before the list: a list that is the same may draw someone differently
+                if (!SameList(_nxList, list))
+                {
+                    _nxList = list;
+                }
             }
             FilterRecent();
             if (_nxNoteIsPoll && !_nxBusy)
@@ -206,6 +211,10 @@ public sealed partial class Launcher
         foreach (var news in poll.Events)
         {
             Toast(news.Toast());
+        }
+        if (poll.Error is null)
+        {
+            WantNextendoAvatars(looks);
         }
         return poll.Next;
     }
@@ -254,6 +263,7 @@ public sealed partial class Launcher
             }
             FilterRecent();
         });
+        WantNextendoAvatars(false);
     }
 
     // ---- managing it ----------------------------------------------------------------------

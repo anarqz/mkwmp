@@ -54,7 +54,7 @@
             <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
           </Grid.ColumnDefinitions>
-          <c:Avatar DisplayName="{Binding NextendoName}" Width="116" Height="116" />
+          <c:Avatar DisplayName="{Binding NextendoName}" Width="116" Height="116" Picture="{Binding NextendoPicture}" />
           <StackPanel Grid.Column="1" Margin="28,0,0,0" VerticalAlignment="Center">
             <TextBlock Text="{Binding NextendoName}" Style="{StaticResource Text.Title}" />
             <TextBlock Text="{Binding S[nextendo.linked]}" Style="{StaticResource Text.Caption}" />

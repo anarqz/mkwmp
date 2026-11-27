@@ -110,6 +110,9 @@ public sealed partial class SettingsViewModel
 
     public string NextendoName => Nextendo.Username;
 
+    /// <summary>The account's own profile picture on Nextendo (a file), while PLAY goes there; null: the disc with its initials.</summary>
+    public string? NextendoPicture => Launcher.NextendoOwnAvatar.Path;
+
     public string NextendoFriendCode => Nextendo.FriendCode;
 
     public bool HasNextendoFriendCode => Nextendo.FriendCode.Length > 0;

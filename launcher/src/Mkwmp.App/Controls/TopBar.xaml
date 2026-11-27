@@ -17,7 +17,7 @@
       <ItemsControl.ItemTemplate>
         <DataTemplate>
           <Button Style="{StaticResource AvatarButton}" Click="OnAvatar">
-            <c:Avatar DisplayName="{Binding Name}" Presence="{Binding Presence}" Count="{Binding Count}" />
+            <c:Avatar DisplayName="{Binding Name}" Presence="{Binding Presence}" Count="{Binding Count}" Color="{Binding Color}" Picture="{Binding Picture}" />
           </Button>
         </DataTemplate>
       </ItemsControl.ItemTemplate>

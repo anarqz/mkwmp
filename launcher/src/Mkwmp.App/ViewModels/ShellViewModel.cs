@@ -9,7 +9,9 @@ using Mkwmp.Core;
 namespace Mkwmp.App.ViewModels;
 
 /// <summary>A disc of the top bar: the player, then the friends who are on.</summary>
-public sealed record TopAvatar(string Name, AvatarPresence Presence, string Count, bool IsSelf);
+/// <param name="Picture">On Nextendo: their profile picture (a file), when it is here.</param>
+/// <param name="Color">On Nextendo: the colour behind their picture, "#rrggbb"; "": the colour of the name.</param>
+public sealed record TopAvatar(string Name, AvatarPresence Presence, string Count, bool IsSelf, string? Picture = null, string Color = "");
 
 /// <summary>
 /// The window's state around <see cref="ILauncher"/>: it brings the launcher's changes and toasts
@@ -108,11 +110,13 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
                 // on Nextendo Network: the player (their local name, else the account's), then the Nextendo friends who are on
                 var self = Launcher.Settings.Name.Trim() is { Length: > 0 } named ? named : Launcher.Nextendo.Username;
                 var asking = nextendo.Incoming.Count;
-                list.Add(new TopAvatar(self, AvatarPresence.None, asking > 0 ? asking.ToString(CultureInfo.CurrentCulture) : "", true));
+                var own = Launcher.NextendoOwnAvatar;
+                list.Add(new TopAvatar(self, AvatarPresence.None, asking > 0 ? asking.ToString(CultureInfo.CurrentCulture) : "", true, own.Path, own.Color));
                 list.AddRange(nextendo.Ordered(StringComparer.CurrentCultureIgnoreCase)
                     .Where(f => f.State != FriendState.Offline && f.Name.Length > 0)
                     .Take(5)
-                    .Select(f => new TopAvatar(f.Name, f.State == FriendState.Playing ? AvatarPresence.Playing : AvatarPresence.Online, "", false)));
+                    .Select(f => (Friend: f, Look: Launcher.NextendoAvatarOf(f.Pid)))
+                    .Select(f => new TopAvatar(f.Friend.Name, f.Friend.State == FriendState.Playing ? AvatarPresence.Playing : AvatarPresence.Online, "", false, f.Look.Path, f.Look.Color)));
             }
             else if (!OnlineEnabled)
             {

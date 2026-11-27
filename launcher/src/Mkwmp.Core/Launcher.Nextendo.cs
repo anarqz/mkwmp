@@ -257,6 +257,7 @@ public sealed partial class Launcher
             Interlocked.Decrement(ref _nxQuiet);
         }
         _nxWake.Set();
+        _nxAvatars.Clear(); // no picture of anyone the account knew stays on this PC
         Mutate(() => (_nextendoStanding, _nextendoNote) = (null, note));
         Note("nextendo: account unlinked");
         NetworkChanged(before);
