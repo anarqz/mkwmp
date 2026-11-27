@@ -7,12 +7,14 @@ namespace Mkwmp.Core;
 /// <param name="Detail">A line of their game's about what they do in it ("" mostly).</param>
 /// <param name="Favorite">Marked as a favourite by the player (kept on the account: the same everywhere).</param>
 /// <param name="Banned">The account was closed by Nextendo: it stays in the list until removed, always offline.</param>
-public sealed record NextendoFriend(long Pid, string Name, string FriendCode, FriendState State, string Game, string Detail, bool Favorite, bool Banned = false);
+/// <param name="Account">Their id on the game's servers (16 lowercase hex digits): what the game knows a friend by. "" while Nextendo does not say it. Never shown.</param>
+public sealed record NextendoFriend(long Pid, string Name, string FriendCode, FriendState State, string Game, string Detail, bool Favorite, bool Banned = false, string Account = "");
 
 /// <summary>Someone who is not (yet) a friend: who asked, who was asked, who was met in a race, who is blocked.</summary>
 /// <param name="Name">"" when Nextendo gave none.</param>
 /// <param name="FriendCode">"" when Nextendo gave none: such a player cannot be added from here.</param>
-public sealed record NextendoPerson(long Pid, string Name, string FriendCode);
+/// <param name="Account">Their id on the game's servers (16 lowercase hex digits); "" while Nextendo does not say it. Never shown.</param>
+public sealed record NextendoPerson(long Pid, string Name, string FriendCode, string Account = "");
 
 /// <summary>The friends of the linked Nextendo account, for the window (<see cref="ILauncher.NextendoFriends"/>).</summary>
 /// <param name="Enabled">PLAY goes to Nextendo Network with a linked account: friends are Nextendo's (else an MKWMP server's, or locked).</param>

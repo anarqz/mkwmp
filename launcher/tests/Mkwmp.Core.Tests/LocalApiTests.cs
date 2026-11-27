@@ -276,8 +276,45 @@ public class LocalApiTests
         public string Token => "t0ken";
         public SeatSession? Seat { get; set; }
         public IReadOnlyList<Friend>? FriendsOrNull { get; set; }
+        public bool Nextendo { get; set; }
+        public IReadOnlyList<NextendoFriend>? NextendoGameFriends { get; set; } = [];
         public ClientConfig Config { get; } = new();
 
         public string? EditVoice(Func<ClientConfig, ClientConfig> edit) => null;
+    }
+
+    [Fact]
+    public async Task On_nextendo_the_friends_answer_names_ids_and_waits_for_the_first_list()
+    {
+        var host = new Host { Nextendo = true };
+        using var api = new LocalApi(host, TimeProvider.System) { FriendsWait = TimeSpan.FromMilliseconds(300) };
+        Task<LocalResponse> Friends() => api.HandleAsync("GET", "/local/v1/friends", "Bearer t0ken", default, default);
+
+        // nobody's id is known (Nextendo sends none): an empty list, with no seat and no wait
+        var answer = await Friends();
+        Assert.Equal((200, """{"friends":[]}"""), (answer.Status, answer.Body));
+
+        // the first list is still on its way: the game is told to ask again, not given an empty list
+        host.NextendoGameFriends = null;
+        answer = await Friends();
+        Assert.Equal((503, "loading"), (answer.Status, JsonNode.Parse(answer.Body!)!["state"]!.GetValue<string>()));
+
+        // it arrives while the game waits
+        var asked = Friends();
+        await Task.Delay(120);
+        host.NextendoGameFriends =
+        [
+            .. Enumerable.Range(0, 120).Select(i => new NextendoFriend(100 + i, $"N{i}", "", i == 0 ? FriendState.Playing : FriendState.Offline, "", "", false, Account: $"{0xA000 + i:x16}")),
+        ];
+        answer = await asked;
+        var list = JsonNode.Parse(answer.Body!)!["friends"]!.AsArray();
+        Assert.Equal((200, LocalApi.MaxFriends), (answer.Status, list.Count));
+        Assert.Equal("""[{"name":"N0","online":true,"account":"000000000000a000"},{"name":"N1","online":false,"account":"000000000000a001"}]""",
+            new JsonArray([.. list.Take(2).Select(n => n!.DeepClone())]).ToJsonString());
+
+        // an entry without an id is never the game's
+        host.NextendoGameFriends = [new NextendoFriend(1, "NoId", "", FriendState.Online, "", "", false), new NextendoFriend(2, "", "", FriendState.Online, "", "", false, Account: "00000000000000a2")];
+        answer = await Friends();
+        Assert.Equal((200, """{"friends":[{"name":"Player","online":true,"account":"00000000000000a2"}]}"""), (answer.Status, answer.Body));
     }
 }

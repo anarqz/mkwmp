@@ -231,6 +231,49 @@ public sealed class NextendoFriendsTests
         Assert.Null(NextendoFriendList.People(Json.Parse("""{"players":{}}"""), "players"));
     }
 
+    [Fact]
+    public void A_friend_s_id_on_the_game_s_servers_is_read_when_nextendo_sends_it()
+    {
+        var list = NextendoFriendList.Parse(Json.Parse("""
+            {"friends":[
+              {"pid":11,"name":"Luna","npln_account_id":"0123456789ABCDEF","npln_user_id":"u-11","presence":{"status":1}},
+              {"pid":12,"name":"Kai","account_hex":"1f"},
+              {"pid":13,"name":"Rin","npln_account_id":"nope","account_hex":"00000000000000AA"},
+              {"pid":14,"name":"Bea","npln_account_id":"12345678901234567"},
+              {"pid":15,"name":"Abe","npln_account_id":7},
+              {"pid":16,"name":"Theo"}
+            ],
+            "requests":[{"pid":21,"name":"Nico","npln_account_id":"00000000000000b1"}, 5],
+            "sent":[{"pid":31,"name":"Carol","account_hex":"C1"}]}
+            """))!;
+        Assert.Equal(["0123456789abcdef", "000000000000001f", "00000000000000aa", "", "", ""], list.Friends.Select(f => f.Account));
+        Assert.Equal(new NextendoFriend(11, "Luna", "", FriendState.Online, "", "", false, Account: "0123456789abcdef"), list.Friends[0]);
+        Assert.Equal([new NextendoPerson(21, "Nico", "", "00000000000000b1"), new NextendoPerson(5, "", "")], list.Incoming);
+        Assert.Equal([new NextendoPerson(31, "Carol", "", "00000000000000c1")], list.Sent);
+    }
+
+    [Fact]
+    public void The_game_is_given_only_friends_with_an_id_who_plays_first()
+    {
+        static NextendoFriend F(long pid, string name, FriendState state, string account) => new(pid, name, "", state, "", "", false, Account: account);
+        NextendoFriend[] friends =
+        [
+            F(1, "zed", FriendState.Offline, "00000000000000a1"), F(2, "Bia", FriendState.Online, "00000000000000a2"), F(3, "noid", FriendState.Playing, ""),
+            F(4, "ana", FriendState.Online, "00000000000000a4"), F(5, "Kai", FriendState.Playing, "00000000000000a5"), F(6, "me", FriendState.Online, "00000000000000a6"),
+            F(7, "twin", FriendState.Offline, "00000000000000a5"), F(8, "mine", FriendState.Online, "00000000000000ff"),
+        ];
+        // never the player (by pid, or by the id Nextendo gave them), nobody without an id, no id twice
+        Assert.Equal(["Kai", "ana", "Bia", "zed"], NextendoFriendList.ForGame(friends, 6, "00000000000000ff", 100).Select(f => f.Name));
+        Assert.Equal(["Kai", "ana"], NextendoFriendList.ForGame(friends, 6, "", 2).Select(f => f.Name));
+        Assert.Empty(NextendoFriendList.ForGame(friends.Select(f => f with { Account = "" }), 6, "", 100));
+
+        // names as the hook takes them: 1 to 20 characters
+        Assert.Equal("Player", NextendoFriendList.NameForGame(F(1, "", FriendState.Online, "a")));
+        Assert.Equal("abcdefghijklmnopqrst", NextendoFriendList.NameForGame(F(1, "abcdefghijklmnopqrstuvwxyz", FriendState.Online, "a")));
+        Assert.Equal("""{"friends":[]}""", LocalApi.NextendoFriendsJson([]));
+        Assert.Equal("""{"friends":[]}""", LocalApi.NextendoFriendsJson([F(3, "noid", FriendState.Playing, "")]));
+    }
+
     [Theory]
     [InlineData("0400c3f00006e000", "", "MKW")]
     [InlineData("0400C3F00006E000", "Whatever It Is Called", "MKW")]
@@ -686,7 +729,48 @@ public sealed class NextendoFriendsTests
         Assert.All(ListSecrets, secret => Assert.DoesNotContain(secret, log, StringComparison.Ordinal));
     }
 
-    private static readonly string[] ListSecrets = ["Luna", "Kai", "Bea", "Nico", "Carol", "Grumpy42", "Dario", "SW-2071", "SW-6621", "1234567", "access-"];
+    [Fact]
+    public async Task The_game_gets_the_nextendo_friends_whose_id_nextendo_told()
+    {
+        await using var rig = new FriendsRig();
+        Populate(rig.People);
+        using var api = new LocalApi(rig.Launcher, TimeProvider.System);
+        async Task<(int, string?)> Friends()
+        {
+            var answer = await api.HandleAsync("GET", "/local/v1/friends", "Bearer " + rig.Launcher.Token, default, default);
+            return (answer.Status, answer.Body);
+        }
+
+        // as Nextendo answers today: friends, and nobody's id: the game gets none (what it got before)
+        Assert.Equal((200, """{"friends":[]}"""), await Friends());
+        await rig.Launcher.RefreshNextendoFriendsAsync();
+        Assert.Equal((200, """{"friends":[]}"""), await Friends());
+
+        // once it tells ids: those friends, each with its id; who plays, who is online, who is offline
+        rig.People.Friends[0]["npln_account_id"] = "0123456789ABCDEF"; // Luna, playing
+        rig.People.Friends[1]["npln_account_id"] = "junk"; // Kai, online: not an id, so not for the game
+        rig.People.Friends[2]["account_hex"] = "1f"; // Bea, offline
+        rig.People.Requests[0]["npln_account_id"] = "00000000000000b1"; // Nico asked: not a friend yet
+        var zoe = FakePeople.Person(16, "Zoë \"Z\" <3 & co", "SW-0000-0000-0016", status: 1);
+        zoe["npln_account_id"] = "8000000000000016";
+        rig.People.Friends.Add(zoe);
+        var self = FakePeople.Person(Self, "bia", "SW-1111-2222-3333", status: 1); // a server that lists the player
+        self["npln_account_id"] = "00000000000000ee";
+        rig.People.Friends.Add(self);
+        await rig.Launcher.RefreshNextendoFriendsAsync();
+        Assert.Equal((200, """{"friends":[{"name":"Luna","online":true,"account":"0123456789abcdef"},"""
+            + """{"name":"Zoë \"Z\" <3 & co","online":true,"account":"8000000000000016"},"""
+            + """{"name":"Bea","online":false,"account":"000000000000001f"}]}"""), await Friends());
+
+        // no id and no name is in the log, and no MKWMP server was asked anything
+        var log = ReadLog(rig.Launcher);
+        Assert.All(IdSecrets, secret => Assert.DoesNotContain(secret, log, StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(rig.Seat.Requests);
+    }
+
+    private static readonly string[] IdSecrets = ["0123456789abcdef", "8000000000000016", "000000000000001f", "Zoë"];
+
+    private static readonly string[] ListSecrets =["Luna", "Kai", "Bea", "Nico", "Carol", "Grumpy42", "Dario", "SW-2071", "SW-6621", "1234567", "access-"];
     private static readonly string[] ActionSecrets = ["Dario", "Yuki", "Kai", "Grumpy42", "SW-3302", "\"pid\""];
 
     private static string ReadLog(Launcher launcher)

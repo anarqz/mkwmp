@@ -25,9 +25,16 @@ internal interface ILocalApiHost
 
     /// <summary>
     /// PLAY goes to Nextendo Network (docs/contracts/NEXTENDO_API.md): no seat is ever given, the friends list is
-    /// empty, voice is off, and the game asks <see cref="NextendoSessionAsync"/> instead of a seat.
+    /// <see cref="NextendoGameFriends"/>, voice is off, and the game asks <see cref="NextendoSessionAsync"/> instead of a seat.
     /// </summary>
     bool Nextendo => false;
+
+    /// <summary>
+    /// The account's Nextendo friends the game can know (those with an id on the game's servers, in the order of
+    /// <see cref="NextendoFriendList.ForGame"/>): none while Nextendo tells no ids. Null while the first list is
+    /// still on its way.
+    /// </summary>
+    IReadOnlyList<NextendoFriend>? NextendoGameFriends => [];
 
     /// <summary>What <c>GET /local/v1/nextendo/session</c> answers (§4): ready with the game token, refused, or unavailable.</summary>
     Task<LocalResponse> NextendoSessionAsync(CancellationToken cancel) => Task.FromResult(LocalApi.NextendoRefused("unlinked", Strings.NextendoNotLinked));
@@ -373,7 +380,19 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
     {
         if (host.Nextendo)
         {
-            return new LocalResponse(200, """{"friends":[]}"""); // MKWMP friends are an MKWMP server's (NEXTENDO_API.md §4)
+            // Never an MKWMP server's friends: the account's Nextendo friends whose id the game can match, each with
+            // that id (NEXTENDO_API.md §4). Nextendo tells no ids yet, so this is {"friends":[]} until it does.
+            var waited = clock.GetTimestamp();
+            IReadOnlyList<NextendoFriend>? known;
+            while ((known = host.NextendoGameFriends) is null)
+            {
+                if (clock.GetElapsedTime(waited) >= FriendsWait)
+                {
+                    return State(503, "loading", Strings.FriendsStillLoading);
+                }
+                await Task.Delay(TimeSpan.FromMilliseconds(100), cancel).ConfigureAwait(false);
+            }
+            return new LocalResponse(200, NextendoFriendsJson(known));
         }
         if (host.Seat is null)
         {
@@ -395,6 +414,16 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
         var friends = all.Take(MaxFriends).Select(f => new { name = f.Name, online = f.State != FriendState.Offline });
         return new LocalResponse(200, JsonSerializer.Serialize(new { friends }));
     }
+
+    /// <summary>Names as they are (the hook reads no <c>\u</c> escape); only what JSON itself must escape is escaped.</summary>
+    private static readonly JsonSerializerOptions PlainText = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    /// <summary><c>{"friends":[{"name","online","account":"16 hex"}]}</c>: only friends with an id, at most <see cref="MaxFriends"/>.</summary>
+    internal static string NextendoFriendsJson(IReadOnlyList<NextendoFriend> friends) => JsonSerializer.Serialize(new
+    {
+        friends = friends.Where(f => f.Account.Length > 0).Take(MaxFriends)
+            .Select(f => new { name = NextendoFriendList.NameForGame(f), online = f.State != FriendState.Offline, account = f.Account }),
+    }, PlainText);
 
     // ---- voice ----------------------------------------------------------------------------
 

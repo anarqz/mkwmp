@@ -42,6 +42,26 @@ public sealed partial class Launcher
     private int _nextendoServed;
     private string? _nextendoToasted;
 
+    /// <summary>
+    /// The linked account's id on the game's servers, as Nextendo last said it (<see cref="NextendoApi.NplnAccount"/>;
+    /// null: it never did). In memory only, and never in a log.
+    /// </summary>
+    private volatile Tuple<long, string>? _nextendoOwn;
+
+    /// <summary>Nextendo said who the account is: its id on the game's servers is kept when it came with it.</summary>
+    private void KeepNextendoAccount(long pid, string account)
+    {
+        if (account.Length > 0)
+        {
+            _nextendoOwn = Tuple.Create(pid, account);
+        }
+    }
+
+    /// <summary>The id of the account <paramref name="pid"/> on the game's servers; "" while Nextendo has not said it.</summary>
+    private string NextendoOwnAccount(long pid) => _nextendoOwn is { } own && own.Item1 == pid ? own.Item2 : "";
+
+    private static readonly JsonSerializerOptions OmitNull = new() { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
+
     private enum NextendoStanding { Allowed, Refused, Problem }
 
     public NextendoView Nextendo => _nextendoView;
@@ -132,6 +152,7 @@ public sealed partial class Launcher
                     var tokens = await _nextendoApi.ExchangeAsync(answer.Value, loopback.RedirectUri, verifier, cancel.Token).ConfigureAwait(false);
                     var user = await _nextendoApi.UserInfoAsync(tokens.Access, cancel.Token).ConfigureAwait(false);
                     var kept = await _nextendo.AdoptAsync(tokens, cancel.Token).ConfigureAwait(false);
+                    KeepNextendoAccount(user.Pid, user.Account);
                     var before = OnNextendo;
                     // A first link is the choice of Nextendo (an install that plays on MKWMP servers was invited to it);
                     // linking again keeps the choice, and nothing changes under a game that runs on an MKWMP server.
@@ -313,6 +334,7 @@ public sealed partial class Launcher
         try
         {
             var user = await _nextendo.UserAsync(_life.Token).ConfigureAwait(false);
+            KeepNextendoAccount(user.Pid, user.Account);
             FollowAccount(user.Pid, user.Username, user.FriendCode);
             // Whether it may go online is asked with a game token: only while PLAY goes there.
             if (NextendoMode)
@@ -371,6 +393,7 @@ public sealed partial class Launcher
             }
             var network = await _nextendo.NetworkAsync(fresh: true, life).ConfigureAwait(false);
             var grant = await _nextendo.GameTokenAsync(life).ConfigureAwait(false);
+            KeepNextendoAccount(grant.Token.Pid, grant.Token.Account);
             FollowAccount(grant.Token.Pid, grant.Token.Username, grant.Token.FriendCode);
             Note($"playing on Nextendo Network ({network.ServerHost}): no MKWMP server is contacted, no seat is taken"); // never who: logs go into bug reports
             return SessionFile.Nextendo(grant.Token.Username, address, Token, LauncherExe, network.CaPem);
@@ -408,6 +431,9 @@ public sealed partial class Launcher
             var grant = await _nextendo.GameTokenAsync(cancel).ConfigureAwait(false);
             var network = await _nextendo.NetworkAsync(fresh: false, cancel).ConfigureAwait(false);
             Volatile.Write(ref _nextendoServed, 1);
+            KeepNextendoAccount(grant.Token.Pid, grant.Token.Account);
+            // "accountId": the account's id on the game's servers, only when Nextendo said it (with the game token,
+            // else with who the account is); left out otherwise, and the hook derives one from the pid as before.
             return new LocalResponse(200, JsonSerializer.Serialize(new
             {
                 state = "ready",
@@ -419,7 +445,8 @@ public sealed partial class Launcher
                 serverHost = network.ServerHost,
                 natHost = network.NatHost,
                 caFile = Probe.NextendoCa,
-            }));
+                accountId = NextendoOwnAccount(grant.Token.Pid) is { Length: > 0 } own ? own : null,
+            }, OmitNull));
         }
         catch (NextendoException e) when (e.Kind is NextendoError.SignedOut or NextendoError.Scope)
         {

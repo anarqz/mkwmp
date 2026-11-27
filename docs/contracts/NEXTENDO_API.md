@@ -80,8 +80,33 @@ The launcher keeps the nx2 cached and fetches a new one when less than 1 h is le
 on demand. `online-status` is checked before PLAY and again when a session is served (cached 60 s). Nothing about
 the session reaches MKWMP servers.
 
-`GET /local/v1/friends` in Nextendo mode answers `200 {"friends":[]}`. Friend ids on Nextendo are derived server
-side, so this stays empty until that is settled. Overlay routes are unchanged. Voice answers `enabled:false`.
+A ready session may also carry `"accountId":"<16 lowercase hex>"`: the account's id on the game's servers (its
+NPLN account id), present only once Nextendo tells it to the launcher (§7). The mod then answers
+`GetNetworkServiceAccountId` with it. Without it (today) the mod derives an id from `pid`, as before. A value that
+is not 1 to 16 hex digits, or is zero, counts as absent.
+
+`GET /local/v1/friends` in Nextendo mode never names an MKWMP server's friends. It answers
+
+    200 {"friends":[{"name":"Luna","online":true,"account":"0123456789abcdef"}, …]}
+
+- Only the linked account's mutual Nextendo friends whose id on the game's servers Nextendo told (§7). Requests
+  received or sent, the player, and friends without an id are left out. Nextendo tells no ids yet, so the answer is
+  `200 {"friends":[]}` until it does.
+- `account`: 16 lowercase hex digits, the friend's account id as it is. The mod uses it unchanged as
+  `nn::friends::Friend::GetAccountId()`; it never derives an id from a name in this mode, and ignores an entry
+  without `account`. (In MKWMP mode entries have no `account` and the id is derived from `name`, as in
+  LAUNCHER_API.md.)
+- `name`: 1 to 20 characters, written as UTF-8 (no `\u` escapes); `Player` when Nextendo gave none.
+- Order: playing, online, offline, then by name. At most 100.
+- `503 {"state":"loading"}` while the launcher's first friends list is on its way: ask again in a second. The game
+  reads its friend list once per sign-in, so the mod asks when Online Play is opened and waits up to 1 s for the
+  answer at each sign-in (the id-token load), as it does for an MKWMP seat.
+
+Why: the game maps the friends its server names (`SubscribeFriendUsers`: account id + user) onto the system
+friend list by account id, once per sign-in. A server friend that is not in the system list gets no presence, so
+it never shows online in game, and groups and joining a friend's session cannot work.
+
+Overlay routes are unchanged. Voice answers `enabled:false`.
 
 ## 5. What the mod does in Nextendo mode
 
@@ -91,7 +116,10 @@ side, so this stays empty until that is settled. Overlay routes are unchanged. V
     iat/exp, **nnex: <nexToken>**.
   - Only nnex is trusted by Nextendo.
 - `nn::account::GetNickname`: the `username`.
-- `GetNetworkServiceAccountId`: derived from `pid`, unique per player and never 0.
+- `GetNetworkServiceAccountId`: the session's `accountId` when it has one (§4); otherwise derived from `pid`,
+  unique per player and never 0.
+- `nn::friends::GetFriendList`: the entries of `/local/v1/friends` that carry `account` (§4), at most 100; empty
+  while there are none.
 - `nn::nsd::GetEnvironmentIdentifier`: `lp1` (as today).
 - Built-in certificates (`GetBuiltInCertificates`): serve `nextendo_ca` instead of the MKWMP lobby CA.
 - Name resolution, following Nextendo's emulator rules:
@@ -105,7 +133,7 @@ side, so this stays empty until that is settled. Overlay routes are unchanged. V
   unchanged. The game's own TLS keeps the original SNI.
 - Pia UDP: as in LAN mode. Bind to all interfaces, report the real local address, and send to whatever address and
   port Pia gives. NAT probes are not redirected to MKWMP's `:10025`.
-- Off in Nextendo mode: seat keepalive, voice, chat rooms and camera, and the MKWMP friends fill.
+- Off in Nextendo mode: seat keepalive, voice, chat rooms and camera, and MKWMP friends (ids derived from names).
 - Crash records and logs name the backend (`backend: nextendo`), never the token.
 - Errors: 2321-2304 means the token or account was refused, and 2321-3072 means the version was refused. These are
   the game's own messages. The mod just logs them.
@@ -113,7 +141,8 @@ side, so this stays empty until that is settled. Overlay routes are unchanged. V
 ## 6. Friends and presence (launcher only)
 
 In Nextendo mode the launcher's friends panel, top bar and notifications are the linked account's Nextendo friends.
-Nothing of this reaches the mod or an MKWMP server; `/local/v1/friends` stays as §4 says.
+Nothing of this reaches an MKWMP server. The mod gets only what §4 says of `/local/v1/friends`: a name, online or
+not, and the id on the game's servers, for friends Nextendo told an id for.
 
 | What | Call (Bearer access token, scope `friends` unless noted) |
 |---|---|
@@ -130,4 +159,18 @@ Nothing of this reaches the mod or an MKWMP server; `/local/v1/friends` stays as
   every 60 s (Nextendo forgets it after 90 s); status 0 once on exit, unlink, a switch to MKWMP servers, or when
   `[nextendo] show_online = false` (client.toml; default on).
 - A sent request cannot be taken back (Nextendo has no route for it): the panel shows it without a Cancel.
-- Friends' names, pids and friend codes are never logged and are overwritten in a report's minidump.
+- Friends' names, pids, friend codes and ids are never logged and are overwritten in a report's minidump.
+
+## 7. Requested from Nextendo
+
+The game matches a friend by NPLN account id, which Nextendo derives on its side; the launcher cannot compute
+it. Two optional fields are asked of Nextendo. Until they exist everything above works as before, with no friends
+in game; once they appear the launcher and the mod use them with no further change.
+
+| Where | Field |
+|---|---|
+| `GET /api/friends`, on each entry of `friends` (and of `requests`, `sent`) | `"npln_account_id": "<16 lowercase hex>"`: that player's NPLN account id (the `account_hex` of Nextendo's own friends route). Optionally `"npln_user_id": "u-…"`. |
+| `POST /api/nex-token` and `GET /api/oauth/userinfo` | `"npln_account_id"` (and optionally `"npln_user_id"`) of the signed-in player. |
+
+The launcher reads `npln_account_id`, or `account_hex` as another name for it: a string of 1 to 16 hex digits in
+either case, not zero; anything else is ignored. `npln_user_id` is not used yet.

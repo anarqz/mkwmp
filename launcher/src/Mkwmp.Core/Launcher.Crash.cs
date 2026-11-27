@@ -201,7 +201,7 @@ public sealed partial class Launcher
         var link = Config.Nextendo;
         if (link.Linked)
         {
-            secrets.AddRange([link.Username, link.FriendCode, link.Pid.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+            secrets.AddRange([link.Username, link.FriendCode, link.Pid.ToString(System.Globalization.CultureInfo.InvariantCulture), NextendoOwnAccount(link.Pid)]);
         }
         // Nextendo friends are other people: their names, friend codes and ids are in no dump either.
         secrets.AddRange(NextendoPeopleSecrets());

@@ -44,10 +44,12 @@ internal sealed class NextendoException(NextendoError kind, string message, Time
 /// <summary>What the token endpoint answers: the access token (1 h) and the refresh token that replaces the one used.</summary>
 internal sealed record NextendoTokens(string Access, string Refresh, long ExpiresIn, string Scope);
 
-internal sealed record NextendoUser(long Pid, string Username, string FriendCode, string DisplayName);
+/// <param name="Account">The account's id on the game's servers (<see cref="NextendoApi.NplnAccount"/>); "" while Nextendo does not say it.</param>
+internal sealed record NextendoUser(long Pid, string Username, string FriendCode, string DisplayName, string Account = "");
 
 /// <summary>The game token (<c>nx2…</c>, a day) with who it is for.</summary>
-internal sealed record NextendoGameToken(string Token, long Pid, string FriendCode, string Username, long ExpiresIn);
+/// <param name="Account">The account's id on the game's servers (<see cref="NextendoApi.NplnAccount"/>); "" while Nextendo does not say it.</param>
+internal sealed record NextendoGameToken(string Token, long Pid, string FriendCode, string Username, long ExpiresIn, string Account = "");
 
 /// <summary>Where the game connects on Nextendo, and the certificate it trusts there (PEM).</summary>
 internal sealed record NextendoNetwork(string ServerHost, string NatHost, string CaPem);
@@ -278,15 +280,36 @@ internal sealed class NextendoApi(HttpClient http, string userAgent)
     internal static long? Id(JsonElement? e) =>
         e.Long() ?? (e.Str() is { } text && long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : null);
 
+    /// <summary>Where an entry may carry <see cref="NplnAccount"/>: the name asked of Nextendo, and the one its own server uses.</summary>
+    private static readonly string[] AccountKeys = ["npln_account_id", "account_hex"];
+
+    /// <summary>
+    /// The id an account has on the game's servers (what the game matches a friend by), as 16 lowercase hex digits;
+    /// "" when the entry has none. Nextendo derives it on its side and does not send it yet (NEXTENDO_API.md §7): it
+    /// is optional everywhere. Read from <c>npln_account_id</c>, else <c>account_hex</c>: a string of 1 to 16 hex
+    /// digits in either case, and not zero. Anything else is no id.
+    /// </summary>
+    internal static string NplnAccount(JsonElement? v)
+    {
+        foreach (var key in AccountKeys)
+        {
+            if (v.At(key).Str() is { Length: >= 1 and <= 16 } text && text.All(char.IsAsciiHexDigit) && text.Any(c => c != '0'))
+            {
+                return text.ToLowerInvariant().PadLeft(16, '0');
+            }
+        }
+        return "";
+    }
+
     internal static NextendoUser? ParseUser(JsonElement? v) =>
         Id(v.At("pid")) is { } pid and > 0 && v.At("username").Str() is { Length: > 0 } name
-            ? new NextendoUser(pid, name, v.At("friend_code").Str() ?? "", v.At("display_name").Str() ?? name)
+            ? new NextendoUser(pid, name, v.At("friend_code").Str() ?? "", v.At("display_name").Str() ?? name, NplnAccount(v))
             : null;
 
     internal static NextendoGameToken? ParseGameToken(JsonElement? v) =>
         v.At("nex_token").Str() is { Length: > 0 } token && token.StartsWith("nx2", StringComparison.Ordinal)
         && Id(v.At("pid")) is { } pid and > 0 && v.At("username").Str() is { Length: > 0 } name
-            ? new NextendoGameToken(token, pid, v.At("friend_code").Str() ?? "", name, Math.Clamp(v.At("expires_in").Long() ?? 86_400, 1, 7 * 86_400))
+            ? new NextendoGameToken(token, pid, v.At("friend_code").Str() ?? "", name, Math.Clamp(v.At("expires_in").Long() ?? 86_400, 1, 7 * 86_400), NplnAccount(v))
             : null;
 
     internal static NextendoNetwork? ParseNetwork(JsonElement? v) =>

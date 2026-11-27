@@ -49,6 +49,9 @@ internal sealed class FakeNextendo : HttpMessageHandler
 
     public int GameTokenSeconds { get; set; } = 86_400;
 
+    /// <summary><c>npln_account_id</c> of <c>userinfo</c> (null: not sent, as Nextendo does today).</summary>
+    public string? UserAccount { get; set; }
+
     /// <summary>
     /// What answers the calls this fake does not know itself (the friends list, presence: NextendoFriendsTests.cs), once
     /// their access token was found good: the method and the path with its query, then the body. Null: 404.
@@ -112,7 +115,9 @@ internal sealed class FakeNextendo : HttpMessageHandler
                     return Json(200, new { });
                 case ("GET", "/api/oauth/userinfo"):
                     return bearer == $"access-{_refreshes}"
-                        ? Json(200, new { pid = 1234567, username = Username, friend_code = "SW-1111-2222-3333", display_name = "Bia" })
+                        ? UserAccount is { } account
+                            ? Json(200, new { pid = 1234567, username = Username, friend_code = "SW-1111-2222-3333", display_name = "Bia", npln_account_id = account, npln_user_id = "u-1" })
+                            : Json(200, new { pid = 1234567, username = Username, friend_code = "SW-1111-2222-3333", display_name = "Bia" })
                         : Json(401, new { error = "invalid_token" });
                 case ("POST", "/api/nex-token"):
                     if (bearer != $"access-{_refreshes}")
@@ -279,7 +284,14 @@ public sealed class NextendoTests
         Assert.Null(NextendoApi.ParseGameToken(Json.Parse("""{"nex_token":"abc","pid":42,"username":"bia"}"""))); // not a game token
         Assert.Null(NextendoApi.ParseGameToken(Json.Parse("""{"pid":42,"username":"bia"}""")));
 
-        var pem = "-----BEGIN CERTIFICATE-----\r\nAAAA\r\n-----END CERTIFICATE-----";
+        // the account's id on the game's servers: optional (Nextendo does not send it yet), under either name
+        Assert.Equal(new NextendoUser(42, "bia", "", "bia", "00ab12cd34ef5601"),
+            NextendoApi.ParseUser(Json.Parse("""{"pid":42,"username":"bia","npln_account_id":"00AB12cd34EF5601","npln_user_id":"u-1"}""")));
+        Assert.Equal(new NextendoGameToken("nx2abc", 42, "", "bia", 86400, "000000000000f00d"),
+            NextendoApi.ParseGameToken(Json.Parse("""{"nex_token":"nx2abc","pid":42,"username":"bia","account_hex":"F00D"}""")));
+        Assert.Equal("", NextendoApi.ParseUser(Json.Parse("""{"pid":42,"username":"bia","npln_account_id":"not hex"}"""))!.Account);
+
+        var pem ="-----BEGIN CERTIFICATE-----\r\nAAAA\r\n-----END CERTIFICATE-----";
         var network = NextendoApi.ParseNetwork(Json.Parse(JsonSerializer.Serialize(new { server_host = "nex.nextendo.network", nat_host = "nat.nextendo.network", npln = new { x = 1 }, ca_pem = pem })))!;
         Assert.Equal(("nex.nextendo.network", "nat.nextendo.network", "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n"), (network.ServerHost, network.NatHost, network.CaPem));
         Assert.Null(NextendoApi.ParseNetwork(Json.Parse("""{"server_host":"a.b","nat_host":"c.d","ca_pem":"not a certificate"}""")));
@@ -847,6 +859,79 @@ public sealed class NextendoTests
         // and one that had MKWMP servers chosen stays on them
         await using var mkwmp = new NextendoRig(playOn: "mkwmp", vault: false);
         Assert.Equal((false, PlayNetwork.Mkwmp, true), (mkwmp.Launcher.Nextendo.Linked, mkwmp.Launcher.Nextendo.PlayOn, mkwmp.Launcher.OnlineEnabled));
+    }
+
+    [Theory]
+    [InlineData("0123456789abcdef", "0123456789abcdef")]
+    [InlineData("0123456789ABCDEF", "0123456789abcdef")]
+    [InlineData("1f", "000000000000001f")]
+    [InlineData("8000000000000000", "8000000000000000")]
+    [InlineData("", "")]
+    [InlineData("0", "")]
+    [InlineData("0000000000000000", "")]
+    [InlineData("0123456789abcdef0", "")] // 17 digits
+    [InlineData("0x1f", "")]
+    [InlineData(" 1f", "")]
+    [InlineData("1f-2e", "")]
+    [InlineData("u-12345", "")]
+    [InlineData("１２", "")] // digits, but not ASCII
+    public void An_account_s_id_on_the_game_s_servers_is_hex_or_nothing(string sent, string read)
+    {
+        Assert.Equal(read, NextendoApi.NplnAccount(Json.Parse(JsonSerializer.Serialize(new { npln_account_id = sent }))));
+        Assert.Equal(read, NextendoApi.NplnAccount(Json.Parse(JsonSerializer.Serialize(new { account_hex = sent }))));
+        // the first name that holds one counts
+        Assert.Equal(read.Length > 0 ? read : "00000000000000aa", NextendoApi.NplnAccount(Json.Parse(JsonSerializer.Serialize(new { npln_account_id = sent, account_hex = "AA" }))));
+    }
+
+    [Fact]
+    public void An_account_s_id_that_is_not_a_string_is_no_id()
+    {
+        Assert.Equal("", NextendoApi.NplnAccount(Json.Parse("""{"npln_account_id":1234}""")));
+        Assert.Equal("", NextendoApi.NplnAccount(Json.Parse("""{"npln_account_id":null,"account_hex":["1f"]}""")));
+        Assert.Equal("", NextendoApi.NplnAccount(Json.Parse("""{"pid":1}""")));
+        Assert.Equal("", NextendoApi.NplnAccount(Json.Parse("[]")));
+        Assert.Equal("", NextendoApi.NplnAccount(null));
+    }
+
+    [Fact]
+    public async Task The_game_s_session_carries_the_account_s_id_once_nextendo_says_it()
+    {
+        await using var rig = new NextendoRig();
+        var launcher = rig.Launcher;
+        using var api = new LocalApi(launcher, TimeProvider.System);
+        async Task<JsonObject> Session()
+        {
+            var answer = await api.HandleAsync("GET", "/local/v1/nextendo/session", "Bearer " + launcher.Token, default, default);
+            Assert.Equal(200, answer.Status);
+            return JsonNode.Parse(answer.Body!)!.AsObject();
+        }
+
+        // today: Nextendo says no id, and the session has no "accountId" at all (the hook derives one from the pid)
+        await Rig.Until("the account to be asked about", () => !launcher.Nextendo.Checking);
+        await launcher.RefreshNextendoAsync();
+        Assert.False((await Session()).ContainsKey("accountId"));
+
+        // junk is no id either
+        rig.Nextendo.UserAccount = "u-1234567";
+        await launcher.RefreshNextendoAsync();
+        Assert.False((await Session()).ContainsKey("accountId"));
+
+        // once it does: 16 lowercase hex digits, last
+        rig.Nextendo.UserAccount = "AB12CD34EF5601";
+        await launcher.RefreshNextendoAsync();
+        var session = await Session();
+        Assert.Equal("00ab12cd34ef5601", session["accountId"]!.GetValue<string>());
+        Assert.Equal(
+            ["state", "nexToken", "expiresAt", "pid", "username", "friendCode", "serverHost", "natHost", "caFile", "accountId"],
+            session.Select(p => p.Key));
+        // an answer without it later (an older server behind a balancer) does not take it back
+        rig.Nextendo.UserAccount = null;
+        await launcher.RefreshNextendoAsync();
+        Assert.Equal("00ab12cd34ef5601", (await Session())["accountId"]!.GetValue<string>());
+
+        // it is in no log (bug reports carry the log)
+        var log = ReadShared(launcher.Log.Path!);
+        Assert.DoesNotContain("ab12cd34ef5601", log, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

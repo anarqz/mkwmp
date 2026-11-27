@@ -54,7 +54,7 @@ internal sealed record NextendoFriendList(IReadOnlyList<NextendoFriend> Friends,
     }
 
     public static NextendoPerson? Person(JsonElement? v) =>
-        NextendoApi.Id(v.At("pid")) is { } pid and > 0 ? new NextendoPerson(pid, NameOf(v), Clean(v.At("friend_code").Str(), 32)) : null;
+        NextendoApi.Id(v.At("pid")) is { } pid and > 0 ? new NextendoPerson(pid, NameOf(v), Clean(v.At("friend_code").Str(), 32), NextendoApi.NplnAccount(v)) : null;
 
     private static string NameOf(JsonElement? v) =>
         Clean(v.At("name").Str(), 64) is { Length: > 0 } shown ? shown : Clean(v.At("username").Str(), 64);
@@ -81,8 +81,29 @@ internal sealed record NextendoFriendList(IReadOnlyList<NextendoFriend> Friends,
         return new NextendoFriend(who.Pid, who.Name, who.FriendCode, state,
             playing ? GameName(presence.At("app_id").Str() ?? presence.At("title_id").Str(), title) : "",
             playing ? Clean(presence.At("app_detail").Str() ?? presence.At("detail").Str(), 64) : "",
-            v.At("favorite").Bool() ?? false, banned);
+            v.At("favorite").Bool() ?? false, banned, who.Account);
     }
+
+    /// <summary>The most characters of a name the game is given (the hook's rule for <c>/local/v1/friends</c>: 1 to 20).</summary>
+    public const int GameNameMost = 20;
+
+    /// <summary>
+    /// The friends the game can know: those whose id on the game's servers Nextendo told (none, while it tells
+    /// nobody's), never the player, nobody twice. Who plays, who is online, then who is offline; by name in each.
+    /// </summary>
+    public static IReadOnlyList<NextendoFriend> ForGame(IEnumerable<NextendoFriend> friends, long self, string selfAccount, int most)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        if (selfAccount.Length > 0)
+        {
+            seen.Add(selfAccount);
+        }
+        return [.. friends.Where(f => f.Account.Length > 0 && f.Pid != self).OrderBy(f => f.State).ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Pid)
+            .Where(f => seen.Add(f.Account)).Take(most)];
+    }
+
+    /// <summary>A friend's name as the game takes it: 1 to <see cref="GameNameMost"/> characters ("Player" for one without a name).</summary>
+    public static string NameForGame(NextendoFriend friend) => Clean(friend.Name, GameNameMost) is { Length: > 0 } name ? name : "Player";
 
     /// <summary>
     /// What a friend plays, as the window says it: "MKW" for the game (its title id, or its title), another game's

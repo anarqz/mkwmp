@@ -10,8 +10,9 @@ namespace Mkwmp.Core;
 /// accept, decline, remove, block, unblock, favourite) and says on Nextendo that the player is online, or playing.
 /// <para>
 /// Nextendo has no push channel: the list is asked for again and again, at the pace <see cref="NextendoRoster"/>
-/// sets. Nothing of it reaches an MKWMP server, the game (<c>/local/v1/friends</c> stays empty in Nextendo mode: the
-/// game's friends there are Nextendo's own), or a log: no friend's name, pid or friend code is ever written to one.
+/// sets. Nothing of it reaches an MKWMP server or a log: no friend's name, pid, friend code or id is ever written to
+/// one. The game gets, on <c>/local/v1/friends</c>, the friends whose id on the game's servers Nextendo told (so it
+/// can match them to the friends its server names); Nextendo tells none yet, and the answer is empty until it does.
 /// </para>
 /// </summary>
 public sealed partial class Launcher
@@ -87,9 +88,31 @@ public sealed partial class Launcher
     {
         lock (_gate)
         {
-            var people = (_nxList?.Friends ?? []).Select(f => new NextendoPerson(f.Pid, f.Name, f.FriendCode))
+            var people = (_nxList?.Friends ?? []).Select(f => new NextendoPerson(f.Pid, f.Name, f.FriendCode, f.Account))
                 .Concat(_nxList?.Incoming ?? []).Concat(_nxList?.Sent ?? []).Concat(_nxRecent).Concat(_nxBlocked);
-            return [.. people.SelectMany(p => new[] { p.Name, p.FriendCode, p.Pid.ToString(System.Globalization.CultureInfo.InvariantCulture) })];
+            return [.. people.SelectMany(p => new[] { p.Name, p.FriendCode, p.Pid.ToString(System.Globalization.CultureInfo.InvariantCulture), p.Account })];
+        }
+    }
+
+    /// <summary>
+    /// What <c>GET /local/v1/friends</c> gives the game on Nextendo (NEXTENDO_API.md §4): the friends whose id on the
+    /// game's servers Nextendo told, so the game can match them; none while it tells no ids. Null while the first
+    /// list is on its way (the game reads its friends once per sign-in: it is told to ask again, not given an empty
+    /// list); a list that does not come is an empty one.
+    /// </summary>
+    IReadOnlyList<NextendoFriend>? ILocalApiHost.NextendoGameFriends
+    {
+        get
+        {
+            lock (_gate)
+            {
+                if (_nxList is not { } list)
+                {
+                    return _options.BackgroundLoops && NextendoMode && !_nxFailing ? null : [];
+                }
+                var self = _config.Nextendo.Pid;
+                return NextendoFriendList.ForGame(list.Friends, self, NextendoOwnAccount(self), LocalApi.MaxFriends);
+            }
         }
     }
 
