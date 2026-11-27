@@ -1,3 +1,14 @@
+**mkwmp 1.5.1**: Nextendo friends, ghosts, and an Alpha update channel.
+
+The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.
+
+- **Nextendo friends in the friends panel**: add by friend code, accept or decline requests, see who is online or playing, favorite, remove or block, and add players you met in recent races.
+- **Friend notifications and presence on Nextendo**, with a "Show Me Online to Friends" switch in Settings › Nextendo.
+- **Friends inside the game on Nextendo**: they appear in the game's friend list (as "Friend 1", "Friend 2"… for now).
+- **Ghosts on Nextendo**: time trial ghost downloads and uploads.
+- **Update channel**: Settings › Updates › Stable or Alpha (test versions). Leaving Alpha offers "Return to Stable".
+
+---
 **mkwmp 1.5.0**: play online on Nextendo Network.
 
 The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.

@@ -2,6 +2,15 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
+## 1.5.1 — 2026-11-27
+
+- **Nextendo friends in the friends panel.** Your friend code with Copy, add a friend by their code, accept or decline requests, see who is online or playing, favorite, remove or block a friend, and add "Players you met" in recent races. Blocked players are in Settings › Nextendo.
+- **Friend notifications on Nextendo.** "Is online", "is playing", "sent you a friend request", "accepted your request". Opening the launcher shows one summary instead of one per friend.
+- **Your presence on Nextendo.** Friends see you online while the launcher is open and playing while the game runs (shown as an unofficial app). Settings › Nextendo › "Show Me Online to Friends" turns it off.
+- **Friends inside the game on Nextendo.** Your Nextendo friends now appear in the game's friend list (as "Friend 1", "Friend 2"… for now), so their status, rooms and groups can work.
+- **Ghosts on Nextendo.** Downloading and uploading time trial ghosts now has what it needs on PC.
+- **Update channel.** Settings › Updates › Update Channel: Stable (finished versions) or Alpha (also test versions before they are released). Leaving Alpha offers "Return to Stable".
+
 ## 1.5.0 — 2026-11-27
 
 - **Play online on Nextendo Network.** Sign in with your Nextendo account (or create one) and race online on Nextendo Network. You sign in on nextendo.network in your browser: your password never goes through MKWMP, and your Nextendo sign-in stays on this device, never sent to MKWMP servers.
