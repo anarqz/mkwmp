@@ -23,6 +23,15 @@ internal interface ILocalApiHost
     /// <summary>What the game is told when it asks for a seat while <see cref="Online"/> is false (plain ASCII: the mod shows it).</summary>
     string OfflineText => Strings.OnlineOffInGame;
 
+    /// <summary>
+    /// PLAY goes to Nextendo Network (docs/contracts/NEXTENDO_API.md): no seat is ever given, the friends list is
+    /// empty, voice is off, and the game asks <see cref="NextendoSessionAsync"/> instead of a seat.
+    /// </summary>
+    bool Nextendo => false;
+
+    /// <summary>What <c>GET /local/v1/nextendo/session</c> answers (§4): ready with the game token, refused, or unavailable.</summary>
+    Task<LocalResponse> NextendoSessionAsync(CancellationToken cancel) => Task.FromResult(LocalApi.NextendoRefused("unlinked", Strings.NextendoNotLinked));
+
     /// <summary>Accepted friends as the server orders them; null until the first list arrives.</summary>
     IReadOnlyList<Friend>? FriendsOrNull { get; }
 
@@ -57,6 +66,8 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
     // The probe calls seat every <= 20 s and friends every 15 s; voice is polled every 2 s.
     private readonly TokenBucket _seat = new(10, 1, clock);
     private readonly TokenBucket _friends = new(10, 1, clock);
+    // The game asks for its Nextendo session when it goes online and each time it loads its id token.
+    private readonly TokenBucket _nextendo = new(10, 1, clock);
     private readonly TokenBucket _voice = new(10, 2, clock);
     private readonly TokenBucket _voicePost = new(20, 2, clock);
     // The overlay: a state poll every 2 s while it is open and every 10 s otherwise; an open per button press.
@@ -256,6 +267,7 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
         {
             "/local/v1/seat" => ("POST", _seat),
             "/local/v1/friends" => ("GET", _friends),
+            "/local/v1/nextendo/session" => ("GET", _nextendo),
             "/local/v1/voice" => ("GET", _voice),
             "/local/v1/voice/devices" => ("POST", _voicePost),
             "/local/v1/voice/mute" => ("POST", _voicePost),
@@ -289,7 +301,8 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
             "/local/v1/instance/host" => Instance.Host(Query(query), Port, host.Token),
             "/local/v1/seat" => await SeatAsync(cancel).ConfigureAwait(false),
             "/local/v1/friends" => await FriendsAsync(cancel).ConfigureAwait(false),
-            "/local/v1/voice" => new LocalResponse(200, VoiceJson(host.Config)),
+            "/local/v1/nextendo/session" => await host.NextendoSessionAsync(cancel).ConfigureAwait(false),
+            "/local/v1/voice" => new LocalResponse(200, VoiceJson(host.Config, off: host.Nextendo)),
             "/local/v1/voice/devices" => VoiceDevices(body),
             _ => VoiceMute(body),
         };
@@ -319,8 +332,17 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
     private static LocalResponse State(int status, string state, string message) =>
         new(status, JsonSerializer.Serialize(new { state, message }));
 
+    /// <summary><c>409 {"state":"refused","reason","message"}</c>: the game stays offline (NEXTENDO_API.md §4).</summary>
+    internal static LocalResponse NextendoRefused(string reason, string message) =>
+        new(409, JsonSerializer.Serialize(new { state = "refused", reason, message }));
+
     private async Task<LocalResponse> SeatAsync(CancellationToken cancel)
     {
+        if (host.Nextendo)
+        {
+            // Only a mod older than Nextendo mode asks for a seat now: there is none, and no MKWMP server is contacted.
+            return State(409, "refused", Strings.NextendoNoSeatInGame);
+        }
         if (!host.Online)
         {
             // Offline: a refusal (409) ends the game's wait at once and its text is what the mod shows; the game stays offline.
@@ -349,6 +371,10 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
 
     private async Task<LocalResponse> FriendsAsync(CancellationToken cancel)
     {
+        if (host.Nextendo)
+        {
+            return new LocalResponse(200, """{"friends":[]}"""); // MKWMP friends are an MKWMP server's (NEXTENDO_API.md §4)
+        }
         if (host.Seat is null)
         {
             return State(503, "unavailable", Strings.PressPlayInLauncher);
@@ -372,12 +398,13 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
 
     // ---- voice ----------------------------------------------------------------------------
 
-    public static string VoiceJson(ClientConfig c)
+    /// <param name="off">Voice is not offered now (PLAY goes to Nextendo): <c>enabled</c> is false whatever the setting.</param>
+    public static string VoiceJson(ClientConfig c, bool off = false)
     {
         var v = c.Settings.Voice;
         return JsonSerializer.Serialize(new
         {
-            enabled = v.Enabled,
+            enabled = v.Enabled && !off,
             input = v.Input,
             output = v.Output,
             inputGain = Math.Clamp(v.InputGain, 1, 100),

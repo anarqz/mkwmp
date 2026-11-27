@@ -207,6 +207,49 @@ public static class Strings
 
     public static string PickLocalName => T("core.pick_local_name");
 
+    // ---- Nextendo Network (docs/contracts/NEXTENDO_API.md) --------------------------------
+    public static string NextendoUnreachable => T("core.nextendo.unreachable");
+    public static string NextendoLinkAgain => T("core.nextendo.link_again");
+    public static string NextendoScope => T("core.nextendo.scope");
+    public static string NextendoBadAnswer => T("core.nextendo.bad_answer");
+    public static string NextendoNotLinked => T("core.nextendo.not_linked");
+    public static string NextendoLimited(long seconds) => F("core.nextendo.limited", ("wait", WaitText(seconds)));
+
+    /// <summary>Why Nextendo does not let the account online now (<c>online-status</c>'s reason; one it does not name is "unknown").</summary>
+    public static string NextendoRefused(string reason) => reason switch
+    {
+        "unverified" => T("core.nextendo.reason.unverified"),
+        "discord_unlinked" => T("core.nextendo.reason.discord_unlinked"),
+        "suspended" => T("core.nextendo.reason.suspended"),
+        "disabled" => T("core.nextendo.reason.disabled"),
+        "elsewhere" => T("core.nextendo.reason.elsewhere"),
+        _ => T("core.nextendo.reason.unknown"),
+    };
+
+    public static string NextendoAllowed => T("core.nextendo.allowed");
+    public static string NextendoLinkWaiting => T("core.nextendo.link.waiting");
+    public static string NextendoLinkNoBrowser => T("core.nextendo.link.no_browser");
+    public static string NextendoLinkTimeout => T("core.nextendo.link.timeout");
+    public static string NextendoLinkDenied => T("core.nextendo.link.denied");
+    public static string NextendoLinkCancelled => T("core.nextendo.link.cancelled");
+    public static string NextendoLinkNotKept => T("core.nextendo.link.not_kept");
+    public static string NextendoLinked(string name) => F("core.nextendo.linked", ("name", name));
+    public static string NextendoUnlinked => T("core.nextendo.unlinked");
+
+    /// <summary>The page the browser shows once it came back to the launcher.</summary>
+    public static string NextendoBrowserDoneTitle => T("core.nextendo.browser.done_title");
+    public static string NextendoBrowserDoneText => T("core.nextendo.browser.done_text");
+    public static string NextendoBrowserFailedTitle => T("core.nextendo.browser.failed_title");
+    public static string NextendoBrowserFailedText => T("core.nextendo.browser.failed_text");
+
+    /// <summary>The status pill while PLAY goes to Nextendo.</summary>
+    public static string NextendoReady => T("core.status.nextendo_ready");
+    public static string NextendoConnecting => T("core.status.nextendo_connecting");
+    public static string NextendoInGame => T("core.status.nextendo_in_game");
+
+    /// <summary>A mod older than Nextendo mode asks for an MKWMP seat while PLAY goes to Nextendo: English and plain ASCII, as <see cref="OnlineOffInGame"/>.</summary>
+    public const string NextendoNoSeatInGame = "Playing on Nextendo Network: no MKWMP seat. Update the MKWMP mod (launcher, Checklist)";
+
     // ---- asking a server who it is (Connect) ----------------------------------------------
     public static string ProbeInvalid => T("core.probe_invalid");
     public static string ProbeUnreachable => T("core.probe_unreachable");

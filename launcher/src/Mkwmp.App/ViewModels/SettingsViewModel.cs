@@ -29,6 +29,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         [
             new CategoryEntry("profile", S["settings.profile"]),
             new CategoryEntry(Routes.OnlineCategory, S["settings.online"]), // the server, the profile on it, privacy (SettingsViewModel.Online.cs)
+            new CategoryEntry(NextendoCategory, S["settings.nextendo"]), // a linked Nextendo account, and where PLAY goes online (SettingsViewModel.Nextendo.cs)
             new CategoryEntry("game", S["settings.game"]),
             new CategoryEntry("voice", S["settings.voice"]),
             new CategoryEntry("notifications", S["settings.notifications"]),
@@ -63,6 +64,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         InitVoice();
         InitGameSettings();
         InitOnline();
+        InitNextendo();
         Profile.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ProfileForm.PinRevealed))
@@ -91,6 +93,7 @@ public sealed partial class SettingsViewModel : PageViewModel
                 {
                     EnterVoice(); // the devices are listed only once Voice & Camera is opened
                 }
+                EnterNextendo();
                 SyncGameRows();
                 RaiseAll();
                 RefreshHints();
@@ -134,6 +137,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             EnterVoice();
         }
         FollowServers(true);
+        EnterNextendo();
     }
 
     /// <summary>The window lost the focus, or the overlay went back to the game: the microphone test stops.</summary>

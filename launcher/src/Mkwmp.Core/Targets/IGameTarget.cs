@@ -386,8 +386,23 @@ public sealed record SessionFile(string Server, string Name, string Launcher, st
     public static SessionFile Offline(string launcher, string launcherToken, string? launcherExe) =>
         new("", "", launcher, launcherToken, 0, null, 1, null, launcherExe);
 
+    /// <summary>
+    /// The session file of a game that goes online on Nextendo Network (docs/contracts/NEXTENDO_API.md §3):
+    /// <c>backend = "nextendo"</c>, the account's name, how to reach this launcher, and the certificate the game
+    /// trusts there (<paramref name="caPem"/>, written beside the file before it). No server, ticket or voice port,
+    /// and never a token: the hook asks the launcher for one (<c>GET /local/v1/nextendo/session</c>).
+    /// </summary>
+    public static SessionFile Nextendo(string username, string launcher, string launcherToken, string? launcherExe, string caPem) =>
+        new("", username, launcher, launcherToken, 0, null, 1, null, launcherExe) { NextendoCaPem = caPem ?? throw new ArgumentNullException(nameof(caPem)) };
+
+    /// <summary>Nextendo's certificate (PEM), for a session on Nextendo Network; null for any other session.</summary>
+    public string? NextendoCaPem { get; init; }
+
+    /// <summary>The game goes online on Nextendo Network: see <see cref="Nextendo"/>.</summary>
+    public bool IsNextendo => NextendoCaPem is not null;
+
     /// <summary>No server: see <see cref="Offline"/>.</summary>
-    public bool IsOffline => Server.Length == 0;
+    public bool IsOffline => Server.Length == 0 && !IsNextendo;
 }
 
 public sealed record LaunchOptions(string? CustomCommand);

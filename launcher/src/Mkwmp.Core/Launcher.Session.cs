@@ -62,6 +62,8 @@ public sealed partial class Launcher
             }
             (_sessionState, _sessionError, _seatSnapshot, _gameRunning) = (SessionState.Starting, null, null, false);
             _offlineSession = !IsOnline(_config.Settings);
+            _nextendoSession = NextendoMode; // no MKWMP seat either: the game goes online on Nextendo (Launcher.Nextendo.cs)
+            (_nextendoServed, _nextendoToasted) = (0, null);
             _stop.Reset(); // a STOP pressed while idle is not for this session
             _sessionTask = Task.Run(RunSessionAsync);
         });
@@ -110,6 +112,7 @@ public sealed partial class Launcher
             error = e.Message;
         }
         _seat = null;
+        Volatile.Write(ref _nextendoServed, 0);
         if (error is not null)
         {
             Note(error);
@@ -285,13 +288,26 @@ public sealed partial class Launcher
             throw new LauncherException($"{integration.Summary} ({string.Join("; ", integration.Lines)})");
         }
         var address = string.Create(CultureInfo.InvariantCulture, $"127.0.0.1:{(_local.Port != 0 ? _local.Port : s.LocalPort)}");
-        // Also takes away what an online session left there: the server, the name, a ticket, the lobby's certificate.
-        target.WriteSession(install, SessionFile.Offline(address, Token, LauncherExe));
-        Note("playing offline: no server is set (SETTINGS > ONLINE), so no seat is taken and no server is contacted");
+        if (_nextendoSession)
+        {
+            // Nextendo is asked first (may the account go online, where, which certificate); then its certificate and
+            // the session file that names it. Nothing of an MKWMP session stays: no server, ticket or lobby certificate.
+            target.WriteSession(install, await NextendoSessionFileAsync(address, life).ConfigureAwait(false));
+        }
+        else
+        {
+            // Also takes away what an online session left there: the server, the name, a ticket, the lobby's certificate.
+            target.WriteSession(install, SessionFile.Offline(address, Token, LauncherExe));
+            Note("playing offline: no server is set (SETTINGS > ONLINE), so no seat is taken and no server is contacted");
+        }
 
         IGameProcess? game = null;
         try
         {
+            if (_nextendoSession)
+            {
+                EnforceOnlineOwned(target, install); // the game goes online all the same: what online play needs of its settings
+            }
             EnforceOverlayOwned(target, install);
             SyncModSettings(target, install, force: true);
             var launches = LaunchesGame(s) && target.Capabilities.HasFlag(TargetCapabilities.Launch);

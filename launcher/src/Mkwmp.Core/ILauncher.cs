@@ -380,6 +380,34 @@ public interface ILauncher : IAsyncDisposable
     /// <summary>Asks GameBanana whether the mods installed from it have a newer file; the answer is <see cref="ModsView.Updates"/>.</summary>
     Task CheckModUpdatesAsync(CancellationToken cancel) => Task.CompletedTask;
 
+    // Nextendo Network (docs/contracts/NEXTENDO_API.md): a linked account, and the choice of where PLAY goes online
+    /// <summary>The linked Nextendo account, the network PLAY goes to, and how the account stands there.</summary>
+    NextendoView Nextendo => NextendoView.None;
+
+    /// <summary>
+    /// Links a Nextendo account: opens the sign-in page with <paramref name="openBrowser"/> (false: it could not be
+    /// opened) and waits for the browser to come back to this PC. The link stays here: nothing of it reaches an MKWMP
+    /// server. Never throws: progress and the outcome are in <see cref="Nextendo"/>.
+    /// </summary>
+    Task LinkNextendoAsync(Func<Uri, bool> openBrowser) => Task.CompletedTask;
+
+    /// <summary>Gives up a link that waits for the browser.</summary>
+    void CancelNextendoLink()
+    {
+    }
+
+    /// <summary>Unlinks: the sign-in is revoked and forgotten, and PLAY goes to MKWMP servers again. Refused while PLAY runs.</summary>
+    Task UnlinkNextendoAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// Where PLAY goes online from now on (saved). <see cref="PlayNetwork.Nextendo"/> only counts while an account is
+    /// linked. Refused while PLAY runs. On Nextendo no MKWMP server is contacted: no seat, friends, voice or camera.
+    /// </summary>
+    Task SetPlayOnAsync(PlayNetwork network) => Task.CompletedTask;
+
+    /// <summary>Asks Nextendo how the linked account stands (its name, and whether it may go online now); the answer is <see cref="Nextendo"/>.</summary>
+    Task RefreshNextendoAsync() => Task.CompletedTask;
+
 // The console-style overlay (launcher/docs/OVERLAY.md)
     /// <summary>The game asks for the launcher over it (<c>Requested</c>); the window answers with <c>ReturnToGame</c>.</summary>
     Overlay.OverlayBridge OverlayBridge { get; }
@@ -430,6 +458,33 @@ public sealed record GameSettingsView(
 
     /// <summary>Whether a setting's condition holds now (<see cref="GameSetting.VisibleWhen"/>).</summary>
     public bool IsVisible(GameSetting setting) => GameSettingsSchema.IsVisible(setting, Values);
+}
+
+/// <summary>Where PLAY goes online (client.toml <c>[nextendo] play_on</c>).</summary>
+public enum PlayNetwork
+{
+    /// <summary>An MKWMP server (the default).</summary>
+    Mkwmp,
+
+    /// <summary>Nextendo Network, with the linked account.</summary>
+    Nextendo,
+}
+
+/// <summary>The linked Nextendo account, for the window (<see cref="ILauncher.Nextendo"/>). No token is ever in it.</summary>
+/// <param name="Linked">An account is linked on this PC.</param>
+/// <param name="Username">Its name on Nextendo ("" when not linked).</param>
+/// <param name="FriendCode">Its friend code ("" when not linked or not known).</param>
+/// <param name="PlayOn">The saved choice; <see cref="PlayNetwork.Mkwmp"/> whenever no account is linked.</param>
+/// <param name="Active">PLAY goes to Nextendo now: linked, chosen, and this run is not offline only.</param>
+/// <param name="Linking">The sign-in page is open in the browser and the launcher waits for it.</param>
+/// <param name="Checking">Nextendo is being asked how the account stands.</param>
+/// <param name="Status">One line: how the account stands on Nextendo ("" when not linked or not asked yet).</param>
+/// <param name="Tone">good / warn / bad / muted, for <paramref name="Status"/>.</param>
+/// <param name="Note">The outcome of the last link, unlink or switch, when there is something to say.</param>
+public sealed record NextendoView(bool Linked, string Username, string FriendCode, PlayNetwork PlayOn, bool Active, bool Linking, bool Checking,
+    string Status, string Tone, string? Note, bool NoteIsError)
+{
+    public static NextendoView None { get; } = new(false, "", "", PlayNetwork.Mkwmp, false, false, false, "", "muted", null, false);
 }
 
 public enum ServerProbeState

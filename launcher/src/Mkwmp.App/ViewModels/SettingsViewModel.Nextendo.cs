@@ -1,0 +1,109 @@
+// Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
+using System.Windows.Input;
+using Mkwmp.Core;
+
+namespace Mkwmp.App.ViewModels;
+
+/// <summary>
+/// Settings › Nextendo (Views/Settings/NextendoPane.xaml), and what Settings › Online shows while PLAY goes to
+/// Nextendo Network. Not linked: what it is, "Link Nextendo Account" (the sign-in page in the browser; the launcher
+/// waits for it) and "Create a Nextendo Account". Linked: the account, its friend code, how it stands, the choice of
+/// network ("Play on") and Unlink. The link stays on this PC (docs/contracts/NEXTENDO_API.md).
+/// </summary>
+public sealed partial class SettingsViewModel
+{
+    public const string NextendoCategory = "nextendo";
+    private const string NextendoRegisterUrl = "https://nextendo.network/register.html";
+
+    private void InitNextendo()
+    {
+        LinkNextendoCommand = new RelayCommand(
+            () => RelayCommand.Async(() => Launcher.LinkNextendoAsync(page => Links.Open(page))).Execute(null),
+            () => !Nextendo.Linking && !(Busy && NextendoMode));
+        CancelNextendoLinkCommand = new RelayCommand(Launcher.CancelNextendoLink, () => Nextendo.Linking);
+        CreateNextendoCommand = new RelayCommand(() => Links.Open(Shell, NextendoRegisterUrl));
+        UnlinkNextendoCommand = RelayCommand.Async(UnlinkNextendoAsync, () => Nextendo.Linked && !(Busy && NextendoMode));
+        PlayOnCommand = RelayCommand.Async(Shell.PickPlayOnAsync, () => Nextendo.Linked && !Busy);
+        NextendoPaneCommand = new RelayCommand(() => At(NextendoCategory));
+    }
+
+    private NextendoView Nextendo => Launcher.Nextendo;
+
+    public bool IsNextendoPane => _category.Key == NextendoCategory;
+
+    public bool NextendoLinked => Nextendo.Linked;
+
+    public bool NextendoUnlinked => !Nextendo.Linked;
+
+    /// <summary>PLAY goes to Nextendo Network: Settings › Online shows that instead of a server, and what is an MKWMP server's is locked.</summary>
+    public bool NextendoMode => Nextendo.Active;
+
+    public bool NextendoLinking => Nextendo.Linking;
+
+    /// <summary>Not linked and not waiting for the browser: the two ways in.</summary>
+    public bool NextendoCanLink => !Nextendo.Linked && !Nextendo.Linking;
+
+    public string NextendoName => Nextendo.Username;
+
+    public string NextendoFriendCode => Nextendo.FriendCode;
+
+    public bool HasNextendoFriendCode => Nextendo.FriendCode.Length > 0;
+
+    /// <summary>How the account stands on Nextendo; "Linked" until it was asked (it is asked while PLAY goes there).</summary>
+    public string NextendoStatus => Nextendo.Status.Length > 0 ? Nextendo.Status : S["nextendo.status.linked"];
+
+    /// <summary>good / warn / bad / busy / muted, for the light beside <see cref="NextendoStatus"/>.</summary>
+    public string NextendoTone => Nextendo.Checking ? "busy" : Nextendo.Status.Length > 0 ? Nextendo.Tone : "good";
+
+    /// <summary>The outcome of the last link, unlink or switch.</summary>
+    public string NextendoNote => Nextendo.Note ?? "";
+
+    public bool NextendoNoteIsError => Nextendo.NoteIsError;
+
+    /// <summary>The note's own line: not while the first link waits for the browser (it is under Cancel then).</summary>
+    public bool ShowNextendoNote => NextendoNote.Length > 0 && !(Nextendo.Linking && !Nextendo.Linked);
+
+    /// <summary>"PLAY signs you in on Nextendo as bia. No MKWMP server is contacted."</summary>
+    public string NextendoOnlineText => S.Format("settings.online.nextendo_text", ("name", Nextendo.Username));
+
+    // ── the choice of network ──
+
+    /// <summary>The "Play on" row is shown: an account is linked.</summary>
+    public bool ShowPlayOn => Nextendo.Linked;
+
+    public string PlayOnName => Shell.PlayOnName;
+
+    /// <summary>Under the row: what the choice does; while PLAY runs, why it cannot be changed.</summary>
+    public string PlayOnCaption => Busy ? S["playon.busy"] : S["playon.body"];
+
+    public ICommand PlayOnCommand { get; private set; } = null!;
+
+    public ICommand LinkNextendoCommand { get; private set; } = null!;
+
+    public ICommand CancelNextendoLinkCommand { get; private set; } = null!;
+
+    /// <summary>nextendo.network's sign-up page, in the browser.</summary>
+    public ICommand CreateNextendoCommand { get; private set; } = null!;
+
+    public ICommand UnlinkNextendoCommand { get; private set; } = null!;
+
+    /// <summary>Settings › Nextendo, from Settings › Online.</summary>
+    public ICommand NextendoPaneCommand { get; private set; } = null!;
+
+    private async Task UnlinkNextendoAsync()
+    {
+        if (await Shell.ConfirmAsync(S["nextendo.unlink_title"], S.Format("nextendo.unlink_body", ("name", Nextendo.Username)), S["nextendo.unlink"]).ConfigureAwait(true))
+        {
+            await Launcher.UnlinkNextendoAsync().ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>The pane is on screen (or Online's, on Nextendo): how the account stands is asked again.</summary>
+    private void EnterNextendo()
+    {
+        if (Nextendo.Linked && (IsNextendoPane || (IsOnlinePane && NextendoMode)))
+        {
+            RelayCommand.Async(Launcher.RefreshNextendoAsync).Execute(null);
+        }
+    }
+}

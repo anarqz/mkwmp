@@ -31,7 +31,32 @@
   </UserControl.Resources>
 
   <StackPanel>
+  <!-- ───────── where PLAY goes online, once a Nextendo account is linked ───────── -->
+  <c:SettingsRow Label="{Binding S[playon.label]}" Kind="Chevron" Icon="{StaticResource Icon.Globe}" Margin="0,22,0,0"
+                 Value="{Binding PlayOnName}" Command="{Binding PlayOnCommand}" Caption="{Binding PlayOnCaption}"
+                 Visibility="{Binding ShowPlayOn, Converter={StaticResource Conv.Visible}}" />
   <Grid>
+    <!-- ───────── on Nextendo Network: the account, and what stays an MKWMP server's ───────── -->
+    <StackPanel Visibility="{Binding NextendoMode, Converter={StaticResource Conv.Visible}}">
+      <Border Style="{StaticResource Card}" Margin="0,24,0,0">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <c:Avatar DisplayName="{Binding NextendoName}" Width="116" Height="116" />
+          <StackPanel Grid.Column="1" Margin="28,0,0,0" VerticalAlignment="Center">
+            <TextBlock Text="{Binding S[settings.online.nextendo]}" Style="{StaticResource Text.Title}" />
+            <TextBlock Text="{Binding NextendoOnlineText}" Style="{StaticResource Text.Caption}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+      <settings:NextendoFacts />
+      <c:SettingsRow Label="{Binding S[settings.online.nextendo_account]}" Kind="Chevron" Icon="{StaticResource Icon.User}"
+                     Value="{Binding NextendoName}" Command="{Binding NextendoPaneCommand}" />
+      <TextBlock Text="{Binding S[settings.online.nextendo_note]}" Style="{StaticResource Note}" />
+      <TextBlock Text="{Binding BusyNote}" Style="{StaticResource Note}" Visibility="{Binding BusyNote, Converter={StaticResource Conv.Visible}}" />
+    </StackPanel>
     <!-- ───────── offline: online is off ───────── -->
     <!-- offline only until MKWMP is updated: one reason, and the way back to the update -->
     <v:OnlineLocked Margin="0,96,0,40" Visibility="{Binding UpdateOffline, Converter={StaticResource Conv.Visible}}" />
@@ -191,7 +216,8 @@
     </StackPanel>
   </Grid>
 
-  <!-- ───────── where the server list comes from (both states) ───────── -->
+  <!-- ───────── where the server list comes from (both states; not on Nextendo Network) ───────── -->
+  <StackPanel Visibility="{Binding ShowMkwmpOnline, Converter={StaticResource Conv.Visible}}">
   <c:SectionHeader Text="{Binding S[settings.online.announcer]}" />
   <Grid Margin="0,22,0,0">
     <Grid.ColumnDefinitions>
@@ -221,5 +247,6 @@
   <c:SettingsRow Label="{Binding HiddenServersLabel}" Kind="Chevron" Icon="{StaticResource Icon.EyeOff}" Margin="0,14,0,0"
                  Command="{Binding HiddenServersCommand}" Caption="{Binding S[servers.hidden.caption]}"
                  Visibility="{Binding HasHiddenServers, Converter={StaticResource Conv.Visible}}" />
+  </StackPanel>
   </StackPanel>
 </UserControl>

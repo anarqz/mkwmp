@@ -391,6 +391,15 @@ public sealed class PlayChecklist : IEquatable<PlayChecklist>
     {
         var title = Strings.T("core.check.online");
         var s = f.Settings;
+        if (f.Nextendo is { Active: true } nextendo)
+        {
+            // PLAY goes to Nextendo Network: no MKWMP server, gamertag or PIN is needed. What Nextendo last said of the
+            // account is shown; PLAY asks again and says why if it may not go online.
+            var signedIn = Strings.F("core.check.online.nextendo", ("name", nextendo.Username));
+            return nextendo.Tone is "warn" or "bad" && nextendo.Status.Length > 0
+                ? new CheckItem(CheckId.Online, title, nextendo.Status, CheckState.Warning, Act(CheckActionKind.ChooseServer, "core.check.do.network"))
+                : Row(CheckId.Online, title, signedIn, CheckState.Ok);
+        }
         if (string.IsNullOrWhiteSpace(s.Server))
         {
             return Row(CheckId.Online, title, Strings.T("core.check.online.off"), CheckState.NotApplicable, Act(CheckActionKind.ChooseServer, "core.check.do.server"));
@@ -430,6 +439,9 @@ public sealed record ChecklistFacts(
     string LauncherVersion,
     string? PlayProblem)
 {
+    /// <summary>The linked Nextendo account and whether PLAY goes there (null: as none).</summary>
+    public NextendoView? Nextendo { get; init; }
+
     private TargetInfo? Target => Game.Targets.FirstOrDefault(t => string.Equals(t.Id, Game.Install?.TargetId ?? Settings.Target, StringComparison.OrdinalIgnoreCase))
         ?? (Game.Targets.Count > 0 ? Game.Targets[0] : null);
 

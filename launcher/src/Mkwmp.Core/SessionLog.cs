@@ -116,7 +116,7 @@ public sealed class SessionLog : IDisposable
     }
 
     /// <summary>
-    /// Masks what must never reach a log: <c>mkw1.</c> tickets, 64-hex tokens, and a 6-digit PIN
+    /// Masks what must never reach a log: <c>mkw1.</c> tickets, <c>nx2</c> game tokens, 64-hex tokens, and a 6-digit PIN
     /// on a line that mentions "pin".
     /// </summary>
     public static string Redact(string text)
@@ -130,6 +130,10 @@ public sealed class SessionLog : IDisposable
             if (word.StartsWith("mkw1.", StringComparison.Ordinal))
             {
                 o.Append("mkw1.<redacted>");
+            }
+            else if (word.Length >= 16 && word.StartsWith("nx2", StringComparison.Ordinal))
+            {
+                o.Append("nx2<redacted>"); // a Nextendo game token (never logged on purpose; masked all the same)
             }
             else if (word.Length >= 64 && word.All(char.IsAsciiHexDigit))
             {

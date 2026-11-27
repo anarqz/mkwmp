@@ -77,9 +77,15 @@ public partial class App : Application
         if (demo)
         {
             var args = Environment.GetCommandLineArgs();
-            return new DesignLauncher(args.Contains("--demo-fresh", StringComparer.OrdinalIgnoreCase) ? DemoStart.Fresh
+            var design = new DesignLauncher(args.Contains("--demo-fresh", StringComparer.OrdinalIgnoreCase) ? DemoStart.Fresh
                 : args.Contains("--demo-offline", StringComparer.OrdinalIgnoreCase) ? DemoStart.Offline
                 : DemoStart.Online);
+            // --demo-nextendo: a linked Nextendo account, playing there; --demo-nextendo-linked: linked, playing on MKWMP servers
+            if (args.Contains("--demo-nextendo", StringComparer.OrdinalIgnoreCase) || args.Contains("--demo-nextendo-linked", StringComparer.OrdinalIgnoreCase))
+            {
+                design.PretendNextendo(playing: args.Contains("--demo-nextendo", StringComparer.OrdinalIgnoreCase));
+            }
+            return design;
         }
         var folder = LauncherOptions.LauncherFolder;
         return new Launcher(options.ConfigPath ?? LauncherOptions.DefaultConfigPath(folder), folder, options);

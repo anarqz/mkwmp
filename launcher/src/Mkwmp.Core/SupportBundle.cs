@@ -19,7 +19,7 @@ public static class SupportBundle
     /// <summary><c>windows x86_64</c>, as the Rust launcher named it in logs and reports.</summary>
     public static string Os => "windows " + (RuntimeInformation.ProcessArchitecture == Architecture.X64 ? "x86_64" : RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant());
 
-    /// <summary>Masks the secrets of the hook's session file (mkwmp.toml).</summary>
+    /// <summary>Masks the secrets of the hook's session file (mkwmp.toml), and the Nextendo account's name when it holds one.</summary>
     public static string RedactToml(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -29,11 +29,13 @@ public static class SupportBundle
         {
             lines.RemoveAt(lines.Count - 1);
         }
+        // A session on Nextendo Network names the player's Nextendo account: that name stays on this PC too.
+        var nextendo = lines.Any(l => l.Split('=') is [var k, var v] && k.Trim() == "backend" && v.Trim().Trim('"') == "nextendo");
         foreach (var raw in lines)
         {
             var line = raw.TrimEnd('\r');
             var key = line.Split('=')[0].Trim();
-            b.Append(key is "launcher_token" or "ticket" or "pin" && line.Contains('=', StringComparison.Ordinal)
+            b.Append((key is "launcher_token" or "ticket" or "pin" || (nextendo && key == "name")) && line.Contains('=', StringComparison.Ordinal)
                 ? $"{key} = \"<redacted>\"\n"
                 : $"{SessionLog.Redact(line)}\n");
         }

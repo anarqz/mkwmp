@@ -475,6 +475,15 @@ public sealed class MkwRecompTarget : IGameTarget
         }
         try
         {
+            // Before the session file that names it (NEXTENDO_API.md §3); gone again with any other session.
+            Probe.WriteNextendoCa(install.Root, session.NextendoCaPem);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            throw new LauncherException($"writing {Probe.NextendoCa}: {e.Message}", e);
+        }
+        try
+        {
             Probe.WriteSessionText(install.Root, Probe.SessionText(session));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)

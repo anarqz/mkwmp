@@ -44,6 +44,13 @@ internal sealed record ClientConfig
     /// </summary>
     public IReadOnlyList<HiddenServer> HiddenServers { get; init; } = [];
 
+    /// <summary>
+    /// The linked Nextendo account and where PLAY goes online (<c>[nextendo]</c>; docs/contracts/NEXTENDO_API.md §2).
+    /// Local only: nothing of it is sent to an MKWMP server. The sign-in itself (the refresh token) is not here: it is
+    /// kept protected beside this file (<see cref="Net.NextendoVault"/>).
+    /// </summary>
+    public NextendoLink Nextendo { get; init; } = NextendoLink.None;
+
     /// <summary>The same server, however it was typed (scheme, trailing slash, letter case).</summary>
     public static bool SameServer(string a, string b) => string.Equals(ServerBase(a), ServerBase(b), StringComparison.OrdinalIgnoreCase);
 
@@ -232,8 +239,10 @@ internal sealed record ClientConfig
                 hidden.Add(new HiddenServer(id, Str(row, "name", ""), Str(row, "address", "")));
             }
         }
+        var nx = Table(t, "nextendo");
         return new ClientConfig
         {
+            Nextendo = NextendoLink.Of(Str(nx, "play_on", ""), Long(nx, "pid"), Str(nx, "username", ""), Str(nx, "friend_code", "")),
             Servers = servers,
             HiddenServers = hidden,
             Settings = settings,
@@ -361,6 +370,15 @@ internal sealed record ClientConfig
             b.Append("\n[dev]\n");
             Line(b, "recomp_exe_sha256", s.DevRecompExes);
         }
+        // The linked Nextendo account (nothing is written while there is none): never a token.
+        if (Nextendo.Linked)
+        {
+            b.Append("\n[nextendo]\n");
+            Line(b, "play_on", Nextendo.PlayOnName);
+            b.Append("pid = ").Append(Nextendo.Pid.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            Line(b, "username", Nextendo.Username);
+            Line(b, "friend_code", Nextendo.FriendCode);
+        }
         // The servers hidden from the server list (nothing is written while there are none).
         foreach (var h in HiddenServers)
         {
@@ -382,7 +400,7 @@ internal sealed record ClientConfig
 
     public bool SameAs(ClientConfig other) =>
         Settings == other.Settings && Mutes.SequenceEqual(other.Mutes) && Inputs.SequenceEqual(other.Inputs) && Outputs.SequenceEqual(other.Outputs)
-        && Servers.SequenceEqual(other.Servers) && HiddenServers.SequenceEqual(other.HiddenServers);
+        && Servers.SequenceEqual(other.Servers) && HiddenServers.SequenceEqual(other.HiddenServers) && Nextendo == other.Nextendo;
 
     private static void Line(StringBuilder b, string key, string value) => b.Append(key).Append(" = ").Append(Quote(value)).Append('\n');
 
@@ -454,6 +472,8 @@ internal sealed record ClientConfig
     private static int Int(TomlTable? t, string key, int fallback, int min, int max) =>
         t is not null && t.TryGetValue(key, out var v) && v is long n ? (int)Math.Clamp(n, min, max) : fallback;
 
+    private static long Long(TomlTable? t, string key) => t is not null && t.TryGetValue(key, out var v) && v is long n ? n : 0;
+
     private static IEnumerable<TomlTable> Rows(TomlTable? t, string key)
     {
         if (t is null || !t.TryGetValue(key, out var v))
@@ -475,3 +495,59 @@ internal sealed record ClientConfig
 /// itself says so again at every sign-in).
 /// </summary>
 internal sealed record ServerProfile(string Server, string Name, string Pin, bool Consent = false);
+
+/// <summary>
+/// The Nextendo account linked on this PC, as client.toml keeps it (<c>[nextendo]</c>): who it is, and where PLAY
+/// goes online. <see cref="PlayNetwork.Nextendo"/> only counts while an account is linked: without one the choice is
+/// <see cref="PlayNetwork.Mkwmp"/>, whatever the file says.
+/// </summary>
+internal sealed record NextendoLink
+{
+    public const string MkwmpName = "mkwmp", NextendoName = "nextendo";
+
+    private NextendoLink()
+    {
+    }
+
+    public static NextendoLink None { get; } = new();
+
+    public long Pid { get; private init; }
+
+    public string Username { get; private init; } = "";
+
+    public string FriendCode { get; private init; } = "";
+
+    public PlayNetwork PlayOn { get; private init; }
+
+    public bool Linked => Pid > 0 && Username.Length > 0;
+
+    /// <summary>The wire name of <see cref="PlayOn"/>: <c>"mkwmp"</c> or <c>"nextendo"</c>.</summary>
+    public string PlayOnName => PlayOn == PlayNetwork.Nextendo ? NextendoName : MkwmpName;
+
+    /// <summary>What a file (or an answer of Nextendo's) holds, made consistent: no account, no Nextendo.</summary>
+    public static NextendoLink Of(string? playOn, long pid, string? username, string? friendCode)
+    {
+        var name = Clean(username, 64);
+        if (pid <= 0 || name.Length == 0)
+        {
+            return None;
+        }
+        return new NextendoLink
+        {
+            Pid = pid,
+            Username = name,
+            FriendCode = Clean(friendCode, 32),
+            PlayOn = string.Equals(playOn?.Trim(), NextendoName, StringComparison.OrdinalIgnoreCase) ? PlayNetwork.Nextendo : PlayNetwork.Mkwmp,
+        };
+    }
+
+    /// <summary>The same account, with another choice of network.</summary>
+    public NextendoLink Playing(PlayNetwork network) => Linked ? this with { PlayOn = network } : None;
+
+    /// <summary>The same choice, with what Nextendo says of the account now.</summary>
+    public NextendoLink Named(long pid, string? username, string? friendCode) => Of(PlayOnName, pid, username, friendCode);
+
+    /// <summary>A name as the session file can hold it: no quotes, backslashes or control characters.</summary>
+    private static string Clean(string? text, int most) =>
+        new([.. (text ?? "").Trim().Where(c => !char.IsControl(c) && c is not ('"' or '\\')).Take(most)]);
+}

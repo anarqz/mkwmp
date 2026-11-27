@@ -1,0 +1,96 @@
+<UserControl x:Class="Mkwmp.App.Views.Settings.NextendoPane"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
+             Focusable="False">
+  <!-- DataContext: SettingsViewModel (SettingsViewModel.Nextendo.cs). Settings › Nextendo. Not linked: what a link is
+       and that it stays on this PC, "Link Nextendo Account" (the sign-in page opens in the browser; while the launcher
+       waits for it, a spinner and Cancel) and "Create a Nextendo Account". Linked: the account, its friend code and how
+       it stands, the choice of network ("Play on"), and Unlink. -->
+  <UserControl.Resources>
+    <Style x:Key="Note" TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+      <Setter Property="Margin" Value="20,16,20,0" />
+    </Style>
+  </UserControl.Resources>
+
+  <StackPanel>
+    <!-- ───────── not linked ───────── -->
+    <StackPanel Visibility="{Binding NextendoUnlinked, Converter={StaticResource Conv.Visible}}">
+      <Border Style="{StaticResource Card}" Margin="0,38,0,0" Padding="34,30">
+        <StackPanel Orientation="Horizontal">
+          <Grid Width="84" Height="84" VerticalAlignment="Top">
+            <Ellipse Fill="{DynamicResource Brush.Background}" />
+            <c:Icon Data="{StaticResource Icon.Globe}" Width="44" Height="44" Foreground="{DynamicResource Brush.Accent}" />
+          </Grid>
+          <StackPanel Margin="24,0,0,0" VerticalAlignment="Center" MaxWidth="900">
+            <TextBlock Text="{Binding S[nextendo.title]}" Style="{StaticResource Text.Heading}" />
+            <TextBlock Text="{Binding S[nextendo.about]}" Style="{StaticResource Text.Caption}" />
+            <TextBlock Text="{Binding S[nextendo.local]}" Style="{StaticResource Text.Caption}" Margin="0,8,0,0" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <StackPanel Margin="0,18,0,0" Visibility="{Binding NextendoCanLink, Converter={StaticResource Conv.Visible}}">
+        <c:SettingsRow Label="{Binding S[nextendo.link]}" Kind="Chevron" Icon="{StaticResource Icon.User}"
+                       Command="{Binding LinkNextendoCommand}" Caption="{Binding S[nextendo.link_caption]}" />
+        <c:SettingsRow Label="{Binding S[nextendo.create]}" Kind="Chevron" Icon="{StaticResource Icon.Globe}"
+                       Command="{Binding CreateNextendoCommand}" Caption="https://nextendo.network/register.html" />
+      </StackPanel>
+      <!-- waiting for the browser -->
+      <c:SettingsRow Label="{Binding S[common.cancel]}" Margin="0,18,0,0" Command="{Binding CancelNextendoLinkCommand}"
+                     Caption="{Binding NextendoNote}"
+                     Visibility="{Binding NextendoLinking, Converter={StaticResource Conv.Visible}}">
+        <c:Spinner Width="40" Height="40" />
+      </c:SettingsRow>
+    </StackPanel>
+
+    <!-- ───────── linked ───────── -->
+    <StackPanel Visibility="{Binding NextendoLinked, Converter={StaticResource Conv.Visible}}">
+      <Border Style="{StaticResource Card}" Margin="0,38,0,0">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <c:Avatar DisplayName="{Binding NextendoName}" Width="116" Height="116" />
+          <StackPanel Grid.Column="1" Margin="28,0,0,0" VerticalAlignment="Center">
+            <TextBlock Text="{Binding NextendoName}" Style="{StaticResource Text.Title}" />
+            <TextBlock Text="{Binding S[nextendo.linked]}" Style="{StaticResource Text.Caption}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+      <settings:NextendoFacts Margin="0,10,0,0" />
+
+      <c:SectionHeader Text="{Binding S[playon.label]}" />
+      <c:SettingsRow Label="{Binding S[playon.label]}" Kind="Chevron" Icon="{StaticResource Icon.Globe}"
+                     Value="{Binding PlayOnName}" Command="{Binding PlayOnCommand}" Caption="{Binding PlayOnCaption}" />
+
+      <c:SectionHeader Text="{Binding S[nextendo.title]}" />
+      <c:SettingsRow Label="{Binding S[nextendo.relink]}" Kind="Chevron" Icon="{StaticResource Icon.Refresh}"
+                     Command="{Binding LinkNextendoCommand}" Caption="{Binding S[nextendo.link_caption]}"
+                     Visibility="{Binding NextendoLinking, Converter={StaticResource Conv.Visible}, ConverterParameter=!}" />
+      <c:SettingsRow Label="{Binding S[common.cancel]}" Command="{Binding CancelNextendoLinkCommand}"
+                     Visibility="{Binding NextendoLinking, Converter={StaticResource Conv.Visible}}">
+        <c:Spinner Width="40" Height="40" />
+      </c:SettingsRow>
+      <c:SettingsRow Label="{Binding S[nextendo.unlink]}" Icon="{StaticResource Icon.Trash}" IsDestructive="True"
+                     Command="{Binding UnlinkNextendoCommand}" Caption="{Binding S[nextendo.unlink_caption]}" />
+      <TextBlock Text="{Binding S[nextendo.local]}" Style="{StaticResource Note}" />
+    </StackPanel>
+
+    <!-- the outcome of the last link, unlink or switch (while waiting for the browser it is under Cancel) -->
+    <TextBlock Text="{Binding NextendoNote}" Visibility="{Binding ShowNextendoNote, Converter={StaticResource Conv.Visible}}">
+      <TextBlock.Style>
+        <Style TargetType="TextBlock" BasedOn="{StaticResource Note}">
+          <Style.Triggers>
+            <DataTrigger Binding="{Binding NextendoNoteIsError}" Value="True">
+              <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
+            </DataTrigger>
+          </Style.Triggers>
+        </Style>
+      </TextBlock.Style>
+    </TextBlock>
+    <TextBlock Text="{Binding BusyNote}" Style="{StaticResource Note}" Visibility="{Binding BusyNote, Converter={StaticResource Conv.Visible}}" />
+  </StackPanel>
+</UserControl>

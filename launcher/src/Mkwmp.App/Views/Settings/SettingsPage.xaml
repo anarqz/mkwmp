@@ -85,6 +85,9 @@
           <!-- ═════════ Online: the server, the profile on it, privacy (Views/Settings/OnlinePane.xaml) ═════════ -->
           <settings:OnlinePane Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=online'}" />
 
+          <!-- ═════════ Nextendo: a linked account, and where PLAY goes online (Views/Settings/NextendoPane.xaml) ═════════ -->
+          <settings:NextendoPane Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=nextendo'}" />
+
           <!-- ═════════ Game ═════════ -->
           <StackPanel Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=game'}">
             <c:SectionHeader Text="{Binding S[settings.game]}" />

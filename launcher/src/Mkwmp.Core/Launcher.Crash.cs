@@ -196,6 +196,13 @@ public sealed partial class Launcher
     {
         var secrets = new List<string> { Settings.Pin, Token };
         secrets.AddRange(Config.Servers.Select(p => p.Pin));
+        // The game holds its Nextendo token and account in memory: never in a dump that leaves this PC.
+        secrets.AddRange(_nextendo.Secrets);
+        var link = Config.Nextendo;
+        if (link.Linked)
+        {
+            secrets.AddRange([link.Username, link.FriendCode, link.Pid.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
+        }
         if (install is null)
         {
             return secrets;

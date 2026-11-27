@@ -70,8 +70,10 @@ public partial class OnlineLocked : UserControl
     private void Show()
     {
         var update = _shell is { OnlineBlockedByUpdate: true };
-        SetValue(ShownTitleProperty, update ? _shell!.S["core.update_to_play_online"] : Title);
-        SetValue(ShownTextProperty, update ? _shell!.S["online.update.text"] : Text);
+        // PLAY goes to Nextendo Network: what is locked here is an MKWMP server's, and the way back is the same Settings › Online
+        var nextendo = !update && _shell is { PlaysOnNextendo: true };
+        SetValue(ShownTitleProperty, update ? _shell!.S["core.update_to_play_online"] : nextendo ? _shell!.S["nextendo.locked.title"] : Title);
+        SetValue(ShownTextProperty, update ? _shell!.S["online.update.text"] : nextendo ? _shell!.S["nextendo.locked.text"] : Text);
         SetValue(ButtonTextProperty, _shell?.OnlineLockLabel ?? "");
     }
 

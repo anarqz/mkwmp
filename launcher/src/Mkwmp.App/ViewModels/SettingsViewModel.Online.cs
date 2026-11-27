@@ -41,7 +41,10 @@ public sealed partial class SettingsViewModel
     public bool UpdateOffline => Launcher.OnlineBlockedByUpdate;
 
     /// <summary>"Online is off" with its server list: no server is set (and it is not <see cref="UpdateOffline"/>).</summary>
-    public bool ShowOnlineOff => OnlineLocked && !UpdateOffline;
+    public bool ShowOnlineOff => OnlineLocked && !UpdateOffline && !NextendoMode;
+
+    /// <summary>The MKWMP parts of the pane (the server list's source, hidden servers): not while PLAY goes to Nextendo Network.</summary>
+    public bool ShowMkwmpOnline => !NextendoMode;
 
     /// <summary>The servers to choose from while offline (the beholder's list, nearest first).</summary>
     public ServerPicker Servers { get; private set; } = null!;
@@ -53,7 +56,7 @@ public sealed partial class SettingsViewModel
         {
             return; // a category chosen while the page is still being made
         }
-        if (visible && IsOnlinePane && OnlineLocked && !UpdateOffline)
+        if (visible && IsOnlinePane && ShowOnlineOff)
         {
             Servers.Start();
         }
@@ -66,11 +69,11 @@ public sealed partial class SettingsViewModel
     // ── hidden servers: Y on a row of the list hides it; "Hidden servers (n)" shows them again ──
 
     /// <summary>The list is on screen (the Online pane, offline) and one of its rows has the focus: "Y Hide" instead of "Y Friends".</summary>
-    private IReadOnlyList<Hint>? ServerHintsNow => IsOnlinePane && OnlineLocked && Servers.Hint is { } hide
+    private IReadOnlyList<Hint>? ServerHintsNow => IsOnlinePane && ShowOnlineOff && Servers.Hint is { } hide
         ? [hide, .. Shell.DefaultHints().Where(h => h.Button != PadButton.Y)]
         : null;
 
-    private bool HideServer(PadButton button) => IsOnlinePane && OnlineLocked && Servers.OnButton(button);
+    private bool HideServer(PadButton button) => IsOnlinePane && ShowOnlineOff && Servers.OnButton(button);
 
     public bool HasHiddenServers => Launcher.Servers.Hidden.Count > 0;
 

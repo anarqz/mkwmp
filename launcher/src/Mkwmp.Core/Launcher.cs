@@ -105,6 +105,15 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         _targetInfos = _targets.Infos;
         _updater = new Updater(_http, _userAgent, _options.UpdateApi, _options.ReleaseKeys);
         _local = new LocalApi(this, _clock);
+        _nextendoApi = new NextendoApi(_http, _userAgent);
+        var vault = NextendoVault.Beside(configPath);
+        _nextendo = new NextendoAccount(_nextendoApi, vault, _clock);
+        // An account client.toml names without its sign-in beside it (the file was copied from another PC, or the
+        // sign-in deleted) is not linked here: PLAY goes to MKWMP servers.
+        if (_config.Nextendo.Linked && !vault.Exists)
+        {
+            _config = _config with { Nextendo = NextendoLink.None };
+        }
         WatchOverlayHost();
         _devices = new DeviceLab(CameraFolders, Log.Note);
         Token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
@@ -226,7 +235,11 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
     /// it). False is the launcher's offline state, the same in both cases: no status, presence, friends or reports,
     /// PLAY starts the game with no seat, and the game's own request for one is refused.
     /// </summary>
-    internal bool IsOnline(LauncherSettings s) => HasServer(s) && !_offlineOnly;
+    /// <remarks>
+    /// Also false while PLAY goes to Nextendo Network (<see cref="NextendoMode"/>, Launcher.Nextendo.cs): no MKWMP
+    /// server is contacted then, whatever server is set.
+    /// </remarks>
+    internal bool IsOnline(LauncherSettings s) => HasServer(s) && !_offlineOnly && !NextendoMode;
 
     public bool OnlineEnabled => IsOnline(Settings);
 
@@ -414,11 +427,13 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         var steam = !LaunchesGame(s);
         var snap = _seatSnapshot;
         var offlinePlay = _offlineSession;
+        var nextendoPlay = _nextendoSession; // also an offline one for MKWMP: no seat, no phase
         var (status, tone) = _sessionState switch
         {
-            SessionState.Idle => configProblem is null ? (online ? Strings.Ready : Strings.ReadyOffline, "plain") : (Strings.Upper(configProblem), "warn"),
-            SessionState.Starting => (offlinePlay ? Strings.StartingGame : Strings.Connecting, "info"),
+            SessionState.Idle => configProblem is null ? (NextendoMode ? Strings.NextendoReady : online ? Strings.Ready : Strings.ReadyOffline, "plain") : (Strings.Upper(configProblem), "warn"),
+            SessionState.Starting => (nextendoPlay ? Strings.NextendoConnecting : offlinePlay ? Strings.StartingGame : Strings.Connecting, "info"),
             SessionState.Failed => (_sessionError ?? "", "bad"),
+            _ when nextendoPlay => _gameRunning ? (Strings.NextendoInGame, "good") : (steam ? Strings.StartFromSteam : Strings.StartingGame, "info"),
             _ when offlinePlay => _gameRunning ? (Strings.PlayingOffline, "good") : (steam ? Strings.StartFromSteam : Strings.StartingGame, "info"),
             _ => snap switch
             {
@@ -456,6 +471,10 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
             _friendsNote?.IsError ?? false,
             _friendsBusy));
         _friendsView = friends;
+
+        var nextendo = _nextendoView;
+        Put(ref nextendo, NextendoNow());
+        _nextendoView = nextendo;
 
         var voice = _voiceView;
         Put(ref voice, new VoiceView(_config.Inputs, _config.Outputs, _config.Mutes));
@@ -500,7 +519,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
 
         // The play checklist, from the same views; what blocks PLAY is never something it does not show, and the other way round.
         var checklist = _checklist;
-        Put(ref checklist, PlayChecklist.Build(new ChecklistFacts(s, server, game, runtime, setup, _updateView, Version, problem)));
+        Put(ref checklist, PlayChecklist.Build(new ChecklistFacts(s, server, game, runtime, setup, _updateView, Version, problem) { Nextendo = nextendo }));
         _checklist = checklist;
         problem ??= checklist.Blocking.FirstOrDefault()?.Status;
 
@@ -723,6 +742,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         await WaitIdleAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
         await _life.CancelAsync().ConfigureAwait(false);
         _local.Dispose();
+        _nextendo.Dispose();
         _devices.Dispose();
         _http.Dispose();
         Log.Dispose();

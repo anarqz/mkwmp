@@ -67,7 +67,7 @@ public sealed partial class DesignLauncher : ILauncher
     private void Sync()
     {
         var s = Settings;
-        var online = !string.IsNullOrWhiteSpace(s.Server);
+        var online = !string.IsNullOrWhiteSpace(s.Server) && !NextendoActive; // on Nextendo no MKWMP server is asked anything
         var named = s.Name.Length is >= 3 and <= 16 && s.Name.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
         var signedIn = online && named && s.Pin.Length == 6;
         if (!online)
@@ -113,7 +113,7 @@ public sealed partial class DesignLauncher : ILauncher
         if (!Session.Busy)
         {
             Session = problem is null
-                ? new SessionView(SessionState.Idle, null, 0, false, false, online ? CoreStrings.Ready : CoreStrings.ReadyOffline, "plain")
+                ? new SessionView(SessionState.Idle, null, 0, false, false, NextendoActive ? CoreStrings.NextendoReady : online ? CoreStrings.Ready : CoreStrings.ReadyOffline, "plain")
                 : new SessionView(SessionState.Idle, null, 0, false, false, problem.ToUpperInvariant(), "warn");
         }
     }
@@ -191,7 +191,7 @@ public sealed partial class DesignLauncher : ILauncher
     /// <summary>The play checklist of the pretend state, made by the real builder from the views as they are now.</summary>
     public PlayChecklist Checklist => PlayChecklist.Build(Facts(PlayProblem));
 
-    private ChecklistFacts Facts(string? problem) => new(Settings, Server, Game, Runtime, GameSetup, Update, Version, problem);
+    private ChecklistFacts Facts(string? problem) => new(Settings, Server, Game, Runtime, GameSetup, Update, Version, problem) { Nextendo = Nextendo };
 
     /// <summary>For screenshots and trying things (<c>--state</c>): another situation than the happy one.</summary>
     public void Pretend(string? state)
@@ -779,6 +779,14 @@ public sealed partial class DesignLauncher : ILauncher
         _play = play;
         try
         {
+            if (NextendoActive)
+            {
+                // on Nextendo Network: no MKWMP seat
+                Change(() => Session = new SessionView(SessionState.Starting, null, 0, false, false, CoreStrings.NextendoConnecting, "info"));
+                await Task.Delay(1500, play.Token).ConfigureAwait(false);
+                Change(() => Session = new SessionView(SessionState.Running, null, 0, true, false, CoreStrings.NextendoInGame, "good"));
+                return;
+            }
             if (!((ILauncher)this).OnlineEnabled)
             {
                 // no server: the game alone, no seat
@@ -935,7 +943,7 @@ public sealed partial class DesignLauncher : ILauncher
 
     private bool _offlineOnly;
 
-    public bool OnlineEnabled => !_offlineOnly && !string.IsNullOrWhiteSpace(Settings.Server);
+    public bool OnlineEnabled => !_offlineOnly && !string.IsNullOrWhiteSpace(Settings.Server) && !NextendoActive;
 
     public bool OnlineBlockedByUpdate => _offlineOnly;
 

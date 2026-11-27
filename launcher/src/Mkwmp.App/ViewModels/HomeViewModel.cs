@@ -135,6 +135,7 @@ public sealed class HomeViewModel : PageViewModel
                 Shell.Navigate(new WhatsNewViewModel(Shell));
             }
         });
+        PlayOnCommand = RelayCommand.Async(Shell.PickPlayOnAsync);
         SettingsCommand = new RelayCommand(() => Shell.OpenSettings());
         ModsCommand = new RelayCommand(() => Shell.Navigate(Routes.Mods));
         FullscreenCommand = RelayCommand.Async(() => Shell.SetFullscreenAsync(!Shell.IsFullscreen));
@@ -214,6 +215,18 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>No server is set: online features are locked behind "Configure online".</summary>
     public bool Locked => !Launcher.OnlineEnabled;
 
+    /// <summary>PLAY goes to Nextendo Network (a linked account, chosen): no MKWMP server, yet the game goes online.</summary>
+    public bool Nextendo => Launcher.Nextendo.Active;
+
+    /// <summary>"Play on: MKWMP servers | Nextendo Network", in the status line once a Nextendo account is linked (not over a running game).</summary>
+    public bool ShowPlayOn => Launcher.Nextendo.Linked && !Overlay;
+
+    /// <summary>"Play on: Nextendo Network".</summary>
+    public string PlayOnText => S.Format("playon.now", ("network", Shell.PlayOnName));
+
+    /// <summary>The choice of network (a list of two); while PLAY runs it says to stop first.</summary>
+    public ICommand PlayOnCommand { get; }
+
     /// <summary>The server's part of the status line: only with a server.</summary>
     public bool ShowServer => !Locked;
 
@@ -224,7 +237,7 @@ public sealed class HomeViewModel : PageViewModel
 
     // ── the dock ──
 
-    public string PlayLabel => Overlay ? S["home.overlay.back"] : Busy ? S["home.stop"] : Locked ? S["home.play_offline"] : S["home.play"];
+    public string PlayLabel => Overlay ? S["home.overlay.back"] : Busy ? S["home.stop"] : Locked && !Nextendo ? S["home.play_offline"] : S["home.play"];
 
     public string PlayIcon => Overlay ? "Icon.Play" : Busy ? "Icon.Stop" : "Icon.Kart";
 
@@ -397,7 +410,7 @@ public sealed class HomeViewModel : PageViewModel
             : game.Install is { } install ? string.IsNullOrEmpty(install.GameVersion) ? "MKW" : $"MKW {install.GameVersion}"
             : Overlay ? "MKW"
             : S["home.no_game"];
-        _play.Badge = Overlay ? S["home.overlay.badge"] : Locked ? S["home.offline"] : session.Phase switch
+        _play.Badge = Overlay ? S["home.overlay.badge"] : Nextendo ? "Nextendo" : Locked ? S["home.offline"] : session.Phase switch
         {
             SeatPhase.Queued when session.QueuePosition > 0 => S.Format("home.queued", ("n", Number(session.QueuePosition))),
             SeatPhase.Seated => S["home.seated"],

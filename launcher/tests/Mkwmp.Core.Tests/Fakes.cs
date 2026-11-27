@@ -237,7 +237,11 @@ internal sealed class Rig : IAsyncDisposable
     }
 
     /// <param name="executable">What the launcher takes for its own executable (null: none, as under a test host).</param>
-    public Rig(FakeSeatServer server, Func<LauncherSettings, LauncherSettings>? edit = null, bool installPatch = true, string? executable = null)
+    /// <param name="http">What answers every request instead of <paramref name="server"/> alone (a router that also plays Nextendo).</param>
+    /// <param name="config">The settings file as it is saved before the launcher opens (a linked Nextendo account).</param>
+    /// <param name="prepare">Called with client.toml's path once it is saved, before the launcher opens on it.</param>
+    public Rig(FakeSeatServer server, Func<LauncherSettings, LauncherSettings>? edit = null, bool installPatch = true, string? executable = null,
+        HttpMessageHandler? http = null, Func<ClientConfig, ClientConfig>? config = null, TimeSpan? linkPatience = null, Action<string>? prepare = null)
     {
         Server = server;
         Root = NewFolder("core");
@@ -265,7 +269,9 @@ internal sealed class Rig : IAsyncDisposable
             AdultConsent = true,
         };
         ConfigPath = Path.Combine(Root, "client.toml");
-        new ClientConfig { Settings = edit?.Invoke(settings) ?? settings, Mutes = [new MutedPlayer("42", "Bia")] }.Save(ConfigPath);
+        var saved = new ClientConfig { Settings = edit?.Invoke(settings) ?? settings, Mutes = [new MutedPlayer("42", "Bia")] };
+        (config?.Invoke(saved) ?? saved).Save(ConfigPath);
+        prepare?.Invoke(ConfigPath);
         Target = new MkwRecompTarget("1.4.0") { RunningOverride = () => false };
         Launcher = new Launcher(ConfigPath, home, new LauncherOptions
         {
@@ -279,7 +285,8 @@ internal sealed class Rig : IAsyncDisposable
             BusyRetry = TimeSpan.FromMilliseconds(400),
             UpdateApi = "http://github.test",
             Exit = _ => { },
-        }, server);
+            NextendoLinkPatience = linkPatience ?? TimeSpan.FromSeconds(20),
+        }, http ?? server);
     }
 
     public FakeSeatServer Server { get; }

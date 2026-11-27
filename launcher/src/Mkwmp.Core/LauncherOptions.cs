@@ -98,6 +98,9 @@ public sealed record LauncherOptions
 
     internal TimeSpan? BusyRetry { get; init; }
 
+    /// <summary>How long a Nextendo link waits for the browser to come back (five minutes).</summary>
+    internal TimeSpan NextendoLinkPatience { get; init; } = TimeSpan.FromMinutes(5);
+
     /// <summary>False: no status, friends, stars, game-refresh and update loops (a test drives each by hand).</summary>
     internal bool BackgroundLoops { get; init; } = true;
 
