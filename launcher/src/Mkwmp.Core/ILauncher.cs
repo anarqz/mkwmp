@@ -733,6 +733,11 @@ public sealed record LauncherSettings
     /// be timed, and the list keeps the directory's order, without bars or ms. Never the player's location.
     /// </summary>
     public bool ClosestServers { get; init; } = true;
+    /// <summary>
+    /// Settings › Support › Debug mode (<c>debug_mode</c>, written only while on): PLAY starts the game with the mod's
+    /// deep trace (<see cref="LaunchOptions.Debug"/>: <c>MKWMP_TRACE_EDGES=1</c>), after the player confirms it. Slow; off by default.
+    /// </summary>
+    public bool DebugMode { get; init; }
     public bool Patch { get; init; } = true;
     /// <summary>
     /// <c>dev_package = true</c>, written by hand (or by <c>publish.ps1 -Dev</c>), never by the window: the launcher

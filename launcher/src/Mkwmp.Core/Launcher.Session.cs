@@ -219,7 +219,7 @@ public sealed partial class Launcher
             {
                 Note("starting the game");
                 GameStarting();
-                game = target.Launch(install, new LaunchOptions(s.LaunchCommand.Length == 0 ? null : s.LaunchCommand));
+                game = target.Launch(install, new LaunchOptions(s.LaunchCommand.Length == 0 ? null : s.LaunchCommand, s.DebugMode));
             }
             else
             {
@@ -317,7 +317,7 @@ public sealed partial class Launcher
             {
                 Note("starting the game");
                 GameStarting();
-                game = target.Launch(install, new LaunchOptions(s.LaunchCommand.Length == 0 ? null : s.LaunchCommand));
+                game = target.Launch(install, new LaunchOptions(s.LaunchCommand.Length == 0 ? null : s.LaunchCommand, s.DebugMode));
             }
             else
             {

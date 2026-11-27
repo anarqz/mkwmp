@@ -391,6 +391,8 @@
                            Caption="{Binding S[settings.support.logs_caption]}" />
             <c:SettingsRow Label="{Binding S[settings.support.issues]}" Kind="Chevron" Icon="{StaticResource Icon.Flag}" Command="{Binding IssuesCommand}"
                            Caption="https://github.com/anarqz/mkwmp/issues" />
+            <c:SettingsRow Label="{Binding S[settings.support.debug]}" Kind="Toggle" IsOn="{Binding DebugMode}"
+                           Caption="{Binding S[settings.support.debug_caption]}" />
             <c:SectionHeader Text="{Binding S[settings.support.help]}" />
             <c:SettingsRow Label="{Binding S[settings.support.guide]}" Kind="Chevron" Icon="{StaticResource Icon.Info}" Command="{Binding GuideCommand}"
                            Caption="https://anarqz.github.io/mkwmp/" />

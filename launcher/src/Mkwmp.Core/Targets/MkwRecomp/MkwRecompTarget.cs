@@ -37,6 +37,9 @@ public sealed class MkwRecompTarget : IGameTarget
     /// <summary>Tests: what mkw-recomp's own start screen would be started with, instead of starting it.</summary>
     internal Action<ProcessStartInfo>? OwnLauncherOverride { get; set; }
 
+    /// <summary>Tests: what <see cref="Launch"/> would start the game with, instead of starting it (no process).</summary>
+    internal Action<ProcessStartInfo>? LaunchOverride { get; set; }
+
     public string Id => TargetId;
 
     public string DisplayName => "mkw-recomp";
@@ -521,8 +524,21 @@ public sealed class MkwRecompTarget : IGameTarget
             // /S: cmd takes off exactly the outer quotes, so the command arrives as the player wrote it.
             : new ProcessStartInfo(Environment.GetEnvironmentVariable("ComSpec") is { Length: > 0 } cmd ? cmd : "cmd.exe", $"/S /C \"{command}\"") { CreateNoWindow = true };
         GameEnvironment(start, install);
+        if (options.Debug)
+        {
+            start.Environment[DebugTrace] = "1";
+            _note($"game environment: {DebugTrace}=1 (Settings › Support › Debug mode: the mod's deep trace)");
+        }
+        if (LaunchOverride is { } test)
+        {
+            test(start);
+            return null;
+        }
         return Start(start);
     }
+
+    /// <summary>The mod's opt-in deep trace (native/probe/src/npln.c: every NPLN call, packet dumps), turned on by Debug mode.</summary>
+    internal const string DebugTrace = "MKWMP_TRACE_EDGES";
 
     /// <summary>
     /// mkw-recomp's own start screen (Settings › Game, "Open mkw-recomp"): <c>mkw.exe --launcher</c> with

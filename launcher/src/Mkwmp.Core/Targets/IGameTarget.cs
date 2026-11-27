@@ -405,7 +405,9 @@ public sealed record SessionFile(string Server, string Name, string Launcher, st
     public bool IsOffline => Server.Length == 0 && !IsNextendo;
 }
 
-public sealed record LaunchOptions(string? CustomCommand);
+/// <param name="CustomCommand">The player's own start command (Settings › Game), or null for the target's.</param>
+/// <param name="Debug">Settings › Support › Debug mode, confirmed at PLAY: the game starts with the mod's deep trace.</param>
+public sealed record LaunchOptions(string? CustomCommand, bool Debug = false);
 
 public interface IGameProcess : IDisposable
 {

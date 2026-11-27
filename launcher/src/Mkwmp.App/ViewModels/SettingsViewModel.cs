@@ -216,6 +216,15 @@ public sealed partial class SettingsViewModel : PageViewModel
         }
     }
 
+    // ── support ──
+
+    /// <summary>The mod's deep trace at the next PLAYs (asked again before each one): Settings › Support › Bug reports.</summary>
+    public bool DebugMode
+    {
+        get => Launcher.Settings.DebugMode;
+        set => Save(s => s with { DebugMode = value });
+    }
+
     // ── notifications and background ──
 
     public bool NotifyOnline

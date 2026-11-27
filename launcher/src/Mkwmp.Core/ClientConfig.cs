@@ -200,6 +200,7 @@ internal sealed record ClientConfig
             LaunchCommand = Str(t, "launch_command", ""),
             Beholder = Str(t, "beholder", "").Trim(),
             ClosestServers = Bool(t, "closest_servers", true),
+            DebugMode = Bool(t, "debug_mode", false),
             Patch = Bool(t, "patch", true),
             DevPackage = Bool(t, "dev_package", false),
             DevRecompExes = Targets.MkwRecomp.Recomp.DevHashList(DevList(dev, "recomp_exe_sha256")),
@@ -321,6 +322,10 @@ internal sealed record ClientConfig
         Line(b, "launch_command", s.LaunchCommand);
         Line(b, "beholder", s.Beholder);
         Line(b, "closest_servers", s.ClosestServers);
+        if (s.DebugMode)
+        {
+            Line(b, "debug_mode", true); // only while on: a client.toml without it is the default
+        }
         Line(b, "patch", s.Patch);
         if (s.DevPackage)
         {

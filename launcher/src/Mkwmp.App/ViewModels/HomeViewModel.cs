@@ -566,7 +566,43 @@ public sealed class HomeViewModel : PageViewModel
             Shell.Navigate(Routes.Checklist);
             return Task.CompletedTask;
         }
-        return Launcher.PlayAsync();
+        return Launcher.Settings.DebugMode ? ConfirmDebugThenPlayAsync() : Launcher.PlayAsync();
+    }
+
+    /// <summary>
+    /// Debug mode is on (Settings › Support): before each PLAY the player says so again, or turns it off right there
+    /// (the focused choice), since the trace slows the game. B / the bottom button: no game.
+    /// </summary>
+    private async Task ConfirmDebugThenPlayAsync()
+    {
+        var choice = new TaskCompletionSource<bool?>();
+        var modal = new ModalViewModel { Title = S["play.debug.title"], Body = S["play.debug.body"] };
+        modal.Actions.Add(new ModalAction(S["play.debug.off"], () =>
+        {
+            Shell.CloseModal(modal);
+            choice.TrySetResult(false);
+        }, Controls.ButtonKind.Primary, isDefault: true));
+        modal.Actions.Add(new ModalAction(S["play.debug.keep"], () =>
+        {
+            Shell.CloseModal(modal);
+            choice.TrySetResult(true);
+        }));
+        modal.Bottom = new ModalAction(S["common.cancel"], () =>
+        {
+            Shell.CloseModal(modal);
+            choice.TrySetResult(null);
+        });
+        modal.Dismissed += (_, _) => choice.TrySetResult(null);
+        Shell.ShowModal(modal);
+        switch (await choice.Task.ConfigureAwait(true))
+        {
+            case null:
+                return;
+            case false:
+                await Shell.UpdateSettingsAsync(s => s with { DebugMode = false }).ConfigureAwait(true);
+                break;
+        }
+        await Launcher.PlayAsync().ConfigureAwait(true);
     }
 
     // ── power ──

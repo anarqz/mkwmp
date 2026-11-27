@@ -175,8 +175,11 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
 
     public string Version { get; }
 
-    /// <summary>The version as a bug report names it, with the update channel: "1.5.1-rc.2 (alpha channel)".</summary>
-    private string ReportVersion => UpdateChannels.Describe(Version, Settings.UpdateChannel);
+    /// <summary>
+    /// The version as a bug report names it, with the update channel: "1.5.1-rc.2 (alpha channel)", and ", debug mode on"
+    /// while Debug mode is on (its logs carry the mod's deep trace; the launcher log names it at each start).
+    /// </summary>
+    private string ReportVersion => UpdateChannels.Describe(Version, Settings.UpdateChannel) + (Settings.DebugMode ? ", debug mode on" : "");
 
     /// <summary>The bearer token of the local API, random per start, written into the game's session file.</summary>
     internal string Token { get; }
