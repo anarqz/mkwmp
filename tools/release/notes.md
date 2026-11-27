@@ -1,3 +1,12 @@
+**mkwmp 1.5.2**: real friend names in game, Nextendo profile pictures, and more controllers in the launcher.
+
+The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it. **Nextendo Network support in MKWMP is still experimental.**
+
+- **Real friend names inside the game on Nextendo**, instead of "Friend 1", "Friend 2"…
+- **Nextendo profile pictures** for your friends and yourself in the friends panel, on Home and on your account card.
+- **Switch Pro Controller, Joy-Con and DualSense** now work in the launcher even when Windows does not see them as an Xbox controller.
+
+---
 **mkwmp 1.5.2-rc.1** (Alpha test version): real friend names in game and profile pictures on Nextendo.
 
 This is a test version for the Alpha channel (Settings › Updates › Update Channel). **Nextendo Network support in MKWMP is still experimental.** To go back, choose Stable: the launcher offers "Return to Stable".

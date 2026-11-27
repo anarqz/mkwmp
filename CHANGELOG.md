@@ -2,6 +2,13 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
+## 1.5.2 — 2026-11-27
+
+- **Nextendo Network support is still experimental in MKWMP.**
+- **Real friend names inside the game on Nextendo**, instead of "Friend 1", "Friend 2"…
+- **Nextendo profile pictures** for your friends and yourself in the friends panel, on Home and on your account card.
+- **More controllers in the launcher.** A Switch Pro Controller, Joy-Con or DualSense that Windows does not show as an Xbox controller now works in the launcher too; the Checklist names the controller it found.
+
 ## 1.5.2-rc.1 — 2026-11-27
 
 - **Test version, Alpha channel only.** Nextendo Network support is still experimental in MKWMP.
