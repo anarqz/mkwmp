@@ -2,6 +2,13 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
+## 1.5.3-rc.1 — 2026-11-27
+
+- **Test version, Alpha channel only.** Nextendo Network support is still experimental in MKWMP.
+- **Players in lobbies on the Play card.** Home shows "In lobbies: N", the players racing right now on Nextendo (or seated on your MKWMP server).
+- **Controllers in the overlay.** A Switch Pro Controller, Joy-Con or DualSense now drives the launcher over a running game too; the Home button goes back to the game like Xbox's Guide, and the button hints show your controller's own buttons (A/B/X/Y and +/− on Switch controllers, the shapes on PlayStation's).
+- **Debug mode** (Settings › Support). Records a detailed trace of the next games you start, for bug reports; PLAY asks each time whether to keep it on.
+
 ## 1.5.2 — 2026-11-27
 
 - **Nextendo Network support is still experimental in MKWMP.**
