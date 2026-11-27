@@ -54,6 +54,7 @@ require_ticket = false         # true: sign-in needs a seat ticket
 gamesync_host = "gamesync.npln.nintendo.net"  # advertised; the patch redirects it, the cert covers it
 # token_secret_file = "../scratch/keys/lobby-token-secret"  # 32 random bytes: restarts keep running games
 # ban_queue_file = "../scratch/lobby-bans-pending.json"     # bans the seat server has not confirmed yet survive a restart
+# ban_enforce = true    # ban a game that claims another name (default false: only logs "name spoofing (would ban)")
 
 [lobby.policy]
 # Unset = the tested defaults: 24 players per lobby, start at 2, gather 10 s.
