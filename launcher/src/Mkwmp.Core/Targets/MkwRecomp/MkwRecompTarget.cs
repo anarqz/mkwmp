@@ -722,6 +722,16 @@ public sealed class MkwRecompTarget : IGameTarget
         yield return new SupportItem("mkwmp-game.log", Path.Combine(game, "mkwmp-game.log"), null);
         // mkw-recomp's own log lives in its data folder (0.1.12 can move it).
         var data = Recomp.DataDir(game);
+        // The mod's own session log (mods/mkwmp/ in the data folder, or under the game folder in older layouts).
+        // Without it a launcher bug report only has the winmm build's mkwmp.log above, often stale.
+        var modLog = new[] { install.DataRoot, data, game }
+            .Where(r => r is { Length: > 0 })
+            .Select(r => Path.Combine(r!, "mods", Recomp.Mod, "mkwmp.log"))
+            .FirstOrDefault(File.Exists);
+        if (modLog is not null)
+        {
+            yield return new SupportItem("mkwmp-mod.log", modLog, null);
+        }
         yield return new SupportItem("mkw.log", Path.Combine(data, "logs", "mkw.log"), null);
         yield return new SupportItem("mkw.1.log", Path.Combine(data, "logs", "mkw.1.log"), null);
         string? toml = null;

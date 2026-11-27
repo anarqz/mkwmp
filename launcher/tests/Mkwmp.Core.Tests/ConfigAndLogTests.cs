@@ -179,8 +179,12 @@ public class LogTests
         File.WriteAllText(Path.Combine(game, "mkwmp.toml"), "ticket = \"mkw1.a.b\"\n");
         File.WriteAllText(Path.Combine(game, "mkwmp.log"), "probe");
         File.WriteAllText(Path.Combine(game, "logs", "mkw.log"), "recomp");
+        // The mod's session log lives in mods/mkwmp/ (#18: the launcher's bug report left it out).
+        Directory.CreateDirectory(Path.Combine(game, "mods", "mkwmp"));
+        File.WriteAllText(Path.Combine(game, "mods", "mkwmp", "mkwmp.log"), "mod");
         var target = new MkwRecompTarget("1.4.0");
         var (folder, zip) = SupportBundle.Save(dir, "1.4.0", target, target.Detect(game));
+        Assert.Equal("mod", File.ReadAllText(Path.Combine(folder, "mkwmp-mod.log")));
         var system = File.ReadAllText(Path.Combine(folder, "system.txt"));
         Assert.StartsWith("launcher: 1.4.0\nos: windows ", system, StringComparison.Ordinal);
         Assert.Contains("mkw-recomp: Supported(\"0.1.10\")\ngame version: unknown", system, StringComparison.Ordinal);
@@ -188,7 +192,7 @@ public class LogTests
         Assert.Contains("\ntime: 20", system, StringComparison.Ordinal);
         Assert.DoesNotContain("mkw1.a", File.ReadAllText(Path.Combine(folder, "mkwmp.toml")), StringComparison.Ordinal);
         using var archive = ZipFile.OpenRead(zip);
-        Assert.Equal(["launcher-20260101-000000.log", "mkw.log", "mkwmp.log", "mkwmp.toml", "system.txt"], archive.Entries.Select(e => e.FullName).Order(StringComparer.Ordinal));
+        Assert.Equal(["launcher-20260101-000000.log", "mkw.log", "mkwmp-mod.log", "mkwmp.log", "mkwmp.toml", "system.txt"], archive.Entries.Select(e => e.FullName).Order(StringComparer.Ordinal));
     }
 }
 
