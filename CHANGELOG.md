@@ -4,6 +4,7 @@ What changed in each MKWMP release, newest first. The launcher shows this file o
 
 ## 1.5.1 — 2026-11-27
 
+- **Nextendo Network support is still experimental in MKWMP.** Races work; friends inside the game, groups and ghosts are new and not fully tested yet. MKWMP servers remain available in Settings › Online.
 - **Nextendo friends in the friends panel.** Your friend code with Copy, add a friend by their code, accept or decline requests, see who is online or playing, favorite, remove or block a friend, and add "Players you met" in recent races. Blocked players are in Settings › Nextendo.
 - **Friend notifications on Nextendo.** "Is online", "is playing", "sent you a friend request", "accepted your request". Opening the launcher shows one summary instead of one per friend.
 - **Your presence on Nextendo.** Friends see you online while the launcher is open and playing while the game runs (shown as an unofficial app). Settings › Nextendo › "Show Me Online to Friends" turns it off.

@@ -1,5 +1,7 @@
 **mkwmp 1.5.1**: Nextendo friends, ghosts, and an Alpha update channel.
 
+**Nextendo Network support in MKWMP is still experimental**: races work, while friends inside the game, groups and ghosts are new and not fully tested yet. If something goes wrong, MKWMP servers remain available in Settings › Online.
+
 The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.
 
 - **Nextendo friends in the friends panel**: add by friend code, accept or decline requests, see who is online or playing, favorite, remove or block, and add players you met in recent races.
