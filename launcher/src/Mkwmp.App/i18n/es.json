@@ -1534,6 +1534,7 @@
   "settings.online.nextendo_row": "Recomendado: juega en línea con una cuenta de Nextendo.",
   "settings.notify.locked_nextendo": "Inicia sesión con Nextendo para recibir avisos de amigos",
   "core.local_name_nextendo": "Este es tu nombre en este dispositivo. En línea juegas con tu cuenta de Nextendo.",
+  "settings.profile.nextendo_name": "Tu nombre de usuario de Nextendo. Los demás jugadores ven este nombre en las carreras.",
   "core.check.online.nextendo_off": "Sin conexión: inicia sesión con Nextendo para correr en línea",
   "setup.online.local": "Tu inicio de sesión se guarda solo en este PC.",
   "friends.nx.add_hint": "Añade a un amigo por su código de amigo",

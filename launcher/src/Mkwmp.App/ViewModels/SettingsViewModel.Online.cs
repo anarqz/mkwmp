@@ -199,9 +199,15 @@ public sealed partial class SettingsViewModel
 
     public bool CanEditLocalName => !Busy && !Registered;
 
+    /// <summary>The name box and its rule: not while PLAY goes to Nextendo Network, where the name is the account's username.</summary>
+    public bool ShowLocalNameBox => CanEditLocalName && !NextendoMode;
+
+    public bool ShowLocalNameSection => !NextendoMode;
+
     public bool LocalNameIsError => LocalName.Length > 0 && !Links.ValidName(LocalName);
 
-    public string LocalNameNote => LocalNameIsError ? CoreStrings.NameRule
+    public string LocalNameNote => NextendoMode ? S["settings.profile.nextendo_name"]
+        : LocalNameIsError ? CoreStrings.NameRule
         : Registered ? S.Format("settings.profile.local_registered", ("server", ServerShort))
         : OnlineEnabled ? S["settings.profile.local_online"]
         : S["settings.profile.local_note"];
@@ -209,7 +215,14 @@ public sealed partial class SettingsViewModel
     /// <summary>Under the name's box: its rule; for an install on MKWMP servers also that it is the name registered there.</summary>
     public string LocalNameCaption => S[NextendoFirst ? "setup.name.rule" : "settings.profile.local_caption"];
 
-    public string LocalNameShown => Launcher.Settings.Name.Length > 0 ? Launcher.Settings.Name : S["settings.profile.local_none"];
+    /// <summary>The profile card's name: on Nextendo Network the account's username (the name other players see in races), else the name on this device.</summary>
+    public string LocalNameShown => NextendoMode && Nextendo.Username.Length > 0 ? Nextendo.Username
+        : Launcher.Settings.Name.Length > 0 ? Launcher.Settings.Name : S["settings.profile.local_none"];
+
+    /// <summary>The profile card's picture: the Nextendo account's own while PLAY goes there; null, the initials.</summary>
+    public string? ProfilePicture => NextendoMode ? Launcher.NextendoOwnAvatar.Path : null;
+
+    public string ProfileColor => NextendoMode ? Launcher.NextendoOwnAvatar.Color : "";
 
     // ── the PIN's button (X) while its card is on screen ──
 

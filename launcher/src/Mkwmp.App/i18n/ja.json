@@ -1534,6 +1534,7 @@
   "settings.online.nextendo_row": "おすすめ：Nextendo アカウントでオンラインプレイ。",
   "settings.notify.locked_nextendo": "フレンドの通知を受け取るには Nextendo でサインインしてください",
   "core.local_name_nextendo": "これはこのデバイスでのあなたの名前です。オンラインでは Nextendo アカウントでプレイします。",
+  "settings.profile.nextendo_name": "あなたの Nextendo ユーザー名です。レースでは他のプレイヤーにこの名前が表示されます。",
   "core.check.online.nextendo_off": "オフライン：オンラインで走るには Nextendo でサインインしてください",
   "setup.online.local": "サインイン情報はこのPCにのみ保存されます。",
   "friends.nx.add_hint": "フレンドコードでフレンドを追加",

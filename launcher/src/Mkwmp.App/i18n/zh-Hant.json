@@ -1534,6 +1534,7 @@
   "settings.online.nextendo_row": "建議：使用 Nextendo 帳號線上遊玩。",
   "settings.notify.locked_nextendo": "使用 Nextendo 登入即可收到好友通知",
   "core.local_name_nextendo": "這是你在這台裝置上的名稱。線上遊玩時會使用你的 Nextendo 帳號。",
+  "settings.profile.nextendo_name": "你的 Nextendo 使用者名稱。其他玩家在比賽中會看到這個名稱。",
   "core.check.online.nextendo_off": "離線：使用 Nextendo 登入即可線上比賽",
   "setup.online.local": "登入資訊只會儲存在這台電腦上。",
   "friends.nx.add_hint": "用好友代碼新增好友",

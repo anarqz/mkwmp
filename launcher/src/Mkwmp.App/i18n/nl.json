@@ -1534,6 +1534,7 @@
   "settings.online.nextendo_row": "Aanbevolen: speel online met een Nextendo-account.",
   "settings.notify.locked_nextendo": "Meld je aan met Nextendo om meldingen over vrienden te krijgen",
   "core.local_name_nextendo": "Dit is je naam op dit apparaat. Online speel je met je Nextendo-account.",
+  "settings.profile.nextendo_name": "Je Nextendo-gebruikersnaam. Andere spelers zien deze naam in races.",
   "core.check.online.nextendo_off": "Offline: meld je aan met Nextendo om online te racen",
   "setup.online.local": "Je aanmelding wordt alleen op deze pc bewaard.",
   "friends.nx.add_hint": "Voeg een vriend toe via vriendcode",

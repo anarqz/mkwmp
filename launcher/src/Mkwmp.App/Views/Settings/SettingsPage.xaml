@@ -54,15 +54,15 @@
                   <ColumnDefinition Width="Auto" />
                   <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <c:Avatar DisplayName="{Binding LocalNameShown}" Width="116" Height="116" />
+                <c:Avatar DisplayName="{Binding LocalNameShown}" Width="116" Height="116" Picture="{Binding ProfilePicture}" Color="{Binding ProfileColor}" />
                 <StackPanel Grid.Column="1" Margin="28,0,0,0" VerticalAlignment="Center">
                   <TextBlock Text="{Binding LocalNameShown}" Style="{StaticResource Text.Title}" />
                   <TextBlock Text="{Binding LocalNameNote}" Style="{StaticResource Text.Caption}" />
                 </StackPanel>
               </Grid>
             </Border>
-            <c:SectionHeader Text="{Binding S[settings.profile.local]}" />
-            <Border Style="{StaticResource Field}" Visibility="{Binding CanEditLocalName, Converter={StaticResource Conv.Visible}}">
+            <c:SectionHeader Text="{Binding S[settings.profile.local]}" Visibility="{Binding ShowLocalNameSection, Converter={StaticResource Conv.Visible}}" />
+            <Border Style="{StaticResource Field}" Visibility="{Binding ShowLocalNameBox, Converter={StaticResource Conv.Visible}}">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="Auto" />
@@ -76,7 +76,7 @@
                 </Grid>
               </Grid>
             </Border>
-            <TextBlock Text="{Binding LocalNameCaption}" Style="{StaticResource Note}" />
+            <TextBlock Text="{Binding LocalNameCaption}" Style="{StaticResource Note}" Visibility="{Binding ShowLocalNameSection, Converter={StaticResource Conv.Visible}}" />
             <!-- where the player goes online: Settings › Nextendo (Settings › Online for an install on MKWMP servers) -->
             <c:SettingsRow Label="{Binding ProfileOnlineLabel}" Kind="Chevron" Icon="{StaticResource Icon.Globe}" Margin="0,18,0,0"
                            Command="{Binding OnlineCommand}" Caption="{Binding ProfileOnlineCaption}" />

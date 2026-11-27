@@ -1534,6 +1534,7 @@
   "settings.online.nextendo_row": "Empfohlen: online spielen mit einem Nextendo-Konto.",
   "settings.notify.locked_nextendo": "Melde dich mit Nextendo an, um Mitteilungen zu Freunden zu erhalten",
   "core.local_name_nextendo": "Das ist dein Name auf diesem Gerät. Online spielst du mit deinem Nextendo-Konto.",
+  "settings.profile.nextendo_name": "Dein Nextendo-Benutzername. Andere Spieler sehen diesen Namen in Rennen.",
   "core.check.online.nextendo_off": "Offline: melde dich mit Nextendo an, um online zu fahren",
   "setup.online.local": "Deine Anmeldung bleibt nur auf diesem PC gespeichert.",
   "friends.nx.add_hint": "Freund per Freundescode hinzufügen",

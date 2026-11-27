@@ -1553,6 +1553,7 @@
   "settings.online.nextendo_row": "Recommended: play online with a Nextendo account.",
   "settings.notify.locked_nextendo": "Sign in with Nextendo to get friend notifications",
   "core.local_name_nextendo": "This is your name on this device. Online, you play as your Nextendo account.",
+  "settings.profile.nextendo_name": "Your Nextendo username. Other players see this name in races.",
   "core.check.online.nextendo_off": "Offline: sign in with Nextendo to race online",
   "setup.online.local": "Your sign-in is kept on this PC only.",
   "friends.nx.add_hint": "Add a friend by friend code",

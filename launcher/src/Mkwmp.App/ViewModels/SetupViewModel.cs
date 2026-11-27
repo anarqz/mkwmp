@@ -142,7 +142,12 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
     /// <summary>The pages of this run, in order (the dots).</summary>
     private IReadOnlyList<SetupStep> Path => _connectOnly
         ? [SetupStep.Server, SetupStep.Register, SetupStep.Consent, SetupStep.Pin]
-        : [SetupStep.Welcome, SetupStep.Online, SetupStep.Name, SetupStep.Game, SetupStep.Done];
+        : NameFromNextendo
+            ? [SetupStep.Welcome, SetupStep.Online, SetupStep.Game, SetupStep.Done]
+            : [SetupStep.Welcome, SetupStep.Online, SetupStep.Name, SetupStep.Game, SetupStep.Done];
+
+    /// <summary>Signed in with Nextendo: the player's name is the account's username (the one other players see in races), so no name page.</summary>
+    private bool NameFromNextendo => Nextendo.Linked && Links.ValidName(Nextendo.Username);
 
     public int StepCount => PolicyOnly ? 0 : Path.Count;
 
@@ -476,7 +481,17 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
                 await GamePrimaryAsync().ConfigureAwait(true);
                 break;
             case SetupStep.Online:
-                if (Nextendo.Linked)
+                if (NameFromNextendo)
+                {
+                    if (Launcher.Settings.Name.Length == 0)
+                    {
+                        // the welcome's resume needs a name on this device: the account's, the one played under
+                        var account = Nextendo.Username;
+                        await Shell.UpdateSettingsAsync(s => s with { Name = account }).ConfigureAwait(true);
+                    }
+                    Step = SetupStep.Game;
+                }
+                else if (Nextendo.Linked)
                 {
                     Step = SetupStep.Name;
                 }

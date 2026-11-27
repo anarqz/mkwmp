@@ -107,8 +107,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             var profile = Launcher.Profile;
             if (Launcher.NextendoFriends is { Enabled: true } nextendo)
             {
-                // on Nextendo Network: the player (their local name, else the account's), then the Nextendo friends who are on
-                var self = Launcher.Settings.Name.Trim() is { Length: > 0 } named ? named : Launcher.Nextendo.Username;
+                // on Nextendo Network: the player as the account's username (the name other players see in races), then the
+                // Nextendo friends who are on
+                var self = Launcher.Nextendo.Username is { Length: > 0 } account ? account : Launcher.Settings.Name.Trim();
                 var asking = nextendo.Incoming.Count;
                 var own = Launcher.NextendoOwnAvatar;
                 list.Add(new TopAvatar(self, AvatarPresence.None, asking > 0 ? asking.ToString(CultureInfo.CurrentCulture) : "", true, own.Path, own.Color));

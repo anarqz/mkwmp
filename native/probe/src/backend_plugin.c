@@ -39,6 +39,7 @@
 #include "guesthook.h"
 #include "launcher.h"
 #include "log.h"
+#include "nextendo.h"
 #include "nnssl.h"
 #include "overlay.h"
 #include "plat.h"
@@ -197,10 +198,16 @@ static void use_settings(const MkwPluginApi *api) {
 
 // ---- the GameChat camera (camera.c; plugin API 3, game 1.8.0): what it asks of the session
 static uint64_t cam_self_account(void) {
+    // npln.c's nsa_id: on Nextendo the session's account id, the one other players' games know this player by
+    uint64_t account = mkwmp_config_nextendo() ? nextendo_account() : 0;
+    if (account) return account;
     const char *name = mkwmp_config()->name;
-    return name[0] ? friends_account_id(name) : 0x1122334455667788ull;   // npln.c's nsa_id (FAKE_NSA_ID without a name)
+    return name[0] ? friends_account_id(name) : 0x1122334455667788ull;   // FAKE_NSA_ID without a name
 }
 static const char *cam_self_name(void) {
+    // on Nextendo the account's username, as GetNickname gives the game (npln.c ov_nickname)
+    static char username[64];
+    if (mkwmp_config_nextendo() && nextendo_username(username, sizeof username) && username[0]) return username;
     const char *name = mkwmp_config()->name;
     return name[0] ? name : g_api->size > offsetof(MkwPluginApi, profile_name) && g_api->profile_name ? g_api->profile_name : "";
 }

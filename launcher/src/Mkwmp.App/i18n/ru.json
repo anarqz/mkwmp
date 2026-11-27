@@ -1534,6 +1534,7 @@
   "settings.online.nextendo_row": "Рекомендуется: играй онлайн с аккаунтом Nextendo.",
   "settings.notify.locked_nextendo": "Войди через Nextendo, чтобы получать уведомления о друзьях",
   "core.local_name_nextendo": "Это твоё имя на этом устройстве. В онлайне ты играешь под своим аккаунтом Nextendo.",
+  "settings.profile.nextendo_name": "Твоё имя пользователя Nextendo. Другие игроки видят его в гонках.",
   "core.check.online.nextendo_off": "Офлайн: войди через Nextendo, чтобы гонять онлайн",
   "setup.online.local": "Данные входа хранятся только на этом компьютере.",
   "friends.nx.add_hint": "Добавить друга по коду друга",

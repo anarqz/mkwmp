@@ -1534,6 +1534,7 @@
   "settings.online.nextendo_row": "Önerilen: bir Nextendo hesabıyla çevrimiçi oyna.",
   "settings.notify.locked_nextendo": "Arkadaş bildirimleri almak için Nextendo ile oturum aç",
   "core.local_name_nextendo": "Bu, bu cihazdaki adın. Çevrimiçi oyunda Nextendo hesabınla oynarsın.",
+  "settings.profile.nextendo_name": "Nextendo kullanıcı adın. Diğer oyuncular yarışlarda bu adı görür.",
   "core.check.online.nextendo_off": "Çevrimdışı: çevrimiçi yarışmak için Nextendo ile oturum aç",
   "setup.online.local": "Oturum bilgin yalnızca bu bilgisayarda saklanır.",
   "friends.nx.add_hint": "Arkadaş koduyla arkadaş ekle",

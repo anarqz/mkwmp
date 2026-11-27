@@ -1534,6 +1534,7 @@
   "settings.online.nextendo_row": "推荐：使用 Nextendo 账号联机游玩。",
   "settings.notify.locked_nextendo": "使用 Nextendo 登录即可收到好友通知",
   "core.local_name_nextendo": "这是你在这台设备上的名字。联机时使用你的 Nextendo 账号游玩。",
+  "settings.profile.nextendo_name": "你的 Nextendo 用户名。其他玩家在比赛中会看到这个名字。",
   "core.check.online.nextendo_off": "离线：使用 Nextendo 登录即可在线比赛",
   "setup.online.local": "登录信息只保存在这台电脑上。",
   "friends.nx.add_hint": "通过好友代码添加好友",
