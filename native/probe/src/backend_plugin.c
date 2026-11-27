@@ -39,6 +39,7 @@
 #include "guesthook.h"
 #include "launcher.h"
 #include "log.h"
+#include "nnssl.h"
 #include "overlay.h"
 #include "plat.h"
 #include "probe.h"
@@ -321,6 +322,7 @@ MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_vers
         // Nextendo Network has no MKWMP relay: no friend room, no camera, no voice (NEXTENDO_API.md section 5)
         mkwmp_log("camera: off: not available on Nextendo Network");
         camera_set_off_reason("not available on Nextendo Network");
+        nnssl_register();   // ghost data: the game's HTTPS transfers of document attachments (nnssl.h)
     } else if (g_active) use_camera(api, api_version);   // the GameChat camera: 1.8.0 on plugin API 3, else off (logged)
     else {
         mkwmp_log("camera: off: online play is not set up");

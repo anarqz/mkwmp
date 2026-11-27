@@ -20,6 +20,7 @@
 #include "guesthook.h"
 #include "kartrace.h"
 #include "nextendo.h"
+#include "nnssl.h"
 #include "probe.h"
 #include "uuid5.h"
 #include "voice.h"
@@ -73,7 +74,7 @@ static void rhex(const char *tag, const void *buf, size_t len) {
 }
 
 // Linux errno numbers the game reads
-enum { G_EINTR = 4, G_EAGAIN = 11, G_EINVAL = 22, G_EPROTONOSUPPORT = 93, G_EINPROGRESS = 115 };
+enum { G_EINTR = 4, G_EAGAIN = 11, G_EINVAL = 22, G_EPROTONOSUPPORT = 93, G_ECONNRESET = 104, G_EINPROGRESS = 115 };
 static _Thread_local int g_errno;
 
 // LAN mode (server host not loopback): see net_init.
@@ -371,12 +372,13 @@ static void ov_nsa_available(Cpu *c) { uint8_t *o = arg_p(c, 0); if (o) *o = 1; 
 // Each player needs its own account id: Pia's mesh join fails with 2318-0540 (result 0x647e,
 // main+0x1577c6c) when the joiner's station id equals the host's. A launcher player gets the
 // id the lobby derives for its name (the one its friends see); local tests keep FAKE_NSA_ID(+1).
-// On Nextendo the id comes from the account's pid (nextendo_account_id). Before the first session (a read while the
-// game is still offline) there is no pid yet: the id of the name stands in, and the log says so.
+// On Nextendo the id is the session's (nextendo_account: the accountId the launcher names, the id Nextendo's servers
+// know the player by; while it names none, one from the account's pid). Before the first session (a read while the
+// game is still offline) there is neither: the id of the name stands in, and the log says so.
 static uint64_t nsa_id(void) {
     const char *name = mkwmp_config()->name;
-    uint64_t pid = g_nextendo ? nextendo_pid() : 0;
-    if (pid) return nextendo_account_id(pid);
+    uint64_t account = g_nextendo ? nextendo_account() : 0;
+    if (account) return account;
     return name[0] ? friends_account_id(name) : FAKE_NSA_ID + g_second_player;
 }
 static void ov_nsa_get_id(Cpu *c) {
@@ -422,6 +424,9 @@ static void ov_nsa_load_token(Cpu *c) {
         plat_lock(&lock);
         NxState st = g_active ? nextendo_fetch() : NX_UNAVAILABLE;
         if (st == NX_READY) nextendo_net();
+        // This is the sign-in: the game reads its friend list once, soon after it. The launcher's roster (the
+        // Nextendo friends it has an id for; none while Nextendo tells no ids) is asked for now, as on an MKWMP seat.
+        if (g_active && nextendo_have()) friends_online(FRIENDS_WAIT_MS);
         size_t len = g_active ? nextendo_token(jwt, sizeof jwt) : 0;
         if (len && buf && cap >= len) {
             memcpy(buf, jwt, len);
@@ -1042,6 +1047,99 @@ static void sock_getaddrinfo(Cpu *c, const char *label, int cpp_layout) {
 }
 static void ov_sock_getaddrinfo(Cpu *c) { sock_getaddrinfo(c, "nnsocketGetAddrInfo node", 0); }
 static void ov_sock_getaddrinfo_cpp(Cpu *c) { sock_getaddrinfo(c, "nn::socket::GetAddrInfo typed node", 1); }
+
+// ---- the game's HTTP client (ghost data; nnssl.h) ------------------------------------------------------------------
+// Its libcurl opens, connects, polls and closes sockets through the names above, like gRPC, and adds these: its own
+// resolver call, errno through the socket library instead of __errno_location, plain send / recv (TLS data goes
+// through nnssl.c), and the two ends' addresses. They are outside kRegs: registered by nnssl_register only, where the
+// runtime's override table has room for them. Nothing here is reached before the game is online.
+PlatSock npln_guest_socket(int fd) { return fd_get(fd); }
+
+// int nnsocketGetAddrInfoWithOptions(node, service, hints, addrinfo **res, options, option count): as
+// nnsocketGetAddrInfo (the options are the resolver's cancel handle); freed with nnsocketFreeAddrInfo.
+static void ov_sock_getaddrinfo_options(Cpu *c) { sock_getaddrinfo(c, "nnsocketGetAddrInfoWithOptions node", 0); }
+// int nnsocketResolverGetOption(option *, key) / SetOption(const option *): the game asks for a handle to cancel a
+// lookup with ({u32 key, u32 type, u64 size, data}); 0 is "none", which it never tries to cancel.
+static void ov_resolver_get_option(Cpu *c) {
+    uint8_t *option = arg_p(c, 0);
+    if (!option) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
+    memset(option + 16, 0, 8);
+    ret_x(c, 0);
+}
+static void ov_resolver_set_option(Cpu *c) { ret_x(c, 0); }
+static void ov_sock_get_errno(Cpu *c) { ret_x(c, (unsigned)g_errno); }
+static void ov_sock_set_errno(Cpu *c) { g_errno = (int)arg_x(c, 0); }
+
+// ssize_t nnsocketRecv(fd, buf, len, flags) / nnsocketSend(fd, buf, len, flags). MSG_PEEK is 2 on the console too.
+static void ov_sock_recv(Cpu *c) {
+    PlatSock s = fd_get((int)arg_x(c, 0));
+    void *buf = arg_p(c, 1);
+    uint64_t len = arg_x(c, 2);
+    if (s == PLAT_NO_SOCK || !buf) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
+    if (len > INT_MAX) len = INT_MAX;
+    long r = recv(s, buf, (int)len, (arg_x(c, 3) & 2) ? MSG_PEEK : 0);
+    if (r < 0) {
+        int e = plat_net_error();
+        g_errno = e == PLAT_NET_WOULDBLOCK ? G_EAGAIN : e == PLAT_NET_INTR ? G_EINTR : G_ECONNRESET;
+        ret_x(c, (uint64_t)-1); return;
+    }
+    ret_x(c, (uint64_t)r);
+}
+static void ov_sock_send(Cpu *c) {
+    PlatSock s = fd_get((int)arg_x(c, 0));
+    void *buf = arg_p(c, 1);
+    uint64_t len = arg_x(c, 2);
+    if (s == PLAT_NO_SOCK || !buf) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
+    PlatIov one = {buf, len > INT_MAX ? INT_MAX : (size_t)len};
+    long r = plat_sock_sendv(s, &one, 1);   // (no SIGPIPE on Linux)
+    if (r < 0) {
+        int e = plat_net_error();
+        g_errno = e == PLAT_NET_WOULDBLOCK ? G_EAGAIN : e == PLAT_NET_INTR ? G_EINTR : G_ECONNRESET;
+        ret_x(c, (uint64_t)-1); return;
+    }
+    ret_x(c, (uint64_t)r);
+}
+
+// int nnsocketGetPeerName(fd, sockaddr *, u32 *len) / nnsocketGetSockName: the console's sockaddr_in
+// (len, family, port, address, 8 zero bytes).
+static void sock_name(Cpu *c, int peer) {
+    PlatSock s = fd_get((int)arg_x(c, 0));
+    uint8_t *out = arg_p(c, 1);
+    uint32_t *len = arg_p(c, 2);
+    struct sockaddr_in sa;
+    plat_socklen_t sl = sizeof sa;
+    memset(&sa, 0, sizeof sa);
+    if (s == PLAT_NO_SOCK || !out || !len || *len < 16 ||
+        (peer ? getpeername(s, (struct sockaddr *)&sa, &sl) : getsockname(s, (struct sockaddr *)&sa, &sl)) ||
+        sa.sin_family != AF_INET) {
+        g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
+    }
+    memset(out, 0, 16);
+    out[0] = 16; out[1] = 2;
+    memcpy(out + 2, &sa.sin_port, 2);
+    memcpy(out + 4, &sa.sin_addr, 4);
+    *len = 16;
+    ret_x(c, 0);
+}
+static void ov_sock_peername(Cpu *c) { sock_name(c, 1); }
+static void ov_sock_sockname(Cpu *c) { sock_name(c, 0); }
+
+int npln_curl_socket_overrides(void) {
+    static const struct { const char *name; GuestFn fn; } kCurl[] = {
+        {"nnsocketGetAddrInfoWithOptions", ov_sock_getaddrinfo_options},
+        {"nnsocketResolverGetOption", ov_resolver_get_option},
+        {"nnsocketResolverSetOption", ov_resolver_set_option},
+        {"nnsocketGetLastErrno", ov_sock_get_errno},
+        {"nnsocketSetLastErrno", ov_sock_set_errno},
+        {"nnsocketRecv", ov_sock_recv},
+        {"nnsocketSend", ov_sock_send},
+        {"nnsocketGetPeerName", ov_sock_peername},
+        {"nnsocketGetSockName", ov_sock_sockname},
+    };
+    int n = (int)(sizeof kCurl / sizeof kCurl[0]);
+    for (int i = 0; i < n; i++) g_rt.override(kCurl[i].name, kCurl[i].fn);
+    return n;
+}
 
 // Pia's separate datagram path. Keep it loopback-only; gRPC still uses TCP.
 //
@@ -1928,6 +2026,7 @@ static void ov_ssl_initialize(Cpu *c) {
     rlog("ssl::Initialize (stub)");
     ret_x(c, 0);
 }
+// (The context is its id, 1: the game's HTTP client only asks that it is not 0. Its connections are nnssl.c's.)
 static void ov_ssl_ctx_create(Cpu *c) { uint64_t *s = arg_p(c, 0); if (s) *s = 1; ret_x(c, 0); }
 static void ov_ssl_import_pki(Cpu *c) { uint64_t *o = arg_p(c, 1); if (o) *o = 1; ret_x(c, 0); }
 typedef struct {
@@ -1974,7 +2073,8 @@ static volatile int32_t g_active;
 static GuestFn stock_handler(const char *name) { return g_rt.stock ? g_rt.stock(name) : NULL; }
 
 // Nextendo mode, Online Play opened: the launcher's session instead of a seat, its CA and the server's address, or the
-// game stays offline. No seat keepalive, friends fill or voice: none of it exists there.
+// game stays offline. No seat keepalive or voice: neither exists there. The friends fill starts (friends.c): the
+// launcher's roster holds the Nextendo friends it has an id for, none while Nextendo tells no ids.
 static int nextendo_online(void) {
     if (!mkwmp_config()->launcher_port) {
         mlog("online requested: Nextendo needs the MKWMP launcher (none in mkwmp.toml), staying offline");
@@ -1997,6 +2097,7 @@ static int nextendo_online(void) {
         mlog("online requested: no address for %s, staying offline", server);
         return 0;
     }
+    friends_online(0);   // asked now, without waiting: the sign-in (ov_nsa_load_token) waits for the answer
     mlog("online requested: Nextendo session ready, going active");
     crumb_state("online", "1");
     crumb_state("server", "%s:443", server);
@@ -2297,6 +2398,10 @@ int npln_register(void) {
     g_rt.override("nnosGetThreadCoreMask", ov_get_thread_core_mask);
     g_rt.override("nnosSetThreadCoreMask", ov_set_thread_core_mask);
     log_line("core-mask overrides registered");
+    // Ghost data needs the console's TLS service, which only the mod build answers (nnssl.h: its overrides are beyond
+    // this table's 64).
+    if (g_nextendo && g_rt.host_fn_at)
+        mlog("ghost transfers: off with the winmm.dll loader (the mod answers them): ghost uploads and downloads fail");
     log_kv("npln_register: overrides", (uint64_t)n);
     return n;
 }

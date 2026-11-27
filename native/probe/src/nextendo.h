@@ -31,6 +31,7 @@ typedef struct {
     char token[NX_TOKEN_MAX];   // nexToken
     uint64_t expires_at;        // ms since 1970 (0: not said)
     uint64_t pid;
+    uint64_t account_id;        // accountId: the account's id on the game's servers (0: the launcher did not say)
     char username[64];
     char friend_code[32];
     char server_host[128], nat_host[128];
@@ -40,6 +41,7 @@ typedef struct {
 
 // HTTP status + JSON body of GET /local/v1/nextendo/session. A 200 is NX_READY only when it is whole: state "ready",
 // a token that fits and is plain printable text, a pid, a username and two host names; else NX_UNAVAILABLE.
+// "accountId" is optional: a string of 1 to 16 hex digits, not zero; anything else is as if it were not there.
 void nextendo_session_parse(int http_status, const char *body, NxSession *out);
 const char *nextendo_state_name(NxState s);
 
@@ -68,7 +70,11 @@ int nextendo_cache_get(NxHostCache *c, const char *host, uint64_t now_ms, NxReso
 
 // ---- the account (pure) -----------------------------------------------------------------------------------------
 // GetNetworkServiceAccountId: one id per pid, never 0, the same every session (Pia's station id comes from it).
+// The stand-in while the launcher's session names no accountId (Nextendo derives the real one on its side).
 uint64_t nextendo_account_id(uint64_t pid);
+// The id of a session's account: its accountId when the launcher said one (the id Nextendo's servers know the
+// player by, the one friends match), else nextendo_account_id(pid); 0 without a pid.
+uint64_t nextendo_session_account(const NxSession *s);
 
 // LoadNetworkServiceAccountIdTokenCache: b64url(header).b64url(claims).b64url(64 bytes), no padding. Claims as
 // Nextendo's reference table: iss, aud, typ, sub, jti, di, bs:did, sn, hm, tv "1.8.0", iat, exp (3 h), nnex.
@@ -88,6 +94,7 @@ size_t nextendo_jwt(const NxJwt *in, char *out, size_t cap);
 NxState nextendo_fetch(void);
 int nextendo_have(void);                             // a session is in hand
 uint64_t nextendo_pid(void);                         // 0 without one
+uint64_t nextendo_account(void);                     // nextendo_session_account of the one in hand; 0 without one
 int nextendo_username(char *out, size_t cap);        // 1 with one
 int nextendo_hosts(char *server, char *nat, char *ca_file, size_t cap);   // each may be NULL; 1 with a session
 // The account token for the session in hand (a new jti each call). Length, 0 without a session or when it does not fit.

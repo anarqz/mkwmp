@@ -6,7 +6,7 @@
 Produces build/plugin/linux/mkwmp.so (x86_64-linux-gnu) and build/plugin/windows/mkwmp.dll (x86_64-windows-gnu, a
 plain DLL, not the winmm.dll proxy): the core sources of build.py (minus the winmm loader and the COFF backend, as
 build_linux.py), the plat files of the target (with its HTTP: WinHTTP, or libcurl loaded at run
-time), the plugin's seat client (seatapi.c, seatd.c), the GameChat camera (camera.c, camcodec.c, camlib.c; plugin
+time; and its TLS client for the game's ghost transfers: Schannel, or OpenSSL loaded at run time), the plugin's seat client (seatapi.c, seatd.c), the GameChat camera (camera.c, camcodec.c, camlib.c; plugin
 API 3), the chat room on the relay (roomnet.c), the overlay trigger (overlay.c) and src/backend_plugin.c. No options page or
 settings tab: the MKWMP launcher sets everything. Both export only mkw_plugin_init (Linux: a version script, linked with --no-undefined). --test also builds tests/test_plugin.c and runs
 it against the Linux .so (on a Linux host): a fake MkwPluginApi, no runtime needed. Runs in CI
@@ -41,8 +41,10 @@ OUT = HERE / "build" / "plugin"
 BACKEND = "backend_plugin.c"
 # the plugin's own parts: its seat client (no launcher running), the camera, the friend room, the overlay trigger
 PLUGIN_ONLY = ["seatapi.c", "seatd.c", "camera.c", "camcodec.c", "camlib.c", "chatroom.c", "roomnet.c", "overlay.c"]
-WIN_PLAT = ["plat_win.c", "plat_net_win.c", "plat_http_win.c"]
-POSIX_HTTP = ["plat_http_posix.c"]
+# ghost data: the console's TLS service for the game's HTTP client (nnssl.c) and the log of its transfers (ghost.c)
+PLUGIN_ONLY = PLUGIN_ONLY + ["nnssl.c", "ghost.c"]
+WIN_PLAT = ["plat_win.c", "plat_net_win.c", "plat_http_win.c", "plat_tls_win.c"]
+POSIX_HTTP = ["plat_http_posix.c", "plat_tls_posix.c"]
 VERSION_SCRIPT = "{ global: mkw_plugin_init; local: *; };\n"
 # the controller under Wine / Proton (XInput asked at load; a no-op elsewhere, so in both builds)
 PLUGIN_ONLY = PLUGIN_ONLY + ["winepad.c"]
@@ -83,7 +85,8 @@ def build_windows(zig, version):
     # only __declspec(dllexport) symbols are exported (mkw_plugin_init), no import library is needed
     run([zig, "cc", "-target", "x86_64-windows-gnu", "-shared", "-O2",
          "-Wall", "-Wextra", "-Werror", f'-DMKWMP_VERSION="{version}"', "-o", str(out)]
-        + [str(SRC / s) for s in core() + WIN_PLAT + PLUGIN_ONLY + [BACKEND]] + ["-lws2_32", "-lwinhttp"])
+        + [str(SRC / s) for s in core() + WIN_PLAT + PLUGIN_ONLY + [BACKEND]]
+        + ["-lws2_32", "-lwinhttp", "-lsecur32", "-lcrypt32"])
     print("built", out, out.stat().st_size, "bytes", flush=True)
     return out
 

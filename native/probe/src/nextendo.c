@@ -53,6 +53,19 @@ static uint64_t u64_field(const char *json, const char *key) {
     return p && *p >= '0' && *p <= '9' ? strtoull(p, NULL, 10) : 0;
 }
 
+// A string of 1 to 16 hex digits (either case) that is not zero, as a number. 0 when it is not there or not that.
+static uint64_t hex_field(const char *json, const char *key) {
+    char text[17];
+    if (!str_field(json, key, text, sizeof text, 1) || !text[0]) return 0;
+    uint64_t v = 0;
+    for (const char *p = text; *p; p++) {
+        int d = *p >= '0' && *p <= '9' ? *p - '0' : *p >= 'a' && *p <= 'f' ? *p - 'a' + 10 : *p >= 'A' && *p <= 'F' ? *p - 'A' + 10 : -1;
+        if (d < 0) return 0;
+        v = v << 4 | (uint64_t)d;
+    }
+    return v;
+}
+
 static int token_ok(const char *t) {
     if (!t[0]) return 0;
     for (; *t; t++)
@@ -95,6 +108,7 @@ void nextendo_session_parse(int http_status, const char *body, NxSession *out) {
         str_field(body, "username", out->username, sizeof out->username, 1) && name_ok(out->username) &&
         str_field(body, "serverHost", out->server_host, sizeof out->server_host, 1) && host_ok(out->server_host) &&
         str_field(body, "natHost", out->nat_host, sizeof out->nat_host, 1) && host_ok(out->nat_host)) {
+        out->account_id = hex_field(body, "accountId");   // optional: 0 while Nextendo does not tell the launcher
         out->state = NX_READY;
         return;
     }
@@ -175,6 +189,11 @@ uint64_t nextendo_account_id(uint64_t pid) {
     // "NX" over the pid: one id per pid (pids are 32 bits today; 48 fit), never 0, positive, and not an id an
     // MKWMP server would derive from a name by chance
     return 0x4e58ull << 48 | (pid & 0xffffffffffffull);
+}
+
+uint64_t nextendo_session_account(const NxSession *s) {
+    if (s->account_id) return s->account_id;
+    return s->pid ? nextendo_account_id(s->pid) : 0;
 }
 
 static size_t b64url(const uint8_t *in, size_t n, char *out) {
@@ -302,6 +321,13 @@ uint64_t nextendo_pid(void) {
     uint64_t pid = g_have ? g_session.pid : 0;
     plat_unlock_shared(&g_lock);
     return pid;
+}
+
+uint64_t nextendo_account(void) {
+    plat_lock_shared(&g_lock);
+    uint64_t id = g_have ? nextendo_session_account(&g_session) : 0;
+    plat_unlock_shared(&g_lock);
+    return id;
 }
 
 int nextendo_username(char *out, size_t cap) {

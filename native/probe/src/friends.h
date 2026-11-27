@@ -50,7 +50,16 @@ uint64_t friends_account_id(const char *name);
 // Pure parser of a /local/v1/friends answer. Fills *out and returns 1 for a well-formed 200;
 // otherwise returns 0 and leaves *out alone. Skips invalid names, repeated players and
 // `self` (the caller's own name, may be NULL); stops at FRIENDS_MAX.
+// An entry may carry its own id, `"account":"<1..16 hex digits>"`: it is then the account id as it is (the name is
+// only shown; one the game cannot take becomes "Player"), and an "account" that is not that drops the entry. An
+// MKWMP launcher sends none; on Nextendo it is the only way to know a friend's id (docs/contracts/NEXTENDO_API.md §4).
 int friends_parse(int http_status, const char *body, const char *self, FriendRoster *out);
+
+// The same for Nextendo mode: only entries that carry "account" count, and nobody is left out by name.
+int friends_parse_accounts(int http_status, const char *body, FriendRoster *out);
+
+// 1 to 16 hex digits (either case), not zero, nothing else: 1 and the id. Otherwise 0.
+int friends_account_hex(const char *s, uint64_t *out);
 
 // GetFriendList paging over a roster: writes entries [offset, offset + count) to `out` and
 // returns how many were written.

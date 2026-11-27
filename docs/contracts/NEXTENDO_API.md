@@ -131,6 +131,11 @@ Overlay routes are unchanged. Voice answers `enabled:false`.
 - TCP connect: to the address the game asks for (it came from the resolution above). Port 443 stays 443; the
   MKWMP port remap applies only in MKWMP mode. **Gamesync** uses the host and port the game session gives,
   unchanged. The game's own TLS keeps the original SNI.
+- Ghost data (time-trial ghosts, mod build only): the game moves a ghost's bytes with its own HTTP client over the
+  console's TLS service, not over its gRPC channel. The mod answers that service: HTTPS to the host the link names,
+  at the address the resolution above gives, with the server's certificate always checked against `nextendo_ca`
+  (chain, dates, host name). `mkwmp.log` has one `ghost:` line per step (lookup, handshake, request, answer, bytes),
+  never a link's path or signature. `MKWMP_NO_GHOST=1` in `mkwmp.env` turns it off.
 - Pia UDP: as in LAN mode. Bind to all interfaces, report the real local address, and send to whatever address and
   port Pia gives. NAT probes are not redirected to MKWMP's `:10025`.
 - Off in Nextendo mode: seat keepalive, voice, chat rooms and camera, and MKWMP friends (ids derived from names).

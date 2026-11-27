@@ -110,13 +110,42 @@ static int valid_name(const char *name) {
 typedef struct {
     FriendRoster *roster;
     uint64_t self_id;   // 0 = nobody to exclude
+    int need_account;   // only entries that carry their own "account" (Nextendo: no id can be derived from a name)
     int seen;           // a "friends" array was read
 } ParseCtx;
 
-static void roster_add(ParseCtx *cx, const char *name) {
+// One entry of the array as read: its name, and its "account" when it has one.
+typedef struct {
+    char name[FRIEND_NAME_SIZE];
+    uint64_t account;
+    int has_account;   // 0 no "account" member, 1 a good one, -1 one that is not an id
+} Entry;
+
+int friends_account_hex(const char *s, uint64_t *out) {
+    uint64_t v = 0;
+    int n = 0;
+    for (; *s; s++, n++) {
+        int d = *s >= '0' && *s <= '9' ? *s - '0' : *s >= 'a' && *s <= 'f' ? *s - 'a' + 10 : *s >= 'A' && *s <= 'F' ? *s - 'A' + 10 : -1;
+        if (d < 0 || n >= 16) return 0;
+        v = v << 4 | (uint64_t)d;
+    }
+    if (!n || !v) return 0;
+    *out = v;
+    return 1;
+}
+
+static void roster_add(ParseCtx *cx, const Entry *en) {
     FriendRoster *r = cx->roster;
-    if (r->count >= FRIENDS_MAX || !valid_name(name)) return;
-    uint64_t id = friends_account_id(name);
+    const char *name = en->name;
+    uint64_t id;
+    if (r->count >= FRIENDS_MAX || en->has_account < 0) return;
+    if (en->has_account) {
+        id = en->account;                         // the launcher knows the id: used as it is
+        if (!valid_name(name)) name = "Player";   // the id is what the game matches; the name is only shown
+    } else {
+        if (cx->need_account || !valid_name(name)) return;
+        id = friends_account_id(name);
+    }
     if (id == cx->self_id) return;
     for (int i = 0; i < r->count; i++) if (r->e[i].account_id == id) return;
     r->e[r->count].account_id = id;
@@ -125,11 +154,19 @@ static void roster_add(ParseCtx *cx, const char *name) {
 }
 
 static const char *friend_member(const char *key, const char *value, void *ctx) {
-    char *name = ctx;
+    Entry *en = ctx;
     int ok;
+    if (!strcmp(key, "account")) {
+        char hex[20];
+        en->has_account = -1;
+        if (*value != '"') return json_skip(value);
+        value = json_string(value, hex, sizeof hex, &ok);
+        if (value && ok && friends_account_hex(hex, &en->account)) en->has_account = 1;
+        return value;
+    }
     if (strcmp(key, "name") || *value != '"') return json_skip(value);
-    value = json_string(value, name, FRIEND_NAME_SIZE, &ok);
-    if (!ok) name[0] = 0;
+    value = json_string(value, en->name, FRIEND_NAME_SIZE, &ok);
+    if (!ok) en->name[0] = 0;
     return value;
 }
 
@@ -141,9 +178,12 @@ static const char *root_member(const char *key, const char *value, void *ctx) {
     if (*p == ']') return p + 1;
     for (;;) {
         if (*p == '{') {
-            char name[FRIEND_NAME_SIZE] = "";
-            if (!(p = json_object(p, friend_member, name))) return NULL;
-            roster_add(cx, name);
+            Entry en;
+            en.name[0] = 0;
+            en.account = 0;
+            en.has_account = 0;
+            if (!(p = json_object(p, friend_member, &en))) return NULL;
+            roster_add(cx, &en);
         } else if (!(p = json_skip(p))) {
             return NULL;
         }
@@ -154,15 +194,23 @@ static const char *root_member(const char *key, const char *value, void *ctx) {
     }
 }
 
-int friends_parse(int http_status, const char *body, const char *self, FriendRoster *out) {
+static int parse(int http_status, const char *body, uint64_t self_id, int need_account, FriendRoster *out) {
     if (http_status != 200 || !body) return 0;
     FriendRoster roster;
     roster.count = 0;
-    ParseCtx cx = {&roster, self && self[0] ? friends_account_id(self) : 0, 0};
+    ParseCtx cx = {&roster, self_id, need_account, 0};
     const char *p = skip_ws(body);
     if (*p != '{' || !json_object(p, root_member, &cx) || !cx.seen) return 0;
     memcpy(out, &roster, sizeof roster);
     return 1;
+}
+
+int friends_parse(int http_status, const char *body, const char *self, FriendRoster *out) {
+    return parse(http_status, body, self && self[0] ? friends_account_id(self) : 0, 0, out);
+}
+
+int friends_parse_accounts(int http_status, const char *body, FriendRoster *out) {
+    return parse(http_status, body, 0, 1, out);
 }
 
 // ---- nn::friends::Friend -----------------------------------------------------------
@@ -232,7 +280,11 @@ static int refresh(void) {
     static int last_status = 200, last_count = -1;
     const char *body;
     int status = launcher_request("GET", "/local/v1/friends", buf, sizeof buf, &body);
-    if (!friends_parse(status, body, mkwmp_config()->name, &roster)) {
+    // Nextendo: only friends the launcher gives an id for (it leaves the player out itself); none while Nextendo
+    // tells no ids, and the list stays empty as before.
+    int ok = mkwmp_config_nextendo() ? friends_parse_accounts(status, body, &roster)
+                                     : friends_parse(status, body, mkwmp_config()->name, &roster);
+    if (!ok) {
         // Keep the last good roster: a launcher hiccup must not empty the friend list.
         if (status != last_status) mkwmp_log("friends: launcher answered %d, keeping %d in the list", status, g_latest.count);
         last_status = status;

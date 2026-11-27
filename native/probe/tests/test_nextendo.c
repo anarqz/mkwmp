@@ -66,6 +66,32 @@ static void test_session(void) {
     assert(!strcmp(s.ca_file, "nextendo-ca.pem"));
     nextendo_session_parse(200, READY(""), &s);   // caFile is optional
     assert(s.state == NX_READY && !s.ca_file[0]);
+    // accountId (the account's id on the game's servers) is optional: 1 to 16 hex digits in a string, not zero
+    assert(s.account_id == 0 && nextendo_session_account(&s) == nextendo_account_id(123));   // none: from the pid, as before
+    nextendo_session_parse(200, READY(",\"accountId\":\"00ab12cd34ef5601\""), &s);
+    assert(s.state == NX_READY && s.account_id == 0x00ab12cd34ef5601ull && nextendo_session_account(&s) == 0x00ab12cd34ef5601ull);
+    nextendo_session_parse(200, READY(" , \"accountId\" : \"FEDCBA9876543210\" "), &s);
+    assert(s.state == NX_READY && s.account_id == 0xfedcba9876543210ull && nextendo_session_account(&s) == 0xfedcba9876543210ull);
+    nextendo_session_parse(200, READY(",\"accountId\":\"1f\""), &s);
+    assert(s.state == NX_READY && s.account_id == 0x1f);
+    static const char *const kNoAccount[] = {
+        ",\"accountId\":\"\"", ",\"accountId\":\"0\"", ",\"accountId\":\"0000000000000000\"", ",\"accountId\":\"00ab12cd34ef56012\"",
+        ",\"accountId\":\"0x1f\"", ",\"accountId\":\"12g4\"", ",\"accountId\":\" 1f\"", ",\"accountId\":\"1f \"", ",\"accountId\":\"-1\"",
+        ",\"accountId\":\"u-123\"", ",\"accountId\":31", ",\"accountId\":null", ",\"accountId\":\"1\\u0066\"", ",\"accountId\":[\"1f\"]",
+    };
+    for (size_t i = 0; i < sizeof kNoAccount / sizeof kNoAccount[0]; i++) {
+        nextendo_session_parse(200, READY(""), &s);
+        static char body[1024];
+        snprintf(body, sizeof body, "%.*s%s}", (int)strlen(READY("")) - 1, READY(""), kNoAccount[i]);
+        nextendo_session_parse(200, body, &s);
+        if (s.state != NX_READY || s.account_id) printf("accountId taken: %s\n", kNoAccount[i]);
+        // a session whose accountId is not an id is still a session: the id comes from the pid
+        assert(s.state == NX_READY && !s.account_id && nextendo_session_account(&s) == 0x4e5800000000007bull);
+    }
+    memset(&s, 0, sizeof s);
+    assert(nextendo_session_account(&s) == 0);   // no session: no id (npln.c then uses the name's)
+    nextendo_session_parse(409, "{\"state\":\"refused\",\"accountId\":\"1f\"}", &s);
+    assert(s.state == NX_REFUSED && !s.account_id);
     nextendo_session_parse(200, "{ \"state\" : \"ready\" , \"nexToken\" : \"nx2.a\" , \"pid\" : 7 , \"username\" : \"z\" ,"
                                 " \"serverHost\" : \"1.2.3.4\" , \"natHost\" : \"n.example\" }", &s);
     assert(s.state == NX_READY && s.pid == 7 && !s.expires_at && !strcmp(s.server_host, "1.2.3.4"));
@@ -379,7 +405,7 @@ static void test_running(void) {
     // nothing before the first session
     static char jwt[8192], name[64], server[128], nat[128], file[128];
     uint8_t ip[4];
-    assert(!nextendo_have() && !nextendo_pid() && !nextendo_username(name, sizeof name));
+    assert(!nextendo_have() && !nextendo_pid() && !nextendo_account() && !nextendo_username(name, sizeof name));
     assert(!nextendo_token(jwt, sizeof jwt) && !nextendo_host(NX_HOST_SERVER, ip));
     assert(!nextendo_resolve("t-e96531c6-lp1.lp1.t.npln.srv.nintendo.net", ip));   // not to DNS, not anywhere
     assert(nextendo_resolve("203.0.113.9", ip) && !memcmp(ip, "\xcb\x00\x71\x09", 4));
@@ -396,6 +422,7 @@ static void test_running(void) {
     g_mode = 200;
     assert(nextendo_fetch() == NX_READY && nextendo_have() && g_requests == 5 && !g_bad_auth && !g_bad_route);
     assert(nextendo_pid() == 123 && nextendo_username(name, sizeof name) && !strcmp(name, "bia"));
+    assert(nextendo_account() == nextendo_account_id(123));   // the launcher named no accountId: the pid's stand-in
     assert(nextendo_hosts(server, nat, file, sizeof server) && !strcmp(server, "nex.nextendo.network"));
     assert(!strcmp(nat, "nat.nextendo.network") && !strcmp(file, "other-ca.pem"));
     size_t len = nextendo_token(jwt, sizeof jwt);
@@ -414,6 +441,18 @@ static void test_running(void) {
     assert(nextendo_fetch() == NX_UNAVAILABLE && nextendo_have() && nextendo_token(jwt2, sizeof jwt2) == len);
     g_mode = 409;
     assert(nextendo_fetch() == NX_REFUSED && !nextendo_have() && !nextendo_token(jwt2, sizeof jwt2) && !nextendo_pid());
+    assert(!nextendo_account());
+
+    // the launcher names the account's id on the game's servers: that is the id, and the token is the same otherwise
+    g_ready_body = READY(",\"accountId\":\"8a0b0c0d0e0f1011\"");
+    g_mode = 200;
+    assert(nextendo_fetch() == NX_READY && nextendo_account() == 0x8a0b0c0d0e0f1011ull && nextendo_pid() == 123);
+    assert(nextendo_token(jwt2, sizeof jwt2) == len);
+    g_mode = 503;   // a hiccup keeps it
+    assert(nextendo_fetch() == NX_UNAVAILABLE && nextendo_account() == 0x8a0b0c0d0e0f1011ull);
+    g_ready_body = READY("");   // a later session without it: the stand-in again (never a stale id of another answer)
+    g_mode = 200;
+    assert(nextendo_fetch() == NX_READY && nextendo_account() == nextendo_account_id(123));
 
     // hosts given as addresses need no DNS: the names of the console maker's domains go to them
     g_ready_body = "{\"state\":\"ready\",\"nexToken\":\"" NX2 "\",\"expiresAt\":4102444800000,\"pid\":123,"
@@ -446,6 +485,7 @@ static void test_running(void) {
     assert(strstr(text, "the one in hand stays"));
     assert(!strstr(text, "nx2") && !strstr(text, "SECRET") && !strstr(text, "eyJ"));
     assert(!strstr(text, "bia") && !strstr(text, "123,") && !strstr(text, "SW-"));
+    assert(!strstr(text, "8a0b0c0d") && !strstr(text, "8A0B0C0D"));   // nor its id on the game's servers
     closesocket(g_listener);
     snprintf(path, sizeof path, "%s\\mkwmp.toml", dir);
     remove(path);

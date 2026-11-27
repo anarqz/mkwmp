@@ -423,6 +423,73 @@ int main(void) {
             ov_sock_getaddrinfo(&q);
             assert(q.x[0] == UINT64_MAX && !r);
         }
+        // The game's HTTP client (ghost data, nnssl.h) on a socket connected as above: the two ends' addresses, errno
+        // through the socket library, plain send and recv (with MSG_PEEK, and the peer's end as 0), its resolver call.
+        {
+            Cpu h = {0}; ov_sock_socket(&h); int hfd = (int)h.x[0];
+            h.x[0] = hfd; h.x[1] = (uintptr_t)ask; h.x[2] = sizeof ask;
+            ov_sock_connect(&h);
+            SOCKET peer = accept(lis, NULL, NULL);
+            assert(peer != INVALID_SOCKET);
+            uint8_t name[16]; uint32_t nl = sizeof name;
+            Cpu a = {0}; a.x[0] = hfd; a.x[1] = (uintptr_t)name; a.x[2] = (uintptr_t)&nl;
+            ov_sock_peername(&a);
+            assert(a.x[0] == 0 && nl == 16 && name[0] == 16 && name[1] == 2 && !memcmp(name + 2, &la.sin_port, 2) &&
+                   !memcmp(name + 4, "\x7f\0\0\1", 4));
+            memset(name, 0, sizeof name);
+            a.x[0] = hfd; a.x[1] = (uintptr_t)name; a.x[2] = (uintptr_t)&nl;
+            ov_sock_sockname(&a);
+            assert(a.x[0] == 0 && nl == 16 && name[1] == 2 && (name[2] | name[3]) && !memcmp(name + 4, "\x7f\0\0\1", 4));
+            nl = 8;   // no room for an address
+            a.x[0] = hfd; a.x[1] = (uintptr_t)name; a.x[2] = (uintptr_t)&nl;
+            ov_sock_peername(&a);
+            assert(a.x[0] == UINT64_MAX && g_errno == G_EINVAL);
+            char in[8];
+            Cpu r = {0}; r.x[0] = hfd; r.x[1] = (uintptr_t)in; r.x[2] = sizeof in;
+            ov_sock_recv(&r);   // nothing yet
+            assert(r.x[0] == UINT64_MAX && call2(ov_sock_get_errno, 0, 0) == G_EAGAIN);
+            call2(ov_sock_set_errno, 0, 0);
+            assert(call2(ov_sock_get_errno, 0, 0) == 0 && g_errno == 0);
+            Cpu s = {0}; s.x[0] = hfd; s.x[1] = (uintptr_t)"ghost"; s.x[2] = 5;
+            ov_sock_send(&s);
+            assert(s.x[0] == 5 && recv(peer, in, sizeof in, 0) == 5 && !memcmp(in, "ghost", 5));
+            assert(send(peer, "data", 4, 0) == 4 && readable(hfd));
+            memset(in, 0, sizeof in);
+            r.x[0] = hfd; r.x[1] = (uintptr_t)in; r.x[2] = sizeof in; r.x[3] = 2;   // MSG_PEEK
+            ov_sock_recv(&r);
+            assert(r.x[0] == 4 && !memcmp(in, "data", 4));
+            r.x[0] = hfd; r.x[1] = (uintptr_t)in; r.x[2] = 2; r.x[3] = 0;
+            ov_sock_recv(&r);
+            assert(r.x[0] == 2);
+            r.x[0] = hfd; r.x[1] = (uintptr_t)in; r.x[2] = sizeof in; r.x[3] = 0;
+            ov_sock_recv(&r);
+            assert(r.x[0] == 2 && !memcmp(in, "ta", 2));
+            closesocket(peer);
+            assert(readable(hfd));
+            r.x[0] = hfd; r.x[1] = (uintptr_t)in; r.x[2] = sizeof in; r.x[3] = 0;
+            ov_sock_recv(&r);
+            assert(r.x[0] == 0);   // the server closed: the end
+            call2(ov_sock_close, hfd, 0);
+            r.x[0] = hfd; r.x[1] = (uintptr_t)in; r.x[2] = sizeof in;
+            ov_sock_recv(&r);      // not a descriptor of ours any more
+            assert(r.x[0] == UINT64_MAX && g_errno == G_EINVAL);
+            s.x[0] = hfd; s.x[1] = (uintptr_t)"x"; s.x[2] = 1;
+            ov_sock_send(&s);
+            assert(s.x[0] == UINT64_MAX && g_errno == G_EINVAL);
+            Cpu q = {0};
+            GAddrInfo *res = NULL;
+            q.x[0] = (uintptr_t)"203.0.113.7"; q.x[1] = (uintptr_t)"443"; q.x[3] = (uintptr_t)&res;
+            ov_sock_getaddrinfo_options(&q);
+            const uint8_t *sa = res ? res->ai_addr : NULL;
+            assert(q.x[0] == 0 && sa && res->ai_family == 2 && res->ai_addrlen == 16 && !res->ai_next &&
+                   !memcmp(sa, "\x10\x02\x01\xbb\xcb\x00\x71\x07", 8));
+            call2(ov_sock_freeaddrinfo, (uintptr_t)res, 0);
+            uint8_t option[32];
+            memset(option, 0xff, sizeof option);
+            assert(call2(ov_resolver_get_option, (uintptr_t)option, 0x2711) == 0 && !memcmp(option + 16, "\0\0\0\0", 4));
+            assert(call2(ov_resolver_set_option, (uintptr_t)option, 0) == 0);
+            assert(npln_guest_socket(hfd) == PLAT_NO_SOCK);
+        }
         // Pia on Nextendo: a NAT probe (16 bytes, type 0) goes to the address Pia names, not to an MKWMP responder.
         Cpu u1 = {0}, u2 = {0};
         u1.x[0] = u2.x[0] = 2; u1.x[1] = u2.x[1] = 2;
