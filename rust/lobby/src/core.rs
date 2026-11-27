@@ -923,10 +923,16 @@ impl State {
             let all = req.writes.iter().chain(req.deferments.iter().flat_map(|d| &d.writes));
             let claims: Vec<String> = all.filter_map(|w| claimed_name(w, uid, writer_number)).collect();
             if let Some(claimed) = claims.iter().find(|c| !name_matches(registered, c)) {
-                self.ban_spoofer(key, uid, registered, claimed, now, sends);
-                return Err(Out::status(code::PERMISSION_DENIED, BAN_MESSAGE));
-            }
-            if !claims.is_empty() {
+                if self.cfg.ban_enforce {
+                    self.ban_spoofer(key, uid, registered, claimed, now, sends);
+                    return Err(Out::status(code::PERMISSION_DENIED, BAN_MESSAGE));
+                }
+                // Watching the rule first: nothing happens to the player; the write goes on below with the
+                // ticket's name in place of the claimed one, as before. Lengths, not names, for the review.
+                let players = self.mm.lobby_of(uid).and_then(|l| self.mm.lobbies.get(&l)).and_then(|l| l.seat(uid)).map_or(0, |s| s.players);
+                warn!(user = %uid, ussid = writer_number, registered_len = registered.chars().count(), claimed_len = claimed.chars().count(),
+                      claimed_local = claimed.eq_ignore_ascii_case("Local"), players, "name spoofing (would ban)");
+            } else if !claims.is_empty() {
                 info!(user = %uid, ussid = writer_number, name = %registered, writes = claims.len(), "name written (the ticket's)");
             }
         }

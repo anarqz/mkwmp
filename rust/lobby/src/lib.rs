@@ -53,6 +53,10 @@ pub struct CoreConfig {
     /// Refuse sign-ins without a valid seat ticket (production). Off for local tests,
     /// where the probe sends its development tokens.
     pub require_ticket: bool,
+    /// A game that claims another name than its ticket's: banned (true), or only logged as
+    /// "name spoofing (would ban)" while the rule is watched on real races (false). The server's
+    /// config (`[lobby] ban_enforce`) defaults to false; the library to true.
+    pub ban_enforce: bool,
 }
 
 impl Default for CoreConfig {
@@ -66,6 +70,7 @@ impl Default for CoreConfig {
             token_secret: None,
             ticket_keys: Vec::new(),
             require_ticket: false,
+            ban_enforce: true,
         }
     }
 }

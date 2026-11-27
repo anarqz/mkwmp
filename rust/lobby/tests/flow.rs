@@ -37,6 +37,13 @@ impl World {
         Self { core, clock, next: AtomicU64::new(1), peers: Default::default() }
     }
 
+    fn with_config(cfg: CoreConfig) -> Self {
+        let clock = Arc::new(AtomicU64::new(1_800_000_000_000));
+        let c = clock.clone();
+        let core = Core::with_clock(cfg, Policy::default(), Arc::new(move || c.load(Ordering::SeqCst) as f64 / 1000.0));
+        Self { core, clock, next: AtomicU64::new(1), peers: Default::default() }
+    }
+
     fn advance(&self, secs: f64) {
         self.clock.fetch_add((secs * 1000.0) as u64, Ordering::SeqCst);
         self.core.tick();
@@ -954,6 +961,24 @@ fn matched(w: &World, a: &mut Player, b: &mut Player) -> (i64, i64) {
         send_frame(w, p, Msg::new().bytes(1, "userSessions/current").msg(3, &listen(4, true, "docs/PlayerStatic")));
     }
     (ua, ub)
+}
+
+#[test]
+fn with_bans_off_a_claimed_name_is_only_logged_and_replaced() {
+    let w = World::with_config(CoreConfig { ban_enforce: false, ..CoreConfig::default() });
+    let mut ana = sign_in_from(&w, &dev_ticket("Ana"), Some("203.0.113.1")).unwrap();
+    let mut bia = sign_in_from(&w, &dev_ticket("Bia"), Some("203.0.113.2")).unwrap();
+    let (_, ussid_b) = matched(&w, &mut ana, &mut bia);
+    let ps = format!("docs/PlayerStatic/{ussid_b}");
+    pushes(&mut ana);
+    try_write(&w, &bia, &ps, name_field("Ana")).expect("not refused");
+    try_write(&w, &bia, &ps, name_field("Local")).expect("not refused");
+    assert!(w.core.pending_bans().is_empty(), "nothing for the seat server");
+    assert_eq!(get(&w, &ana, &ps).unwrap().get("name").and_then(Value::as_str), Some("Bia"), "others still see the ticket's name");
+    let c = changes(&pushes(&mut ana));
+    assert!(c.iter().all(|c| c.1 != ChangeKind::Removed as u64), "nobody leaves: {c:?}");
+    assert_eq!(w.core.counts()["Battle24"].players, 2);
+    assert!(sign_in_from(&w, &dev_ticket("Bia"), Some("203.0.113.2")).is_ok(), "name and address still sign in");
 }
 
 #[test]

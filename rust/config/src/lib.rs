@@ -238,6 +238,10 @@ pub struct Lobby {
     /// restart while the seat server is unreachable loses none. None = kept in memory only.
     #[serde(default)]
     pub ban_queue_file: Option<PathBuf>,
+    /// Ban a game that claims another name than its seat ticket's. Off: the lobby only logs
+    /// "name spoofing (would ban)", so the rule can be watched on real races first.
+    #[serde(default)]
+    pub ban_enforce: bool,
     /// Matchmaking policy overrides; unset = the lobby's tested defaults.
     #[serde(default)]
     pub policy: LobbyPolicy,

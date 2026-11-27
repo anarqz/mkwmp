@@ -135,6 +135,7 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn Error>> {
             token_secret,
             ticket_keys: cfg.ticket.public_keys.clone(),
             require_ticket: l.require_ticket,
+            ban_enforce: l.ban_enforce,
         },
         policy(&l.policy),
     );
