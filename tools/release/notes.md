@@ -1,3 +1,12 @@
+**mkwmp 1.5.3**: players in lobbies on Home, controllers in the overlay, Debug mode.
+
+The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it. **Nextendo Network support in MKWMP is still experimental.**
+
+- **"In lobbies: N"** on the Play card: the players racing right now on Nextendo (or seated on your MKWMP server).
+- **Switch Pro Controller, Joy-Con and DualSense in the overlay** over a running game, Home button back to the game, and button hints that match your controller.
+- **Debug mode** in Settings › Support: a detailed trace of the next games for bug reports; PLAY asks each time.
+
+---
 **mkwmp 1.5.3-rc.1** (Alpha test version): players in lobbies on Home, controllers in the overlay, Debug mode.
 
 This is a test version for the Alpha channel (Settings › Updates › Update Channel). **Nextendo Network support in MKWMP is still experimental.** To go back, choose Stable: the launcher offers "Return to Stable".
