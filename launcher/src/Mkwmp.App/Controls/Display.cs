@@ -347,15 +347,18 @@ public sealed class BatteryIcon : FrameworkElement
 }
 
 /// <summary>
-/// The picture of a button in the hint bar: a plain disc with the letter for a controller (A B X
-/// Y), a pill for LB / RB, a disc with lines for Start / Back; a key cap for the keyboard. Generic
-/// shapes only, no console's glyphs.
+/// The picture of a button in the hint bar: a disc with the button's label as the controller in use labels it (Xbox's
+/// A B X Y, LB / RB; a Switch controller's A B X Y, L / R, + and −; PlayStation's shapes, L1 / R1), discs with lines for
+/// Start / Back where the family draws them so; a key cap for the keyboard. <see cref="Button"/> is a role (A confirms):
+/// <see cref="Look"/> says where that role's button is and how it is labelled (<see cref="PadLayout.Label"/>). Plain
+/// shapes and letters only, no console's artwork.
 /// </summary>
 public sealed class HintGlyph : FrameworkElement
 {
     private const double Size = 42;
     private static readonly Typeface Face = new(new FontFamily(new Uri("pack://application:,,,/"), "./Assets/Fonts/#Nunito"),
         FontStyles.Normal, FontWeights.ExtraBold, FontStretches.Normal);
+    private static GlyphLook s_look = new(GlyphFamily.Xbox, FaceLayout.Xbox);
 
     public static readonly DependencyProperty ButtonProperty = Dp.Register<HintGlyph, PadButton>(nameof(Button), PadButton.A, null,
         FrameworkPropertyMetadataOptions.AffectsMeasure | FrameworkPropertyMetadataOptions.AffectsRender);
@@ -363,6 +366,34 @@ public sealed class HintGlyph : FrameworkElement
         FrameworkPropertyMetadataOptions.AffectsMeasure | FrameworkPropertyMetadataOptions.AffectsRender);
     public static readonly DependencyProperty FillProperty = Dp.Register<HintGlyph, Brush>(nameof(Fill), Brushes.Black, null, FrameworkPropertyMetadataOptions.AffectsRender);
     public static readonly DependencyProperty InkProperty = Dp.Register<HintGlyph, Brush>(nameof(Ink), Brushes.White, null, FrameworkPropertyMetadataOptions.AffectsRender);
+
+    public HintGlyph()
+    {
+        Loaded += (_, _) => LookChanged += OnLookChanged;
+        Unloaded += (_, _) => LookChanged -= OnLookChanged;
+    }
+
+    /// <summary>The labels every glyph draws: the controller in use and the game's button icons and layout (MainWindow.Pad.cs keeps it).</summary>
+    public static GlyphLook Look
+    {
+        get => s_look;
+        set
+        {
+            if (s_look != value)
+            {
+                s_look = value;
+                LookChanged?.Invoke(null, EventArgs.Empty);
+            }
+        }
+    }
+
+    private static event EventHandler? LookChanged;
+
+    private void OnLookChanged(object? sender, EventArgs e)
+    {
+        InvalidateMeasure();
+        InvalidateVisual();
+    }
 
     public PadButton Button
     {
@@ -407,18 +438,12 @@ public sealed class HintGlyph : FrameworkElement
         _ => "→",
     };
 
-    private bool Keys => Input != InputKind.Gamepad;
+    // the game's "Keyboard" icons show key caps whatever is in the player's hands
+    private bool Keys => Input != InputKind.Gamepad || Look.Family == GlyphFamily.Keyboard;
 
-    private string Text => Keys ? KeyName(Button) : Button switch
-    {
-        PadButton.A => "A",
-        PadButton.B => "B",
-        PadButton.X => "X",
-        PadButton.Y => "Y",
-        PadButton.LB => "LB",
-        PadButton.RB => "RB",
-        _ => "",
-    };
+    private string Text => Keys ? KeyName(Button) : PadLayout.Label(Button, Look);
+
+    private static bool IsShape(string text) => text is "cross" or "circle" or "square" or "triangle";
 
     private FormattedText Format(string text, double size, Brush brush) => new(text, CultureInfo.InvariantCulture,
         FlowDirection.LeftToRight, Face, size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
@@ -429,7 +454,8 @@ public sealed class HintGlyph : FrameworkElement
         {
             return new Size(Math.Max(Size, Format(Text, 22, Fill).Width + 26), Size);
         }
-        return new Size(Button is PadButton.LB or PadButton.RB ? 68 : Size, Size);
+        // a pill for two letters (LB, L1); one letter (a Switch controller's L / R) fits the disc
+        return new Size(Button is PadButton.LB or PadButton.RB && Text.Length > 1 ? 68 : Size, Size);
     }
 
     protected override void OnRender(DrawingContext drawingContext)
@@ -437,18 +463,24 @@ public sealed class HintGlyph : FrameworkElement
         ArgumentNullException.ThrowIfNull(drawingContext);
         var width = ActualWidth;
         var box = new Rect(0, 0, width, Size);
+        var text = Text;
         if (Keys)
         {
             drawingContext.DrawRoundedRectangle(null, new Pen(Fill, 2.5), new Rect(1.25, 1.25, width - 2.5, Size - 2.5), 9, 9);
-            var key = Format(Text, 22, Fill);
+            var key = Format(text, 22, Fill);
             drawingContext.DrawText(key, new Point((width - key.Width) / 2, (Size - key.Height) / 2));
             return;
         }
         drawingContext.DrawRoundedRectangle(Fill, null, box, Size / 2, Size / 2);
         var center = new Point(width / 2, Size / 2);
+        if (IsShape(text))
+        {
+            DrawShape(drawingContext, text, center);
+            return;
+        }
         switch (Button)
         {
-            case PadButton.Start:
+            case PadButton.Start when text.Length == 0:
             {
                 var pen = new Pen(Ink, 3.2) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
                 for (var i = -1; i <= 1; i++)
@@ -457,7 +489,7 @@ public sealed class HintGlyph : FrameworkElement
                 }
                 break;
             }
-            case PadButton.Back:
+            case PadButton.Back when text.Length == 0:
             {
                 var pen = new Pen(Ink, 2.6);
                 drawingContext.DrawRoundedRectangle(null, pen, new Rect(center.X - 4, center.Y - 10, 13, 11), 2, 2);
@@ -475,10 +507,34 @@ public sealed class HintGlyph : FrameworkElement
             }
             default:
             {
-                var letter = Format(Text, Text.Length > 1 ? 22 : 26, Ink);
+                // + and − a little larger: thin signs, not letters
+                var letter = Format(text, text.Length > 1 ? 22 : text is "+" or "\u2212" ? 32 : 26, Ink);
                 drawingContext.DrawText(letter, new Point(center.X - letter.Width / 2, center.Y - letter.Height / 2));
                 break;
             }
+        }
+    }
+
+    /// <summary>PlayStation's face buttons: outlines in the ink colour (no colours of their own: one look with the rest of the bar).</summary>
+    private void DrawShape(DrawingContext dc, string shape, Point c)
+    {
+        var pen = new Pen(Ink, 3) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+        switch (shape)
+        {
+            case "cross":
+                dc.DrawLine(pen, new Point(c.X - 8, c.Y - 8), new Point(c.X + 8, c.Y + 8));
+                dc.DrawLine(pen, new Point(c.X - 8, c.Y + 8), new Point(c.X + 8, c.Y - 8));
+                break;
+            case "circle":
+                dc.DrawEllipse(null, pen, c, 9.5, 9.5);
+                break;
+            case "square":
+                dc.DrawRectangle(null, pen, new Rect(c.X - 8.5, c.Y - 8.5, 17, 17));
+                break;
+            default:
+                dc.DrawGeometry(null, pen, Geometry.Parse(FormattableString.Invariant(
+                    $"M{c.X},{c.Y - 10} L{c.X + 10.5},{c.Y + 8} H{c.X - 10.5} Z")));
+                break;
         }
     }
 }

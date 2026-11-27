@@ -16,9 +16,10 @@ internal sealed record SdlReading(ushort Buttons, short LX, short LY, short RX, 
 /// the way the game reads them: through mkw-recomp's own <c>SDL3.dll</c>. The launcher loads a copy of it (in
 /// <c>cache/sdl3/</c>), never the game folder's file, so a runtime update can still replace it.
 /// <para>
-/// SDL runs on its own thread (opening a Switch controller is a handshake that can take a second) and is shut
-/// down whenever <see cref="Wanted"/> is false: while the game runs it is the game's SDL that talks to the
-/// controller, alone (two programs driving a Switch controller's HID reports fight over it).
+/// SDL runs on its own thread (opening a Switch controller is a handshake that can take a second), and only while
+/// <see cref="Wanted"/>: the launcher's window is in front, the launcher itself or its overlay over a running game.
+/// With the overlay up the game is suspended behind it and reads an idle pad (the mod's filter), so only one of the
+/// two SDLs acts on the controller's input. Out of front, SDL is shut down and the game's SDL has the controller alone.
 /// SDL's XInput, RawInput and Windows.Gaming.Input drivers are off: XInput pads stay <see cref="GamepadInput"/>'s.
 /// </para>
 /// </summary>
@@ -42,7 +43,12 @@ internal sealed class SdlPads : IDisposable
     /// <summary>The newest reading of the open controller; null without one (or while SDL is off).</summary>
     public SdlReading? Reading => Volatile.Read(ref _reading);
 
-    /// <summary>SDL may run: the launcher's window is in front and the game is not running.</summary>
+    /// <summary>The newest reading's buttons (Guide, the Home button, included), 0 without a controller: the overlay's Guide watch.</summary>
+    public static ushort CurrentButtons => (ushort)Volatile.Read(ref s_buttons);
+
+    private static int s_buttons;
+
+    /// <summary>SDL may run: the launcher's window (or its overlay) is in front.</summary>
     public bool Wanted
     {
         get => _wanted;
@@ -144,7 +150,7 @@ internal sealed class SdlPads : IDisposable
                     nextScan = DateTime.UtcNow.AddSeconds(1);
                     pad = OpenFirst(sdl);
                 }
-                Volatile.Write(ref _reading, pad == IntPtr.Zero ? null : Read(sdl, pad));
+                Publish(pad == IntPtr.Zero ? null : Read(sdl, pad));
                 Sleep();
             }
         }
@@ -154,7 +160,7 @@ internal sealed class SdlPads : IDisposable
         }
         finally
         {
-            Volatile.Write(ref _reading, null);
+            Publish(null);
             if (on && sdl is not null)
             {
                 Close(sdl, ref pad);
@@ -169,9 +175,15 @@ internal sealed class SdlPads : IDisposable
         }
     }
 
+    private void Publish(SdlReading? reading)
+    {
+        Volatile.Write(ref _reading, reading);
+        Volatile.Write(ref s_buttons, reading?.Buttons ?? 0);
+    }
+
     private void Close(Sdl sdl, ref IntPtr pad)
     {
-        Volatile.Write(ref _reading, null);
+        Publish(null);
         if (pad != IntPtr.Zero)
         {
             sdl.CloseGamepad(pad);
@@ -199,7 +211,7 @@ internal sealed class SdlPads : IDisposable
     private static readonly (int Button, ushort Mask)[] Buttons =
     [
         (0, 0x1000), (1, 0x2000), (2, 0x4000), (3, 0x8000), // south, east, west, north
-        (4, 0x0020), (6, 0x0010), (7, 0x0040), (8, 0x0080), // back, start, left stick, right stick
+        (4, 0x0020), (5, 0x0400), (6, 0x0010), (7, 0x0040), (8, 0x0080), // back, guide (Home), start, left stick, right stick
         (9, 0x0100), (10, 0x0200), // left and right shoulder
         (11, 0x0001), (12, 0x0002), (13, 0x0004), (14, 0x0008), // D-pad up, down, left, right
     ];

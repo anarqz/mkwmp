@@ -19,7 +19,8 @@ public readonly record struct ScrollStep(double X, double Y);
 /// DualSense...), the game's own SDL3 (<see cref="SdlPads"/>): an XInput pad comes first. Raises
 /// <see cref="Pressed"/> once per button press; the D-pad and the left stick repeat while held (after
 /// a delay). Silent while <see cref="Enabled"/> is false (the window is not the active one: the game
-/// has the controller then); SDL lets go of the controller then too, and while <see cref="GameRunning"/>.
+/// has the controller then); SDL lets go of the controller then too. With the overlay up the window is in front and the game,
+/// suspended behind it, reads an idle pad (the mod's filter): the launcher reads the controller then, SDL's included.
 /// </summary>
 public sealed class GamepadInput : IDisposable
 {
@@ -42,7 +43,6 @@ public sealed class GamepadInput : IDisposable
     private bool _noCapabilitiesEx;
     private PadIdentity? _pretend;
     private readonly SdlPads _sdl = new();
-    private bool _gameRunning;
 
     /// <summary>The slot standing for SDL's controller (XInput has 0-3).</summary>
     private const int SdlSlot = 4;
@@ -94,17 +94,6 @@ public sealed class GamepadInput : IDisposable
         set => _sdl.RuntimeFolder = value;
     }
 
-    /// <summary>The game runs: its SDL has the controller, the launcher's lets go.</summary>
-    public bool GameRunning
-    {
-        get => _gameRunning;
-        set
-        {
-            _gameRunning = value;
-            _sdl.Wanted = _enabled && !value;
-        }
-    }
-
     public bool Enabled
     {
         get => _enabled;
@@ -115,14 +104,14 @@ public sealed class GamepadInput : IDisposable
                 _enabled = value;
                 _swallow = true; // what is held when the window comes back is not a press
                 _repeating = null;
-                _sdl.Wanted = value && !_gameRunning;
+                _sdl.Wanted = value;
             }
         }
     }
 
     public void Start()
     {
-        _sdl.Wanted = _enabled && !_gameRunning;
+        _sdl.Wanted = _enabled;
         _timer.Start();
     }
 

@@ -61,7 +61,8 @@ public sealed class GuideWatcher : IDisposable
 
     private void Poll()
     {
-        ushort buttons = 0;
+        // and a controller XInput does not see, read by the launcher's SDL (a Switch Pro Controller's Home button is its Guide)
+        var buttons = Input.SdlPads.CurrentButtons;
         try
         {
             for (uint pad = 0; pad < 4; pad++)

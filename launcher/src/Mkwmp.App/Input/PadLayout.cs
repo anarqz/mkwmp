@@ -51,6 +51,12 @@ public readonly record struct PadIdentity(ushort VendorId, ushort ProductId, str
     }
 }
 
+/// <summary>Whose button labels the hint bar draws (the game's Settings › Controls › Button icons).</summary>
+public enum GlyphFamily { Xbox, Nintendo, PlayStation, Keyboard }
+
+/// <summary>What the hint glyphs show: the labels of <see cref="Family"/>, and the layout that says which physical button gives a role.</summary>
+public readonly record struct GlyphLook(GlyphFamily Family, FaceLayout Layout);
+
 /// <summary>
 /// How the launcher reads its controller so that it does what the game does: the layout in effect
 /// (the setting, with "auto" decided as the game decides it) and whether Steam's face buttons are
@@ -77,6 +83,11 @@ public static class PadLayout
 {
     /// <summary>The game setting that holds the layout ("auto", "nintendo", "xbox").</summary>
     public const string SettingId = "pad_layout";
+
+    /// <summary>The game setting that holds the button icons ("auto", "nintendo", "xbox", "playstation", "keyboard").</summary>
+    public const string IconsSettingId = "button_icons";
+
+    public const ushort SonyVendor = 0x054C;
 
     public const ushort ValveVendor = 0x28DE;
     public const ushort SteamVirtualProduct = 0x11FF;
@@ -113,6 +124,68 @@ public static class PadLayout
             return IsSwitchType(type);
         }
         return pad.VendorId == SwitchVendor && pad.ProductId is not (0x0337 or 0x2073);
+    }
+
+    /// <summary>
+    /// The glyph family for the game's <c>button_icons</c> value and this controller: a chosen family as it is; Automatic
+    /// (or no value) by the controller, as the game's prompts: Switch labels for a Switch controller, PlayStation's
+    /// for a Sony one (also behind Steam Input), Xbox's for every other.
+    /// </summary>
+    public static GlyphFamily Glyphs(string? setting, PadIdentity pad) => setting?.Trim().ToLowerInvariant() switch
+    {
+        "nintendo" => GlyphFamily.Nintendo,
+        "xbox" => GlyphFamily.Xbox,
+        "playstation" => GlyphFamily.PlayStation,
+        "keyboard" => GlyphFamily.Keyboard,
+        _ => SwitchLabels(pad) ? GlyphFamily.Nintendo
+            : pad.SteamType is { Length: > 0 } type ? (type.Trim().TrimStart('+', '-').ToLowerInvariant() is "ps3" or "ps4" or "ps5" ? GlyphFamily.PlayStation : GlyphFamily.Xbox)
+            : pad.VendorId == SonyVendor ? GlyphFamily.PlayStation : GlyphFamily.Xbox,
+    };
+
+    /// <summary>
+    /// The label on the button that gives <paramref name="role"/> with <paramref name="look"/>: the role's physical place
+    /// (<see cref="ToRole(PadButton, FaceLayout)"/> is its own inverse), named as that family labels the place. PlayStation's
+    /// face buttons are shapes: "cross", "circle", "square", "triangle". Empty for a button drawn as a picture (Start, Back,
+    /// the D-pad) in the Xbox and PlayStation families.
+    /// </summary>
+    public static string Label(PadButton role, GlyphLook look)
+    {
+        var place = role is PadButton.A or PadButton.B or PadButton.X or PadButton.Y ? ToRole(role, look.Layout) : role;
+        return look.Family switch
+        {
+            GlyphFamily.Nintendo => place switch
+            {
+                PadButton.A => "B", // south
+                PadButton.B => "A", // east
+                PadButton.X => "Y", // west
+                PadButton.Y => "X", // north
+                PadButton.LB => "L",
+                PadButton.RB => "R",
+                PadButton.Start => "+",
+                PadButton.Back => "−",
+                _ => "",
+            },
+            GlyphFamily.PlayStation => place switch
+            {
+                PadButton.A => "cross",
+                PadButton.B => "circle",
+                PadButton.X => "square",
+                PadButton.Y => "triangle",
+                PadButton.LB => "L1",
+                PadButton.RB => "R1",
+                _ => "",
+            },
+            _ => place switch
+            {
+                PadButton.A => "A",
+                PadButton.B => "B",
+                PadButton.X => "X",
+                PadButton.Y => "Y",
+                PadButton.LB => "LB",
+                PadButton.RB => "RB",
+                _ => "",
+            },
+        };
     }
 
     /// <summary>SDL's ShouldSwapFaceButtons: Steam's virtual pad standing for a Switch Pro Controller or Joy-Con.</summary>

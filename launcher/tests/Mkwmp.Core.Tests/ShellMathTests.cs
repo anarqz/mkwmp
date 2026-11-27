@@ -91,6 +91,53 @@ public class ShellMathTests
         Assert.Equal(PadButton.A, PadLayout.ToRole(PadLayout.FromPosition(confirms)!.Value, mapping.Layout));
     }
 
+    [Theory]
+    // Automatic: by the controller, as the game's prompts
+    [InlineData("057e:2009", "auto", GlyphFamily.Nintendo)]      // Pro Controller through SDL
+    [InlineData("28de:11ff:switchpro", null, GlyphFamily.Nintendo)]
+    [InlineData("054c:0ce6", "auto", GlyphFamily.PlayStation)]   // DualSense through SDL
+    [InlineData("28de:11ff:ps5", "auto", GlyphFamily.PlayStation)]
+    [InlineData("28de:11ff:xboxone", "auto", GlyphFamily.Xbox)]
+    [InlineData("045e:028e", "auto", GlyphFamily.Xbox)]
+    [InlineData("057e:0337", "auto", GlyphFamily.Xbox)]          // GameCube adapter: not Switch labels
+    [InlineData("0000:0000", "", GlyphFamily.Xbox)]
+    // a chosen family is kept, whatever the controller
+    [InlineData("057e:2009", "xbox", GlyphFamily.Xbox)]
+    [InlineData("045e:028e", "nintendo", GlyphFamily.Nintendo)]
+    [InlineData("045e:028e", "PlayStation", GlyphFamily.PlayStation)]
+    [InlineData("057e:2009", "keyboard", GlyphFamily.Keyboard)]
+    public void GlyphsFollowTheGamesButtonIcons(string device, string? setting, GlyphFamily family)
+    {
+        Assert.True(PadIdentity.TryParse(device, out var pad));
+        Assert.Equal(family, PadLayout.Glyphs(setting, pad));
+    }
+
+    [Theory]
+    // a Pro Controller in the Switch layout: confirm is the right button, labelled A; back the bottom one, B
+    [InlineData(GlyphFamily.Nintendo, FaceLayout.Switch, PadButton.A, "A")]
+    [InlineData(GlyphFamily.Nintendo, FaceLayout.Switch, PadButton.B, "B")]
+    [InlineData(GlyphFamily.Nintendo, FaceLayout.Switch, PadButton.X, "X")]
+    [InlineData(GlyphFamily.Nintendo, FaceLayout.Switch, PadButton.Y, "Y")]
+    // a Pro Controller with the Xbox layout chosen: confirm is the bottom button, which it labels B
+    [InlineData(GlyphFamily.Nintendo, FaceLayout.Xbox, PadButton.A, "B")]
+    [InlineData(GlyphFamily.Nintendo, FaceLayout.Xbox, PadButton.B, "A")]
+    [InlineData(GlyphFamily.Nintendo, FaceLayout.Switch, PadButton.LB, "L")]
+    [InlineData(GlyphFamily.Nintendo, FaceLayout.Switch, PadButton.Start, "+")]
+    [InlineData(GlyphFamily.Nintendo, FaceLayout.Switch, PadButton.Back, "−")]
+    // an Xbox pad with the Switch layout chosen: confirm is the right button, which it labels B
+    [InlineData(GlyphFamily.Xbox, FaceLayout.Switch, PadButton.A, "B")]
+    [InlineData(GlyphFamily.Xbox, FaceLayout.Xbox, PadButton.A, "A")]
+    [InlineData(GlyphFamily.Xbox, FaceLayout.Xbox, PadButton.RB, "RB")]
+    [InlineData(GlyphFamily.Xbox, FaceLayout.Xbox, PadButton.Start, "")]   // drawn as a picture
+    [InlineData(GlyphFamily.PlayStation, FaceLayout.Xbox, PadButton.A, "cross")]
+    [InlineData(GlyphFamily.PlayStation, FaceLayout.Xbox, PadButton.B, "circle")]
+    [InlineData(GlyphFamily.PlayStation, FaceLayout.Switch, PadButton.A, "circle")]
+    [InlineData(GlyphFamily.PlayStation, FaceLayout.Xbox, PadButton.X, "square")]
+    [InlineData(GlyphFamily.PlayStation, FaceLayout.Xbox, PadButton.Y, "triangle")]
+    [InlineData(GlyphFamily.PlayStation, FaceLayout.Xbox, PadButton.LB, "L1")]
+    public void GlyphsLabelTheRolesButton(GlyphFamily family, FaceLayout layout, PadButton role, string label) =>
+        Assert.Equal(label, PadLayout.Label(role, new GlyphLook(family, layout)));
+
     [Fact]
     public void SteamsSwitchSwapIsUndoneOnlyForItsVirtualPad()
     {

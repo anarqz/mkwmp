@@ -18,10 +18,10 @@ public partial class MainWindow
     private void FollowPadLayout()
     {
         var setting = _vm.Launcher.GameSettings.Value(PadLayout.SettingId);
-        // SDL (controllers XInput does not see) comes from the game's folder, and lets go while the game runs
+        var icons = _vm.Launcher.GameSettings.Value(PadLayout.IconsSettingId);
+        // SDL (controllers XInput does not see) comes from the game's folder
         var exe = _vm.Launcher.Game.Install?.Executable;
         var runtime = exe is { Length: > 0 } ? System.IO.Path.GetDirectoryName(exe) : null;
-        var running = _vm.Launcher.Session.GameRunning;
         Dispatcher.BeginInvoke(() =>
         {
             if (_gamepad.Setting != setting)
@@ -29,12 +29,32 @@ public partial class MainWindow
                 _gamepad.Setting = setting;
             }
             _gamepad.RuntimeFolder = runtime;
-            _gamepad.GameRunning = running;
+            _iconsSetting = icons;
+            FollowGlyphs();
         });
     }
 
-    private void LogPadMapping() =>
+    private string? _iconsSetting;
+
+    /// <summary>
+    /// The hint glyphs are labelled as the controller in use labels its buttons, or as the game's Settings › Controls ›
+    /// Button icons says (Automatic: by the controller, as the game's own prompts), at the places the layout puts the roles.
+    /// </summary>
+    private void FollowGlyphs()
+    {
+        var look = new GlyphLook(PadLayout.Glyphs(_iconsSetting, _gamepad.Connected ? _gamepad.Identity : PadIdentity.Unknown), _gamepad.Mapping.Layout);
+        if (HintGlyph.Look != look)
+        {
+            HintGlyph.Look = look;
+            App.Log($"input: hint glyphs {look.Family} (button_icons = {(_iconsSetting is { Length: > 0 } s ? s : "auto")}, layout {look.Layout})");
+        }
+    }
+
+    private void LogPadMapping()
+    {
         App.Log($"input: button layout {_gamepad.Mapping} (pad_layout = {(_gamepad.Setting is { Length: > 0 } s ? s : "auto")}, controller {(_gamepad.Connected ? _gamepad.Identity.ToString() + (_gamepad.Name is { Length: > 0 } n ? $" \"{n}\"" : "") : "none")})");
+        FollowGlyphs();
+    }
 
     private void OnLauncherChangedForPad(object? sender, EventArgs e) => FollowPadLayout();
 
