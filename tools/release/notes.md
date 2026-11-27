@@ -1,3 +1,11 @@
+**mkwmp 1.5.2-rc.1** (Alpha test version): real friend names in game and profile pictures on Nextendo.
+
+This is a test version for the Alpha channel (Settings › Updates › Update Channel). **Nextendo Network support in MKWMP is still experimental.** To go back, choose Stable: the launcher offers "Return to Stable".
+
+- **Real friend names inside the game on Nextendo**, instead of "Friend 1", "Friend 2"…
+- **Nextendo profile pictures** for your friends and yourself in the friends panel, on Home and on your account card.
+
+---
 **mkwmp 1.5.1**: Nextendo friends, ghosts, and an Alpha update channel.
 
 **Nextendo Network support in MKWMP is still experimental**: races work, while friends inside the game, groups and ghosts are new and not fully tested yet. If something goes wrong, MKWMP servers remain available in Settings › Online.

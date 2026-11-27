@@ -2,6 +2,12 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
+## 1.5.2-rc.1 — 2026-11-27
+
+- **Test version, Alpha channel only.** Nextendo Network support is still experimental in MKWMP.
+- **Real friend names inside the game on Nextendo.** Your Nextendo friends now show with their names in the game's friend list instead of "Friend 1", "Friend 2"…
+- **Nextendo profile pictures.** Your friends' pictures and your own replace the letter circles in the friends panel, on Home and on your account card. Without a picture, the circle keeps the colour chosen on Nextendo.
+
 ## 1.5.1 — 2026-11-27
 
 - **Nextendo Network support is still experimental in MKWMP.** Races work; friends inside the game, groups and ghosts are new and not fully tested yet. MKWMP servers remain available in Settings › Online.
