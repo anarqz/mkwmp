@@ -2,6 +2,12 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
+## 1.5.4 — 2026-11-27
+
+- **Nextendo Network support is still experimental in MKWMP.**
+- **Previous Races.** The friends panel and Settings › Profile list your online sessions: every race, every player, and each player's ID given by the server. A player who changed their name between races is flagged ("Used 3 names"), with every name and when it was used, and "Copy Report" prepares a report to send to Nextendo staff or your server's host. The history stays on this PC for 30 days and is never sent anywhere by itself.
+- **Your Nextendo username everywhere.** On Nextendo, the launcher shows you by your Nextendo username and picture, the name other players see in races.
+
 ## 1.5.4-rc.1 — 2026-11-27
 
 - **Test version, Alpha channel only.** Nextendo Network support is still experimental in MKWMP.

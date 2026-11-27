@@ -1,3 +1,11 @@
+**mkwmp 1.5.4**: Previous Races, and your Nextendo username everywhere.
+
+The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it. **Nextendo Network support in MKWMP is still experimental.**
+
+- **Previous Races** (friends panel, Settings › Profile): your online sessions, every player with the ID the server gave them, every name each one used, and "Copy Report". A player who renames between races is flagged. Kept on this PC for 30 days, never sent anywhere by itself.
+- **Your Nextendo username everywhere** in the launcher, with your Nextendo picture: the name other players see in races.
+
+---
 **mkwmp 1.5.4-rc.1** (Alpha test version): Previous Races, and your Nextendo username everywhere.
 
 This is a test version for the Alpha channel (Settings › Updates › Update Channel). **Nextendo Network support in MKWMP is still experimental.** To go back, choose Stable: the launcher offers "Return to Stable".
