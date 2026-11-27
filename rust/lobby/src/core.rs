@@ -869,6 +869,10 @@ impl State {
         let lobby = self.lobby_mut(&scope).expect("scope exists");
         let members = lobby.ussids();
         for write in &req.writes {
+            if !may_write(write.name(), &writer, writer_number) {
+                warn!(lobby = %lobby.id, user = %writer, name = %write.name(), "document refused (not the writer's own)");
+                continue;
+            }
             match write {
                 Write::Update { name, fields, mask, exists } => {
                     let mut fields = fields.clone();
@@ -911,7 +915,9 @@ impl State {
         if let Some(seat) = lobby.seat_mut(&writer) {
             for d in &req.deferments {
                 if seat.deferments.len() < caps::DEFERMENTS_PER_SEAT || seat.deferments.contains_key(&d.name) {
-                    seat.deferments.insert(d.name.clone(), d.writes.clone());
+                    // what runs when the seat leaves: the same rule as a write now (its own PlayerStatic, never __us)
+                    let writes: Vec<Write> = d.writes.iter().filter(|w| may_write(w.name(), &writer, writer_number)).cloned().collect();
+                    seat.deferments.insert(d.name.clone(), writes);
                 }
             }
         }
@@ -1668,6 +1674,19 @@ fn answer(lobby: &mut Lobby, cfg: &CoreConfig, policy: &Policy, w: Watcher, uid:
 
 /// `__us/<id>` (SDK parser FUN_0128b2b4, game parser FUN_02255158). `st` 2 = present; the
 /// member listener (FUN_02254e4c) erases members with any other state.
+/// May a member's game write (or delete) this document? `__us/*` is the server's: each member's identity, written only
+/// from its session (research/docs/LOBBY-ROSTER-1.8.0.md 1). `PlayerStatic/<n>` carries the name others see: only the
+/// member it is named after (by ussid, or by uid) may write it, so nobody puts a name or a station id on another seat.
+fn may_write(name: &str, writer: &str, writer_ussid: u32) -> bool {
+    if name.starts_with(US_PREFIX) {
+        return false;
+    }
+    match name.strip_prefix(PLAYER_STATIC) {
+        Some(id) => id == writer || id.parse::<u32>().is_ok_and(|n| n == writer_ussid),
+        None => true,
+    }
+}
+
 fn user_session_document(name: &str, uid: &str, ussid: u32, upcsid: u64, pgn: &str, now: u64) -> Document {
     let fields = Fields::new()
         .with("uid", Value::str(uid))

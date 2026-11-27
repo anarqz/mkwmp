@@ -256,6 +256,17 @@ fn two_players_match_play_and_leave() {
     assert_eq!(doc.get("p2p_sid"), Some(&Value::Int(77)));
     assert_eq!(doc.get("vehicle"), Some(&Value::Int(5)));
 
+    // Nobody writes another member's PlayerStatic (the name and station others see) nor the server's __us.
+    write(&w, &b, &ps, Fields::new().with("name", Value::str("impostor")).with("p2p_sid", Value::Int(1)), None);
+    let doc = get(&w, &b, &ps).unwrap();
+    assert_eq!(doc.get("p2p_sid"), Some(&Value::Int(77)), "B's write to A's PlayerStatic is refused");
+    assert!(doc.get("name").is_none());
+    let us_a = format!("docs/__us/{ussid_a}");
+    write(&w, &b, &us_a, Fields::new().with("uid", Value::str("forged")).with("st", Value::Int(0)), None);
+    write(&w, &a, &us_a, Fields::new().with("uid", Value::str("forged")).with("st", Value::Int(0)), None);
+    assert!(get(&w, &a, &us_a).and_then(|d| d.get("uid").and_then(Value::as_str).map(str::to_owned)).as_deref() != Some("forged"), "__us is the server's");
+    assert!(changes(&pushes(&mut a)).iter().all(|c| c.2 != us_a), "a refused write publishes nothing");
+
     // Referee: open, merge reports, final only after both reported.
     send_frame(&w, &mut a, Msg::new().bytes(1, "userSessions/current").msg(3, &listen(5, true, "docs/@@RefereeResult")));
     let request = Fields::new()
