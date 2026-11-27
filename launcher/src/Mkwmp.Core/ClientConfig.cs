@@ -178,6 +178,7 @@ internal sealed record ClientConfig
         var voice = Table(t, "voice");
         var ui = Table(t, "ui");
         var dev = Table(t, "dev");
+        var nx = Table(t, "nextendo");
         var chosen = Bool(t, "launch_chosen", false);
         var launch = Bool(t, "launch", true) || (wine && !chosen);
         var settings = new LauncherSettings
@@ -234,6 +235,7 @@ internal sealed record ClientConfig
                 OverlayShortcut = Overlay.OverlayShortcuts.Parse(Str(ui, "overlay_shortcut", "")),
             },
             Picker = PickerOf(Table(t, "picker")),
+            NextendoShowOnline = Bool(nx, "show_online", true),
         };
         var servers = new List<ServerProfile>();
         if (Table(t, "servers") is { } table)
@@ -255,7 +257,6 @@ internal sealed record ClientConfig
                 hidden.Add(new HiddenServer(id, Str(row, "name", ""), Str(row, "address", "")));
             }
         }
-        var nx = Table(t, "nextendo");
         return new ClientConfig
         {
             Nextendo = NextendoLink.Of(Str(nx, "play_on", ""), Long(nx, "pid"), Str(nx, "username", ""), Str(nx, "friend_code", "")),
@@ -392,10 +393,18 @@ internal sealed record ClientConfig
         }
         // Where PLAY goes online, once it was said (the launcher says it the first time it saves; see PlayOn), and
         // the linked Nextendo account when there is one: never a token.
-        if (Nextendo.Linked || Nextendo.Choice is not null)
+        var said = Nextendo.Linked || Nextendo.Choice is not null;
+        if (said || !s.NextendoShowOnline)
         {
             b.Append("\n[nextendo]\n");
+        }
+        if (said)
+        {
             Line(b, "play_on", PlayOn == PlayNetwork.Nextendo ? NextendoLink.NextendoName : NextendoLink.MkwmpName);
+        }
+        if (!s.NextendoShowOnline)
+        {
+            Line(b, "show_online", false); // only once the player turned it off (Settings › Nextendo)
         }
         if (Nextendo.Linked)
         {

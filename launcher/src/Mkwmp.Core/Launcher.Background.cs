@@ -48,6 +48,8 @@ public sealed partial class Launcher
         _ = Task.Run(RefreshCrashes, CancellationToken.None); // a crash from before this start, not answered yet
         _ = Task.Run(() => StatusLoopAsync(life), CancellationToken.None);
         _ = Task.Run(() => FriendsLoopAsync(life), CancellationToken.None);
+        _ = Task.Run(() => NextendoFriendsLoopAsync(life), CancellationToken.None); // Launcher.NextendoFriends.cs
+        _ = Task.Run(() => NextendoPresenceLoopAsync(life), CancellationToken.None);
         _ = Task.Run(() => GameLoopAsync(life), CancellationToken.None);
         if (!_options.Headless)
         {

@@ -47,14 +47,18 @@ public sealed class FriendsSection : FriendsRow
 /// <summary>Someone who wants to be a friend: Accept / Decline.</summary>
 public sealed class FriendRequestRow : FriendsRow
 {
-    public FriendRequestRow(string name, string note, Action<FriendRequestRow> accept, Action<FriendRequestRow> decline)
-        : base("in:" + name)
+    /// <param name="pid">On Nextendo: who (names are not unique there); 0 on an MKWMP server, where the name is who.</param>
+    public FriendRequestRow(string name, string note, Action<FriendRequestRow> accept, Action<FriendRequestRow> decline, long pid = 0)
+        : base(pid != 0 ? "nxin:" + pid.ToString(CultureInfo.InvariantCulture) : "in:" + name)
     {
+        Pid = pid;
         Name = name;
         Note = note;
         AcceptCommand = new RelayCommand(() => accept(this));
         DeclineCommand = new RelayCommand(() => decline(this));
     }
+
+    public long Pid { get; }
 
     public string Name { get; }
 
@@ -127,17 +131,118 @@ public sealed class FriendSentRow : FriendsRow
     public ICommand CancelCommand { get; }
 }
 
+/// <summary>A friend on Nextendo Network: A opens the small menu (favourite, remove, block). Told apart by pid: names there are not unique.</summary>
+public sealed class NextendoFriendRow : FriendsRow
+{
+    private string _name = "";
+    private FriendState _state;
+    private string _stateText = "";
+    private string _friendCode = "";
+    private bool _favorite;
+
+    public NextendoFriendRow(long pid, Action<NextendoFriendRow> open)
+        : base("nx:" + pid.ToString(CultureInfo.InvariantCulture))
+    {
+        Pid = pid;
+        OpenCommand = new RelayCommand(() => open(this));
+    }
+
+    public long Pid { get; }
+
+    public ICommand OpenCommand { get; }
+
+    public string Name
+    {
+        get => _name;
+        set => Set(ref _name, value);
+    }
+
+    public FriendState State
+    {
+        get => _state;
+        set
+        {
+            if (Set(ref _state, value))
+            {
+                Raise(nameof(Presence));
+            }
+        }
+    }
+
+    public AvatarPresence Presence => _state switch
+    {
+        FriendState.Playing => AvatarPresence.Playing,
+        FriendState.Online => AvatarPresence.Online,
+        _ => AvatarPresence.Offline,
+    };
+
+    /// <summary>"Playing MKW" / "Online" / "Offline", under the name.</summary>
+    public string StateText
+    {
+        get => _stateText;
+        set => Set(ref _stateText, value);
+    }
+
+    public string FriendCode
+    {
+        get => _friendCode;
+        set => Set(ref _friendCode, value);
+    }
+
+    /// <summary>A star beside the name.</summary>
+    public bool Favorite
+    {
+        get => _favorite;
+        set => Set(ref _favorite, value);
+    }
+}
+
+/// <summary>Someone on Nextendo who is not a friend (yet): asked by the player (no button: Nextendo cannot take a request back), or met in a race (Add).</summary>
+public sealed class NextendoPersonRow : FriendsRow
+{
+    public NextendoPersonRow(string key, NextendoPerson who, string name, string note, string? action, Action<NextendoPersonRow> act)
+        : base(key)
+    {
+        Who = who;
+        Name = name;
+        Note = note;
+        ActionLabel = action ?? "";
+        ActCommand = new RelayCommand(() => act(this));
+    }
+
+    public NextendoPerson Who { get; }
+
+    public string Name { get; }
+
+    /// <summary>"request sent", or their friend code.</summary>
+    public string Note { get; }
+
+    /// <summary>"Add"; "" for a line with no button.</summary>
+    public string ActionLabel { get; }
+
+    public bool HasAction => ActionLabel.Length > 0;
+
+    public ICommand ActCommand { get; }
+}
+
 /// <summary>
 /// The friends panel that slides in from the right on any page (Y / RB / F): the Rust launcher's
 /// FRIENDS card. Add a friend by gamertag, one message line, then REQUESTS (Accept / Decline),
 /// FRIENDS (A: Remove friend, after a confirmation) and SENT (Cancel). Without a server
 /// (<see cref="Locked"/>) it is only the locked state: friends live on a server.
+/// <para>
+/// While PLAY goes to Nextendo Network with a linked account (<see cref="OnNextendo"/>) the same panel shows that
+/// account's Nextendo friends (<see cref="ILauncher.NextendoFriends"/>): the player's own friend code with Copy, add
+/// by friend code, REQUESTS, FRIENDS (who plays and who is online first, favourites before the others; A: favourite,
+/// remove, block), SENT and PLAYERS YOU MET (Add). On an MKWMP server it is exactly as it always was.
+/// </para>
 /// </summary>
 public sealed class FriendsPanelViewModel : LayerViewModel
 {
     private readonly ShellViewModel _shell;
     private string _entry = "";
     private string? _localNote;
+    private bool _localNoteIsGood;
     private string? _focusName;
 
     public FriendsPanelViewModel(ShellViewModel shell)
@@ -145,6 +250,7 @@ public sealed class FriendsPanelViewModel : LayerViewModel
         _shell = shell ?? throw new ArgumentNullException(nameof(shell));
         AddCommand = new RelayCommand(Add);
         ConfigureOnlineCommand = new RelayCommand(shell.ConfigureOnline);
+        CopyCodeCommand = new RelayCommand(CopyCode);
         Build();
     }
 
@@ -154,38 +260,86 @@ public sealed class FriendsPanelViewModel : LayerViewModel
 
     private FriendsView Friends => Launcher.Friends;
 
-    /// <summary>No server is set: no list, no add field, only "Configure online".</summary>
-    public bool Locked => !Launcher.OnlineEnabled;
+    private NextendoFriendsView Nx => Launcher.NextendoFriends;
+
+    /// <summary>PLAY goes to Nextendo Network with a linked account: the panel shows that account's Nextendo friends.</summary>
+    public bool OnNextendo => Nx.Enabled;
+
+    /// <summary>An action is under way (one at a time).</summary>
+    private bool Busy => OnNextendo ? Nx.Busy : Friends.Busy;
+
+    /// <summary>No server is set (and no Nextendo account plays): no list, no add field, only "Configure online" (on Nextendo: "Sign in with Nextendo").</summary>
+    public bool Locked => !Launcher.OnlineEnabled && !OnNextendo;
 
     public bool Unlocked => !Locked;
 
     /// <summary>The locked state's button: Settings › Online (the panel closes).</summary>
     public ICommand ConfigureOnlineCommand { get; }
 
-    /// <summary>A valid gamertag and its PIN: without them there is no friends list.</summary>
-    public bool SignedIn => !Locked && Launcher.Profile.SignedIn;
+    /// <summary>A valid gamertag and its PIN (on Nextendo: the linked account): without them there is no friends list.</summary>
+    public bool SignedIn => OnNextendo || (!Locked && Launcher.Profile.SignedIn);
 
     /// <summary>"5 of 8 online"; nothing before the list is there.</summary>
-    public string Summary => SignedIn && Friends.Loaded && Friends.Friends.Count > 0
+    public string Summary => OnNextendo
+        ? Nx is { Loaded: true, Friends.Count: > 0 }
+            ? S.Format("friends.summary",
+                ("online", Nx.OnlineCount.ToString(CultureInfo.CurrentCulture)),
+                ("total", Nx.Friends.Count.ToString(CultureInfo.CurrentCulture)))
+            : ""
+        : SignedIn && Friends.Loaded && Friends.Friends.Count > 0
         ? S.Format("friends.summary",
             ("online", Friends.OnlineCount.ToString(CultureInfo.CurrentCulture)),
             ("total", Friends.Friends.Count.ToString(CultureInfo.CurrentCulture)))
         : "";
 
+    // ── on Nextendo: the player's own friend code ──
+
+    /// <summary>The linked account's friend code ("" on an MKWMP server, or when Nextendo gave none).</summary>
+    public string MyCode => OnNextendo ? Launcher.Nextendo.FriendCode : "";
+
+    public bool ShowMyCode => MyCode.Length > 0;
+
+    /// <summary>Copies <see cref="MyCode"/>: what a friend types to add the player.</summary>
+    public ICommand CopyCodeCommand { get; }
+
+    private void CopyCode()
+    {
+        if (MyCode.Length == 0)
+        {
+            return;
+        }
+        _localNoteIsGood = ShellViewModel.CopyText(MyCode);
+        _localNote = S[_localNoteIsGood ? "friends.nx.copied" : "friends.nx.copy_failed"];
+        Raise(nameof(NoteText));
+        Raise(nameof(NoteTone));
+    }
+
     // ── add a friend ──
 
-    /// <summary>The "add a friend" field. Gamertags have no spaces.</summary>
+    /// <summary>"Add a friend by gamertag"; on Nextendo, by friend code.</summary>
+    public string AddHint => S[OnNextendo ? "friends.nx.add_hint" : "friends.add_hint"];
+
+    /// <summary>The on-screen keyboard's title for the field.</summary>
+    public string AddTitle => S[OnNextendo ? "friends.nx.add_title" : "friends.add_title"];
+
+    /// <summary>A gamertag is 16 at most; a friend code is typed with its dashes, or pasted with spaces around it.</summary>
+    public int EntryMax => OnNextendo ? NextendoFriendCode.MaxTyped : 16;
+
+    /// <summary>The on-screen keyboard's keys: a gamertag's, or digits (the twelve of a friend code; "SW" and the dashes are added).</summary>
+    public KeyboardCharset EntryCharset => OnNextendo ? KeyboardCharset.Digits : KeyboardCharset.Gamertag;
+
+    /// <summary>The "add a friend" field. Gamertags have no spaces; a friend code keeps what was typed (it is read leniently).</summary>
     public string Entry
     {
         get => _entry;
         set
         {
-            var clean = string.Concat((value ?? "").Where(c => !char.IsWhiteSpace(c)));
+            var clean = OnNextendo ? (value ?? "").TrimStart() : string.Concat((value ?? "").Where(c => !char.IsWhiteSpace(c)));
             var changed = _entry != clean;
             _entry = clean;
             if (changed)
             {
-                _localNote = null;
+                (_localNote, _localNoteIsGood) = (null, false);
                 Raise(nameof(NoteText));
                 Raise(nameof(NoteTone));
                 Raise(nameof(ShowPlaceholder));
@@ -208,8 +362,21 @@ public sealed class FriendsPanelViewModel : LayerViewModel
     private void Add()
     {
         var entry = _entry.Trim();
-        if (!SignedIn || Friends.Busy)
+        if (!SignedIn || Busy)
         {
+            return;
+        }
+        if (OnNextendo)
+        {
+            if (NextendoFriendCode.Normalize(entry) is not { } code)
+            {
+                (_localNote, _localNoteIsGood) = (CoreStrings.NextendoFriendCodeRule, false);
+                Raise(nameof(NoteText));
+                Raise(nameof(NoteTone));
+                return;
+            }
+            Entry = "";
+            Run(() => Launcher.AddNextendoFriendAsync(code));
             return;
         }
         if (!ValidName(entry))
@@ -233,19 +400,28 @@ public sealed class FriendsPanelViewModel : LayerViewModel
     }
 
     /// <summary>Exactly one message line, as in the Rust launcher: not signed in, the last outcome, loading, or what friends are.</summary>
-    public string NoteText => !SignedIn ? CoreStrings.RegisterToAddFriends
+    public string NoteText => OnNextendo
+        ? _localNote ?? Nx.Note ?? (!Nx.Loaded ? CoreStrings.LoadingFriends : CoreStrings.NextendoFriendsHint)
+        : !SignedIn ? CoreStrings.RegisterToAddFriends
         : _localNote ?? Friends.Note
         ?? (!Friends.Loaded ? CoreStrings.LoadingFriends : CoreStrings.FriendsAreOnServer);
 
     /// <summary>bad / good / muted.</summary>
-    public string NoteTone => !SignedIn ? "muted"
+    public string NoteTone => _localNote is not null && OnNextendo ? _localNoteIsGood ? "good" : "bad"
+        : OnNextendo ? Nx.Note is not null ? Nx.NoteIsError ? "bad" : "good" : "muted"
+        : !SignedIn ? "muted"
         : _localNote is not null ? "bad"
         : Friends.Note is not null ? Friends.NoteIsError ? "bad" : "good"
         : "muted";
 
-    public bool IsLoading => SignedIn && !Friends.Loaded;
+    public bool IsLoading => OnNextendo ? !Nx.Loaded && Nx.Note is null : SignedIn && !Friends.Loaded;
 
-    public bool IsEmpty => SignedIn && Friends.Loaded && Friends.Friends.Count == 0 && Friends.Incoming.Count == 0 && Friends.Outgoing.Count == 0;
+    public bool IsEmpty => OnNextendo
+        ? Nx is { Loaded: true, Friends.Count: 0, Incoming.Count: 0, Sent.Count: 0, Recent.Count: 0 }
+        : SignedIn && Friends.Loaded && Friends.Friends.Count == 0 && Friends.Incoming.Count == 0 && Friends.Outgoing.Count == 0;
+
+    /// <summary>"No friends yet. Add someone by their gamertag above."; on Nextendo, by their friend code.</summary>
+    public string EmptyText => S[OnNextendo ? "friends.nx.empty" : "friends.empty"];
 
     // ── the list ──
 
@@ -261,12 +437,19 @@ public sealed class FriendsPanelViewModel : LayerViewModel
         ApplyDefault();
     }
 
-    public override void OnOpened() => ApplyDefault();
+    public override void OnOpened()
+    {
+        ApplyDefault();
+        if (OnNextendo)
+        {
+            Run(Launcher.RefreshNextendoFriendsAsync); // the list now, with the players met lately
+        }
+    }
 
     public override void OnClosed()
     {
         _focusName = null;
-        _localNote = null;
+        (_localNote, _localNoteIsGood) = (null, false);
         Raise(nameof(NoteText));
         Raise(nameof(NoteTone));
     }
@@ -286,7 +469,11 @@ public sealed class FriendsPanelViewModel : LayerViewModel
             wanted.Add(("section:" + key, () => new FriendsSection(key), row => ((FriendsSection)row).Text = text));
         static string Count(int n) => n.ToString(CultureInfo.CurrentCulture);
 
-        if (SignedIn && friends.Loaded)
+        if (OnNextendo)
+        {
+            BuildNextendo(wanted, Section);
+        }
+        else if (SignedIn && friends.Loaded)
         {
             if (friends.Incoming.Count > 0)
             {
@@ -348,6 +535,75 @@ public sealed class FriendsPanelViewModel : LayerViewModel
         }
     }
 
+    /// <summary>The lines of a Nextendo account's friends: REQUESTS, FRIENDS, SENT, PLAYERS YOU MET.</summary>
+    private void BuildNextendo(List<(string Key, Func<FriendsRow> Create, Action<FriendsRow> Update)> wanted, Action<string, string> section)
+    {
+        var nx = Nx;
+        if (!nx.Loaded)
+        {
+            return;
+        }
+        static string Count(int n) => n.ToString(CultureInfo.CurrentCulture);
+        static string Id(long pid) => pid.ToString(CultureInfo.InvariantCulture);
+        if (nx.Incoming.Count > 0)
+        {
+            section("requests", S.Format("friends.section.requests", ("n", Count(nx.Incoming.Count))));
+            foreach (var request in nx.Incoming)
+            {
+                wanted.Add(("nxin:" + Id(request.Pid), () => new FriendRequestRow(NameOf(request), S["friends.wants"], Accept, Decline, request.Pid), _ => { }));
+            }
+        }
+        if (nx.Friends.Count > 0)
+        {
+            section("friends", S.Format("friends.section.friends", ("n", Count(nx.OnlineCount))));
+            foreach (var friend in nx.Ordered(StringComparer.CurrentCultureIgnoreCase))
+            {
+                wanted.Add(("nx:" + Id(friend.Pid), () => new NextendoFriendRow(friend.Pid, OpenNextendoFriend), row =>
+                {
+                    var line = (NextendoFriendRow)row;
+                    line.Name = friend.Name.Length > 0 ? friend.Name : CoreStrings.NextendoSomeone;
+                    line.State = friend.State;
+                    line.StateText = NextendoStateText(friend);
+                    line.FriendCode = friend.FriendCode;
+                    line.Favorite = friend.Favorite;
+                }));
+            }
+        }
+        if (nx.Sent.Count > 0)
+        {
+            section("sent", S.Format("friends.section.sent", ("n", Count(nx.Sent.Count))));
+            foreach (var asked in nx.Sent)
+            {
+                wanted.Add(("nxout:" + Id(asked.Pid), () => new NextendoPersonRow("nxout:" + Id(asked.Pid), asked, NameOf(asked), S["friends.sent"], null, _ => { }), _ => { }));
+            }
+        }
+        if (nx.Recent.Count > 0)
+        {
+            section("met", S.Format("friends.nx.section.met", ("n", Count(nx.Recent.Count))));
+            foreach (var met in nx.Recent)
+            {
+                wanted.Add(("nxmet:" + Id(met.Pid), () => new NextendoPersonRow("nxmet:" + Id(met.Pid), met, NameOf(met), met.FriendCode, S["friends.add"], AddMet), _ => { }));
+            }
+        }
+    }
+
+    private static string NameOf(NextendoPerson who) => who.Name.Length > 0 ? who.Name : who.FriendCode.Length > 0 ? who.FriendCode : CoreStrings.NextendoSomeone;
+
+    /// <summary>"Playing MKW · Online", "Playing", "Online", "Offline"; "Account closed" for one Nextendo closed.</summary>
+    private string NextendoStateText(NextendoFriend friend)
+    {
+        if (friend.Banned)
+        {
+            return S["friends.nx.banned"];
+        }
+        if (friend.State != FriendState.Playing)
+        {
+            return S[friend.State == FriendState.Online ? "friends.online" : "friends.offline"];
+        }
+        var playing = friend.Game.Length > 0 ? S.Format("friends.nx.playing_game", ("game", friend.Game)) : S["friends.nx.playing"];
+        return friend.Detail.Length > 0 ? playing + " · " + friend.Detail : playing;
+    }
+
     private string StateText(FriendState state) => S[state switch
     {
         FriendState.Playing => "friends.playing",
@@ -361,7 +617,8 @@ public sealed class FriendsPanelViewModel : LayerViewModel
         FriendsRow? chosen = null;
         if (_focusName is { } name)
         {
-            chosen = Rows.FirstOrDefault(r => r is FriendRow friend && string.Equals(friend.Name, name, StringComparison.OrdinalIgnoreCase))
+            chosen = Rows.FirstOrDefault(r => r is NextendoFriendRow nx && string.Equals(nx.Name, name, StringComparison.OrdinalIgnoreCase))
+                ?? Rows.FirstOrDefault(r => r is FriendRow friend && string.Equals(friend.Name, name, StringComparison.OrdinalIgnoreCase))
                 ?? Rows.FirstOrDefault(r => r is FriendRequestRow request && string.Equals(request.Name, name, StringComparison.OrdinalIgnoreCase));
         }
         chosen ??= Rows.FirstOrDefault(r => r is FriendRequestRow);
@@ -379,6 +636,7 @@ public sealed class FriendsPanelViewModel : LayerViewModel
             ?? Rows.Take(Math.Max(0, at)).LastOrDefault(r => r is not FriendsSection);
         _focusName = next switch
         {
+            NextendoFriendRow nx => nx.Name,
             FriendRow friend => friend.Name,
             FriendRequestRow request => request.Name,
             _ => null,
@@ -395,19 +653,72 @@ public sealed class FriendsPanelViewModel : LayerViewModel
 
     private void Accept(FriendRequestRow row)
     {
-        if (!Friends.Busy)
+        if (!Busy)
         {
             FocusNextTo(row);
-            Run(() => Launcher.AcceptFriendAsync(row.Name));
+            Run(() => row.Pid != 0 ? Launcher.AcceptNextendoFriendAsync(row.Pid) : Launcher.AcceptFriendAsync(row.Name));
         }
     }
 
     private void Decline(FriendRequestRow row)
     {
-        if (!Friends.Busy)
+        if (!Busy)
         {
             FocusNextTo(row);
-            Run(() => Launcher.RemoveFriendAsync(row.Name, FriendRemoval.Reject));
+            Run(() => row.Pid != 0 ? Launcher.DeclineNextendoFriendAsync(row.Pid) : Launcher.RemoveFriendAsync(row.Name, FriendRemoval.Reject));
+        }
+    }
+
+    // ── on Nextendo ──
+
+    /// <summary>"Add" on someone met in a race: a request to their friend code.</summary>
+    private void AddMet(NextendoPersonRow row)
+    {
+        if (!Busy && row.Who.FriendCode.Length > 0)
+        {
+            FocusNextTo(row);
+            Run(() => Launcher.AddNextendoFriendAsync(row.Who.FriendCode));
+        }
+    }
+
+    /// <summary>A on a Nextendo friend: the small menu (favourite, remove, block).</summary>
+    private void OpenNextendoFriend(NextendoFriendRow row)
+    {
+        var modal = new ModalViewModel { Title = row.Name, Body = row.FriendCode.Length > 0 ? row.StateText + "\n" + row.FriendCode : row.StateText };
+        modal.Actions.Add(new ModalAction(S[row.Favorite ? "friends.nx.unfavorite" : "friends.nx.favorite"], () =>
+        {
+            _shell.CloseModal(modal);
+            if (!Busy)
+            {
+                _focusName = row.Name; // it moves in the list: the focus goes with it
+                Run(() => Launcher.FavoriteNextendoFriendAsync(row.Pid, !row.Favorite));
+            }
+        }));
+        modal.Actions.Add(new ModalAction(S["friends.remove"], () =>
+        {
+            _shell.CloseModal(modal);
+            Run(() => LeaveAsync(row, block: false));
+        }));
+        modal.Actions.Add(new ModalAction(S["friends.nx.block"], () =>
+        {
+            _shell.CloseModal(modal);
+            Run(() => LeaveAsync(row, block: true));
+        }));
+        modal.Bottom = new ModalAction(S["common.close"], () => _shell.CloseModal(modal));
+        _shell.ShowModal(modal);
+    }
+
+    /// <summary>Remove a Nextendo friend, or block them: both after a confirmation.</summary>
+    private async Task LeaveAsync(NextendoFriendRow row, bool block)
+    {
+        var sure = await _shell.ConfirmAsync(
+            S[block ? "friends.nx.block.title" : "friends.remove.title"],
+            S.Format(block ? "friends.nx.block.body" : "friends.remove.body", ("name", row.Name)),
+            S[block ? "friends.nx.block" : "friends.remove.yes"]).ConfigureAwait(true);
+        if (sure && !Busy)
+        {
+            FocusNextTo(row);
+            await (block ? Launcher.BlockNextendoPlayerAsync(row.Pid) : Launcher.RemoveNextendoFriendAsync(row.Pid)).ConfigureAwait(true);
         }
     }
 

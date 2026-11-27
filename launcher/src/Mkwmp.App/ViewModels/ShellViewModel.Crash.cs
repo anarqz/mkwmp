@@ -134,6 +134,9 @@ public sealed partial class ShellViewModel
         ShowModal(modal);
     }
 
+    /// <summary>A short text of the window's to the clipboard (the player's own friend code); false when it could not be copied.</summary>
+    public static bool CopyText(string text) => Copy(text ?? "");
+
     /// <summary>Text to the clipboard; false when another program holds it (or there is none: some Wine sessions).</summary>
     private static bool Copy(string text)
     {
@@ -149,7 +152,7 @@ public sealed partial class ShellViewModel
                 Thread.Sleep(60);
             }
         }
-        App.Log("clipboard: the report text could not be copied");
+        App.Log("clipboard: the text could not be copied");
         return false;
     }
 }

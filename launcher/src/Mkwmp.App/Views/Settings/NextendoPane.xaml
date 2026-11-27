@@ -7,7 +7,8 @@
   <!-- DataContext: SettingsViewModel (SettingsViewModel.Nextendo.cs). Settings › Nextendo. Not signed in: what it is
        and that the sign-in stays on this PC, "Sign in with Nextendo" (the sign-in page opens in the browser; while the
        launcher waits for it, a spinner and Cancel) and "Create a Nextendo Account". Signed in: the account, its friend
-       code and how it stands, the choice of network ("Play on"), and Unlink. -->
+       code and how it stands, the choice of network ("Play on"), its friends on Nextendo while PLAY goes there (whether
+       they see the player online; the blocked players), and Unlink. -->
   <UserControl.Resources>
     <Style x:Key="Note" TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
       <Setter Property="Margin" Value="20,16,20,0" />
@@ -65,6 +66,15 @@
       <c:SectionHeader Text="{Binding S[playon.label]}" />
       <c:SettingsRow Label="{Binding S[playon.label]}" Kind="Chevron" Icon="{StaticResource Icon.Globe}"
                      Value="{Binding PlayOnName}" Command="{Binding PlayOnCommand}" Caption="{Binding PlayOnCaption}" />
+
+      <!-- friends on Nextendo (the list itself is the friends panel: Y) -->
+      <StackPanel Visibility="{Binding ShowNextendoFriends, Converter={StaticResource Conv.Visible}}">
+        <c:SectionHeader Text="{Binding S[friends.title]}" />
+        <c:SettingsRow Label="{Binding S[nextendo.show_online]}" Kind="Toggle" IsOn="{Binding NextendoShowOnline}"
+                       Caption="{Binding S[nextendo.show_online_caption]}" />
+        <c:SettingsRow Label="{Binding S[nextendo.blocked]}" Kind="Chevron" Icon="{StaticResource Icon.Block}"
+                       Value="{Binding BlockedPlayersCount}" Command="{Binding BlockedPlayersCommand}" Caption="{Binding S[nextendo.blocked.caption]}" />
+      </StackPanel>
 
       <c:SectionHeader Text="{Binding S[nextendo.title]}" />
       <c:SettingsRow Label="{Binding S[nextendo.relink]}" Kind="Chevron" Icon="{StaticResource Icon.Refresh}"

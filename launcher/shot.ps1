@@ -8,6 +8,8 @@
 #   (nothing)                 an install that already played on an MKWMP server: its server, Friends, and home's invitation to Nextendo
 #   --demo-offline            Nextendo, nobody signed in: "Sign in with Nextendo to play online"   (+ --demo-mkwmp: the locked "Configure Online")
 #   --demo-nextendo           signed in, playing on Nextendo Network          --demo-nextendo-linked   signed in, playing on MKWMP servers
+#   --demo-nextendo-friends   the same as --demo-nextendo, named for its Nextendo friends: --friends opens the panel
+#                             (--state nx-nofriends | nx-loading | nx-error); --page settings --category nextendo: who sees you, the blocked players
 #   --demo-fresh --page setup [--step welcome|online|name|game|done]          the welcome; its Nextendo page waiting for the browser:
 #                             --step online --state nextendo-linking; signed in: add --demo-nextendo; after "Create": --step online=created
 # More: --battery 93  --input keyboard  --locale pt-BR  --press a,b,x,y,up,down,left,right,start

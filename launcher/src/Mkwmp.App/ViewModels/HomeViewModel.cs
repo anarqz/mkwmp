@@ -120,7 +120,11 @@ public sealed class HomeViewModel : PageViewModel
         PlayCommand = RelayCommand.Async(TogglePlayAsync);
         FriendsCommand = new RelayCommand(() =>
         {
-            if (NextendoFirst && Launcher.Nextendo.Linked && !Launcher.OnlineBlockedByUpdate)
+            if (Shell.FriendsOnNextendo)
+            {
+                Shell.OpenFriends(); // the linked account's Nextendo friends
+            }
+            else if (NextendoFirst && Launcher.Nextendo.Linked && !Launcher.OnlineBlockedByUpdate)
             {
                 Shell.OpenNextendo(); // the account, its friend code, how it stands
             }
@@ -309,7 +313,7 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>An update on its way or waiting: the What's New tile opens its card and its badge stands out.</summary>
     private bool UpdatePending => Launcher.Update.State is UpdateState.Available or UpdateState.Downloading or UpdateState.ReadyToInstall or UpdateState.Failed or UpdateState.Restarting;
 
-    public bool HasRequests => !Locked && Launcher.Friends.Incoming.Count > 0;
+    public bool HasRequests => Shell.FriendsOnNextendo ? Launcher.NextendoFriends.Incoming.Count > 0 : !Locked && Launcher.Friends.Incoming.Count > 0;
 
     /// <summary>The dock's second button is the Nextendo account (not Friends, which are an MKWMP server's): Nextendo is where PLAY goes online, in a run that may go online.</summary>
     private bool NextendoDock => NextendoFirst && !Launcher.OnlineBlockedByUpdate;
@@ -318,11 +322,13 @@ public sealed class HomeViewModel : PageViewModel
     /// The dock's second button. On Nextendo: "Sign in with Nextendo", then "Nextendo Account". On MKWMP servers:
     /// Friends; "Configure Online" with a lock while there is no server.
     /// </summary>
-    public string FriendsLabel => NextendoDock ? S[Launcher.Nextendo.Linked ? "settings.online.nextendo_account" : "nextendo.signin"]
+    public string FriendsLabel => Shell.FriendsOnNextendo ? S["home.friends"]
+        : NextendoDock ? S[Launcher.Nextendo.Linked ? "settings.online.nextendo_account" : "nextendo.signin"]
         : Locked ? Shell.OnlineLockLabel
         : S["home.friends"];
 
-    public string FriendsIcon => NextendoDock ? (Launcher.Nextendo.Linked ? "Icon.User" : "Icon.UserPlus") : Locked ? "Icon.FriendsLocked" : "Icon.Friends";
+    public string FriendsIcon => Shell.FriendsOnNextendo ? "Icon.Friends"
+        : NextendoDock ? (Launcher.Nextendo.Linked ? "Icon.User" : "Icon.UserPlus") : Locked ? "Icon.FriendsLocked" : "Icon.Friends";
 
     public ICommand PlayCommand { get; }
 
@@ -362,7 +368,7 @@ public sealed class HomeViewModel : PageViewModel
         get
         {
             var hints = new List<Hint> { new(PadButton.Start, S["hint.options"]) };
-            if (!NextendoFirst)
+            if (Shell.ShowFriendsHint)
             {
                 hints.Add(new Hint(PadButton.Y, S["hint.friends"]));
             }

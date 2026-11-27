@@ -178,6 +178,7 @@ public sealed partial class Launcher
             }
         });
         cancel.Dispose();
+        _nxWake.Set(); // a linked account's friends, from now
         if (linked)
         {
             _ = RefreshNextendoAsync();
@@ -212,18 +213,29 @@ public sealed partial class Launcher
             return;
         }
         var before = OnNextendo;
-        // Forgotten here first (the choice of network stays: on Nextendo PLAY is offline until signed in again), then
-        // revoked there when it can be reached.
-        var refresh = await _nextendo.ForgetAsync().ConfigureAwait(false);
+        // Friends see the player offline first (it takes the sign-in), then the account is forgotten here (the choice
+        // of network stays: on Nextendo PLAY is offline until signed in again), then revoked there when it can be reached.
+        string? refresh;
         (string Text, bool IsError) note = (Strings.NextendoUnlinked, false);
+        Interlocked.Increment(ref _nxQuiet);
         try
         {
-            EditConfig(c => c with { Nextendo = c.Nextendo.Unlinked() }, wakeFriends: false);
+            await NextendoOfflineAsync(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+            refresh = await _nextendo.ForgetAsync().ConfigureAwait(false);
+            try
+            {
+                EditConfig(c => c with { Nextendo = c.Nextendo.Unlinked() }, wakeFriends: false);
+            }
+            catch (LauncherException e)
+            {
+                note = (e.Message, true);
+            }
         }
-        catch (LauncherException e)
+        finally
         {
-            note = (e.Message, true);
+            Interlocked.Decrement(ref _nxQuiet);
         }
+        _nxWake.Set();
         Mutate(() => (_nextendoStanding, _nextendoNote) = (null, note));
         Note("nextendo: account unlinked");
         NetworkChanged(before);
@@ -281,6 +293,7 @@ public sealed partial class Launcher
             return;
         }
         Note(now ? "online: Nextendo Network (no MKWMP server is contacted)" : "online: MKWMP servers");
+        _nxWake.Set(); // friends are Nextendo's now, or no longer
         ServerChanged(now ? Settings.Server : "");
     }
 

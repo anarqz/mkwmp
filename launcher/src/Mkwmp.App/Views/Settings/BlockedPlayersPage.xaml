@@ -1,0 +1,41 @@
+<UserControl x:Class="Mkwmp.App.Views.Settings.BlockedPlayersPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:Mkwmp.App.Controls"
+             xmlns:input="clr-namespace:Mkwmp.App.Input"
+             x:Name="Self" Focusable="False">
+  <!-- DataContext: BlockedPlayersViewModel. The players the linked Nextendo account blocked: A on one unblocks them. -->
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <c:PageHeader Title="{Binding Title}" Icon="{StaticResource Icon.Block}" />
+    <c:SmoothScrollViewer Grid.Row="1" Padding="16,26,24,60" EdgePadding="110" input:FocusNav.IsGroup="True" HorizontalAlignment="Center" Width="1300">
+      <StackPanel>
+        <TextBlock Text="{Binding Caption}" Style="{StaticResource Text.Caption}" Margin="20,0,20,18" />
+        <ItemsControl ItemsSource="{Binding Rows}" Focusable="False">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <c:SettingsRow Label="{Binding Name}" Caption="{Binding Detail}" Icon="{StaticResource Icon.User}"
+                             Value="{Binding DataContext.UnblockLabel, ElementName=Self}" Kind="Chevron" Command="{Binding UnblockCommand}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Text="{Binding EmptyText}" Style="{StaticResource Text.Caption}" Margin="20,26,20,0"
+                   Visibility="{Binding IsEmpty, Converter={StaticResource Conv.Visible}}" />
+        <TextBlock Text="{Binding Note}" Margin="20,18,20,0" Visibility="{Binding Note, Converter={StaticResource Conv.Visible}}">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding NoteIsError}" Value="True">
+                  <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+      </StackPanel>
+    </c:SmoothScrollViewer>
+  </Grid>
+</UserControl>

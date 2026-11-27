@@ -148,6 +148,27 @@ internal sealed class NextendoAccount(NextendoApi api, NextendoVault vault, Time
         }
     }
 
+    /// <summary>
+    /// A call with the access token that does not hold the gate while it runs (the friends list, presence: they must
+    /// never keep the game waiting for its token). One that is refused as no longer good is made once more with a new
+    /// token; when another call renewed it meanwhile, with that one.
+    /// </summary>
+    public async Task<T> CallAsync<T>(Func<string, Task<T>> call, CancellationToken cancel)
+    {
+        ArgumentNullException.ThrowIfNull(call);
+        var access = await LockedAsync(() => AccessLockedAsync(fresh: false, cancel), cancel).ConfigureAwait(false);
+        try
+        {
+            return await call(access).ConfigureAwait(false);
+        }
+        catch (NextendoException e) when (e.Kind == NextendoError.SignedOut)
+        {
+            var stale = access;
+            access = await LockedAsync(() => AccessLockedAsync(fresh: _access?.Token == stale, cancel), cancel).ConfigureAwait(false);
+            return await call(access).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>Who the account is, as Nextendo says now.</summary>
     public Task<NextendoUser> UserAsync(CancellationToken cancel) =>
         LockedAsync(() => WithAccessAsync(access => api.UserInfoAsync(access, cancel), cancel), cancel);

@@ -109,3 +109,25 @@ side, so this stays empty until that is settled. Overlay routes are unchanged. V
 - Crash records and logs name the backend (`backend: nextendo`), never the token.
 - Errors: 2321-2304 means the token or account was refused, and 2321-3072 means the version was refused. These are
   the game's own messages. The mod just logs them.
+
+## 6. Friends and presence (launcher only)
+
+In Nextendo mode the launcher's friends panel, top bar and notifications are the linked account's Nextendo friends.
+Nothing of this reaches the mod or an MKWMP server; `/local/v1/friends` stays as §4 says.
+
+| What | Call (Bearer access token, scope `friends` unless noted) |
+|---|---|
+| lists | `GET /api/friends?images=0` → `{friends, requests, sent?}`; `presence.status` 0 offline / 1 online / 2 playing; `banned:true` entries are shown as closed accounts |
+| add | `POST /api/friends {"friend_code":"SW-1234-5678-9012"}` → `{friend, already}`; 404 unknown code, 400 own code, 409 list full (300) |
+| accept, decline, remove, block, unblock | `POST /api/friends/<verb> {"pid":N}` |
+| favourite | `POST /api/friends/favorite {"pid":N,"favorite":bool}` |
+| blocked, met | `GET /api/friends/blocked`, `GET /api/recent-players` (when the panel opens, at most once a minute) |
+| presence | `POST /api/presence {"status":1|2,"app_id":"","app_detail":"","platform":"app"}` (scope `presence`) |
+
+- No push channel: the list is polled every 30 s (10 s for a minute after an action), backing off 30 s → 5 min on
+  failures; a 429's `Retry-After` is obeyed and nothing is asked before it is over.
+- Presence: status 1 while the launcher runs, status 2 with `app_id = 0400c3f00006e000` while the game runs, repeated
+  every 60 s (Nextendo forgets it after 90 s); status 0 once on exit, unlink, a switch to MKWMP servers, or when
+  `[nextendo] show_online = false` (client.toml; default on).
+- A sent request cannot be taken back (Nextendo has no route for it): the panel shows it without a Cancel.
+- Friends' names, pids and friend codes are never logged and are overwritten in a report's minidump.

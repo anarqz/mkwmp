@@ -405,6 +405,9 @@ public sealed partial class DesignLauncher : ILauncher
                     Session = Session with { Status = CoreStrings.PickGamertag.ToUpperInvariant(), Tone = "warn" };
                 });
                 break;
+            case "nx-nofriends" or "nx-loading" or "nx-error":
+                PretendNextendoFriends(state);
+                break;
             case "nofriends":
                 Change(() => Friends = new FriendsView(true, [], [], [], null, false, false));
                 break;

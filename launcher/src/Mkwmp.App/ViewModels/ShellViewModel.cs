@@ -103,7 +103,18 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         {
             var list = new List<TopAvatar>();
             var profile = Launcher.Profile;
-            if (!OnlineEnabled)
+            if (Launcher.NextendoFriends is { Enabled: true } nextendo)
+            {
+                // on Nextendo Network: the player (their local name, else the account's), then the Nextendo friends who are on
+                var self = Launcher.Settings.Name.Trim() is { Length: > 0 } named ? named : Launcher.Nextendo.Username;
+                var asking = nextendo.Incoming.Count;
+                list.Add(new TopAvatar(self, AvatarPresence.None, asking > 0 ? asking.ToString(CultureInfo.CurrentCulture) : "", true));
+                list.AddRange(nextendo.Ordered(StringComparer.CurrentCultureIgnoreCase)
+                    .Where(f => f.State != FriendState.Offline && f.Name.Length > 0)
+                    .Take(5)
+                    .Select(f => new TopAvatar(f.Name, f.State == FriendState.Playing ? AvatarPresence.Playing : AvatarPresence.Online, "", false)));
+            }
+            else if (!OnlineEnabled)
             {
                 if (Launcher.Settings.Name.Trim() is { Length: > 0 } local)
                 {
@@ -435,13 +446,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Friends, Back (when there is a page to go back to), OK. Friends are an MKWMP server's: while Nextendo Network
-    /// is where PLAY goes online the hint bar does not offer them (Y still opens the panel, which says so).
+    /// Friends, Back (when there is a page to go back to), OK. Friends are an MKWMP server's, or the linked Nextendo
+    /// account's: while Nextendo Network is where PLAY goes online and nobody is signed in, the hint bar does not
+    /// offer them (Y still opens the panel, which says so).
     /// </summary>
     public IReadOnlyList<Hint> DefaultHints()
     {
         var hints = new List<Hint>();
-        if (!NextendoFirst)
+        if (ShowFriendsHint)
         {
             hints.Add(new Hint(PadButton.Y, S["hint.friends"]));
         }
@@ -644,7 +656,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     private void OnLauncherToasted(object? sender, Toast toast) =>
         _dispatcher.BeginInvoke(() =>
         {
-            if (!OnlineEnabled && toast.Kind is ToastKind.FriendOnline or ToastKind.FriendPlaying or ToastKind.FriendRequest)
+            if (!OnlineEnabled && !FriendsOnNextendo && toast.Kind is ToastKind.FriendOnline or ToastKind.FriendPlaying or ToastKind.FriendRequest)
             {
                 return; // locked online: there are no friends to hear from, here or in the system's notifications
             }

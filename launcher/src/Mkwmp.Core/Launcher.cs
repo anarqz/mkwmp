@@ -108,6 +108,8 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         _nextendoApi = new NextendoApi(_http, _userAgent);
         var vault = NextendoVault.Beside(configPath);
         _nextendo = new NextendoAccount(_nextendoApi, vault, _clock);
+        _nxFriends = new NextendoRoster(_nextendo, _nextendoApi, _clock);
+        _nxPresence = new NextendoPresence(_nextendo, _nextendoApi, _clock);
         // An account client.toml names without its sign-in beside it (the file was copied from another PC, or the
         // sign-in deleted) is not linked here: the choice of network stays, and on Nextendo the window asks to sign in.
         if (_config.Nextendo.Linked && !vault.Exists)
@@ -483,6 +485,10 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         Put(ref nextendo, NextendoNow());
         _nextendoView = nextendo;
 
+        var nextendoFriends = _nxView;
+        Put(ref nextendoFriends, NextendoFriendsNow());
+        _nxView = nextendoFriends;
+
         var voice = _voiceView;
         Put(ref voice, new VoiceView(_config.Inputs, _config.Outputs, _config.Mutes));
         _voiceView = voice;
@@ -567,6 +573,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
             // Another name or PIN signs in again; the status pill follows another server at once.
             _friendsWake.Set();
             _statusWake.Set();
+            _nxWake.Set(); // the notification settings are also those of Nextendo friends
         }
     }
 
@@ -749,9 +756,12 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         Strings.Changed -= OnLanguageChanged;
         global::Mkwmp.Core.Targets.MkwRecomp.Recomp.SetDevExes(this, ""); // this launcher's developer builds are no one else's
         // Window closed: free the seat and show offline before leaving.
-        await WaitIdleAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        Interlocked.Increment(ref _nxQuiet); // nothing more is said of the player on Nextendo, but "offline"
+        await Task.WhenAll(WaitIdleAsync(TimeSpan.FromSeconds(5)), NextendoOfflineAsync(TimeSpan.FromSeconds(3))).ConfigureAwait(false);
         await _life.CancelAsync().ConfigureAwait(false);
         _local.Dispose();
+        _nxFriends.Dispose();
+        _nxPresence.Dispose();
         _nextendo.Dispose();
         _devices.Dispose();
         _http.Dispose();

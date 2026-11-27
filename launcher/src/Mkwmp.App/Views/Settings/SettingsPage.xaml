@@ -317,10 +317,11 @@
             <c:SettingsRow Label="{Binding S[settings.notify.locked]}" Kind="Chevron" Icon="{StaticResource Icon.Lock}" Value="{Binding S[online.configure]}"
                            Command="{Binding ConfigureOnlineCommand}"
                            Visibility="{Binding ShowNotifyLocked, Converter={StaticResource Conv.Visible}}" />
-            <!-- on Nextendo Network: friends' news is an MKWMP server's; said, with nothing to press -->
+            <!-- on Nextendo Network with nobody signed in: friends' news comes with the sign-in; said, with nothing to press -->
             <c:SettingsRow Label="{Binding S[settings.notify.locked_nextendo]}" Icon="{StaticResource Icon.Info}" Focusable="False"
                            Visibility="{Binding ShowNotifyNextendo, Converter={StaticResource Conv.Visible}}" />
-            <StackPanel Visibility="{Binding OnlineEnabled, Converter={StaticResource Conv.Visible}}">
+            <!-- an MKWMP server's friends, or the Nextendo account's -->
+            <StackPanel Visibility="{Binding ShowNotifyToggles, Converter={StaticResource Conv.Visible}}">
               <c:SettingsRow Label="{Binding S[settings.notify.online]}" Kind="Toggle" IsOn="{Binding NotifyOnline}" />
               <c:SettingsRow Label="{Binding S[settings.notify.playing]}" Kind="Toggle" IsOn="{Binding NotifyPlaying}" />
               <c:SettingsRow Label="{Binding S[settings.notify.requests]}" Kind="Toggle" IsOn="{Binding NotifyRequests}" />

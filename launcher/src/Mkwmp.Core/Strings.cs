@@ -250,6 +250,25 @@ public static class Strings
     public static string NextendoConnecting => T("core.status.nextendo_connecting");
     public static string NextendoInGame => T("core.status.nextendo_in_game");
 
+    // Friends on Nextendo (Launcher.NextendoFriends.cs): what an action answers, and the notifications.
+    public static string NextendoFriendsHint => T("core.nextendo.friends.hint");
+    public static string NextendoFriendCodeRule => T("core.nextendo.friends.code_rule");
+    public static string NextendoFriendCodeUnknown => T("core.nextendo.friends.code_unknown");
+    public static string NextendoFriendCodeOwn => T("core.nextendo.friends.code_own");
+    public static string NextendoFriendsFull => T("core.nextendo.friends.full");
+    public static string NextendoFriendNotSent => T("core.nextendo.friends.not_sent");
+    public static string NextendoRequestGone => T("core.nextendo.friends.gone");
+    public static string NextendoBlocked(string name) => F("core.nextendo.friends.blocked", ("name", name));
+    public static string NextendoUnblocked(string name) => F("core.nextendo.friends.unblocked", ("name", name));
+    public static string NextendoFriendPlaying(string name, string game) => F("core.nextendo.friends.playing", ("name", name), ("game", game));
+    public static string NextendoFriendRequest(string name) => F("core.nextendo.friends.request", ("name", name));
+    public static string NextendoFriendAccepted(string name) => F("core.nextendo.friends.accepted", ("name", name));
+    public static string NextendoFriendsOnline(int count) => F("core.nextendo.friends.online_count", ("n", N(count)));
+    public static string NextendoFriendRequests(int count) => F("core.nextendo.friends.request_count", ("n", N(count)));
+
+    /// <summary>Someone Nextendo gave no name for.</summary>
+    public static string NextendoSomeone => T("core.nextendo.friends.someone");
+
     /// <summary>A mod older than Nextendo mode asks for an MKWMP seat while PLAY goes to Nextendo: English and plain ASCII, as <see cref="OnlineOffInGame"/>.</summary>
     public const string NextendoNoSeatInGame = "Playing on Nextendo Network: no MKWMP seat. Update the MKWMP mod (launcher, Checklist)";
 

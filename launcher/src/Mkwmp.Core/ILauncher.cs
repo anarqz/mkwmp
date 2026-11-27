@@ -409,6 +409,33 @@ public interface ILauncher : IAsyncDisposable
     /// <summary>Asks Nextendo how the linked account stands (its name, and whether it may go online now); the answer is <see cref="Nextendo"/>.</summary>
     Task RefreshNextendoAsync() => Task.CompletedTask;
 
+    // Friends on Nextendo Network (Launcher.NextendoFriends.cs): the linked account's own, managed through Nextendo's API
+    /// <summary>
+    /// The friends of the linked Nextendo account, the requests, the players met lately and the blocked ones. Kept
+    /// current while PLAY goes to Nextendo Network (<see cref="NextendoFriendsView.Enabled"/>); news of it arrives as
+    /// <see cref="Toasted"/>, under the same three settings as an MKWMP server's friends.
+    /// </summary>
+    NextendoFriendsView NextendoFriends => NextendoFriendsView.Off;
+
+    /// <summary>Asks the owner of a friend code to be friends (the code as typed: it is normalized). The outcome is the view's note.</summary>
+    Task AddNextendoFriendAsync(string friendCode) => Task.CompletedTask;
+
+    Task AcceptNextendoFriendAsync(long pid) => Task.CompletedTask;
+
+    Task DeclineNextendoFriendAsync(long pid) => Task.CompletedTask;
+
+    Task RemoveNextendoFriendAsync(long pid) => Task.CompletedTask;
+
+    /// <summary>Blocks a player: no longer a friend, and their requests no longer arrive.</summary>
+    Task BlockNextendoPlayerAsync(long pid) => Task.CompletedTask;
+
+    Task UnblockNextendoPlayerAsync(long pid) => Task.CompletedTask;
+
+    Task FavoriteNextendoFriendAsync(long pid, bool favorite) => Task.CompletedTask;
+
+    /// <summary>The friends panel (or the blocked list) is on screen: the list is asked for now, with the players met lately and the blocked ones.</summary>
+    Task RefreshNextendoFriendsAsync() => Task.CompletedTask;
+
 // The console-style overlay (launcher/docs/OVERLAY.md)
     /// <summary>The game asks for the launcher over it (<c>Requested</c>); the window answers with <c>ReturnToGame</c>.</summary>
     Overlay.OverlayBridge OverlayBridge { get; }
@@ -677,6 +704,12 @@ public sealed record LauncherSettings
     public UiSettings Ui { get; init; } = new();
     /// <summary>Where the launcher's file picker was last used, per purpose (<c>[picker]</c>).</summary>
     public Files.PickerFolders Picker { get; init; } = Files.PickerFolders.Empty;
+    /// <summary>
+    /// <c>[nextendo] show_online</c> (on unless the file says otherwise): while the launcher runs and PLAY goes to
+    /// Nextendo Network, Nextendo friends see the player online. Off: the launcher says nothing of the player there
+    /// (in a race the game's own servers still show them playing).
+    /// </summary>
+    public bool NextendoShowOnline { get; init; } = true;
 }
 
 public enum SeatMode { Start, Online }

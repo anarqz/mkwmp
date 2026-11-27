@@ -31,6 +31,12 @@ public sealed partial class ShellViewModel
     /// <summary>Nextendo is where PLAY goes online and nobody is signed in: PLAY is offline, and the way online is "Sign in with Nextendo".</summary>
     public bool NextendoNeedsSignIn => Launcher.Nextendo.NeedsSignIn;
 
+    /// <summary>PLAY goes to Nextendo Network with a linked account: the friends panel, the top bar and the notifications are that account's Nextendo friends.</summary>
+    public bool FriendsOnNextendo => Launcher.NextendoFriends.Enabled;
+
+    /// <summary>The hint bar offers Friends (Y): on MKWMP servers as always; on Nextendo once an account's friends are there.</summary>
+    public bool ShowFriendsHint => !NextendoFirst || FriendsOnNextendo;
+
     /// <summary>"MKWMP servers" or "Nextendo Network": the saved choice.</summary>
     public string PlayOnName => S[Launcher.Nextendo.PlayOn == PlayNetwork.Nextendo ? "playon.nextendo" : "playon.mkwmp"];
 

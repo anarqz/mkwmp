@@ -30,7 +30,26 @@ public sealed partial class SettingsViewModel
         UnlinkNextendoCommand = RelayCommand.Async(UnlinkNextendoAsync, () => Nextendo.Linked && !(Busy && NextendoMode));
         PlayOnCommand = RelayCommand.Async(Shell.PickPlayOnAsync, () => !Busy);
         NextendoPaneCommand = new RelayCommand(() => At(NextendoCategory));
+        BlockedPlayersCommand = new RelayCommand(() => Shell.Navigate(new BlockedPlayersViewModel(Shell)));
     }
+
+    // ── friends on Nextendo: who sees the player, and who is blocked ──
+
+    /// <summary>PLAY goes to Nextendo Network with this account: its friends are in the friends panel, and these two rows are shown.</summary>
+    public bool ShowNextendoFriends => Launcher.NextendoFriends.Enabled;
+
+    /// <summary>"Show Me Online to Friends": while the launcher runs, Nextendo friends see the player online (client.toml, <c>[nextendo] show_online</c>).</summary>
+    public bool NextendoShowOnline
+    {
+        get => Launcher.Settings.NextendoShowOnline;
+        set => Save(s => s with { NextendoShowOnline = value });
+    }
+
+    /// <summary>The players blocked on Nextendo, each with Unblock (a sub-page).</summary>
+    public ICommand BlockedPlayersCommand { get; private set; } = null!;
+
+    /// <summary>How many are blocked ("" for none, or not known yet).</summary>
+    public string BlockedPlayersCount => Launcher.NextendoFriends.Blocked.Count is > 0 and var n ? n.ToString(System.Globalization.CultureInfo.CurrentCulture) : "";
 
     private NextendoView Nextendo => Launcher.Nextendo;
 
@@ -147,6 +166,10 @@ public sealed partial class SettingsViewModel
         if (Nextendo.Linked && (IsNextendoPane || (IsOnlinePane && NextendoFirst)))
         {
             RelayCommand.Async(Launcher.RefreshNextendoAsync).Execute(null);
+        }
+        if (IsNextendoPane && ShowNextendoFriends)
+        {
+            RelayCommand.Async(Launcher.RefreshNextendoFriendsAsync).Execute(null); // how many are blocked
         }
     }
 }

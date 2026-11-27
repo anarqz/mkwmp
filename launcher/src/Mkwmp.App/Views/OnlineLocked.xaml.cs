@@ -27,6 +27,12 @@ public partial class OnlineLocked : UserControl
     public static readonly DependencyProperty ButtonTextProperty =
         DependencyProperty.Register(nameof(ButtonText), typeof(string), typeof(OnlineLocked), new PropertyMetadata(""));
 
+    public static readonly DependencyProperty NextendoTitleProperty =
+        DependencyProperty.Register(nameof(NextendoTitle), typeof(string), typeof(OnlineLocked), new PropertyMetadata(""));
+
+    public static readonly DependencyProperty NextendoTextProperty =
+        DependencyProperty.Register(nameof(NextendoText), typeof(string), typeof(OnlineLocked), new PropertyMetadata(""));
+
     private ViewModels.ShellViewModel? _shell;
 
     public OnlineLocked()
@@ -63,7 +69,7 @@ public partial class OnlineLocked : UserControl
     protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e)
     {
         base.OnPropertyChanged(e);
-        if (e.Property == TitleProperty || e.Property == TextProperty)
+        if (e.Property == TitleProperty || e.Property == TextProperty || e.Property == NextendoTitleProperty || e.Property == NextendoTextProperty)
         {
             Show();
         }
@@ -75,8 +81,10 @@ public partial class OnlineLocked : UserControl
         // Nextendo Network is where PLAY goes online: what is locked here is an MKWMP server's, and it says so without
         // sending anyone to one.
         var nextendo = !update && _shell is { NextendoFirst: true };
-        SetValue(ShownTitleProperty, update ? _shell!.S["core.update_to_play_online"] : nextendo ? _shell!.S["nextendo.locked.title"] : Title);
-        SetValue(ShownTextProperty, update ? _shell!.S["online.update.text"] : nextendo ? _shell!.S["nextendo.locked.text"] : Text);
+        // A place that Nextendo has too (friends) says so in its own words: what signing in gives.
+        var own = nextendo && NextendoTitle.Length > 0;
+        SetValue(ShownTitleProperty, update ? _shell!.S["core.update_to_play_online"] : own ? NextendoTitle : nextendo ? _shell!.S["nextendo.locked.title"] : Title);
+        SetValue(ShownTextProperty, update ? _shell!.S["online.update.text"] : own ? NextendoText : nextendo ? _shell!.S["nextendo.locked.text"] : Text);
         // signed in on Nextendo there is nothing to do here: no button (MKWMP servers are Settings › Online's alternative, as the text says)
         SetValue(ButtonTextProperty, nextendo && _shell is { NextendoNeedsSignIn: false } ? "" : _shell?.OnlineLockLabel ?? "");
     }
@@ -86,6 +94,22 @@ public partial class OnlineLocked : UserControl
     {
         get => (string)GetValue(TitleProperty);
         set => SetValue(TitleProperty, value);
+    }
+
+    /// <summary>
+    /// What it says instead while Nextendo Network is where PLAY goes online, for a place Nextendo has too (the
+    /// friends panel: "Your Nextendo friends"); "" for a place that is only an MKWMP server's (voice, camera).
+    /// </summary>
+    public string NextendoTitle
+    {
+        get => (string)GetValue(NextendoTitleProperty);
+        set => SetValue(NextendoTitleProperty, value);
+    }
+
+    public string NextendoText
+    {
+        get => (string)GetValue(NextendoTextProperty);
+        set => SetValue(NextendoTextProperty, value);
     }
 
     /// <summary>One or two lines under it.</summary>

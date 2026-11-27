@@ -407,9 +407,9 @@ public sealed class ModsViewModel : PageViewModel
             {
                 hints.Add(new Hint(PadButton.Y, AllLabel));
             }
-            else if (!Shell.NextendoFirst)
+            else if (Shell.ShowFriendsHint)
             {
-                hints.Add(new Hint(PadButton.Y, S["hint.friends"])); // friends are an MKWMP server's (ShellViewModel.DefaultHints)
+                hints.Add(new Hint(PadButton.Y, S["hint.friends"])); // where there are friends (ShellViewModel.DefaultHints)
             }
             if (_focused is { CanToggle: true })
             {

@@ -49,6 +49,12 @@ internal sealed class FakeNextendo : HttpMessageHandler
 
     public int GameTokenSeconds { get; set; } = 86_400;
 
+    /// <summary>
+    /// What answers the calls this fake does not know itself (the friends list, presence: NextendoFriendsTests.cs), once
+    /// their access token was found good: the method and the path with its query, then the body. Null: 404.
+    /// </summary>
+    public Func<string, string, HttpResponseMessage?>? More { get; set; }
+
     public int Grants => _grants;
 
     public int Count(string request)
@@ -131,7 +137,13 @@ internal sealed class FakeNextendo : HttpMessageHandler
                     Assert.StartsWith("nx2", bearer, StringComparison.Ordinal); // asked with the game token, never the access token
                     return Json(200, Refuse.Length == 0 ? new { allow = true, reason = "" } : new { allow = false, reason = Refuse });
                 default:
-                    return new HttpResponseMessage(HttpStatusCode.NotFound);
+                    if (More is null)
+                    {
+                        return new HttpResponseMessage(HttpStatusCode.NotFound);
+                    }
+                    return bearer == $"access-{_refreshes}"
+                        ? More($"{request.Method.Method} {uri.PathAndQuery}", body) ?? new HttpResponseMessage(HttpStatusCode.NotFound)
+                        : Json(401, new { error = "invalid_token" });
             }
         }
     }

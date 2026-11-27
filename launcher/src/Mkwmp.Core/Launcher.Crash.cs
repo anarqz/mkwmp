@@ -203,6 +203,8 @@ public sealed partial class Launcher
         {
             secrets.AddRange([link.Username, link.FriendCode, link.Pid.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
         }
+        // Nextendo friends are other people: their names, friend codes and ids are in no dump either.
+        secrets.AddRange(NextendoPeopleSecrets());
         if (install is null)
         {
             return secrets;

@@ -113,8 +113,11 @@ public sealed partial class SettingsViewModel
     /// <summary>Notifications: "Friend notifications need a server", with the way to Settings › Online. Only for an install on MKWMP servers without one.</summary>
     public bool ShowNotifyLocked => OnlineLocked && !NextendoFirst;
 
-    /// <summary>Notifications on Nextendo: a line that says friends' news is an MKWMP server's (nothing to press: nobody is sent to one).</summary>
-    public bool ShowNotifyNextendo => OnlineLocked && NextendoFirst;
+    /// <summary>Notifications on Nextendo with nobody signed in: a line that says friends' news comes with the sign-in (nothing to press here).</summary>
+    public bool ShowNotifyNextendo => OnlineLocked && NextendoFirst && !ShowNextendoFriends;
+
+    /// <summary>The three switches of friends' news: with an MKWMP server, or with a Nextendo account PLAY goes online with.</summary>
+    public bool ShowNotifyToggles => OnlineEnabled || ShowNextendoFriends;
 
     /// <summary>The chosen category needs a server and there is none: <c>CategoryKey</c> is "locked".</summary>
     private bool CategoryLocked => OnlineLocked && OnlineOnly.Contains(_category.Key);

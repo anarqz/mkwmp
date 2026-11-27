@@ -24,6 +24,9 @@ internal enum NextendoError
 
     /// <summary>An answer that is not what docs/contracts/NEXTENDO_API.md says.</summary>
     Bad,
+
+    /// <summary>Nextendo said no to this one thing (an unknown friend code, a full friends list): the message says which, for the player.</summary>
+    Refused,
 }
 
 /// <summary>A failure of a call to Nextendo, with the text the player reads. Never holds a token.</summary>
@@ -153,7 +156,7 @@ internal sealed class NextendoApi(HttpClient http, string userAgent)
         + "&state=" + Uri.EscapeDataString(state));
 
     private async Task<(HttpStatusCode Status, JsonElement? Body, HttpResponseHeaders Headers)> SendAsync(
-        HttpMethod method, string path, string? bearer, IReadOnlyList<KeyValuePair<string, string>>? form, CancellationToken cancel)
+        HttpMethod method, string path, string? bearer, IReadOnlyList<KeyValuePair<string, string>>? form, CancellationToken cancel, string? json = null)
     {
         using var req = new HttpRequestMessage(method, Origin + path);
         req.Headers.TryAddWithoutValidation("User-Agent", userAgent);
@@ -165,6 +168,10 @@ internal sealed class NextendoApi(HttpClient http, string userAgent)
         if (form is not null)
         {
             req.Content = new FormUrlEncodedContent(form);
+        }
+        else if (json is not null)
+        {
+            req.Content = new StringContent(json, Encoding.UTF8, "application/json");
         }
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel);
         limit.CancelAfter(Timeout);
@@ -268,7 +275,7 @@ internal sealed class NextendoApi(HttpClient http, string userAgent)
     // ---- the account ----------------------------------------------------------------------
 
     /// <summary>A number, or a string of digits (ids are written both ways).</summary>
-    private static long? Id(JsonElement? e) =>
+    internal static long? Id(JsonElement? e) =>
         e.Long() ?? (e.Str() is { } text && long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : null);
 
     internal static NextendoUser? ParseUser(JsonElement? v) =>
@@ -320,4 +327,70 @@ internal sealed class NextendoApi(HttpClient http, string userAgent)
     /// <summary>Whether the account may go online now. Asked with the game token (<c>nx2…</c>), not the access token.</summary>
     public Task<NextendoOnline> OnlineAsync(string gameToken, CancellationToken cancel) =>
         GetAsync(HttpMethod.Get, "/api/online-status", gameToken, false, ParseOnline, cancel);
+
+    // ---- friends and presence (NextendoFriends.cs; scopes friends and presence) ------------
+
+    /// <summary>A call with the access token and an optional JSON body; <paramref name="refused"/> names what a status means for this call.</summary>
+    private async Task<JsonElement?> AskAsync(HttpMethod method, string path, string access, string? json, Func<int, string?>? refused, CancellationToken cancel)
+    {
+        var (status, body, headers) = await SendAsync(method, path, access, null, cancel, json).ConfigureAwait(false);
+        if (Ok(status))
+        {
+            return body;
+        }
+        if (refused?.Invoke((int)status) is { } why)
+        {
+            throw new NextendoException(NextendoError.Refused, why);
+        }
+        throw Failure(status, headers, accessToken: true);
+    }
+
+    private static string PidBody(long pid) => "{\"pid\":" + pid.ToString(CultureInfo.InvariantCulture) + "}";
+
+    /// <summary>The account's friends, the requests it got and the ones it sent (without pictures: <c>images=0</c>).</summary>
+    public async Task<NextendoFriendList> FriendsAsync(string access, CancellationToken cancel) =>
+        NextendoFriendList.Parse(await AskAsync(HttpMethod.Get, "/api/friends?images=0", access, null, null, cancel).ConfigureAwait(false))
+        ?? throw NextendoException.Bad(Strings.NextendoBadAnswer);
+
+    /// <summary>
+    /// Asks the owner of a friend code to be friends. <c>Already</c>: they are friends now (they had asked first, or
+    /// were friends already). Refused: no such code, the player's own, a full list, or a request that cannot be sent.
+    /// </summary>
+    public async Task<(NextendoPerson Friend, bool Already)> AddFriendAsync(string access, string friendCode, CancellationToken cancel)
+    {
+        var body = await AskAsync(HttpMethod.Post, "/api/friends", access, JsonSerializer.Serialize(new { friend_code = friendCode }), status => status switch
+        {
+            404 => Strings.NextendoFriendCodeUnknown,
+            400 => Strings.NextendoFriendCodeOwn,
+            409 => Strings.NextendoFriendsFull,
+            500 => Strings.NextendoFriendNotSent, // one of the two blocked the other
+            _ => null,
+        }, cancel).ConfigureAwait(false);
+        return (NextendoFriendList.Person(body.At("friend")) ?? new NextendoPerson(0, "", friendCode), body.At("already").Bool() ?? false);
+    }
+
+    /// <summary><c>accept</c>, <c>decline</c>, <c>remove</c>, <c>block</c> or <c>unblock</c>, for one player.</summary>
+    public async Task FriendActionAsync(string access, string verb, long pid, CancellationToken cancel) =>
+        await AskAsync(HttpMethod.Post, "/api/friends/" + verb, access, PidBody(pid), status => status == 400 ? Strings.NextendoRequestGone : null, cancel).ConfigureAwait(false);
+
+    public async Task FavoriteAsync(string access, long pid, bool favorite, CancellationToken cancel) =>
+        await AskAsync(HttpMethod.Post, "/api/friends/favorite", access, JsonSerializer.Serialize(new { pid, favorite }),
+            status => status == 400 ? Strings.NextendoRequestGone : null, cancel).ConfigureAwait(false);
+
+    public async Task<IReadOnlyList<NextendoPerson>> BlockedAsync(string access, CancellationToken cancel) =>
+        NextendoFriendList.People(await AskAsync(HttpMethod.Get, "/api/friends/blocked", access, null, null, cancel).ConfigureAwait(false), "blocked")
+        ?? throw NextendoException.Bad(Strings.NextendoBadAnswer);
+
+    /// <summary>The players met in online games lately.</summary>
+    public async Task<IReadOnlyList<NextendoPerson>> RecentPlayersAsync(string access, CancellationToken cancel) =>
+        NextendoFriendList.People(await AskAsync(HttpMethod.Get, "/api/recent-players", access, null, null, cancel).ConfigureAwait(false), "players")
+        ?? throw NextendoException.Bad(Strings.NextendoBadAnswer);
+
+    /// <summary>
+    /// Says where the player is: 0 offline, 1 online, 2 playing <paramref name="appId"/> (16 hex digits). Nextendo
+    /// forgets it after 90 s, so it is said again and again (<see cref="NextendoPresence"/>).
+    /// </summary>
+    public async Task PresenceAsync(string access, int status, string appId, string detail, CancellationToken cancel) =>
+        await AskAsync(HttpMethod.Post, "/api/presence", access,
+            JsonSerializer.Serialize(new { status, app_id = appId, app_detail = detail, platform = "app" }), null, cancel).ConfigureAwait(false);
 }

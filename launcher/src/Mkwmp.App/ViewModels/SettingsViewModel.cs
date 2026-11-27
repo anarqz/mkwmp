@@ -249,7 +249,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     public string TrayCaption => string.Join("\n", new[] { HasTray ? "" : S["settings.background.no_tray"], NextendoFirst ? "" : S["settings.background.caption"] }.Where(line => line.Length > 0));
 
     /// <summary>Under "Keep Running in the System Tray": "so friends see me online", which is an MKWMP server's (nothing on Nextendo Network).</summary>
-    public string TrayRowCaption => NextendoFirst ? "" : S["settings.background.tray_caption"];
+    public string TrayRowCaption => NextendoFirst && !ShowNextendoFriends ? "" : S["settings.background.tray_caption"]; // true of Nextendo friends too, once signed in
 
     /// <summary>Under Wine / Proton the registry's Run key starts nothing: Steam starts the launcher there.</summary>
 #pragma warning disable CA1822 // XAML binds to instance properties

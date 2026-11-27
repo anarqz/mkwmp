@@ -9,7 +9,9 @@
   <!-- DataContext: FriendsPanelViewModel. Header, "add a friend", one message line, then the list in
        sections (requests, friends, sent). The shell slides it in from the right and dims the page; the
        bottom 112 units belong to the panel's own hint bar (MainWindow.xaml). Without a server (Locked) only the header and the locked
-       state: no field, no list. -->
+       state: no field, no list. On Nextendo Network (OnNextendo: a linked account, PLAY goes there) the same panel
+       holds that account's Nextendo friends: its own friend code with Copy above the field, which takes a friend code,
+       and after the requests and the friends the requests sent and the players met in a race. -->
   <UserControl.Resources>
     <!-- a small button inside a line of the list -->
     <Style x:Key="RowButton" TargetType="c:ConsoleButton" BasedOn="{StaticResource {x:Type c:ConsoleButton}}">
@@ -71,6 +73,59 @@
       </DataTemplate.Triggers>
     </DataTemplate>
 
+    <!-- a friend on Nextendo: the name (a star when a favourite), what they do under it, their friend code at the right -->
+    <DataTemplate DataType="{x:Type vm:NextendoFriendRow}">
+      <Button Style="{StaticResource CardButton}" Background="Transparent" Padding="16,10" Margin="0,2" Command="{Binding OpenCommand}"
+              input:FocusNav.IsDefault="{Binding IsDefault}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <c:Avatar DisplayName="{Binding Name}" Presence="{Binding Presence}" Width="72" Height="72" />
+          <StackPanel Grid.Column="1" Margin="20,0,12,0" VerticalAlignment="Center">
+            <DockPanel LastChildFill="False">
+              <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="30" TextTrimming="CharacterEllipsis" MaxWidth="290" />
+              <c:Icon Data="{StaticResource Icon.Star}" Width="24" Height="24" Margin="10,2,0,0" StrokeThickness="2.2" VerticalAlignment="Center"
+                      Foreground="{DynamicResource Brush.Warn}" Visibility="{Binding Favorite, Converter={StaticResource Conv.Visible}}" />
+            </DockPanel>
+            <TextBlock x:Name="State" Text="{Binding StateText}" Style="{StaticResource Text.Base}" FontSize="22" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.TextFaint}" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <TextBlock Grid.Column="2" Text="{Binding FriendCode}" Style="{StaticResource Text.Small}" FontSize="19" VerticalAlignment="Center" Margin="0,0,6,0"
+                     Foreground="{DynamicResource Brush.TextFaint}" />
+        </Grid>
+      </Button>
+      <DataTemplate.Triggers>
+        <DataTrigger Binding="{Binding State}" Value="Playing">
+          <Setter TargetName="State" Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding State}" Value="Online">
+          <Setter TargetName="State" Property="Foreground" Value="{DynamicResource Brush.Good}" />
+        </DataTrigger>
+      </DataTemplate.Triggers>
+    </DataTemplate>
+
+    <!-- someone on Nextendo who is not a friend: asked (no button), or met in a race (Add) -->
+    <DataTemplate DataType="{x:Type vm:NextendoPersonRow}">
+      <Grid Margin="16,8,6,8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <c:Avatar DisplayName="{Binding Name}" Width="72" Height="72" Opacity="0.7" />
+        <StackPanel Grid.Column="1" Margin="20,0,12,0" VerticalAlignment="Center">
+          <TextBlock Text="{Binding Name}" Style="{StaticResource Text.Base}" FontSize="30" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding Note}" Style="{StaticResource Text.Small}" FontSize="22" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <c:ConsoleButton Grid.Column="2" Style="{StaticResource RowButton}" Kind="Secondary" Command="{Binding ActCommand}" Content="{Binding ActionLabel}"
+                         input:FocusNav.IsDefault="{Binding IsDefault}"
+                         Visibility="{Binding HasAction, Converter={StaticResource Conv.Visible}}" />
+      </Grid>
+    </DataTemplate>
+
     <DataTemplate DataType="{x:Type vm:FriendSentRow}">
       <Grid Margin="16,8,6,8">
         <Grid.ColumnDefinitions>
@@ -108,15 +163,28 @@
 
       <!-- add a friend by gamertag, and the one message line -->
       <StackPanel Grid.Row="1" Margin="56,26,56,0" Visibility="{Binding Unlocked, Converter={StaticResource Conv.Visible}}">
+        <!-- on Nextendo: the player's own friend code, to give to a friend -->
+        <Grid Margin="6,0,0,18" Visibility="{Binding ShowMyCode, Converter={StaticResource Conv.Visible}}">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="{Binding S[friends.nx.my_code]}" Style="{StaticResource Text.Small}" FontSize="21" TextTrimming="CharacterEllipsis" />
+            <TextBlock Text="{Binding MyCode}" Style="{StaticResource Text.Base}" FontSize="30" FontWeight="SemiBold" />
+          </StackPanel>
+          <c:ConsoleButton Grid.Column="1" Style="{StaticResource RowButton}" Kind="Secondary" Content="{Binding S[friends.nx.copy]}"
+                           Command="{Binding CopyCodeCommand}" />
+        </Grid>
         <Grid>
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
           <!-- the icon leads the box and stays (as a search field's); the text and its placeholder start after it -->
-          <TextBox x:Name="EntryBox" Text="{Binding Entry, UpdateSourceTrigger=PropertyChanged}" MaxLength="16" IsEnabled="{Binding SignedIn}"
-                   Padding="72,0,22,0" FontSize="27" input:TextEntry.Placeholder="{Binding S[friends.add_hint]}"
-                   input:TextEntry.Title="{Binding S[friends.add_title]}" input:TextEntry.Charset="Gamertag"
+          <TextBox x:Name="EntryBox" Text="{Binding Entry, UpdateSourceTrigger=PropertyChanged}" MaxLength="{Binding EntryMax}" IsEnabled="{Binding SignedIn}"
+                   Padding="72,0,22,0" FontSize="27" input:TextEntry.Placeholder="{Binding AddHint}"
+                   input:TextEntry.Title="{Binding AddTitle}" input:TextEntry.Charset="{Binding EntryCharset}"
                    input:TextEntry.Submitted="OnSubmitted" />
           <c:Icon Data="{StaticResource Icon.UserPlus}" Width="34" Height="34" Margin="24,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
                   Foreground="{DynamicResource Brush.TextMuted}" IsHitTestVisible="False" />
@@ -148,7 +216,7 @@
                   Visibility="{Binding IsEmpty, Converter={StaticResource Conv.Visible}}">
         <Image Source="pack://application:,,,/Assets/Art/empty-friends.png" Width="460" HorizontalAlignment="Center"
                RenderOptions.BitmapScalingMode="HighQuality" IsHitTestVisible="False" />
-        <TextBlock Text="{Binding S[friends.empty]}" Style="{StaticResource Text.Caption}" TextAlignment="Center" Margin="0,18,0,0" />
+        <TextBlock Text="{Binding EmptyText}" Style="{StaticResource Text.Caption}" TextAlignment="Center" Margin="0,18,0,0" />
       </StackPanel>
 
       <c:SmoothScrollViewer Grid.Row="2" Padding="44,0,44,18" Visibility="{Binding Unlocked, Converter={StaticResource Conv.Visible}}">
@@ -158,6 +226,7 @@
       <!-- locked online: friends live on a server, and none is set -->
       <v:OnlineLocked Grid.Row="1" Grid.RowSpan="2" VerticalAlignment="Center" Margin="64,0,64,70"
                       Title="{Binding S[friends.locked.title]}" Text="{Binding S[friends.locked.text]}"
+                      NextendoTitle="{Binding S[friends.nx.locked.title]}" NextendoText="{Binding S[friends.nx.locked.text]}"
                       Visibility="{Binding Locked, Converter={StaticResource Conv.Visible}}" />
     </Grid>
   </Border>

@@ -83,9 +83,11 @@ public partial class App : Application
             // Where the demo goes online (Design/DesignLauncher.Nextendo.cs). --demo-nextendo: signed in with Nextendo,
             // playing there; --demo-nextendo-linked: signed in, playing on MKWMP servers; --demo-mkwmp: on MKWMP servers
             // (with --demo-offline: the locked "Configure Online" of an install that chose them)
-            if (args.Contains("--demo-nextendo", StringComparer.OrdinalIgnoreCase) || args.Contains("--demo-nextendo-linked", StringComparer.OrdinalIgnoreCase))
+            // --demo-nextendo-friends is --demo-nextendo: signed in and playing there, with the account's (made-up) Nextendo friends
+            var onNextendo = args.Contains("--demo-nextendo", StringComparer.OrdinalIgnoreCase) || args.Contains("--demo-nextendo-friends", StringComparer.OrdinalIgnoreCase);
+            if (onNextendo || args.Contains("--demo-nextendo-linked", StringComparer.OrdinalIgnoreCase))
             {
-                design.PretendNextendo(playing: args.Contains("--demo-nextendo", StringComparer.OrdinalIgnoreCase));
+                design.PretendNextendo(playing: onNextendo);
             }
             else if (args.Contains("--demo-mkwmp", StringComparer.OrdinalIgnoreCase))
             {
