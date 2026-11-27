@@ -16,6 +16,10 @@ public sealed partial class Launcher
 {
     private Release? _availableRelease;
     private StagedUpdate? _staged;
+
+    // The newest stable release, while "Return to Stable" is on offer (Updater.StableReturn): an older version than
+    // this one. Never what an update check installs: only ReturnToStableAsync takes it.
+    private Release? _stableReturn;
     private volatile bool _installAfterGame;
     private int _updateWork;
     private int _afterGameLoop;
@@ -64,7 +68,11 @@ public sealed partial class Launcher
             _mustUpdate = false;
             SetOfflineOnly(false); // nothing newer after all (the release was withdrawn): online again
         }
-        view = view with { Required = _mustUpdate && !_waived && view.State is not (UpdateState.UpToDate or UpdateState.Off or UpdateState.Checking) };
+        view = view with
+        {
+            Required = _mustUpdate && !_waived && view.State is not (UpdateState.UpToDate or UpdateState.Off or UpdateState.Checking),
+            StableReturn = StableReturnVersion(),
+        };
         lock (_gate)
         {
             _updateView = view;
@@ -88,7 +96,7 @@ public sealed partial class Launcher
         var s = Settings;
         if (UpdateExe is { } exe && SemVer.TryParse(Version) is { } current)
         {
-            SelfUpdate.Clean(RootOf(exe), current, Note); // what the update that brought this version left
+            SelfUpdate.Clean(RootOf(exe), current, Note, v => Updater.Takes(s.UpdateChannel, v)); // what the update that brought this version left
         }
         if (!UpdatesOn(s))
         {
@@ -190,6 +198,86 @@ public sealed partial class Launcher
         }
     }
 
+    /// <summary>The stable release "Return to Stable" would install, while that is on offer: a release candidate runs, on the stable channel.</summary>
+    private string? StableReturnVersion()
+    {
+        Release? back;
+        lock (_gate)
+        {
+            back = _stableReturn;
+        }
+        return back?.Version is { } version && Settings.UpdateChannel == UpdateChannel.Stable && SemVer.TryParse(Version) is { IsReleaseCandidate: true } current && version < current
+            ? version.ToString()
+            : null;
+    }
+
+    public async Task SetUpdateChannelAsync(UpdateChannel channel)
+    {
+        if (Settings.UpdateChannel == channel)
+        {
+            return;
+        }
+        await SaveSettingsAsync(Settings with { UpdateChannel = channel }).ConfigureAwait(false);
+        if (Settings.UpdateChannel != channel)
+        {
+            return; // not saved (the file could not be written): said by the save
+        }
+        Note($"update channel: {UpdateChannels.Name(channel)} (launcher {Version})");
+        // What was found or downloaded on the other channel is not this one's: asked again, now.
+        lock (_gate)
+        {
+            _availableRelease = null;
+            _stableReturn = null;
+        }
+        _staged = null;
+        if (UpdatesOn(Settings) && !_options.OverlayHost)
+        {
+            await CheckForUpdatesAsync().ConfigureAwait(false);
+        }
+    }
+
+    public async Task ReturnToStableAsync(CancellationToken cancel)
+    {
+        if (Interlocked.CompareExchange(ref _updateWork, 1, 0) != 0)
+        {
+            return; // a download or an install is under way
+        }
+        try
+        {
+            Release? release;
+            lock (_gate)
+            {
+                release = _stableReturn;
+            }
+            // Every condition again, here: this is the only place an older version is ever handed to the installer.
+            if (SemVer.TryParse(Version) is not { IsReleaseCandidate: true } current || Settings.UpdateChannel != UpdateChannel.Stable
+                || release is not { IsStable: true, Version: { } target } || target >= current)
+            {
+                Note("return to stable: not on offer (it needs a release candidate on the stable channel and an older stable release)");
+                return;
+            }
+            if (GameBlocksUpdate())
+            {
+                Note("return to stable: not now, a game is running");
+                SetUpdate(new UpdateView(UpdateState.Failed, null, null, 0, null, Strings.UpdateNeedsNoGame));
+                return;
+            }
+            Note($"return to stable: {Version} -> {target}, asked for by the player");
+            if (await DownloadReleaseAsync(release, back: true, cancel).ConfigureAwait(false) is not { } staged)
+            {
+                return;
+            }
+            // A release candidate downloaded earlier is not kept: the stable launcher must not find it waiting.
+            SelfUpdate.DropOthers(staged.Root, staged.Version, Note);
+            _staged = null;
+            await InstallAsync(staged, returnToStable: true).ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Write(ref _updateWork, 0);
+        }
+    }
+
     public void ContinueWithoutUpdate()
     {
         if (Update is { State: UpdateState.Failed, Required: true })
@@ -211,10 +299,14 @@ public sealed partial class Launcher
             {
                 throw new LauncherException($"{Version} is not a version");
             }
-            var newest = Updater.Newest(await _updater.ReleasesAsync(_life.Token).ConfigureAwait(false), current);
+            // The channel as it is now (Settings › Updates): stable never sees a release candidate.
+            var channel = Settings.UpdateChannel;
+            var releases = await _updater.ReleasesAsync(_life.Token).ConfigureAwait(false);
+            var newest = Updater.Newest(releases, current, channel);
             lock (_gate)
             {
                 _availableRelease = newest;
+                _stableReturn = Updater.StableReturn(releases, current, channel);
             }
             if (newest is null)
             {
@@ -256,11 +348,13 @@ public sealed partial class Launcher
         {
             return null;
         }
-        if (_staged is { } known && (version is null || known.Version == version) && Directory.Exists(UpdatePlan.TransactionFolder(known.Root, known.Version)))
+        var channel = Settings.UpdateChannel;
+        if (_staged is { } known && (version is null || known.Version == version) && SemVer.TryParse(known.Version) is { } staged && Updater.Takes(channel, staged)
+            && Directory.Exists(UpdatePlan.TransactionFolder(known.Root, known.Version)))
         {
             return known;
         }
-        return _staged = SelfUpdate.FindStaged(RootOf(exe), current, UpdateKeys, version);
+        return _staged = SelfUpdate.FindStaged(RootOf(exe), current, UpdateKeys, version, v => Updater.Takes(channel, v));
     }
 
     public async Task DownloadUpdateAsync(CancellationToken cancel)
@@ -373,9 +467,18 @@ public sealed partial class Launcher
     private async Task<StagedUpdate?> StageAsync(CancellationToken cancel)
     {
         Release? release;
+        var channel = Settings.UpdateChannel;
         lock (_gate)
         {
+            if (_availableRelease is { } found && !found.In(channel))
+            {
+                _availableRelease = null; // found on the other channel (it was changed since): asked again below
+            }
             release = _availableRelease;
+        }
+        if (_staged is { Version: var stagedVersion } && (SemVer.TryParse(stagedVersion) is not { } sv || !Updater.Takes(channel, sv)))
+        {
+            _staged = null;
         }
         if (_staged is { } ready && (release is null || release.Version?.ToString() == ready.Version)
             && File.Exists(Path.Combine(UpdatePlan.TransactionFolder(ready.Root, ready.Version), UpdatePlan.ZipName)))
@@ -401,12 +504,22 @@ public sealed partial class Launcher
                 return null;
             }
         }
+        return await DownloadReleaseAsync(release, back: false, cancel).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Downloads and verifies <paramref name="release"/> into the staging folder, with progress in <see cref="Update"/>.
+    /// <paramref name="back"/>: it is the stable release of "Return to Stable" (an older version): it is installed by
+    /// the helper already here, is never remembered as an update that is ready, and a cancel leaves no offer.
+    /// </summary>
+    private async Task<StagedUpdate?> DownloadReleaseAsync(Release release, bool back, CancellationToken cancel)
+    {
         var version = release.Version?.ToString() ?? release.Tag;
         var notes = release.Notes;
         try
         {
             var exe = UpdateExe ?? throw new LauncherException(Strings.CannotUpdateItself);
-            Note($"downloading the launcher {Version} -> {release.Tag}");
+            Note($"downloading the launcher {Version} -> {release.Tag}{(back ? " (return to stable)" : "")}");
             SetUpdate(new UpdateView(UpdateState.Downloading, version, notes, 0, null, Strings.Downloading(version)));
             using var both = CancellationTokenSource.CreateLinkedTokenSource(cancel, _life.Token);
             var meter = new DownloadMeter(_clock);
@@ -417,16 +530,21 @@ public sealed partial class Launcher
                     SetUpdate(new UpdateView(UpdateState.Downloading, version, notes, now.Done, now.Remaining, Strings.Downloading(version), p.Got, p.Total ?? 0, now.Speed));
                 }
             });
-            var staged = await SelfUpdate.StageAsync(_updater, release, RootOf(exe), progress, both.Token).ConfigureAwait(false);
-            _staged = staged;
+            var staged = await SelfUpdate.StageAsync(_updater, release, RootOf(exe), progress, both.Token, installedHelper: back).ConfigureAwait(false);
             Note($"launcher {staged.Version} downloaded and verified ({staged.Asset}); ready to install");
-            SetReady(staged);
+            if (!back)
+            {
+                _staged = staged;
+                SetReady(staged);
+            }
             return staged;
         }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested)
         {
             // The player cancelled: the update stays on offer, and what was downloaded is continued next time.
-            SetUpdate(new UpdateView(UpdateState.Available, version, notes, 0, null, Strings.UpdateAvailable(version)));
+            SetUpdate(back
+                ? new UpdateView(UpdateState.UpToDate, null, null, 0, null, Strings.UpToDate)
+                : new UpdateView(UpdateState.Available, version, notes, 0, null, Strings.UpdateAvailable(version)));
             return null;
         }
         catch (Exception e) when (e is LauncherException or OperationCanceledException or IOException)
@@ -443,13 +561,14 @@ public sealed partial class Launcher
     /// when neither the release nor this install has a helper: the same swap is done here (a running
     /// executable can be renamed aside) and the new launcher is started, as before.
     /// </summary>
-    private async Task InstallAsync(StagedUpdate staged)
+    /// <param name="returnToStable">The plan says "Return to Stable": the one install the installer lets go down a version (<see cref="UpdateInstaller.CheckDirection"/>).</param>
+    private async Task InstallAsync(StagedUpdate staged, bool returnToStable = false)
     {
         var version = staged.Version;
         try
         {
             var exe = UpdateExe ?? throw new LauncherException(Strings.CannotUpdateItself);
-            var plan = staged.Plan(Version, Path.GetFileName(exe), _options.Arguments);
+            var plan = staged.Plan(Version, Path.GetFileName(exe), _options.Arguments) with { ReturnToStable = returnToStable };
             plan.Write();
             if (!_options.Headless && staged.Helper is { } helper)
             {

@@ -30,7 +30,9 @@ internal sealed class FakeGitHub : HttpMessageHandler
     }
 
     /// <summary>Adds a release with a signed SHA256SUMS of its files (<paramref name="listed"/>: what the list claims instead).</summary>
-    public FakeGitHub Release(string version, Dictionary<string, byte[]> files, Dictionary<string, byte[]>? listed = null, bool draft = false, string? notes = null)
+    /// <param name="prerelease">GitHub's pre-release flag.</param>
+    /// <param name="tag">The tag (default <c>v&lt;version&gt;</c>; a release candidate is cut as <c>alpha-v&lt;version&gt;</c>).</param>
+    public FakeGitHub Release(string version, Dictionary<string, byte[]> files, Dictionary<string, byte[]>? listed = null, bool draft = false, string? notes = null, bool prerelease = false, string? tag = null)
     {
         var sums = $"# mkwmp {version}\n" + string.Concat((listed ?? files).Select(f => $"{Updater.Sha256Hex(f.Value)}  {f.Key}\n"));
         var all = new Dictionary<string, byte[]>(files) { ["SHA256SUMS"] = Encoding.UTF8.GetBytes(sums), ["SHA256SUMS.sig"] = Encoding.UTF8.GetBytes(Sign(sums)) };
@@ -38,7 +40,7 @@ internal sealed class FakeGitHub : HttpMessageHandler
         {
             _files[$"/dl/{version}/{name}"] = bytes;
         }
-        _releases.Add(new { tag_name = $"v{version}", draft, body = notes, assets = all.Keys.Select(n => new { name = n, browser_download_url = $"{Api}/dl/{version}/{n}" }) });
+        _releases.Add(new { tag_name = tag ?? $"v{version}", draft, prerelease, body = notes, assets = all.Keys.Select(n => new { name = n, browser_download_url = $"{Api}/dl/{version}/{n}" }) });
         return this;
     }
 
@@ -147,9 +149,10 @@ public class UpdaterTests
     {
         static Release Rel(string tag, bool draft) => new(tag, draft, null, []);
         Release[] list = [Rel("v0.0.1-rc.1", false), Rel("v0.0.1-rc.2", false), Rel("v0.0.2", true), Rel("junk", false)];
-        Assert.Equal("v0.0.1-rc.2", Updater.Newest(list, V("0.0.1-rc.1"))!.Tag);
-        Assert.Null(Updater.Newest(list, V("0.0.1-rc.2")));
-        Assert.Null(Updater.Newest(list, V("0.0.1"))); // 0.0.1 > 0.0.1-rc.2: never downgrade
+        Assert.Equal("v0.0.1-rc.2", Updater.Newest(list, V("0.0.1-rc.1"), UpdateChannel.Alpha)!.Tag);
+        Assert.Null(Updater.Newest(list, V("0.0.1-rc.1"))); // the stable channel (the default) takes no release candidate
+        Assert.Null(Updater.Newest(list, V("0.0.1-rc.2"), UpdateChannel.Alpha));
+        Assert.Null(Updater.Newest(list, V("0.0.1"), UpdateChannel.Alpha)); // 0.0.1 > 0.0.1-rc.2: never downgrade
         Assert.True(V("1.0.0-rc.10") > V("1.0.0-rc.9") && V("1.0.0-rc.1") > V("1.0.0-alpha") && V("1.10.0") > V("1.9.9") && V("1.0.0-1") < V("1.0.0-a"));
         Assert.Null(SemVer.TryParse("1.0"));
         Assert.Null(SemVer.TryParse("01.0.0"));

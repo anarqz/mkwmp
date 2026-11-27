@@ -195,6 +195,7 @@ internal sealed record ClientConfig
             Seat = string.Equals(Str(t, "seat", "start"), "online", StringComparison.OrdinalIgnoreCase) ? SeatMode.Online : SeatMode.Start,
             LocalPort = Int(t, "local_port", d.LocalPort, 1, 65535),
             AutoUpdate = Bool(t, "update", true),
+            UpdateChannel = UpdateChannels.Parse(Str(t, "update_channel", "")),
             Slot = Int(t, "slot", 1, 0, 255),
             LaunchCommand = Str(t, "launch_command", ""),
             Beholder = Str(t, "beholder", "").Trim(),
@@ -312,6 +313,10 @@ internal sealed record ClientConfig
         Line(b, "seat", s.Seat == SeatMode.Online ? "online" : "start");
         Line(b, "local_port", s.LocalPort);
         Line(b, "update", s.AutoUpdate);
+        if (s.UpdateChannel != UpdateChannel.Stable)
+        {
+            Line(b, "update_channel", UpdateChannels.Name(s.UpdateChannel)); // only off the default (stable): Settings › Updates
+        }
         Line(b, "slot", s.Slot);
         Line(b, "launch_command", s.LaunchCommand);
         Line(b, "beholder", s.Beholder);

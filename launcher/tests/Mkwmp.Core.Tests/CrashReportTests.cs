@@ -283,7 +283,7 @@ public class CrashReportTests
         var bug = await l.PrepareReportAsync(null);
         Assert.False(bug.Crash);
         Assert.True(File.Exists(bug.Zip) && bug.OnDesktop && Path.GetDirectoryName(bug.Zip) == desktop);
-        Assert.StartsWith("https://github.com/anarqz/mkwmp/issues/new?template=bug_report.yml&labels=bug&title=&version=1.4.0&logs=Drag%20mkwmp-bug-", bug.Url, StringComparison.Ordinal);
+        Assert.StartsWith("https://github.com/anarqz/mkwmp/issues/new?template=bug_report.yml&labels=bug&title=&version=1.4.0%20%28stable%20channel%29&logs=Drag%20mkwmp-bug-", bug.Url, StringComparison.Ordinal);
 
         // the game crashes: the records are in its folder when it ends
         launcher.GameStarting();

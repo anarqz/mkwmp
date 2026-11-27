@@ -59,6 +59,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         LanguageCommand = RelayCommand.Async(Shell.PickLanguageAsync);
         CheckUpdateCommand = RelayCommand.Async(() => Launcher.CheckForUpdatesAsync(), () => Launcher.Update.State is not (UpdateState.Checking or UpdateState.Downloading or UpdateState.Restarting));
         UpdateCommand = new RelayCommand(Shell.ShowUpdateModal);
+        UpdateChannelCommand = RelayCommand.Async(PickUpdateChannelAsync, () => !UpdateBusy);
+        StableReturnCommand = RelayCommand.Async(OfferStableReturnAsync, () => !UpdateBusy);
         SaveLogsCommand = RelayCommand.Async(SaveLogsAsync, () => !_savingLogs);
         FoundBugCommand = RelayCommand.Async(Shell.ReportBugAsync);
         InitVoice();
@@ -319,7 +321,81 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     // ── updates ──
 
-    public string VersionText => Launcher.Version;
+    /// <summary>"1.5.1-rc.2 · Alpha": the version and the channel it follows.</summary>
+    public string VersionText => Shell.VersionAndChannel;
+
+    // The update channel (Mkwmp.Core's UpdateChannel; launcher/docs/UPDATES.md, "Channels"): stable, or alpha for the
+    // test versions (-rc) too. Changing it looks for an update at once; leaving alpha on a test version offers the
+    // way back to the newest stable release when no stable release has caught up yet.
+
+    public string UpdateChannelName => S[Launcher.Settings.UpdateChannel == UpdateChannel.Alpha ? "settings.updates.channel.alpha" : "settings.updates.channel.stable"];
+
+    public ICommand UpdateChannelCommand { get; }
+
+    private async Task PickUpdateChannelAsync()
+    {
+        var now = Launcher.Settings.UpdateChannel;
+        var picked = await Choice.AskAsync(Shell, S["settings.updates.channel"], S["settings.updates.channel.caption"],
+        [
+            new ChoiceOption(UpdateChannels.StableName, S["settings.updates.channel.stable"], S["settings.updates.channel.stable_caption"]),
+            new ChoiceOption(UpdateChannels.AlphaName, S["settings.updates.channel.alpha"], S["settings.updates.channel.alpha_caption"]),
+        ], UpdateChannels.Name(now)).ConfigureAwait(true);
+        if (picked is null)
+        {
+            return;
+        }
+        var channel = UpdateChannels.Parse(picked);
+        if (channel == now)
+        {
+            return;
+        }
+        // Saved, and asked for at once: alpha's newest test version is then installed like any update.
+        await Launcher.SetUpdateChannelAsync(channel).ConfigureAwait(true);
+        RaiseAll();
+        if (channel == UpdateChannel.Stable && Launcher.Update.StableReturn is not null)
+        {
+            await OfferStableReturnAsync().ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>A test version runs on the stable channel and no stable release has caught up: the newest stable one can be put back.</summary>
+    public bool ShowStableReturn => Launcher.Update.StableReturn is not null && !UpdateBusy;
+
+    public string StableReturnLabel => S.Format("settings.updates.return", ("version", Launcher.Update.StableReturn ?? ""));
+
+    public string StableReturnCaption => S.Format("settings.updates.return_caption", ("version", Launcher.Update.StableReturn ?? ""));
+
+    public ICommand StableReturnCommand { get; }
+
+    /// <summary>
+    /// "Return to Stable": asked, never assumed. Yes installs the older stable release (the core checks every
+    /// condition again, and so does the installer); no keeps this version, which from then on gets stable updates only.
+    /// </summary>
+    private async Task OfferStableReturnAsync()
+    {
+        if (Launcher.Update.StableReturn is not { } version)
+        {
+            return;
+        }
+        var body = S.Format("settings.updates.return_body", ("current", Launcher.Version), ("version", version));
+        if (!await Shell.ConfirmAsync(S["settings.updates.return_title"], body, S["settings.updates.return_yes"], S["settings.updates.return_no"]).ConfigureAwait(true))
+        {
+            return;
+        }
+        var progress = Shell.ShowProgress(S["settings.updates.returning"], S["update.installing_body"]);
+        try
+        {
+            await Launcher.ReturnToStableAsync(CancellationToken.None).ConfigureAwait(true);
+        }
+        finally
+        {
+            progress.Close(); // still here: it was not installed (else the launcher has closed)
+        }
+        if (Launcher.Update.State == UpdateState.Failed)
+        {
+            await Shell.MessageAsync(S["update.failed"], Launcher.Update.Status).ConfigureAwait(true);
+        }
+    }
 
     public string UpdateStatus => Launcher.Update.Status;
 

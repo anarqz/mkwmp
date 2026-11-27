@@ -96,6 +96,8 @@ public sealed class WhatsNewViewModel : PageViewModel
     {
         var running = Launcher.Version;
         var document = await Task.Run(() => Changelog.Load(running)).ConfigureAwait(true);
+        // the alpha channel reads the test versions' own notes; stable has them inside the release they led to
+        document = document with { Releases = Changelog.For(document.Releases, Launcher.Settings.UpdateChannel) };
         // the changelog is English; its "unreleased" in place of a date is the page's own word
         _releases = [.. document.Releases.Select(r => new WhatsNewRelease(r.Version,
             string.Equals(r.Date, "unreleased", StringComparison.OrdinalIgnoreCase) ? S["whatsnew.unreleased"] : r.Date ?? "", r.Markdown, r.IsRunning))];

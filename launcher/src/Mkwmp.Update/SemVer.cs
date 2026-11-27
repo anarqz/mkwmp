@@ -2,12 +2,13 @@
 using System.Globalization;
 using System.Numerics;
 
-namespace Mkwmp.Core.Updates;
+namespace Mkwmp.Update;
 
 /// <summary>
 /// A semantic version (<c>1.4.0</c>, <c>0.0.1-rc.2</c>), ordered by the semver rules: a release
 /// is newer than its own pre-releases, so the launcher never "updates" from 1.0.0 to 1.0.0-rc.2.
-/// <see cref="System.Version"/> knows neither pre-releases nor that order.
+/// <see cref="System.Version"/> knows neither pre-releases nor that order. Here (not in Mkwmp.Core) because the
+/// update helper judges the direction of an install by the same order (<see cref="UpdateInstaller"/>).
 /// </summary>
 public sealed class SemVer : IComparable<SemVer>, IEquatable<SemVer>
 {
@@ -22,6 +23,15 @@ public sealed class SemVer : IComparable<SemVer>, IEquatable<SemVer>
     public BigInteger Minor { get; }
     public BigInteger Patch { get; }
     private string[] Pre { get; }
+
+    /// <summary>Any pre-release suffix (<c>-rc.1</c>, <c>-dev.abc</c>, <c>-beta.2</c>): not a stable release.</summary>
+    public bool IsPrerelease => Pre.Length > 0;
+
+    /// <summary>
+    /// A release candidate, the only kind of pre-release the alpha channel takes: exactly <c>X.Y.Z-rc.N</c>
+    /// (<c>rc</c> in lower case, then one number). <c>-rc1</c>, <c>-beta.1</c>, <c>-rc.1.fix</c> are not.
+    /// </summary>
+    public bool IsReleaseCandidate => Pre.Length == 2 && Pre[0] == "rc" && Pre[1].All(char.IsAsciiDigit);
 
     public static SemVer? TryParse(string? text)
     {

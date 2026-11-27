@@ -44,7 +44,11 @@ internal static class SelfUpdate
     /// cut short, and verifies it. The package is the release's zip (every file, the helper included):
     /// a release without it has nothing to install. Throws <see cref="LauncherException"/>.
     /// </summary>
-    public static async Task<StagedUpdate> StageAsync(Updater updater, Release release, string root, IProgress<(long Got, long? Total)>? progress, CancellationToken cancel)
+    /// <param name="installedHelper">
+    /// The helper that installs it is the one already installed, not the package's ("Return to Stable": the older
+    /// release's helper would not know that an install must not go down a version except this once).
+    /// </param>
+    public static async Task<StagedUpdate> StageAsync(Updater updater, Release release, string root, IProgress<(long Got, long? Total)>? progress, CancellationToken cancel, bool installedHelper = false)
     {
         var version = release.Version?.ToString() ?? throw new LauncherException("release tag is not a version");
         try
@@ -72,7 +76,7 @@ internal static class SelfUpdate
                     throw new LauncherException($"{asset}: checksum mismatch");
                 }
             }
-            return Describe(root, version, kind, asset, release.Notes);
+            return Describe(root, version, kind, asset, release.Notes, installedHelper);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or UpdateException)
         {
@@ -83,8 +87,11 @@ internal static class SelfUpdate
     /// <summary>
     /// The newest verified download waiting in the staging folder that is newer than
     /// <paramref name="current"/> (or exactly <paramref name="version"/>), or null. Reads and hashes the package.
+    /// Never an older version: a download staged for "Return to Stable" is not found here, so nothing left in the
+    /// folder can take the launcher down a version. <paramref name="accept"/>: the versions the update channel
+    /// takes (<see cref="Updater.Takes"/>); a release candidate downloaded while on alpha is not offered on stable.
     /// </summary>
-    public static StagedUpdate? FindStaged(string root, SemVer current, IReadOnlyList<string> keys, string? version = null)
+    public static StagedUpdate? FindStaged(string root, SemVer current, IReadOnlyList<string> keys, string? version = null, Func<SemVer, bool>? accept = null)
     {
         try
         {
@@ -95,7 +102,7 @@ internal static class SelfUpdate
             }
             foreach (var folder in Directory.EnumerateDirectories(store)
                 .Select(d => (Folder: d, Version: SemVer.TryParse(Path.GetFileName(d))))
-                .Where(d => d.Version is not null && d.Version > current && (version is null || d.Version.ToString() == version))
+                .Where(d => d.Version is not null && d.Version > current && (version is null || d.Version.ToString() == version) && (accept is null || accept(d.Version)))
                 .OrderByDescending(d => d.Version))
             {
                 var name = folder.Version!.ToString();
@@ -128,7 +135,7 @@ internal static class SelfUpdate
     /// fails here, with the launcher still open), and the helper is put in place as <c>worker.exe</c>:
     /// the new release's own, out of the verified zip, else the installed one.
     /// </summary>
-    private static StagedUpdate Describe(string root, string version, string kind, string asset, string? notes)
+    private static StagedUpdate Describe(string root, string version, string kind, string asset, string? notes, bool installedHelper = false)
     {
         var folder = UpdatePlan.TransactionFolder(root, version);
         var worker = Path.Combine(folder, UpdatePlan.WorkerName);
@@ -137,8 +144,8 @@ internal static class SelfUpdate
         {
             _ = UpdatePackage.Files(zip, UpdatePlan.LauncherName);
         }
-        var has = UpdatePackage.ExtractHelper(package, worker);
         var installed = Path.Combine(root, UpdatePlan.HelperName);
+        var has = !(installedHelper && File.Exists(installed)) && UpdatePackage.ExtractHelper(package, worker);
         if (!has && File.Exists(installed))
         {
             File.Copy(installed, worker, overwrite: true);
@@ -148,10 +155,34 @@ internal static class SelfUpdate
     }
 
     /// <summary>
-    /// Start-up: removes what earlier updates left (their staging folders up to this version, with the
-    /// backup of the files they replaced and the helper's copy). A download of a newer version stays.
+    /// "Return to Stable": removes every other download from the staging folder (a release candidate that was
+    /// waiting to be installed), so the stable launcher that starts next finds none of them.
     /// </summary>
-    public static void Clean(string root, SemVer current, Action<string> note)
+    public static void DropOthers(string root, string version, Action<string> note)
+    {
+        try
+        {
+            var store = UpdatePlan.Store(root);
+            foreach (var folder in Directory.Exists(store) ? Directory.EnumerateDirectories(store) : [])
+            {
+                if (!string.Equals(Path.GetFileName(folder), version, StringComparison.OrdinalIgnoreCase))
+                {
+                    Directory.Delete(folder, recursive: true);
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            note($"update leftovers: {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Start-up: removes what earlier updates left (their staging folders up to this version, with the
+    /// backup of the files they replaced and the helper's copy). A download of a newer version stays, when the
+    /// update channel still takes it (<paramref name="keep"/>, <see cref="Updater.Takes"/>).
+    /// </summary>
+    public static void Clean(string root, SemVer current, Action<string> note, Func<SemVer, bool>? keep = null)
     {
         try
         {
@@ -162,7 +193,7 @@ internal static class SelfUpdate
             }
             foreach (var folder in Directory.EnumerateDirectories(store))
             {
-                if (SemVer.TryParse(Path.GetFileName(folder)) is { } version && version > current)
+                if (SemVer.TryParse(Path.GetFileName(folder)) is { } version && version > current && (keep is null || keep(version)))
                 {
                     continue;
                 }

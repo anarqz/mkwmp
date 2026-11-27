@@ -1,5 +1,5 @@
 # The Windows half of a release (tools/release/release.sh's header): after `release.sh draft` made the draft
-# v<version> on the Mac (and built the two servers there), this builds on Windows what only Windows builds and
+# v<version> (a test version, X.Y.Z-rc.N: alpha-v<version>) on the Mac (and built the two servers there), this builds on Windows what only Windows builds and
 # uploads it to the draft as ONE working file:
 #
 #   mkwmp-launcher-files-windows.zip    a WORKING FILE of the draft, never an asset: the launcher's publish folder
@@ -20,6 +20,9 @@ $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $props = ([xml](Get-Content -LiteralPath "$repo/launcher/Directory.Build.props" -Raw)).Project.PropertyGroup.Version
 if (-not $Version) { $Version = $props }
 if ($Version -ne $props) { throw "-Version $Version is not the launcher's version ($props in launcher/Directory.Build.props)" }
+# The draft's tag, as release.sh names it: v<version>, or alpha-v<version> for a test version (X.Y.Z-rc.N).
+$tag = if ($Version -cmatch '^\d+\.\d+\.\d+$') { "v$Version" } elseif ($Version -cmatch '^\d+\.\d+\.\d+-rc\.(0|[1-9]\d*)$') { "alpha-v$Version" }
+       else { throw "version ${Version}: a release is X.Y.Z, a test version X.Y.Z-rc.N" }
 if (-not $Out) { $Out = Join-Path ([IO.Path]::GetTempPath()) "mkwmp-release-$Version" }
 if (Test-Path -LiteralPath $Out) { Remove-Item -LiteralPath $Out -Recurse -Force -Confirm:$false }
 New-Item -ItemType Directory -Force $Out | Out-Null
@@ -61,6 +64,6 @@ try {
 
 Get-Item -LiteralPath $files | ForEach-Object { '{0,12:N0}  {1}' -f $_.Length, $_.Name }
 if ($NoUpload) { Write-Host "not uploaded (-NoUpload): $files"; return }
-& gh release upload "v$Version" --clobber $files
-if ($LASTEXITCODE -ne 0) { throw "gh release upload v$Version failed (is the draft there? release.sh draft makes it)" }
-Write-Host "uploaded to the draft v$Version; next, on the Mac: tools/release/release.sh publish"
+& gh release upload $tag --clobber $files
+if ($LASTEXITCODE -ne 0) { throw "gh release upload $tag failed (is the draft there? release.sh draft makes it)" }
+Write-Host "uploaded to the draft $tag; next, on the Mac: tools/release/release.sh publish"

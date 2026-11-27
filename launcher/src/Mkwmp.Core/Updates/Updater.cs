@@ -10,10 +10,37 @@ namespace Mkwmp.Core.Updates;
 
 public sealed record ReleaseAsset(string Name, Uri Url);
 
-/// <summary>A GitHub release of the project (<paramref name="Notes"/>: its description, for the update dialog).</summary>
-public sealed record Release(string Tag, bool Draft, string? Notes, IReadOnlyList<ReleaseAsset> Assets)
+/// <summary>
+/// A GitHub release of the project (<paramref name="Notes"/>: its description, for the update dialog;
+/// <paramref name="Prerelease"/>: GitHub's own flag, never "Latest").
+/// </summary>
+public sealed record Release(string Tag, bool Draft, string? Notes, IReadOnlyList<ReleaseAsset> Assets, bool Prerelease = false)
 {
-    public SemVer? Version => Tag.StartsWith('v') ? SemVer.TryParse(Tag[1..]) : null;
+    /// <summary>
+    /// The tag of a release candidate as tools/release/release.sh cuts it: <c>alpha-v1.5.1-rc.1</c>. Not
+    /// <c>v1.5.1-rc.1</c>, because every launcher up to 1.5.0 takes the highest <c>v…</c> tag there is, pre-release or
+    /// not, and would install it as a required update. They do not read this prefix. (A <c>v1.5.1-rc.1</c> tag is
+    /// understood too, and judged by the same rules.)
+    /// </summary>
+    public const string AlphaTagPrefix = "alpha-v";
+
+    /// <summary>The version the tag names: <c>v1.5.0</c>, <c>v1.5.1-rc.1</c>, or <c>alpha-v1.5.1-rc.1</c> (that prefix only on a release candidate); null for any other tag.</summary>
+    public SemVer? Version => Tag.StartsWith(AlphaTagPrefix, StringComparison.Ordinal)
+        ? SemVer.TryParse(Tag[AlphaTagPrefix.Length..]) is { IsReleaseCandidate: true } candidate ? candidate : null
+        : Tag.StartsWith('v') ? SemVer.TryParse(Tag[1..]) : null;
+
+    /// <summary>A stable release: published, not flagged as a pre-release, tagged <c>v&lt;version&gt;</c> with no pre-release suffix.</summary>
+    public bool IsStable => !Draft && !Prerelease && Tag.StartsWith('v') && Version is { IsPrerelease: false };
+
+    /// <summary>
+    /// A test release of the alpha channel: published, and its version is a release candidate (<c>-rc.N</c>), whatever
+    /// GitHub's flag says. Any other pre-release (<c>-beta.1</c>, <c>-dev.abc</c>, a plain version flagged as a
+    /// pre-release) is in no channel.
+    /// </summary>
+    public bool IsAlpha => !Draft && Version is { IsReleaseCandidate: true };
+
+    /// <summary>The channel offers this release: stable releases on both, release candidates on <see cref="UpdateChannel.Alpha"/> only.</summary>
+    public bool In(UpdateChannel channel) => IsStable || (channel == UpdateChannel.Alpha && IsAlpha);
 
     public bool Has(string name) => Assets.Any(a => a.Name == name);
 
@@ -32,6 +59,11 @@ public sealed record Release(string Tag, bool Draft, string? Notes, IReadOnlyLis
 /// release key whose public half is <see cref="ReleaseKeys"/>. A download is used only if the
 /// signature verifies, the version inside the signed file is the release's tag, and the file's
 /// SHA-256 matches. Any failure leaves what is installed alone; updating never blocks play.
+/// <para>
+/// Two channels (<see cref="UpdateChannel"/>, <c>update_channel</c> in client.toml): stable, the default, takes
+/// stable releases only; alpha also takes release candidates (<c>-rc.N</c>). Both are verified in exactly the same
+/// way: the same key, the same signed list, the same hash.
+/// </para>
 /// </summary>
 public sealed class Updater
 {
@@ -156,11 +188,45 @@ public sealed class Updater
         return map;
     }
 
-    /// <summary>The newest non-draft release strictly newer than <paramref name="current"/>.</summary>
-    public static Release? Newest(IEnumerable<Release> releases, SemVer current)
+    /// <summary>
+    /// The update for a launcher at <paramref name="current"/> on <paramref name="channel"/>: the highest version
+    /// (by the semver order: <c>1.5.1-rc.2</c> over <c>1.5.1-rc.1</c>, <c>1.5.1</c> over both) among the releases the
+    /// channel offers (<see cref="Release.In"/>) that is strictly newer. Never a draft; on
+    /// <see cref="UpdateChannel.Stable"/> never a pre-release, also for a launcher that runs one: it then waits for
+    /// the next stable release at or above its own numbers.
+    /// </summary>
+    public static Release? Newest(IEnumerable<Release> releases, SemVer current, UpdateChannel channel = UpdateChannel.Stable)
     {
         ArgumentNullException.ThrowIfNull(releases);
-        return releases.Where(r => !r.Draft && r.Version is { } v && v > current).MaxBy(r => r.Version);
+        return releases.Where(r => r.In(channel) && r.Version is { } v && v > current).MaxBy(r => r.Version);
+    }
+
+    /// <summary>The newest stable release there is, whatever this launcher runs.</summary>
+    public static Release? LatestStable(IEnumerable<Release> releases)
+    {
+        ArgumentNullException.ThrowIfNull(releases);
+        return releases.Where(r => r.IsStable).MaxBy(r => r.Version);
+    }
+
+    /// <summary>
+    /// "Return to Stable": the newest stable release, for a launcher that runs a release candidate, is on the stable
+    /// channel, and has no stable update to wait for yet (<see cref="Newest"/> is null). It is older than what runs:
+    /// installing it is the one downgrade there is, and only ever the player's own choice. Null in every other case.
+    /// </summary>
+    public static Release? StableReturn(IEnumerable<Release> releases, SemVer current, UpdateChannel channel)
+    {
+        ArgumentNullException.ThrowIfNull(releases);
+        ArgumentNullException.ThrowIfNull(current);
+        var all = releases as IReadOnlyCollection<Release> ?? [.. releases];
+        return channel == UpdateChannel.Stable && current.IsReleaseCandidate && Newest(all, current, channel) is null
+            && LatestStable(all) is { } stable && stable.Version < current ? stable : null;
+    }
+
+    /// <summary>A version the channel may install: stable ones, and on <see cref="UpdateChannel.Alpha"/> release candidates. (A download staged while on the other channel is not offered.)</summary>
+    public static bool Takes(UpdateChannel channel, SemVer version)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+        return !version.IsPrerelease || (channel == UpdateChannel.Alpha && version.IsReleaseCandidate);
     }
 
     private async Task<byte[]> GetAsync(Uri url, IProgress<(long Got, long? Total)>? progress, CancellationToken cancel)
@@ -272,7 +338,7 @@ public sealed class Updater
 
     public async Task<IReadOnlyList<Release>> ReleasesAsync(CancellationToken cancel)
     {
-        var body = await GetAsync(new Uri($"{_api}/repos/{Repo}/releases?per_page=20"), null, cancel).ConfigureAwait(false);
+        var body = await GetAsync(new Uri($"{_api}/repos/{Repo}/releases?per_page=50"), null, cancel).ConfigureAwait(false);
         if (Json.Parse(body) is not { ValueKind: JsonValueKind.Array } list)
         {
             throw new LauncherException("release list: not a list");
@@ -293,7 +359,7 @@ public sealed class Updater
                     files.Add(new ReleaseAsset(name, url));
                 }
             }
-            releases.Add(new Release(tag, r.At("draft").Bool() ?? false, r.At("body").Str(), files));
+            releases.Add(new Release(tag, r.At("draft").Bool() ?? false, r.At("body").Str(), files, r.At("prerelease").Bool() ?? false));
         }
         return releases;
     }

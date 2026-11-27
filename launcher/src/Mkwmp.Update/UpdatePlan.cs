@@ -59,6 +59,14 @@ public sealed record UpdatePlan
     /// <summary>The launcher's arguments, as it was started: the new one gets the same.</summary>
     public IReadOnlyList<string> Arguments { get; init; } = [];
 
+    /// <summary>
+    /// "Return to Stable": the player, on a release candidate and back on the stable channel, asked for the newest
+    /// stable release although it is older than what is installed. The one install that may go down a version, and
+    /// only from a pre-release to a stable release (<see cref="UpdateInstaller.CheckDirection"/>); every other plan
+    /// for an older version is refused.
+    /// </summary>
+    public bool ReturnToStable { get; init; }
+
     public string Transaction => TransactionFolder(Root, Version);
 
     public string PackagePath => Path.Combine(Transaction, ZipName);
@@ -137,6 +145,10 @@ public sealed record UpdatePlan
                 json.WriteStringValue(argument);
             }
             json.WriteEndArray();
+            if (ReturnToStable)
+            {
+                json.WriteBoolean("return_to_stable", true); // only ever written for that one install
+            }
             json.WriteEndObject();
         }
         var temp = PlanPath + ".tmp";
@@ -182,6 +194,7 @@ public sealed record UpdatePlan
                 Asset = Text(root, "asset"),
                 Launcher = Text(root, "launcher"),
                 Arguments = arguments,
+                ReturnToStable = root.TryGetProperty("return_to_stable", out var back) && back.ValueKind == JsonValueKind.True,
             }.Validated();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)

@@ -144,7 +144,10 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     // ── about ──
 
-    public string AboutTitle => $"MKWMP Launcher {Launcher.Version}";
+    public string AboutTitle => $"MKWMP Launcher {VersionAndChannel}";
+
+    /// <summary>"1.5.1-rc.2 · Alpha": the version that runs and the update channel it follows (Settings › Updates, About, What's New).</summary>
+    public string VersionAndChannel => $"{Launcher.Version} · {S[Launcher.Settings.UpdateChannel == UpdateChannel.Alpha ? "settings.updates.channel.alpha" : "settings.updates.channel.stable"]}";
 
     public static string AboutLicense => "GPL-3.0-or-later";
 

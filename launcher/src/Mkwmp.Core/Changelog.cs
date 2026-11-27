@@ -115,6 +115,22 @@ public static class Changelog
     }
 
     /// <summary>
+    /// The releases What's New shows on <paramref name="channel"/>. Alpha: all of them, the test versions
+    /// (<c>1.5.1-rc.1</c>) with their own notes. Stable: a test version's section is left out once the release it led
+    /// to is in the list (its notes are that release's), unless it is the version that runs.
+    /// </summary>
+    public static IReadOnlyList<ChangelogRelease> For(IReadOnlyList<ChangelogRelease> releases, UpdateChannel channel)
+    {
+        ArgumentNullException.ThrowIfNull(releases);
+        if (channel == UpdateChannel.Alpha)
+        {
+            return releases;
+        }
+        var stable = releases.Select(r => SemVer.TryParse(r.Version)).Where(v => v is { IsPrerelease: false }).ToList();
+        return [.. releases.Where(r => r.IsRunning || SemVer.TryParse(r.Version) is not { IsReleaseCandidate: true } rc || !stable.Any(v => SameNumbers(v!, rc)))];
+    }
+
+    /// <summary>
     /// The part of a release's notes that is about that release: up to the first rule (<c>---</c>),
     /// after which GitHub's notes repeat the earlier releases ("From 1.2.0 …"). Lines that start
     /// with "• " are list items, as "- ".

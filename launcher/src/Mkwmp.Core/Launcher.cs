@@ -170,6 +170,9 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
 
     public string Version { get; }
 
+    /// <summary>The version as a bug report names it, with the update channel: "1.5.1-rc.2 (alpha channel)".</summary>
+    private string ReportVersion => UpdateChannels.Describe(Version, Settings.UpdateChannel);
+
     /// <summary>The bearer token of the local API, random per start, written into the game's session file.</summary>
     internal string Token { get; }
 
@@ -692,7 +695,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
     {
         var s = Settings;
         var target = _targets.Get(s.Target);
-        var (_, zip) = SupportBundle.Save(LauncherFolder, Version, target, GameFinder.Detect(target, s.Game), _clock);
+        var (_, zip) = SupportBundle.Save(LauncherFolder, ReportVersion, target, GameFinder.Detect(target, s.Game), _clock);
         Note($"bug report saved: {zip}");
         return zip;
     });

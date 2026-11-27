@@ -148,12 +148,12 @@ public sealed partial class Launcher
         string? zip = null, problem = null, system = null;
         var onDesktop = false;
         // a first text for the zip's own copy; the final one names the zip that was written
-        var draft = crash is not null ? BugReportBuilder.CrashBody(crash, Version, null, zipName, install?.DevSha256) : BugReportBuilder.BugBody(Version, null, null);
+        var draft = crash is not null ? BugReportBuilder.CrashBody(crash, ReportVersion, null, zipName, install?.DevSha256) : BugReportBuilder.BugBody(ReportVersion, null, null);
         try
         {
             // the session the report is about: the one that just ended when the crash is its own, else unknown (SaveZip takes the half day before)
             DateTimeOffset? since = _gameStarted != default && (crash is null || crash.Time >= _gameStarted.AddMinutes(-1)) ? _gameStarted : null;
-            (zip, onDesktop, system) = BugReportBuilder.SaveZip(LauncherFolder, Version, target, install, crashes, draft, DesktopFolder(), Secrets(install), _clock, since);
+            (zip, onDesktop, system) = BugReportBuilder.SaveZip(LauncherFolder, ReportVersion, target, install, crashes, draft, DesktopFolder(), Secrets(install), _clock, since);
             Note($"{(crash is null ? "bug" : "crash")} report saved: {zip}");
         }
         catch (IOException e)
@@ -165,12 +165,12 @@ public sealed partial class Launcher
         if (crash is not null)
         {
             var title = BugReportBuilder.CrashTitle(crash);
-            var text = BugReportBuilder.CrashBody(crash, Version, system, zipName, install?.DevSha256);
+            var text = BugReportBuilder.CrashBody(crash, ReportVersion, system, zipName, install?.DevSha256);
             return new BugReport(true, title, BugReportBuilder.Url("crash.yml", "crash", title, "report", text), text, zip, onDesktop, problem);
         }
-        var body = BugReportBuilder.BugBody(Version, system, zipName);
+        var body = BugReportBuilder.BugBody(ReportVersion, system, zipName);
         var logs = zipName is null ? "" : $"Drag {zipName} here (the launcher saved it and shows where).";
-        return new BugReport(false, "", BugReportBuilder.Url("bug_report.yml", "bug", "", "what", "", [("version", Version), ("logs", logs)]), body, zip, onDesktop, problem);
+        return new BugReport(false, "", BugReportBuilder.Url("bug_report.yml", "bug", "", "what", "", [("version", ReportVersion), ("logs", logs)]), body, zip, onDesktop, problem);
     });
 
     /// <summary>The player's Desktop (under Wine: the prefix's, which Proton and Wine link to the real one); null when there is none.</summary>

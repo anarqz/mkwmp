@@ -89,12 +89,62 @@ public sealed class UpdateInstaller(Ed25519Verifier verifier, IReadOnlyList<stri
         }
     }
 
+    /// <summary>
+    /// The version of the launcher that is installed, read from its executable (null: it says none). Asked before
+    /// the plan's own <see cref="UpdatePlan.FromVersion"/>, so the direction of an install is judged by what is
+    /// really there. (Tests replace it: their launchers are not real executables.)
+    /// </summary>
+    public Func<string, string?>? InstalledVersion { get; init; } = ProductVersionOf;
+
+    /// <summary>The product version stamped into an executable (<c>1.5.1-rc.2+abc</c> gives <c>1.5.1-rc.2</c>); null when it has none that is a version.</summary>
+    public static string? ProductVersionOf(string exe)
+    {
+        try
+        {
+            var text = File.Exists(exe) ? FileVersionInfo.GetVersionInfo(exe).ProductVersion : null;
+            var plus = text?.IndexOf('+', StringComparison.Ordinal) ?? -1;
+            text = plus >= 0 ? text![..plus] : text;
+            return SemVer.TryParse(text) is null ? null : text;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// An install never goes down a version, with one exception the player asks for by name: "Return to Stable"
+    /// (<see cref="UpdatePlan.ReturnToStable"/>), from a pre-release to a stable release. Throws
+    /// <see cref="UpdateException"/> for a plan that names an older version without it, for one that asks for it
+    /// without being that case (from a stable release, to a pre-release, or from a version that cannot be read),
+    /// and nothing for the ordinary update (a newer version; the same one is a repair).
+    /// </summary>
+    public static void CheckDirection(UpdatePlan plan, string? installed)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        var to = SemVer.TryParse(plan.Version) ?? throw new UpdateException($"\"{plan.Version}\" is not a version");
+        var from = SemVer.TryParse(installed);
+        if (plan.ReturnToStable)
+        {
+            if (from is null || !from.IsPrerelease || to.IsPrerelease || to >= from)
+            {
+                throw new UpdateException($"\"return to stable\" is only from a test version to an older stable release, not {(installed is { Length: > 0 } ? installed : "an unknown version")} -> {plan.Version}");
+            }
+            return;
+        }
+        if (from is not null && to < from)
+        {
+            throw new UpdateException($"{plan.Version} is older than the installed {installed}: not installed");
+        }
+    }
+
     /// <summary>Verifies and swaps. Throws <see cref="UpdateException"/>; what was installed before is then back in place.</summary>
     public InstalledUpdate Apply(UpdatePlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
         Progress?.Invoke(UpdateStep.Verifying, -1);
         VerifyStage(plan);
+        CheckDirection(plan, InstalledVersion?.Invoke(plan.LauncherPath) ?? plan.FromVersion);
         var transaction = plan.Transaction;
         var incoming = Path.Combine(transaction, "incoming");
         var backup = Path.Combine(transaction, "backup");

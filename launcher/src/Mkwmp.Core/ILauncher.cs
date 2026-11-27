@@ -221,6 +221,25 @@ public interface ILauncher : IAsyncDisposable
     /// </summary>
     void ContinueWithoutUpdate();
 
+    /// <summary>
+    /// Settings › Updates › Update channel: saves the choice (<see cref="LauncherSettings.UpdateChannel"/>) and looks
+    /// for an update on it at once. To <see cref="UpdateChannel.Alpha"/>: a newer release candidate is then required
+    /// like any update. To <see cref="UpdateChannel.Stable"/> on a release candidate: the next stable release at or
+    /// above this version's numbers when there is one, else <see cref="UpdateView.StableReturn"/> names the stable
+    /// release <see cref="ReturnToStableAsync"/> can go back to. Nothing is ever installed by this call alone.
+    /// </summary>
+    Task SetUpdateChannelAsync(UpdateChannel channel) => SaveSettingsAsync(Settings with { UpdateChannel = channel });
+
+    /// <summary>
+    /// "Return to Stable", confirmed by the player: downloads the newest stable release
+    /// (<see cref="UpdateView.StableReturn"/>), verifies it like any update, and installs it over the release
+    /// candidate that runs, although it is an older version. The only way the launcher ever goes down a version:
+    /// only on the stable channel, only from a release candidate, only to a stable release, never by itself.
+    /// client.toml, logs, mods and the game are not part of a release and stay as they are. Nothing in any other
+    /// case; with a game running <see cref="Update"/> says why not.
+    /// </summary>
+    Task ReturnToStableAsync(CancellationToken cancel) => Task.CompletedTask;
+
     /// <summary>Collects logs into a zip; returns its path (or throws IOException with the reason).</summary>
     Task<string> SaveBugReportAsync();
 
@@ -675,6 +694,12 @@ public sealed record LauncherSettings
     public SeatMode Seat { get; init; } = SeatMode.Start;
     public int LocalPort { get; init; } = 47820;
     public bool AutoUpdate { get; init; } = true;
+    /// <summary>
+    /// <c>update_channel</c>: which releases the launcher updates to. <see cref="UpdateChannel.Stable"/> (the default;
+    /// the key is then not written) or <see cref="UpdateChannel.Alpha"/> (<c>"alpha"</c>: also the test versions,
+    /// <c>-rc.N</c>). Settings › Updates.
+    /// </summary>
+    public UpdateChannel UpdateChannel { get; init; } = UpdateChannel.Stable;
     public int Slot { get; init; } = 1;
     public string LaunchCommand { get; init; } = "";
     /// <summary>The beholder (server directory) to list servers from; "" = this release's default (none yet).</summary>
@@ -831,6 +856,29 @@ public sealed record ReportView(bool? Loaded, OpenReport? Open, IReadOnlyList<Re
 /// </summary>
 public enum UpdateState { Off, Checking, UpToDate, Available, Downloading, ReadyToInstall, Restarting, Failed }
 
+/// <summary>
+/// Which releases the launcher updates to (Settings › Updates; <c>update_channel</c> in client.toml).
+/// <see cref="Stable"/>: stable releases only. <see cref="Alpha"/>: also the test versions published before a
+/// release (release candidates, <c>1.5.1-rc.1</c>), whichever is newest; they may be unstable. An update is
+/// required on either channel, by the same rule; a release candidate is never required of a stable player.
+/// </summary>
+public enum UpdateChannel { Stable, Alpha }
+
+/// <summary>The channel's name in client.toml and in a bug report (English, never translated).</summary>
+public static class UpdateChannels
+{
+    public const string StableName = "stable", AlphaName = "alpha";
+
+    public static string Name(UpdateChannel channel) => channel == UpdateChannel.Alpha ? AlphaName : StableName;
+
+    /// <summary>What a file says: <c>"alpha"</c> (any case) is alpha; anything else, or nothing, is stable.</summary>
+    public static UpdateChannel Parse(string? name) =>
+        string.Equals(name?.Trim(), AlphaName, StringComparison.OrdinalIgnoreCase) ? UpdateChannel.Alpha : UpdateChannel.Stable;
+
+    /// <summary>"1.5.1-rc.2 (alpha channel)": the version as a bug report names it.</summary>
+    public static string Describe(string version, UpdateChannel channel) => $"{version} ({Name(channel)} channel)";
+}
+
 /// <param name="Progress">0..1 while downloading.</param>
 /// <param name="Received">Bytes downloaded so far, of <paramref name="Total"/> (0: not known).</param>
 /// <param name="BytesPerSecond">The download's speed over the last seconds.</param>
@@ -842,6 +890,12 @@ public enum UpdateState { Off, Checking, UpToDate, Available, Downloading, Ready
 /// then it installs after the game). False again once installing failed and the player chose to go on
 /// (<see cref="ILauncher.ContinueWithoutUpdate"/>), for this run.
 /// </param>
+/// <param name="StableReturn">
+/// "Return to Stable" is on offer: this launcher runs a release candidate on the stable channel and no stable
+/// release has reached its numbers yet; this is the version of the newest stable release, an older one
+/// (<see cref="ILauncher.ReturnToStableAsync"/>). Never required, never installed by itself. Null otherwise.
+/// </param>
 public sealed record UpdateView(
     UpdateState State, string? AvailableVersion, string? Notes, double Progress, TimeSpan? Remaining, string Status,
-    long Received = 0, long Total = 0, double BytesPerSecond = 0, bool GameBlocks = false, bool AfterGame = false, bool Required = false);
+    long Received = 0, long Total = 0, double BytesPerSecond = 0, bool GameBlocks = false, bool AfterGame = false, bool Required = false,
+    string? StableReturn = null);

@@ -124,7 +124,8 @@ verified once more.
 
 ## 4. The flow in detail
 
-**Check** (`Launcher.CheckAsync`): the newest non-draft release above this version. If its verified
+**Check** (`Launcher.CheckAsync`): the newest non-draft release above this version that the update channel
+offers (`Updater.Newest`; "Channels" below). If its verified
 download is already staged, the state is `ReadyToInstall` at once. If GitHub cannot be reached but a
 verified download waits, it is `ReadyToInstall` all the same.
 
@@ -145,6 +146,43 @@ card instead of Settings › Online, and `v:OnlineLocked` shows the one reason i
 (`GameBlocks`, `AfterGame`, a session), not in overlay mode; `ShellViewModel.WatchUpdate` opens the card.
 A launcher started by the helper (`MKWMP_UPDATED`) checks nothing at start; after a rollback
 (`MKWMP_UPDATE_FAILED`) its view is `Failed` and `Required`, and "Try Again" is `CheckForUpdatesAsync`.
+
+**Channels** (`UpdateChannel`, `update_channel` in client.toml, Settings › Updates › Update channel; from the release after 1.5.0).
+
+- **Stable** (the default; the key is not written): only stable releases, `Release.IsStable`: published, not
+  flagged as a prerelease on GitHub, tagged `v<version>` with no pre-release suffix.
+- **Alpha** (`update_channel = "alpha"`): stable releases and release candidates, `Release.IsAlpha`: a version
+  that is exactly `X.Y.Z-rc.N` (`SemVer.IsReleaseCandidate`), tagged `alpha-v<version>` (what `release.sh` cuts) or
+  `v<version>`. Any other pre-release (`-beta.1`, `-dev.abc`, a plain version flagged as a prerelease) is in no
+  channel. The highest version by semver wins: `1.5.1-rc.2` over `1.5.1-rc.1`, `1.5.1` over both.
+- The signature, the version in the signed list and the hash are checked the same way for both. Nothing about a
+  release candidate is taken on less.
+- **Required per channel.** The rule above ("Required") applies to whatever `Updater.Newest` returns for the
+  channel: an alpha launcher must take the newest of both kinds, a stable launcher is never given a release
+  candidate. A download staged on the other channel is not offered (`Updater.Takes`: `FindStaged`, `Clean`).
+- **Changing the channel** (`ILauncher.SetUpdateChannelAsync`) saves it and checks at once.
+- **Leaving alpha on a release candidate.** On stable, `1.5.1-rc.2` waits for the next stable release at or above
+  its numbers (`1.5.1` is newer than `1.5.1-rc.2`) and takes it as an ordinary required update. Until there is
+  one, `UpdateView.StableReturn` names the newest stable release (`Updater.StableReturn`), and Settings › Updates
+  shows "Return to Stable": asked once when the channel is changed, and there as a row afterwards. Declined, the
+  launcher stays as it is. Never required, never by itself.
+- **"Return to Stable" is the only downgrade** (`ILauncher.ReturnToStableAsync`), and it is checked three times:
+  the launcher (a release candidate runs, the channel is stable, the release is stable and older, no game runs);
+  the plan (`return_to_stable: true`, written for this install only); the installer
+  (`UpdateInstaller.CheckDirection`, in the helper and in the in-place install): a plan for an older version is
+  refused unless it says so, and one that says so is refused unless what is installed (the launcher exe's product
+  version, else the plan's `from`) is a pre-release and the target is a stable release below it. The helper that
+  runs is the installed one (the older release's own would not know the rule). `SelfUpdate.FindStaged` only ever
+  finds newer versions, so a staged older release is never picked up by anything else; other staged downloads are
+  removed before the hand-over. client.toml, `logs/`, mods and the game are not in a release and are not touched
+  (section 5).
+- Release candidates are tagged `alpha-v…` because launchers up to 1.5.0 take the highest `v…` tag whatever it is
+  (`tools/release/README.md`).
+- The version is shown with its channel ("1.5.1-rc.2 · Alpha": Settings › Updates, About, What's New) and named in
+  bug reports ("1.5.1-rc.2 (alpha channel)"). What's New lists the candidates' own sections on alpha; on stable
+  they are left out once their release is in the list (`Changelog.For`).
+- Demo: `shot.ps1 out.png --page settings --category updates --state alpha | rc-on-stable`.
+- Tests: `SelfUpdateTests.Channels.cs`.
 
 **Download** (`ILauncher.DownloadUpdateAsync` → `SelfUpdate.StageAsync`):
 
@@ -293,7 +331,8 @@ A release is **exactly four assets**:
 Nothing loose: no executable, DLL or mod zip of its own, no Linux launcher. `install-mkwmp.sh` and
 `artwork.json` are read from the repository at the tag (`raw.githubusercontent.com/anarqz/mkwmp/v<version>/tools/linux/…`;
 `site/install.sh` falls back to `main`). The version is the launcher's (`launcher/Directory.Build.props`),
-the tag `v<version>`.
+the tag `v<version>`. A test version (`X.Y.Z-rc.N`, the alpha channel) is the same four assets under the tag
+`alpha-v<version>`, a GitHub prerelease that is never "Latest": `tools/release/README.md`.
 
 The scripts:
 

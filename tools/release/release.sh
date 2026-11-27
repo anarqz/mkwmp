@@ -9,8 +9,8 @@
 #   -> mkwmp-launcher-files-windows.zip)
 #   tools/release/release.sh publish  download the working file, build the two zips (make_zips.py), write and
 #                                     sign SHA256SUMS over them, upload, delete the working file, check that the
-#                                     release holds exactly its four assets, publish (a prerelease when the version
-#                                     has a -suffix)
+#                                     release holds exactly its four assets, publish (a test version, -rc.N, as a
+#                                     GitHub PRERELEASE that is never "Latest": see "Test versions" below)
 #   tools/release/release.sh publish --dry-run
 #                                     the same up to the upload, nothing uploaded, deleted or published: lists the
 #                                     assets the release would have
@@ -24,20 +24,31 @@
 # <version> is the launcher's (launcher/Directory.Build.props); the tag is v<version>. rust/Cargo.toml's version is
 # set by whoever releases the server, before draft.
 #
+# Test versions (the launcher's alpha channel; tools/release/README.md): a version X.Y.Z-rc.N, and no other
+# -suffix, is cut with the same three steps as a GitHub prerelease, never "Latest", under the tag
+# alpha-v<version> (alpha-v1.5.1-rc.1). NOT v<version>: every launcher up to 1.5.0 installs the highest v* tag it
+# finds, prerelease or not, as a required update. Launchers with the channel setting read both forms.
+#
 # Env: MKWMP_RELEASE_KEY = path of the release signing seed (never in the repo).
 set -eu
 cd "$(dirname "$0")/../.."
 export PATH="$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$HOME/.cargo/bin:$PATH"
 version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' launcher/Directory.Build.props | head -1)"
 [ -n "$version" ] || { echo "no <Version> in launcher/Directory.Build.props" >&2; exit 1; }
-tag="v$version"
+# A stable release: v<version>, "Latest". A test version (-rc.N): alpha-v<version>, a prerelease, never "Latest".
+if printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  tag="v$version"; pre="--latest"
+elif printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-rc\.(0|[1-9][0-9]*)$'; then
+  tag="alpha-v$version"; pre="--prerelease --latest=false"
+else
+  echo "version $version: a release is X.Y.Z, a test version X.Y.Z-rc.N (launcher/Directory.Build.props)" >&2; exit 1
+fi
 out="rust/target/release-assets/$tag"
 zips="mkwmp-$version-windows-x64.zip mkwmp-server-$version.zip"
 # Everything the published release holds, sorted as `sort` sorts it.
 want="$(printf '%s\n' $zips SHA256SUMS SHA256SUMS.sig | sort)"
 # Uploaded by Windows for make_zips.py only: deleted before publishing, so never an asset nor in SHA256SUMS.
 work="mkwmp-launcher-files-windows.zip"
-case "$version" in *-*) pre="--prerelease" ;; *) pre="--latest" ;; esac
 
 case "${1:-}" in
 draft)
@@ -83,8 +94,14 @@ publish)
   fi
   gh api -X DELETE "repos/{owner}/{repo}/releases/assets/$id"
   gh release edit "$tag" --draft=false $pre
+  # A test version must never be what "Latest" (the site, the installers, README's download link) points at.
+  case "$tag" in alpha-*)
+    latest="$(gh api "repos/{owner}/{repo}/releases/latest" --jq .tag_name 2>/dev/null || true)"
+    [ "$latest" != "$tag" ] || { echo "$tag is marked Latest: fix it now (gh release edit $tag --prerelease --latest=false)" >&2; exit 1; }
+    ;;
+  esac
   echo "published $tag"
   ;;
 *)
-  sed -n '2,27p' "$0"; exit 2 ;;
+  sed -n '2,32p' "$0"; exit 2 ;;
 esac

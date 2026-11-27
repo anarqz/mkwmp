@@ -15,7 +15,7 @@ namespace Mkwmp.Core.Tests;
 /// launcher's side: staging, "ready to install", the hand-over, and never under a running game.
 /// GitHub is <see cref="FakeGitHub"/>; no process is started and no window is opened.
 /// </summary>
-public class SelfUpdateTests
+public partial class SelfUpdateTests
 {
     private static readonly string[] TestKeys = [FakeGitHub.TestKey];
 

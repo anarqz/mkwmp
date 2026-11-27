@@ -26,7 +26,7 @@ public sealed partial class DesignLauncher : ILauncher
 
     public event EventHandler<Toast>? Toasted;
 
-    public string Version => "1.4.0";
+    public string Version { get; private set; } = "1.4.0";
 
     /// <summary>
     /// The demo's starting point: <c>--demo</c> = online and set up; <c>--demo-offline</c> = set up,
@@ -413,6 +413,22 @@ public sealed partial class DesignLauncher : ILauncher
                 break;
             case "uptodate":
                 Change(() => Update = new UpdateView(UpdateState.UpToDate, null, null, 0, null, CoreStrings.UpToDate));
+                break;
+            // the update channels (Settings › Updates): a test version on alpha; and one back on stable, with the way back
+            case "alpha":
+                Change(() =>
+                {
+                    Version = "1.5.1-rc.2";
+                    Settings = Settings with { UpdateChannel = UpdateChannel.Alpha };
+                    Update = new UpdateView(UpdateState.UpToDate, null, null, 0, null, CoreStrings.UpToDate);
+                });
+                break;
+            case "rc-on-stable":
+                Change(() =>
+                {
+                    Version = "1.5.1-rc.2";
+                    Update = new UpdateView(UpdateState.UpToDate, null, null, 0, null, CoreStrings.UpToDate, StableReturn: "1.5.0");
+                });
                 break;
             case "update-downloading":
                 Change(() => Update = Update with { State = UpdateState.Downloading, Progress = 0.42, Remaining = TimeSpan.FromSeconds(20), Status = "Downloading 1.4.1…" });
