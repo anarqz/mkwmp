@@ -4,7 +4,7 @@
 //   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"; $s = "native\probe\src"
 //   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_bridge.exe `
 //       native\probe\tests\test_bridge.c native\probe\tests\stub_coff.c $s\log.c $s\breadcrumbs.c $s\config.c $s\notify.c `
-//       $s\friends.c $s\lobby_ca.c $s\seat.c $s\voice.c $s\guesthook.c $s\gameaddrs.c `
+//       $s\friends.c $s\lobby_ca.c $s\nextendo.c $s\seat.c $s\voice.c $s\guesthook.c $s\gameaddrs.c `
 //       $s\kartrace.c $s\launcher.c $s\uuid5.c $s\plat_win.c $s\plat_net_win.c -lws2_32
 //   scratch\test_bridge.exe
 #undef NDEBUG
@@ -170,6 +170,27 @@ int main(void) {
     dns.x[0] = (uintptr_t)"capture.local";
     ov_sock_getaddrinfo_cpp(&dns);
     assert(dns.x[0] == 0 && ai == &g_typed_ai[1].ai && typed_first->ai_family == 2);
+    {
+        // On an MKWMP server every name is the lobby (here the default 127.0.0.1:8900): the console maker's names, a
+        // gamesync name, an address. Port 443 and no port are the lobby's; any other port is kept.
+        assert(!g_nextendo && g_server.sin_addr.s_addr == htonl(INADDR_LOOPBACK));
+        static const char *const kNames[] = {"t-e96531c6-lp1.lp1.t.npln.srv.nintendo.net", "gamesync.npln.nintendo.net",
+                                             "nncs2-lp1.n.n.srv.nintendo.net", "example.org", "203.0.113.7"};
+        static const struct { const char *service; unsigned port; } kPorts[] = {{NULL, 0}, {"443", 0}, {"8906", 8906}, {"https", 0}};
+        for (size_t i = 0; i < sizeof kNames / sizeof kNames[0]; i++)
+            for (size_t k = 0; k < sizeof kPorts / sizeof kPorts[0]; k++)
+                for (int typed = 0; typed < 2; typed++) {
+                    Cpu q = {0};
+                    GAddrInfo *r = NULL;
+                    q.x[0] = (uintptr_t)kNames[i]; q.x[1] = (uintptr_t)kPorts[k].service; q.x[3] = (uintptr_t)&r;
+                    (typed ? ov_sock_getaddrinfo_cpp : ov_sock_getaddrinfo)(&q);
+                    assert(q.x[0] == 0 && r);
+                    const uint8_t *sa = typed ? (const uint8_t *)r->ai_canonname : r->ai_addr;
+                    uint16_t want = kPorts[k].port ? htons((uint16_t)kPorts[k].port) : g_server.sin_port;
+                    assert(sa[0] == 16 && sa[1] == 2 && !memcmp(sa + 2, &want, 2) && !memcmp(sa + 4, "\x7f\0\0\1", 4));
+                    if (!typed) call2(ov_sock_freeaddrinfo, (uintptr_t)r, 0);
+                }
+    }
     Cpu sock = {0}; ov_sock_socket(&sock); fd = (int)sock.x[0];
     int32_t option = 1; uint32_t length = 4;
     sock.x[0] = fd; sock.x[1] = 6; sock.x[2] = 1;
@@ -335,6 +356,107 @@ int main(void) {
     assert(kart_moves == 20 && dispatched == 7);
     g_no_idle_kick = 0;
     memset(&A, 0, sizeof A);
+    {
+        // nnsocketConnect. MKWMP server: always the lobby's address; port 443 becomes the lobby's port, any other
+        // explicit port is kept. Nextendo Network: the address and port the game asks for, as they are.
+        SOCKET lis = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        struct sockaddr_in la = {0}; la.sin_family = AF_INET; la.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        int ll = sizeof la;
+        assert(!bind(lis, (struct sockaddr *)&la, sizeof la) && !getsockname(lis, (struct sockaddr *)&la, &ll) && !listen(lis, 4));
+        uint16_t lobby_port = g_server.sin_port, https = htons(443), bogus = htons(1);
+        uint8_t want[16] = {16, 2, 0, 0, 203, 0, 113, 7};   // console sockaddr_in: 203.0.113.7
+        struct { const uint16_t *server_port, *guest_port; } mkwmp[] = {{&la.sin_port, &https}, {&bogus, &la.sin_port}};
+        for (int i = 0; i < 2; i++) {
+            g_server.sin_port = *mkwmp[i].server_port;
+            memcpy(want + 2, mkwmp[i].guest_port, 2);
+            Cpu k = {0}; ov_sock_socket(&k); int cfd = (int)k.x[0];
+            k.x[0] = cfd; k.x[1] = (uintptr_t)want; k.x[2] = sizeof want;
+            ov_sock_connect(&k);
+            assert(k.x[0] == 0 || (k.x[0] == UINT64_MAX && g_errno == G_EINPROGRESS));
+            SOCKET got = accept(lis, NULL, NULL);   // 203.0.113.7 was never tried: the lobby's loopback answered
+            assert(got != INVALID_SOCKET);
+            closesocket(got); call2(ov_sock_close, cfd, 0);
+        }
+        g_nextendo = 1;
+        g_server.sin_port = bogus;
+        uint8_t ask[16] = {16, 2, 0, 0, 127, 0, 0, 1};
+        memcpy(ask + 2, &la.sin_port, 2);
+        Cpu k = {0}; ov_sock_socket(&k); int cfd = (int)k.x[0];
+        k.x[0] = cfd; k.x[1] = (uintptr_t)ask; k.x[2] = sizeof ask;
+        ov_sock_connect(&k);
+        assert(k.x[0] == 0 || (k.x[0] == UINT64_MAX && g_errno == G_EINPROGRESS));
+        SOCKET got = accept(lis, NULL, NULL);
+        assert(got != INVALID_SOCKET);
+        closesocket(got); call2(ov_sock_close, cfd, 0);
+        // no port, no address, no sockaddr: refused, never the MKWMP lobby instead
+        uint8_t none[3][16] = {{16, 2, 0, 0, 127, 0, 0, 1}, {16, 2, 0x1f, 0x90, 0, 0, 0, 0}, {16, 10, 0x1f, 0x90, 127, 0, 0, 1}};
+        for (int i = 0; i < 4; i++) {
+            ov_sock_socket(&k); cfd = (int)k.x[0];
+            k.x[0] = cfd; k.x[1] = i < 3 ? (uintptr_t)none[i] : 0; k.x[2] = 16;
+            g_errno = 0;
+            ov_sock_connect(&k);
+            assert(k.x[0] == UINT64_MAX && g_errno == G_EINVAL);
+            call2(ov_sock_close, cfd, 0);
+        }
+        // Name resolution on Nextendo. An address the game session gives (gamesync) is itself, with the port asked
+        // for; 443 stays 443. The console maker's names need the session's serverHost: without a session they fail
+        // (never the MKWMP lobby, never the real owner of the name).
+        static const struct { const char *service; unsigned port; } kPorts[] = {{"8906", 8906}, {"443", 443}, {NULL, 0}, {"https", 443}};
+        for (size_t p = 0; p < sizeof kPorts / sizeof kPorts[0]; p++)
+            for (int typed = 0; typed < 2; typed++) {
+                Cpu q = {0};
+                GAddrInfo *r = NULL;
+                q.x[0] = (uintptr_t)"203.0.113.7"; q.x[1] = (uintptr_t)kPorts[p].service; q.x[3] = (uintptr_t)&r;
+                (typed ? ov_sock_getaddrinfo_cpp : ov_sock_getaddrinfo)(&q);
+                assert(q.x[0] == 0 && r);
+                const uint8_t *sa = typed ? (const uint8_t *)r->ai_canonname : r->ai_addr;
+                uint16_t port = htons((uint16_t)kPorts[p].port);
+                assert(sa[0] == 16 && sa[1] == 2 && !memcmp(sa + 2, &port, 2) && !memcmp(sa + 4, "\xcb\x00\x71\x07", 4));
+                if (!typed) call2(ov_sock_freeaddrinfo, (uintptr_t)r, 0);
+            }
+        static const char *const kNeedSession[] = {"t-e96531c6-lp1.lp1.t.npln.srv.nintendo.net", "nncs2-lp1.n.n.srv.nintendo.net",
+                                                   "nncs1-lp1.n.n.srv.nintendo.net"};
+        for (size_t i = 0; i < sizeof kNeedSession / sizeof kNeedSession[0]; i++) {
+            Cpu q = {0};
+            GAddrInfo *r = (GAddrInfo *)(uintptr_t)1;
+            q.x[0] = (uintptr_t)kNeedSession[i]; q.x[1] = (uintptr_t)"443"; q.x[3] = (uintptr_t)&r;
+            ov_sock_getaddrinfo(&q);
+            assert(q.x[0] == UINT64_MAX && !r);
+        }
+        // Pia on Nextendo: a NAT probe (16 bytes, type 0) goes to the address Pia names, not to an MKWMP responder.
+        Cpu u1 = {0}, u2 = {0};
+        u1.x[0] = u2.x[0] = 2; u1.x[1] = u2.x[1] = 2;
+        ov_pia_socket(&u1); ov_pia_socket(&u2);
+        int tx = (int)u1.x[0], rx_fd = (int)u2.x[0];
+        ov_pia_bind(&u1); ov_pia_bind(&u2);
+        struct sockaddr_in ua; int ul = sizeof ua;
+        assert(!getsockname(fd_get(rx_fd), (struct sockaddr *)&ua, &ul));
+        uint8_t nat[16] = {16, 2, 0, 0, 127, 0, 0, 1};
+        memcpy(nat + 2, &ua.sin_port, 2);
+        static const char probe[16] = {0};
+        Cpu d = {0};
+        d.x[0] = tx; d.x[1] = (uintptr_t)probe; d.x[2] = sizeof probe; d.x[4] = (uintptr_t)nat; d.x[5] = sizeof nat;
+        ov_pia_sendto(&d);
+        assert(d.x[0] == 16 && readable(rx_fd));
+        nat[2] = nat[3] = 0;   // no port: rejected
+        d.x[0] = tx; d.x[1] = (uintptr_t)probe; d.x[2] = sizeof probe; d.x[4] = (uintptr_t)nat; d.x[5] = sizeof nat;
+        ov_pia_sendto(&d);
+        assert(d.x[0] == UINT64_MAX && g_errno == G_EINVAL);
+        call2(ov_sock_close, tx, 0); call2(ov_sock_close, rx_fd, 0);
+        // The account before any session: no token (nothing is asked of a launcher while dormant), a stand-in id.
+        char tok[64] = "untouched"; uint64_t tok_len = 99;
+        Cpu t = {0}; t.x[0] = (uintptr_t)&tok_len; t.x[1] = (uintptr_t)tok; t.x[2] = sizeof tok;
+        ov_nsa_load_token(&t);
+        assert(t.x[0] == 0 && tok_len == 0 && !strcmp(tok, "untouched"));
+        uint64_t account = 0;
+        Cpu n = {0}; n.x[0] = (uintptr_t)&account;
+        ov_nsa_get_id(&n);
+        assert(n.x[0] == 0 && account == FAKE_NSA_ID);
+        g_nextendo = 0;
+        g_server.sin_port = lobby_port;
+        closesocket(lis);
+        for (int i = 0; i < NFD; i++) assert(!g_used[i]);
+    }
     uint8_t cert_buffer[2048]; GCertificateInfo *info = NULL;
     Cpu cert = {0}; cert.x[0] = (uintptr_t)&info; cert.x[1] = (uintptr_t)cert_buffer;
     cert.x[2] = sizeof cert_buffer;

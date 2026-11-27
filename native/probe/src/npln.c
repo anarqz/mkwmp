@@ -19,6 +19,7 @@
 #include "gameaddrs.h"
 #include "guesthook.h"
 #include "kartrace.h"
+#include "nextendo.h"
 #include "probe.h"
 #include "uuid5.h"
 #include "voice.h"
@@ -82,6 +83,11 @@ static char g_lobby_host[128];   // authoritative lobby from the seated reply (o
 static int g_lobby_port;
 static void eager_seat(void);
 static void net_init(void);
+// The game plays on Nextendo Network, not on an MKWMP server (mkwmp.toml `backend`, read once in npln_register;
+// nextendo.h). The overrides below branch on it: account, certificate, name resolution, connect, Pia.
+static int g_nextendo;
+static int nextendo_net(void);
+static volatile int32_t g_active;   // the probe answers (see "dormant until Online")
 
 // Guest symbols never move once the modules are loaded, but ldr_symbol is a linear strcmp scan over every symbol:
 // overrides on hot paths (1.8.0's SDK calls pthread_cond_timedwait and clock_gettime constantly) must not pay it per
@@ -298,6 +304,7 @@ enum { FRIENDS_WAIT_MS = 1000 };
 // keepalives stopped; with a live seat this is just an immediate POST).
 static void ov_nifm_submit_wait(Cpu *c) {
     (void)c;
+    if (g_nextendo) { crumb_state("online", "1"); return; }   // no seat to take back: the token load asks for a session
     if (seat_keepalive_paused()) {
         SeatReply r;
         if (seat_acquire(&r, 10 * 60 * 1000) == SEAT_SEATED) {
@@ -324,6 +331,9 @@ static void ov_nifm_cancel(Cpu *c) {
 static void ov_nickname(Cpu *c) {
     char *out = arg_p(c, 0);
     const char *name = mkwmp_config()->name;
+    char username[64];
+    // Nextendo: the session's username (mkwmp.toml carries the same one until the session is there)
+    if (g_nextendo && nextendo_username(username, sizeof username) && username[0]) name = username;
     if (out) {
         memset(out, 0, 33);   // nn::account::Nickname: char[33]
         snprintf(out, 33, "%s", name[0] ? name : "Local");
@@ -361,14 +371,26 @@ static void ov_nsa_available(Cpu *c) { uint8_t *o = arg_p(c, 0); if (o) *o = 1; 
 // Each player needs its own account id: Pia's mesh join fails with 2318-0540 (result 0x647e,
 // main+0x1577c6c) when the joiner's station id equals the host's. A launcher player gets the
 // id the lobby derives for its name (the one its friends see); local tests keep FAKE_NSA_ID(+1).
+// On Nextendo the id comes from the account's pid (nextendo_account_id). Before the first session (a read while the
+// game is still offline) there is no pid yet: the id of the name stands in, and the log says so.
 static uint64_t nsa_id(void) {
     const char *name = mkwmp_config()->name;
+    uint64_t pid = g_nextendo ? nextendo_pid() : 0;
+    if (pid) return nextendo_account_id(pid);
     return name[0] ? friends_account_id(name) : FAKE_NSA_ID + g_second_player;
 }
 static void ov_nsa_get_id(Cpu *c) {
     uint64_t *o = arg_p(c, 0);
     if (o) *o = nsa_id();
     static volatile int32_t announced;
+    if (g_nextendo) {
+        // Neither the id nor the name goes to the log or the crash record: a report carries both to MKWMP servers.
+        int32_t now = nextendo_pid() ? 2 : 1;
+        if (plat_xchg(&announced, now) != now)
+            mlog(now == 2 ? "account id: from the Nextendo account" : "account id: no Nextendo session yet, a placeholder");
+        ret_x(c, 0);
+        return;
+    }
     if (plat_cas(&announced, 1, 0) == 0) {
         mlog("account id %#llx", (unsigned long long)nsa_id());
         // the crash record's "uid": the user id the lobby derives from the name and prints in its room lines
@@ -391,6 +413,30 @@ static void ov_nsa_load_token(Cpu *c) {
     uint64_t *out_len = arg_p(c, 0);
     char *buf = arg_p(c, 1);
     uint64_t cap = arg_x(c, 2);
+    if (g_nextendo) {
+        // Nextendo: a new session from the launcher at each load (a token with at least 1 h left), carried in the
+        // "nnex" claim of a JWT. Without a session the game gets no token and its sign-in fails.
+        // (Dormant, nothing is asked of the launcher: the player has not opened Online Play.)
+        static char jwt[NX_TOKEN_MAX * 2];
+        static PlatLock lock = PLAT_LOCK_INIT;
+        plat_lock(&lock);
+        NxState st = g_active ? nextendo_fetch() : NX_UNAVAILABLE;
+        if (st == NX_READY) nextendo_net();
+        size_t len = g_active ? nextendo_token(jwt, sizeof jwt) : 0;
+        if (len && buf && cap >= len) {
+            memcpy(buf, jwt, len);
+            if (out_len) *out_len = len;
+            mlog("account token: %u bytes for the Nextendo session", (unsigned)len);
+        } else {
+            if (out_len) *out_len = 0;
+            mlog("account token: none (Nextendo session %s%s)", nextendo_state_name(st),
+                 len ? ", and it does not fit the game's buffer" : "");
+        }
+        memset(jwt, 0, sizeof jwt);
+        plat_unlock(&lock);
+        ret_x(c, 0);
+        return;
+    }
     // The seat ticket (mkw1.<payload>.<sig>) is the account token the lobby verifies in
     // IssuePrearrangedUserToken; local tests without a launcher keep the dummy tokens.
     static char ticket[520];
@@ -525,12 +571,57 @@ static PlatLock g_wake_lock = PLAT_LOCK_INIT;
 static int g_ready;
 static struct sockaddr_in g_server;
 
+// Nextendo mode: this machine's address on the way to `to` (no packet is sent), for nifm and Pia. As LAN mode.
+static void nextendo_local_ip(struct in_addr to) {
+    PlatSock probe = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    struct sockaddr_in route = {0}, me;
+    plat_socklen_t ml = sizeof me;
+    route.sin_family = AF_INET;
+    route.sin_port = htons(443);
+    route.sin_addr = to;
+    if (probe != PLAT_NO_SOCK && !connect(probe, (struct sockaddr *)&route, sizeof route) &&
+        !getsockname(probe, (struct sockaddr *)&me, &ml))
+        g_local_ip = me.sin_addr;
+    if (probe != PLAT_NO_SOCK) plat_sock_close(probe);
+}
+
+// Nextendo mode, with a session in hand: g_server is serverHost:443 (what a name of the console maker's domains
+// resolves to; connect goes where the game says) and the local address is the one that reaches it. Called at
+// activation and after each new session: the host is looked up again once its 10 minutes are over. 0 = no address.
+static int nextendo_net(void) {
+    uint8_t ip[4];
+    net_init();
+    if (!nextendo_host(NX_HOST_SERVER, ip)) return 0;
+    if (memcmp(&g_server.sin_addr, ip, 4)) {
+        memcpy(&g_server.sin_addr, ip, 4);
+        nextendo_local_ip(g_server.sin_addr);
+        mlog("net bridge -> Nextendo %u.%u.%u.%u:443 (local %s)", ip[0], ip[1], ip[2], ip[3], inet_ntoa(g_local_ip));
+    }
+    if (!nextendo_host(NX_HOST_NAT, ip)) mlog("net: no address for Nextendo's NAT check host (NAT checks will fail)");
+    return 1;
+}
+
 static void net_init(void) {
     if (g_ready) return;
     plat_net_init();
     for (int i = 0; i < NFD; i++) {
         g_sock[i] = PLAT_NO_SOCK;
         g_wake_peer[i] = PLAT_NO_SOCK;
+    }
+    if (g_nextendo) {
+        // No MKWMP lobby: g_server is filled by nextendo_net once there is a session. Real peers, as LAN mode: Pia
+        // binds all interfaces and sends where it says. Until the server is known the local address is the default
+        // route's (192.0.2.1 is a documentation address: nothing is sent to it).
+        g_server.sin_family = AF_INET;
+        g_server.sin_port = htons(443);
+        g_lan = 1;
+        g_local_ip.s_addr = htonl(INADDR_LOOPBACK);
+        struct in_addr any;
+        any.s_addr = inet_addr("192.0.2.1");
+        nextendo_local_ip(any);
+        g_ready = 1;
+        mlog("net bridge ready -> Nextendo Network (local %s)", inet_ntoa(g_local_ip));
+        return;
     }
     // Server from mkwmp.toml; env vars override for testing.
     const MkwmpConfig *cfg = mkwmp_config();
@@ -668,18 +759,34 @@ static void ov_sock_connect(Cpu *c) {
     if (s == PLAT_NO_SOCK) { g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return; }
     struct sockaddr_in target = g_server;
     const uint8_t *guest = arg_p(c, 1);
-    if (guest && arg_x(c, 2) >= 4 && guest[1] == 2) {
-        uint16_t port;
-        memcpy(&port, guest + 2, sizeof port);
-        if (port && ntohs(port) != 443) target.sin_port = port;
+    if (g_nextendo) {
+        // Nextendo: the address and port the game asks for, as they are. They come from sock_getaddrinfo (serverHost
+        // for the NPLN names, port 443 kept) or straight from the game session (gamesync: its host and port).
+        if (!guest || arg_x(c, 2) < 8 || guest[1] != 2 || !(guest[2] | guest[3]) ||
+            !(guest[4] | guest[5] | guest[6] | guest[7])) {
+            mlog("nnsocketConnect: no IPv4 address and port to connect to");
+            g_errno = G_EINVAL; ret_x(c, (uint64_t)-1); return;
+        }
+        memset(&target, 0, sizeof target);
+        target.sin_family = AF_INET;
+        memcpy(&target.sin_port, guest + 2, 2);
+        memcpy(&target.sin_addr, guest + 4, 4);
+        mlog("nnsocketConnect -> %u.%u.%u.%u:%u", guest[4], guest[5], guest[6], guest[7], (unsigned)ntohs(target.sin_port));
+    } else {
+        if (guest && arg_x(c, 2) >= 4 && guest[1] == 2) {
+            uint16_t port;
+            memcpy(&port, guest + 2, sizeof port);
+            if (port && ntohs(port) != 443) target.sin_port = port;
+        }
+        if (target.sin_port != g_server.sin_port)
+            mlog("nnsocketConnect keeps explicit port %u", (unsigned)ntohs(target.sin_port));
     }
-    if (target.sin_port != g_server.sin_port)
-        mlog("nnsocketConnect keeps explicit port %u", (unsigned)ntohs(target.sin_port));
+    const char *where = g_nextendo ? "as asked" : "loopback";
     int r = connect(s, (struct sockaddr *)&target, sizeof target);
-    if (r == 0) { rlog("nnsocketConnect -> connected (loopback)"); ret_x(c, 0); return; }
+    if (r == 0) { mlog("nnsocketConnect -> connected (%s)", where); ret_x(c, 0); return; }
     int e = plat_net_error();
     if (e == PLAT_NET_WOULDBLOCK || e == PLAT_NET_INPROGRESS || e == PLAT_NET_ALREADY) {
-        g_errno = G_EINPROGRESS; rlog("nnsocketConnect -> EINPROGRESS (loopback)");
+        g_errno = G_EINPROGRESS; mlog("nnsocketConnect -> EINPROGRESS (%s)", where);
     } else if (e == PLAT_NET_ISCONN) { ret_x(c, 0); return; }
     else g_errno = G_EINVAL;
     ret_x(c, (uint64_t)-1);
@@ -856,12 +963,41 @@ enum { TYPED_AI_RING = 64 };
 static struct { GAddrInfo ai; uint8_t sa[16]; } g_typed_ai[TYPED_AI_RING];
 static volatile int32_t g_typed_ai_next;
 
+// MKWMP_NO_CORE_AWAY=1: a blocking override keeps its guest core (debugging).
+static int no_core_away(void) {
+    static int off = -1;
+    if (off < 0) { const char *v = getenv("MKWMP_NO_CORE_AWAY"); off = v && !strcmp(v, "1"); }
+    return off;
+}
+
+// Nextendo mode: the address of a name the game asks for (nextendo.h: NAT-check names -> natHost, the other names of
+// the console maker's domains -> serverHost, an IP literal as it is, anything else -> the machine's DNS; that last
+// one is how a gamesync host named by the game session is honoured). A lookup can block: the guest core is given
+// up meanwhile, as in ov_sock_poll.
+static int nextendo_lookup(Cpu *c, const char *node, uint8_t ip[4]) {
+    NxHostClass kind = nextendo_classify(node, ip);
+    if (kind == NX_HOST_LITERAL) return 1;
+    int away = 0;
+    int guest = g_rt.guest_thread ? g_rt.guest_thread(c) : c->thread != NULL;
+    if (guest && g_rt.core_away && g_rt.core_back && !no_core_away()) away = g_rt.core_away();
+    int ok = nextendo_resolve(node, ip);
+    if (g_rt.core_back && away) g_rt.core_back(&away);
+    static volatile int32_t said;
+    if (!ok) mlog("name lookup failed: %s", node ? node : "(null)");
+    else if (plat_inc(&said) <= 40)
+        mlog("name lookup: %s -> %u.%u.%u.%u (%s)", node, ip[0], ip[1], ip[2], ip[3],
+             kind == NX_HOST_NAT ? "Nextendo NAT check" : kind == NX_HOST_SERVER ? "Nextendo server" : "DNS");
+    return ok;
+}
+
 static void sock_getaddrinfo(Cpu *c, const char *label, int cpp_layout) {
     net_init();
     dump_cstr(label, arg_p(c, 0));
     void **res = arg_p(c, 3);
     if (!res) { ret_x(c, (uint64_t)-1); return; }
     *res = NULL;
+    uint8_t nx_ip[4] = {0};
+    if (g_nextendo && !nextendo_lookup(c, arg_p(c, 0), nx_ip)) { ret_x(c, (uint64_t)-1); return; }
     GAddrInfo *ai;
     uint8_t *sa;   // console sockaddr_in: len,family,port,addr,zero[8]
     if (cpp_layout) {
@@ -887,6 +1023,17 @@ static void sock_getaddrinfo(Cpu *c, const char *label, int cpp_layout) {
         }
     }
     memcpy(sa + 4, &g_server.sin_addr, 4);      // 127.0.0.1
+    if (g_nextendo) {
+        // The address found above, and the port the game names (443 stays 443; none given: 0, the caller sets it).
+        char *end = NULL;
+        unsigned long port = service && *service ? strtoul(service, &end, 10) : 0;
+        if (service && !strcmp(service, "https")) port = 443;
+        else if (service && !strcmp(service, "http")) port = 80;
+        else if (!end || *end || port >= 65536) port = 0;
+        uint16_t be = htons((uint16_t)port);
+        memcpy(sa + 2, &be, 2);
+        memcpy(sa + 4, nx_ip, 4);
+    }
     ai->ai_family = 2; ai->ai_socktype = 1; ai->ai_protocol = 6; ai->ai_addrlen = 16;
     if (cpp_layout) ai->ai_canonname = (char *)sa; // nn::socket::AddrInfo address at +0x18
     else ai->ai_addr = sa;
@@ -1013,7 +1160,14 @@ static void ov_pia_sendto(Cpu *c) {
     // Every peer is local in this setup: any other IPv4 peer address (e.g. one
     // advertised through Gamesync signaling) is redirected to loopback, same port.
     int is_probe = len == 16 && !buf[0] && !buf[1] && !buf[2] && (buf[3] == 0 || (buf[3] >= 101 && buf[3] <= 103));
-    if (g_lan) {
+    if (g_nextendo) {
+        // Nextendo: every datagram goes where Pia says, NAT probes too (their addresses came from sock_getaddrinfo:
+        // natHost / serverHost). Nothing goes to an MKWMP responder.
+        if (guest && arg_x(c, 5) >= 16 && guest[1] == 2 && (guest[2] || guest[3])) {
+            memcpy(&sa.sin_port, guest + 2, sizeof sa.sin_port);
+            memcpy(&sa.sin_addr, guest + 4, 4);
+        }
+    } else if (g_lan) {
         // Real peers: send where Pia says; NAT probes go to the server host.
         if (is_probe) {
             sa.sin_addr = g_server.sin_addr;
@@ -1046,6 +1200,10 @@ static void ov_pia_sendto(Cpu *c) {
                  guest && arg_x(c, 5) >= 16 ? guest[4] : 0, guest && arg_x(c, 5) >= 16 ? guest[5] : 0,
                  guest && arg_x(c, 5) >= 16 ? guest[6] : 0, guest && arg_x(c, 5) >= 16 ? guest[7] : 0);
         g_errno = G_EINVAL; ret_x(c, UINT64_MAX); return;
+    }
+    if (g_nextendo && is_probe) {
+        static volatile int32_t probes;   // where the NAT check goes: the first ones say whether both hosts are reached
+        if (plat_inc(&probes) <= 8) mlog("Pia NAT probe -> %s:%u", inet_ntoa(sa.sin_addr), ntohs(sa.sin_port));
     }
     if (len != 16 && pia_log_packet(1, (unsigned)len, sa.sin_addr.s_addr, sa.sin_port)) {
         struct sockaddr_in local; plat_socklen_t ll = sizeof local;
@@ -1780,7 +1938,7 @@ typedef struct {
 static void ov_ssl_cert_bufsize(Cpu *c) {
     uint32_t *out = arg_p(c, 0);
     size_t ca_len;
-    lobby_ca(&ca_len);
+    lobby_ca(&ca_len);   // Nextendo without its CA file: 0 bytes, and ov_ssl_certificates fails (nothing is trusted)
     if (out) *out = (uint32_t)(sizeof(GCertificateInfo) + ca_len);
     ret_x(c, 0);
 }
@@ -1790,7 +1948,7 @@ static void ov_ssl_certificates(Cpu *c) {
     uint32_t *ids = arg_p(c, 3);
     size_t ca_len;
     const unsigned char *ca = lobby_ca(&ca_len);
-    if (!out || !info || arg_x(c, 2) < sizeof(*info) + ca_len) {
+    if (!ca || !out || !info || arg_x(c, 2) < sizeof(*info) + ca_len) {
         ret_x(c, (uint64_t)-1); return;
     }
     memset(info, 0, sizeof(*info));
@@ -1815,6 +1973,36 @@ static volatile int32_t g_active;
 // The runtime's own handler of an SDK name (NULL with none, or a backend without stock handlers).
 static GuestFn stock_handler(const char *name) { return g_rt.stock ? g_rt.stock(name) : NULL; }
 
+// Nextendo mode, Online Play opened: the launcher's session instead of a seat, its CA and the server's address, or the
+// game stays offline. No seat keepalive, friends fill or voice: none of it exists there.
+static int nextendo_online(void) {
+    if (!mkwmp_config()->launcher_port) {
+        mlog("online requested: Nextendo needs the MKWMP launcher (none in mkwmp.toml), staying offline");
+        return 0;
+    }
+    NxState st = nextendo_fetch();
+    if (st != NX_READY) {
+        mlog("online requested: no Nextendo session (%s), staying offline (stock no-network)", nextendo_state_name(st));
+        return 0;
+    }
+    char server[128] = "", ca_file[128] = "";
+    nextendo_hosts(server, NULL, ca_file, sizeof server);
+    lobby_ca_use_file(ca_file);
+    size_t ca_len;
+    if (!lobby_ca(&ca_len)) {
+        mlog("online requested: Nextendo's certificate is not in the game folder, staying offline");
+        return 0;
+    }
+    if (!nextendo_net()) {
+        mlog("online requested: no address for %s, staying offline", server);
+        return 0;
+    }
+    mlog("online requested: Nextendo session ready, going active");
+    crumb_state("online", "1");
+    crumb_state("server", "%s:443", server);
+    return 1;
+}
+
 // Online Play was opened: get a seat (if a launcher is configured) and go active.
 static void try_activate(void) {
     static PlatLock lock = PLAT_LOCK_INIT;
@@ -1822,7 +2010,9 @@ static void try_activate(void) {
     if (!g_active) {
         const MkwmpConfig *cfg = mkwmp_config();
         SeatReply r;
-        if (!mkwmp_config_has_seat(cfg)) {
+        if (g_nextendo) {
+            if (nextendo_online()) plat_xchg(&g_active, 1);
+        } else if (!mkwmp_config_has_seat(cfg)) {
             mlog("online requested: no launcher in mkwmp.toml, going active without a seat");
             voice_online(cfg->host);
             plat_xchg(&g_active, 1);
@@ -1853,7 +2043,7 @@ static int g_eager;
 static void eager_seat(void) {
     static volatile int32_t seated;
     static PlatLock lock = PLAT_LOCK_INIT;
-    if (!g_eager || seated) return;
+    if (!g_eager || seated || g_nextendo) return;   // Nextendo: no seat; ov_nsa_load_token asks for the session itself
     plat_lock(&lock);
     if (!seated) {
         const MkwmpConfig *cfg = mkwmp_config();
@@ -2060,6 +2250,9 @@ int npln_register(void) {
     const char *enabled = getenv("MKWMP_ENABLE");
     int engage = cfg->present || (enabled && !strcmp(enabled, "1"));
     if (!engage) { log_line("npln: inactive (no mkwmp.toml; set MKWMP_ENABLE=1 to force)"); return 0; }
+    g_nextendo = cfg->backend == BACKEND_NEXTENDO;
+    crumb_state("backend", "%s", g_nextendo ? "nextendo" : "mkwmp");   // the crash record's "backend=" state line
+    mlog("backend: %s", g_nextendo ? "nextendo" : "mkwmp");
     const char *player = getenv("MKWMP_PLAYER");
     g_second_player = player ? !strcmp(player, "2") : cfg->slot == 2;
     const char *edges = getenv("MKWMP_TRACE_EDGES");

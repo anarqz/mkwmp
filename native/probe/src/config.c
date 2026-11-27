@@ -12,6 +12,13 @@ static void defaults(MkwmpConfig *c) {
     c->slot = 1;
     c->voice_port = 8907;
     strcpy(c->lobby_ca, "mkwmp-lobby-ca.pem");
+    strcpy(c->nextendo_ca, "nextendo-ca.pem");
+}
+
+// Nextendo has no MKWMP seat, ticket or voice relay: whatever the file says of them does not apply.
+static void nextendo_only(MkwmpConfig *c) {
+    c->voice_port = 0;
+    c->ticket[0] = 0;
 }
 
 // Copy a trimmed, unquoted value into dst (size n, always NUL-terminated).
@@ -23,6 +30,16 @@ static void store_str(char *dst, size_t n, const char *s, const char *end) {
     if (len >= n) len = n - 1;
     memcpy(dst, s, len);
     dst[len] = 0;
+}
+
+// The end of a quoted value: just past its closing quote, so a comment after it (as the contract's example of
+// `backend` has) is not part of it. Unquoted values end at the line's end, as every other key's.
+static const char *quoted_end(const char *s, const char *end) {
+    while (s < end && (*s == ' ' || *s == '\t')) s++;
+    if (s >= end || *s != '"') return end;
+    for (const char *p = s + 1; p < end; p++)
+        if (*p == '"') return p + 1;
+    return end;
 }
 
 void mkwmp_config_parse(const char *text, MkwmpConfig *out) {
@@ -72,6 +89,12 @@ void mkwmp_config_parse(const char *text, MkwmpConfig *out) {
             store_str(out->launcher_exe, sizeof out->launcher_exe, val, eol);
         } else if (klen == 8 && !strncmp(line, "lobby_ca", 8)) {
             store_str(out->lobby_ca, sizeof out->lobby_ca, val, eol);
+        } else if (klen == 11 && !strncmp(line, "nextendo_ca", 11)) {
+            store_str(out->nextendo_ca, sizeof out->nextendo_ca, val, quoted_end(val, eol));
+        } else if (klen == 7 && !strncmp(line, "backend", 7)) {
+            char buf[16];
+            store_str(buf, sizeof buf, val, quoted_end(val, eol));
+            out->backend = !strcmp(buf, "nextendo") ? BACKEND_NEXTENDO : BACKEND_MKWMP;
         } else if (klen == 10 && !strncmp(line, "voice_port", 10)) {
             char buf[16];
             store_str(buf, sizeof buf, val, eol);
@@ -82,11 +105,13 @@ void mkwmp_config_parse(const char *text, MkwmpConfig *out) {
             if (buf[0]) out->slot = atoi(buf);
         }
     }
+    if (out->backend == BACKEND_NEXTENDO) nextendo_only(out);
     out->present = 1;
 }
 
 static MkwmpConfig cfg;
 static int loaded;
+static int g_backend = -1;   // the backend of the first load (-1: none yet); a re-read keeps it
 
 const MkwmpConfig *mkwmp_config_reload(void) {
     loaded = 0;
@@ -120,9 +145,18 @@ const MkwmpConfig *mkwmp_config(void) {
         buf[got] = 0;
         mkwmp_config_parse(buf, &cfg);
     }
+    int alone = 0;   // no launcher answers: Nextendo needs one (its session), so the mod alone is MKWMP only
     if (g_ignore_launcher && cfg.launcher_port) {
         cfg.launcher_port = 0;
         cfg.present = 0;   // nothing else of a launcher's file applies without it
+        alone = 1;
+    }
+    if (g_direct && !cfg.launcher_port) alone = 1;
+    if (alone) g_backend = cfg.backend = BACKEND_MKWMP;
+    if (g_backend < 0) g_backend = cfg.backend;
+    else if (cfg.backend != g_backend) {
+        cfg.backend = g_backend;
+        if (g_backend == BACKEND_NEXTENDO) nextendo_only(&cfg);
     }
     // the plugin's own sign-in (seatd.c): only when no launcher is configured, which stays the one in charge
     if (g_direct && !cfg.launcher_port) {
@@ -152,3 +186,5 @@ void mkwmp_config_ignore_launcher(void) {
 }
 
 int mkwmp_config_has_seat(const MkwmpConfig *c) { return c->launcher_port || c->direct; }
+
+int mkwmp_config_nextendo(void) { return mkwmp_config()->backend == BACKEND_NEXTENDO; }

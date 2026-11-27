@@ -7,8 +7,14 @@
 
 #include <stddef.h>
 
+// Whose servers the game plays on (`backend = "nextendo"`; absent or anything else: an MKWMP server).
+// docs/contracts/NEXTENDO_API.md.
+typedef enum { BACKEND_MKWMP = 0, BACKEND_NEXTENDO } MkwmpBackend;
+
 typedef struct {
     int present;             // a config file was found and parsed
+    int backend;             // MkwmpBackend. Nextendo: no server / ticket / voice (voice_port is 0, ticket empty)
+    char nextendo_ca[96];    // Nextendo's CA, a file beside mkwmp.toml (PEM); default "nextendo-ca.pem"
     char host[128];          // lobby host: IP literal or hostname (default 127.0.0.1)
     int port;                // lobby port (default 8900)
     char name[64];           // player username (may be empty)
@@ -48,7 +54,11 @@ void mkwmp_config_set_voice_port(int port);
 // A seat service answers /local/v1/... : the launcher, or the plugin itself (direct).
 int mkwmp_config_has_seat(const MkwmpConfig *c);
 
-// Re-read mkwmp.toml (e.g. the launcher restarted with a new token). Returns the same cache.
+// Re-read mkwmp.toml (e.g. the launcher restarted with a new token). Returns the same cache. The backend stays the
+// one the process started with: the game cannot change networks while it runs.
 const MkwmpConfig *mkwmp_config_reload(void);
+
+// The session plays on Nextendo Network (mkwmp_config()->backend, for readers who want the question).
+int mkwmp_config_nextendo(void);
 
 #endif

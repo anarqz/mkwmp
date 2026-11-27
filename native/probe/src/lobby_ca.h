@@ -21,7 +21,14 @@
 size_t lobby_ca_decode(const unsigned char *in, size_t len, unsigned char *der, size_t cap);
 
 // The CA to trust: the server's (read once from the game folder), else the
-// built-in capture certificate. Never NULL.
+// built-in capture certificate. Never NULL on an MKWMP server.
+// On Nextendo Network (config.h backend): the file `nextendo_ca` names, and
+// without it NULL with *len 0: nothing is trusted, the capture certificate least.
 const unsigned char *lobby_ca(size_t *len);
+
+// Read this file (a plain name beside mkwmp.toml) instead of the one the config
+// names, from the next lobby_ca on: the Nextendo session's "caFile". Call it
+// before the game's TLS starts.
+void lobby_ca_use_file(const char *name);
 
 #endif
