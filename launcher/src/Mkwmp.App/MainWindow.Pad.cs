@@ -18,17 +18,23 @@ public partial class MainWindow
     private void FollowPadLayout()
     {
         var setting = _vm.Launcher.GameSettings.Value(PadLayout.SettingId);
+        // SDL (controllers XInput does not see) comes from the game's folder, and lets go while the game runs
+        var exe = _vm.Launcher.Game.Install?.Executable;
+        var runtime = exe is { Length: > 0 } ? System.IO.Path.GetDirectoryName(exe) : null;
+        var running = _vm.Launcher.Session.GameRunning;
         Dispatcher.BeginInvoke(() =>
         {
             if (_gamepad.Setting != setting)
             {
                 _gamepad.Setting = setting;
             }
+            _gamepad.RuntimeFolder = runtime;
+            _gamepad.GameRunning = running;
         });
     }
 
     private void LogPadMapping() =>
-        App.Log($"input: button layout {_gamepad.Mapping} (pad_layout = {(_gamepad.Setting is { Length: > 0 } s ? s : "auto")}, controller {(_gamepad.Connected ? _gamepad.Identity.ToString() : "none")})");
+        App.Log($"input: button layout {_gamepad.Mapping} (pad_layout = {(_gamepad.Setting is { Length: > 0 } s ? s : "auto")}, controller {(_gamepad.Connected ? _gamepad.Identity.ToString() + (_gamepad.Name is { Length: > 0 } n ? $" \"{n}\"" : "") : "none")})");
 
     private void OnLauncherChangedForPad(object? sender, EventArgs e) => FollowPadLayout();
 

@@ -155,7 +155,7 @@ public sealed class ChecklistViewModel : PageViewModel
 
     private void OnShellChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(ShellViewModel.GamepadConnected))
+        if (e.PropertyName is nameof(ShellViewModel.GamepadConnected) or nameof(ShellViewModel.GamepadName))
         {
             Refresh();
         }
@@ -203,7 +203,9 @@ public sealed class ChecklistViewModel : PageViewModel
             Rows[i].Update(item.Title, item.Status, StateOf(item.State), item.State == CheckState.Working ? item.Progress ?? double.NaN : double.NaN, item.Action, item.More);
         }
         var pad = Shell.GamepadConnected;
-        Rows[^1].Update(S["checklist.controller"], S[pad ? "checklist.controller_ok" : "checklist.controller_none"], pad ? "ok" : "warning", double.NaN, null, null);
+        // the controller's own name when SDL gives one (a product name: no translation)
+        var status = !pad ? S["checklist.controller_none"] : Shell.GamepadName is { Length: > 0 } name ? name : S["checklist.controller_ok"];
+        Rows[^1].Update(S["checklist.controller"], status, pad ? "ok" : "warning", double.NaN, null, null);
 
         var needed = list.NeededCount;
         (Summary, SummaryCaption, SummaryState) = list.Ready ? (S["checklist.ready"], S["checklist.ready_caption"], "ok")

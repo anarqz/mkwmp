@@ -15,9 +15,11 @@ public readonly record struct ScrollStep(double X, double Y);
 
 /// <summary>
 /// XInput, polled 60 times a second on the UI thread (xinput1_4.dll, else xinput9_1_0.dll; Wine
-/// has both). Raises <see cref="Pressed"/> once per button press; the D-pad and the left stick
-/// repeat while held (after a delay). Silent while <see cref="Enabled"/> is false (the window is
-/// not the active one: the game has the controller then).
+/// has both), and, for the controllers XInput does not see (a Switch Pro Controller, Joy-Con, a
+/// DualSense...), the game's own SDL3 (<see cref="SdlPads"/>): an XInput pad comes first. Raises
+/// <see cref="Pressed"/> once per button press; the D-pad and the left stick repeat while held (after
+/// a delay). Silent while <see cref="Enabled"/> is false (the window is not the active one: the game
+/// has the controller then); SDL lets go of the controller then too, and while <see cref="GameRunning"/>.
 /// </summary>
 public sealed class GamepadInput : IDisposable
 {
@@ -39,6 +41,11 @@ public sealed class GamepadInput : IDisposable
     private string? _setting;
     private bool _noCapabilitiesEx;
     private PadIdentity? _pretend;
+    private readonly SdlPads _sdl = new();
+    private bool _gameRunning;
+
+    /// <summary>The slot standing for SDL's controller (XInput has 0-3).</summary>
+    private const int SdlSlot = 4;
 
     public GamepadInput()
     {
@@ -77,6 +84,27 @@ public sealed class GamepadInput : IDisposable
 
     public bool Connected => _slot >= 0;
 
+    /// <summary>The controller's name when SDL reads it ("Nintendo Switch Pro Controller"), else null.</summary>
+    public string? Name { get; private set; }
+
+    /// <summary>The mkw-recomp folder (mkw.exe, SDL3.dll): where SDL comes from. Null: XInput only.</summary>
+    public string? RuntimeFolder
+    {
+        get => _sdl.RuntimeFolder;
+        set => _sdl.RuntimeFolder = value;
+    }
+
+    /// <summary>The game runs: its SDL has the controller, the launcher's lets go.</summary>
+    public bool GameRunning
+    {
+        get => _gameRunning;
+        set
+        {
+            _gameRunning = value;
+            _sdl.Wanted = _enabled && !value;
+        }
+    }
+
     public bool Enabled
     {
         get => _enabled;
@@ -87,31 +115,36 @@ public sealed class GamepadInput : IDisposable
                 _enabled = value;
                 _swallow = true; // what is held when the window comes back is not a press
                 _repeating = null;
+                _sdl.Wanted = value && !_gameRunning;
             }
         }
     }
 
-    public void Start() => _timer.Start();
+    public void Start()
+    {
+        _sdl.Wanted = _enabled && !_gameRunning;
+        _timer.Start();
+    }
 
-    public void Dispose() => _timer.Stop();
+    public void Dispose()
+    {
+        _timer.Stop();
+        _sdl.Dispose();
+    }
 
     private void Poll()
     {
-        if (_api == 2)
-        {
-            _timer.Stop();
-            return;
-        }
         var now = DateTime.UtcNow;
         var state = default(XInputState);
         var found = -1;
-        if (_slot >= 0 && Read(_slot, out state))
+        PadIdentity? sdlPad = null;
+        if (_slot is >= 0 and < SdlSlot && Read(_slot, out state))
         {
             found = _slot;
         }
         else
         {
-            for (var i = 0; i < 4 && found < 0; i++)
+            for (var i = 0; i < 4 && found < 0 && _api < 2; i++)
             {
                 if (now < _nextProbe[i])
                 {
@@ -127,11 +160,22 @@ public sealed class GamepadInput : IDisposable
                 }
             }
         }
-        if (found != _slot)
+        if (found < 0 && _sdl.Reading is { } sdl)
+        {
+            found = SdlSlot;
+            sdlPad = sdl.Identity;
+            state = new XInputState { Buttons = sdl.Buttons, ThumbLX = sdl.LX, ThumbLY = sdl.LY, ThumbRX = sdl.RX, ThumbRY = sdl.RY };
+            Name = sdl.Name;
+        }
+        if (found != _slot || (sdlPad is { } p && _pretend is null && p != Identity))
         {
             _slot = found;
             _swallow = true;
-            Identity = _pretend ?? (found >= 0 ? Identify(found) : PadIdentity.Unknown);
+            if (found != SdlSlot)
+            {
+                Name = null;
+            }
+            Identity = _pretend ?? (found == SdlSlot ? sdlPad!.Value : found >= 0 ? Identify(found) : PadIdentity.Unknown);
             Remap();
             ConnectedChanged?.Invoke(this, EventArgs.Empty);
         }

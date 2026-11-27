@@ -397,6 +397,15 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         set => Set(ref _gamepadConnected, value);
     }
 
+    /// <summary>The connected controller's name when it is known ("Nintendo Switch Pro Controller"), else null.</summary>
+    public string? GamepadName
+    {
+        get => _gamepadName;
+        set => Set(ref _gamepadName, value);
+    }
+
+    private string? _gamepadName;
+
     /// <summary>The hint bar now: the top layer's, else the page's.</summary>
     public IReadOnlyList<Hint> Hints
     {
