@@ -190,8 +190,54 @@ static void test_page(void) {
     assert(friends_list(owner, 0, 10, page) == 0);
 }
 
+// Nextendo: the server's accounts (nxfriends.c) merged with the launcher's entries, and the names they get.
+static void test_server_accounts(void) {
+    static FriendRoster known, names, out;
+    const char body[] = "{\"friends\":[{\"name\":\"Luna\",\"account\":\"00000000000000aa\"},{\"name\":\"Bia\"},"
+                        "{\"name\":\"Bia\"},{\"name\":\"\",\"online\":true},{\"name\":\"Rui\",\"account\":\"zz\"}]}";
+    assert(friends_parse_accounts(200, body, &known) && known.count == 1 && known.e[0].account_id == 0xaa);
+    // names only: an entry with a name and no "account", once; a bad "account" is no name either
+    assert(friends_parse_names(200, body, &names) && names.count == 1 && !strcmp(names.e[0].name, "Bia"));
+    assert(names.e[0].account_id == 0);
+    assert(!friends_parse_names(503, body, &names) && names.count == 1);
+
+    // one account left over and one name left over: they are the same friend
+    const uint64_t one[] = {0xaa, 0xbb};
+    assert(friends_merge(&known, &names, one, 2, &out) == 1 && out.count == 2);
+    assert(out.e[0].account_id == 0xaa && !strcmp(out.e[0].name, "Luna"));
+    assert(out.e[1].account_id == 0xbb && !strcmp(out.e[1].name, "Bia"));
+    // more accounts than that, or no name: numbered
+    const uint64_t three[] = {0xbb, 0, 0xcc, 0xaa, 0xbb};
+    assert(friends_merge(&known, &names, three, 5, &out) == 2 && out.count == 3);
+    assert(out.e[1].account_id == 0xbb && !strcmp(out.e[1].name, "Friend 1"));
+    assert(out.e[2].account_id == 0xcc && !strcmp(out.e[2].name, "Friend 2"));
+    assert(friends_merge(&known, NULL, one, 2, &out) == 1 && !strcmp(out.e[1].name, "Friend 1"));
+    static FriendRoster two_names;
+    assert(friends_parse_names(200, "{\"friends\":[{\"name\":\"Bia\"},{\"name\":\"Rui\"}]}", &two_names) && two_names.count == 2);
+    assert(friends_merge(&known, &two_names, one, 2, &out) == 1 && !strcmp(out.e[1].name, "Friend 1"));
+    // nothing from the server: the launcher's entries as they are; a full list takes no more
+    assert(friends_merge(&known, &names, NULL, 0, &out) == 0 && out.count == 1);
+    static FriendRoster full;
+    static uint64_t many[FRIENDS_MAX + 5];
+    for (int i = 0; i < FRIENDS_MAX + 5; i++) many[i] = 0x1000u + (unsigned)i;
+    full.count = 0;
+    assert(friends_merge(&full, NULL, many, FRIENDS_MAX + 5, &out) == FRIENDS_MAX && out.count == FRIENDS_MAX);
+    assert(!strcmp(out.e[FRIENDS_MAX - 1].name, "Friend 100"));
+
+    // GetFriendList serves them (no launcher roster here), and stops when they are taken back
+    const uint64_t owner[2] = {1, 2};
+    static GFriend page[10];
+    friends_set_server(one, 2);
+    assert(friends_list(owner, 0, 10, page) == 2 && page[0].account_id == 0xaa && page[1].account_id == 0xbb);
+    assert(!strcmp(page[0].nickname, "Friend 1") && page[1].is_valid == 1);
+    assert(friends_list(owner, 2, 10, page) == 0);
+    friends_set_server(NULL, 0);
+    assert(friends_list(owner, 0, 10, page) == 0);
+}
+
 static void test_lobby_ca_decode(void);
 int main(void) {
+    test_server_accounts();
     test_sha1();
     test_lobby_ca_decode();
     test_account_id();

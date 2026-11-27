@@ -93,6 +93,28 @@ static const struct game_addrs kRows[] = {
         .cam_query_words = {0xf9400008, 0xf9406d08, 0xd63f0100}, .cam_query_slot = 0xd8 / 8,
         .cam_ret0 = M(0x1c868a0), .cam_ret0_words = {0x2a1f03e0, 0xd65f03c0},
         .g_flags4 = 0x12c, .cam_setup_bit = 11,
+        // The friend manager (static reading of 2026-11-27; not proven live yet). Its update main+0x5faef0 is slot 11
+        // of the class table main+0x36364b8 and of both subclass tables. main+0x12f4c10 locks the friend client and
+        // copies its friend users (40-byte elements); main+0x2560de0 is the destructor the game calls on that copy.
+        .fr_vtables = {M(0x36364b8), M(0x35af9c8), M(0x3682f08)},
+        .fr_slot_changed = 9, .fr_slot_tick = 11, .fr_slot_reload = 15, .fr_slot_remap = 19,
+        .fr_changed = M(0x255f0e0), .fr_tick = M(0x5faef0), .fr_reload = M(0x5fb2e0), .fr_remap = M(0x255f8c0),
+        .fr_reinit = M(0xd6d7a0), .fr_users_copy = M(0x12f4c10), .fr_users_free = M(0x2560de0),
+        .fr_guard = {
+            {M(0x5faf08), 0x91412014}, {M(0x5faf10), 0x396ce688},     // update: the "console list read" byte
+            {M(0x5faf78), 0xb9408a68},                                 // ... and the state at +0x88
+            {M(0x5fafd8), 0xf9401660}, {M(0x5fafe4), 0xf9401108},     // ... the start operation at +0x28, its "finished?"
+            {M(0x255f0e0), 0x52916728}, {M(0x255f0e4), 0x72a00088}, {M(0x255f0e8), 0x38686808},   // "changed?"
+            {M(0xd6d7a0), 0x900152e8}, {M(0xd6d7a4), 0x91394108}, {M(0xd6d7a8), 0xf9400108},      // start over
+            {M(0x12f4c1c), 0xaa0003f3}, {M(0x12f4c20), 0x9101c000}, {M(0x12f4c24), 0xaa0803f4},   // copy: lock, x8
+            {M(0x12f4c34), 0xa9490a61}, {M(0x12f4c38), 0xb202e7e9},                               // ... 40-byte range
+            {M(0x2560df4), 0xf9400014}, {M(0x2560df8), 0xf9400295}, {M(0x2560e14), 0x385d8ec9},   // free
+            {M(0x255f8f8), 0xf9400400},                                // attach: the client at +8,
+            {M(0x255f958), 0x394f4288},                                // ... the "has a server user" byte at +0x3d0,
+            {M(0x255f99c), 0xf94012a8},                                // ... the account id at element +0x20
+        },
+        .fr_client = 8, .fr_op = 0x28, .fr_op_done = 0x20, .fr_state = 0x88, .fr_count = 0x98, .fr_items = 0xa0,
+        .fr_mapped = 0x3d0, .fr_user_size = 0x28, .fr_user_account = 0x20,
         // ---- diagnostic (§4; "high" or better only)
         .pia_join_step = {M(0x16a9230), M(0x16a9390), M(0x16a94b0), M(0x16a9cf0), M(0x16aa010), M(0x16aa0f0),
                           M(0x16aa800)},
@@ -193,6 +215,23 @@ int game_addrs_selfcheck(void) {
     else mkwmp_log("game build %s: address table row found, 3 of 3 guards ok (hooks go in when Online Play opens)",
                    game_build_name(build));
     return bad;
+}
+
+int game_guard_friends(const struct game_addrs *a) {
+    if (!a || !a->fr_tick || !a->fr_vtables[0]) return 0;
+    for (int i = 0; i < 3; i++) {
+        uint64_t vt = a->fr_vtables[i];
+        if (!vt) continue;
+        if (!game_guard_slot("friend manager", vt, a->fr_slot_changed, a->fr_changed) ||
+            !game_guard_slot("friend manager", vt, a->fr_slot_tick, a->fr_tick) ||
+            !game_guard_slot("friend manager", vt, a->fr_slot_reload, a->fr_reload) ||
+            !game_guard_slot("friend manager", vt, a->fr_slot_remap, a->fr_remap))
+            return 0;
+    }
+    int n = 0;
+    for (size_t i = 0; i < sizeof a->fr_guard / sizeof a->fr_guard[0] && a->fr_guard[i].at; i++, n++)
+        if (!game_guard_words("friend manager", a->fr_guard[i].at, &a->fr_guard[i].word, 1)) return 0;
+    return n > 0 && a->fr_user_size > a->fr_user_account;
 }
 
 int game_guard_slot(const char *what, uint64_t vtable, int slot, uint64_t expect) {

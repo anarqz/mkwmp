@@ -93,9 +93,11 @@ is not 1 to 16 hex digits, or is zero, counts as absent.
   received or sent, the player, and friends without an id are left out. Nextendo tells no ids yet, so the answer is
   `200 {"friends":[]}` until it does.
 - `account`: 16 lowercase hex digits, the friend's account id as it is. The mod uses it unchanged as
-  `nn::friends::Friend::GetAccountId()`; it never derives an id from a name in this mode, and ignores an entry
-  without `account`. (In MKWMP mode entries have no `account` and the id is derived from `name`, as in
-  LAUNCHER_API.md.)
+  `nn::friends::Friend::GetAccountId()`; it never derives an id from a name in this mode. (In MKWMP mode entries
+  have no `account` and the id is derived from `name`, as in LAUNCHER_API.md.)
+- An entry without `account` is optional and is only a name: the mod never makes a friend of it. It is used for one
+  thing: when the game's own server names exactly one friend account the launcher gave no entry for (§5), and the
+  answer holds exactly one entry without `account`, that account is shown under that name.
 - `name`: 1 to 20 characters, written as UTF-8 (no `\u` escapes); `Player` when Nextendo gave none.
 - Order: playing, online, offline, then by name. At most 100.
 - `503 {"state":"loading"}` while the launcher's first friends list is on its way: ask again in a second. The game
@@ -118,8 +120,12 @@ Overlay routes are unchanged. Voice answers `enabled:false`.
 - `nn::account::GetNickname`: the `username`.
 - `GetNetworkServiceAccountId`: the session's `accountId` when it has one (§4); otherwise derived from `pid`,
   unique per player and never 0.
-- `nn::friends::GetFriendList`: the entries of `/local/v1/friends` that carry `account` (§4), at most 100; empty
-  while there are none.
+- `nn::friends::GetFriendList`: the entries of `/local/v1/friends` that carry `account` (§4), then the friend
+  accounts the game's own server names at sign-in that are not among them (game 1.8.0; the mod reads them from the
+  game once its friend service has started, and has the game read its friend list again). At most 100.
+  - Such an account has no name of its own: it is shown as `Friend 1`, `Friend 2`, … (or under the one name of §4's
+    rule). Its id never leaves the game's process and is never logged.
+  - `MKWMP_NX_FRIENDS=0` (mkwmp.env) turns this off: only the launcher's entries are served, as before.
 - `nn::nsd::GetEnvironmentIdentifier`: `lp1` (as today).
 - Built-in certificates (`GetBuiltInCertificates`): serve `nextendo_ca` instead of the MKWMP lobby CA.
 - Name resolution, following Nextendo's emulator rules:

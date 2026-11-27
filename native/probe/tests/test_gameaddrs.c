@@ -79,6 +79,11 @@ int main(int argc, char **argv) {
             ranges += r180->trace_ranges[i][1] != 0;
         }
         CHECK(ranges == 6);   // three 1.0.0 ranges have no 1.8.0 counterpart (two merged, one unresolved, one gone)
+        // the friend manager (nxfriends.c): 1.8.0 only
+        CHECK(!r100->fr_tick && !r100->fr_vtables[0] && !game_guard_friends(r100) && !game_guard_friends(NULL));
+        CHECK(r180->fr_tick == 0x70005faef0ull && r180->fr_users_copy == 0x70012f4c10ull && r180->fr_slot_tick == 11);
+        CHECK(r180->fr_vtables[0] && r180->fr_vtables[1] && r180->fr_vtables[2] && r180->fr_guard[0].at);
+        CHECK(r180->fr_user_size == 0x28 && r180->fr_user_account == 0x20 && r180->fr_state == 0x88 && r180->fr_op == 0x28);
         // no 1.0.0 address leaked into the 1.8.0 row
         CHECK(r180->grpc_timedwait_lr != r100->grpc_timedwait_lr && r180->errsvc_post != r100->errsvc_post &&
               r180->game_global != r100->game_global && r180->bulkget_lr != r100->bulkget_lr);
@@ -127,6 +132,22 @@ int main(int argc, char **argv) {
         CHECK(game_addrs_selfcheck() == 0);
         put32(r180->errsvc_post + 4, 0xd503201f);   // a patched image: one guard fails
         CHECK(game_addrs_selfcheck() == 1);
+        // the friend manager's guards: nothing of it in place, then all of it, then one word off, then one slot off
+        CHECK(!game_guard_friends(r180));
+        for (int i = 0; i < 3; i++) {
+            put64(r180->fr_vtables[i] + 8u * r180->fr_slot_changed, r180->fr_changed);
+            put64(r180->fr_vtables[i] + 8u * r180->fr_slot_tick, r180->fr_tick);
+            put64(r180->fr_vtables[i] + 8u * r180->fr_slot_reload, r180->fr_reload);
+            put64(r180->fr_vtables[i] + 8u * r180->fr_slot_remap, r180->fr_remap);
+        }
+        int guards = 0;
+        for (; guards < 24 && r180->fr_guard[guards].at; guards++) put32(r180->fr_guard[guards].at, r180->fr_guard[guards].word);
+        CHECK(guards == 22 && game_guard_friends(r180));
+        put32(r180->fr_guard[19].at, 0xd503201f);
+        CHECK(!game_guard_friends(r180));
+        put32(r180->fr_guard[19].at, r180->fr_guard[19].word);
+        put64(r180->fr_vtables[2] + 8u * r180->fr_slot_tick, r180->fr_reload);
+        CHECK(!game_guard_friends(r180));
     } else if (!strcmp(mode, "other")) {
         map_main(0x02c00000u, 0x346ba64u, kId180);   // a MOD0 offset of no known build
         CHECK(game_build() == GAME_OTHER && game_addrs() == NULL);

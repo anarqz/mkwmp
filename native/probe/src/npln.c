@@ -21,6 +21,7 @@
 #include "kartrace.h"
 #include "nextendo.h"
 #include "nnssl.h"
+#include "nxfriends.h"
 #include "probe.h"
 #include "uuid5.h"
 #include "voice.h"
@@ -259,6 +260,8 @@ static void ov_friend_list_available(Cpu *c) {
 // const FriendFilter &filter): the launcher's roster, so the lobby's NPLN friends have a
 // system friend to attach to. The game reads it once after each sign-in, 10 at a time, until
 // a page comes back short (main+0x22283e8); its filter is all zero (no presence filter).
+// On Nextendo the list is the launcher's friends with an id plus the accounts the game's own server named
+// (nxfriends.h), and game 1.8.0 reads it again when it is told the list changed.
 static void ov_friend_list(Cpu *c) {
     int32_t *out_count = arg_p(c, 0);
     int offset = (int)arg_x(c, 3), count = (int)arg_x(c, 4);
@@ -1989,6 +1992,8 @@ static void install_profile_dispatch_trace(void) {
         return;
     }
     struct game_addrs a = *row;
+    // Nextendo: the friends its game server names go into the game's friend list (nxfriends.h; its own guards)
+    if (g_nextendo) nxfriends_install(row);
     // Install-time guards (GAME-1.8.0-ADDRESSES.md §3). The error-service post is the one functional target here:
     // slot 6 of its vtable must hold it and it must start as expected, else nothing matches it (no skip, no log).
     if (!game_guard_slot("error service post", a.errsvc_vtable, 6, a.errsvc_post) ||

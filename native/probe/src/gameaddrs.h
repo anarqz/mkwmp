@@ -66,6 +66,25 @@ struct game_addrs {
     uint64_t cam_ret0;
     uint32_t cam_ret0_words[2];
     uint16_t g_flags4, cam_setup_bit;
+    // nxfriends.c: the friends the game's server names, read from the game's friend manager (Nextendo mode). 0
+    // fr_tick: off for the build.
+    //   fr_vtables: the manager's class and its two subclasses; all three hold the same four functions in slots
+    //     fr_slot_changed ("the console's friend list has a friend the manager has not", fr_changed), fr_slot_tick
+    //     (the per-frame update, fr_tick: the hooked one), fr_slot_reload (read the console's list again, fr_reload)
+    //     and fr_slot_remap (attach server friends to console friends, fr_remap). Guards: every slot of every table.
+    //   fr_reinit(manager): the game's own "start over for the signed-in user" (list read again on the next update).
+    //   fr_users_copy(client; result in x8): a copy of the friend users the server named (a vector of fr_user_size
+    //     byte elements: a string, the account id at +fr_user_account); fr_users_free(&&vector) frees it.
+    //   fr_guard: instruction words that pin the functions above and the offsets below (0 at: end of the list).
+    //   manager: +fr_client the server's friend client (0 when signed out), +fr_state 1 once its first answer was
+    //     applied (0 before: +fr_op is then the start operation, whose virtual at table offset fr_op_done answers
+    //     "finished?"), +fr_count / +fr_items the console friends (pointers), each with a "has a server user" byte
+    //     at +fr_mapped.
+    uint64_t fr_vtables[3];
+    uint8_t fr_slot_changed, fr_slot_tick, fr_slot_reload, fr_slot_remap;
+    uint64_t fr_changed, fr_tick, fr_reload, fr_remap, fr_reinit, fr_users_copy, fr_users_free;
+    struct game_guard { uint64_t at; uint32_t word; } fr_guard[24];
+    uint16_t fr_client, fr_op, fr_op_done, fr_state, fr_count, fr_items, fr_mapped, fr_user_size, fr_user_account;
 
     // ---------------------------------------------------------------- diagnostic (0 address = off)
     uint64_t pia_join_step[GAME_PIA_STEPS];         // JoinRandomSessionJob step functions
@@ -147,6 +166,8 @@ const struct game_addrs *game_addrs(void);
 // Guards: 1 when guest memory holds the expected value. A mismatch (or unreadable memory) is logged with `what`.
 int game_guard_words(const char *what, uint64_t addr, const uint32_t *words, int n);
 int game_guard_slot(const char *what, uint64_t vtable, int slot, uint64_t expect);
+// Every guard of the row's friend manager fields (fr_*): 1 when all hold, 0 without them or on a mismatch (logged).
+int game_guard_friends(const struct game_addrs *a);
 // Read-only check of every functional guard of the running build, with one summary line in mkwmp.log (npln.c runs it
 // once, at the game's first gated SDK call, so an offline session already shows whether the row fits). Returns the
 // number of failed guards, -1 without a row. Only meaningful once main is mapped, and before any vtable is hooked.

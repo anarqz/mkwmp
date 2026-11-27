@@ -58,6 +58,20 @@ int friends_parse(int http_status, const char *body, const char *self, FriendRos
 // The same for Nextendo mode: only entries that carry "account" count, and nobody is left out by name.
 int friends_parse_accounts(int http_status, const char *body, FriendRoster *out);
 
+// The entries of a Nextendo answer that carry a name and no "account": names only (account_id 0), each once.
+int friends_parse_names(int http_status, const char *body, FriendRoster *out);
+
+// The list the game gets on Nextendo: `known` (the launcher's entries with an id) followed by the server's friend
+// accounts (`ids`, what the game's own server named: nxfriends.h) that are not among them. Such an account has no
+// name of its own: it gets the one name of `names` (may be NULL) when exactly one account and one name are left over
+// (the account is a friend's, and only that friend has no id), else "Friend 1", "Friend 2", ... Returns how many
+// accounts were added; stops at FRIENDS_MAX.
+int friends_merge(const FriendRoster *known, const FriendRoster *names, const uint64_t *ids, int n, FriendRoster *out);
+
+// The server's friend accounts of this sign-in, as nxfriends.c read them (n 0: none). friends_list serves them
+// merged with the launcher's roster in Nextendo mode.
+void friends_set_server(const uint64_t *ids, int n);
+
 // 1 to 16 hex digits (either case), not zero, nothing else: 1 and the id. Otherwise 0.
 int friends_account_hex(const char *s, uint64_t *out);
 
