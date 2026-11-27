@@ -410,6 +410,16 @@ internal sealed class NextendoApi(HttpClient http, string userAgent)
         ?? throw NextendoException.Bad(Strings.NextendoBadAnswer);
 
     /// <summary>
+    /// The players in the lobbies of a game (<see cref="NextendoLive"/>), from the live status; null when the answer does
+    /// not say now. An answer that is no live status is <see cref="NextendoError.Bad"/>; a link without <c>friends</c> is <see cref="NextendoError.Scope"/>.
+    /// </summary>
+    public async Task<int?> LobbyPlayersAsync(string access, string titleId, CancellationToken cancel)
+    {
+        var body = await AskAsync(HttpMethod.Get, "/api/status/live", access, null, null, cancel).ConfigureAwait(false);
+        return body.At("games") is { ValueKind: JsonValueKind.Array } ? NextendoLive.InLobbies(body, titleId) : throw NextendoException.Bad(Strings.NextendoBadAnswer);
+    }
+
+    /// <summary>
     /// Says where the player is: 0 offline, 1 online, 2 playing <paramref name="appId"/> (16 hex digits). Nextendo
     /// forgets it after 90 s, so it is said again and again (<see cref="NextendoPresence"/>).
     /// </summary>

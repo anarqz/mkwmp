@@ -618,6 +618,11 @@
                         Visibility="{Binding Badge, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource Conv.Visible}}">
                   <TextBlock x:Name="BadgeText" Text="{TemplateBinding Badge}" Foreground="#FF2B2B2B" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
                 </Border>
+                <Border x:Name="FooterPill" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="24,0,24,14" Height="36" CornerRadius="18"
+                        Background="#F2FFFFFF" Padding="16,0"
+                        Visibility="{Binding Footer, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource Conv.Visible}}">
+                  <TextBlock Text="{TemplateBinding Footer}" Foreground="#FF2B2B2B" FontSize="19" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                </Border>
                 <Grid x:Name="Strip" Height="8" VerticalAlignment="Bottom" Margin="32,0,32,16"
                       Visibility="{Binding Progress, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource Conv.Visible}}">
                   <Border x:Name="StripTrack" CornerRadius="4" Background="#59FFFFFF" />

@@ -436,6 +436,18 @@ public interface ILauncher : IAsyncDisposable
     /// </summary>
     NextendoFriendsView NextendoFriends => NextendoFriendsView.Off;
 
+    /// <summary>
+    /// How many players are in lobbies now, for home's Play card: on Nextendo Network from its live status, on an MKWMP
+    /// server its seated players (<see cref="LobbyPlayers.FromServer"/>). Null: not known (offline, no answer, no
+    /// permission): nothing is shown. Kept current only while <see cref="WatchPlayersInLobbies"/> is on.
+    /// </summary>
+    int? PlayersInLobbies => null;
+
+    /// <summary>Home is on screen (true) or not (false): the number is asked of Nextendo only while it is.</summary>
+    void WatchPlayersInLobbies(bool on)
+    {
+    }
+
     /// <summary>Asks the owner of a friend code to be friends (the code as typed: it is normalized). The outcome is the view's note.</summary>
     Task AddNextendoFriendAsync(string friendCode) => Task.CompletedTask;
 

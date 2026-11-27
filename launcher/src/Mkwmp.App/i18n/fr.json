@@ -28,6 +28,7 @@
   "home.stop": "Arrêter",
   "home.no_game": "Jeu introuvable",
   "home.seats": "{seated}/{total} en course",
+  "home.lobbies": "En salon : {n}",
   "home.offline": "Hors ligne",
   "home.friends": "Amis",
   "home.friends_online": "{n} en ligne",

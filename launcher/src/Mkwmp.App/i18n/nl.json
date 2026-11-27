@@ -28,6 +28,7 @@
   "home.stop": "Stoppen",
   "home.no_game": "Spel niet gevonden",
   "home.seats": "{seated}/{total} aan het racen",
+  "home.lobbies": "In lobby's: {n}",
   "home.offline": "Offline",
   "home.friends": "Vrienden",
   "home.friends_online": "{n} online",

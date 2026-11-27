@@ -28,6 +28,7 @@
   "home.stop": "Стоп",
   "home.no_game": "Игра не найдена",
   "home.seats": "В гонке: {seated}/{total}",
+  "home.lobbies": "В лобби: {n}",
   "home.offline": "Не в сети",
   "home.friends": "Друзья",
   "home.friends_online": "В сети: {n}",

@@ -15,6 +15,7 @@ public sealed class HomeTile : ObservableObject
     private string _title = "";
     private string _subtitle = "";
     private string _badge = "";
+    private string _footer = "";
     private string _iconKey;
     private double _progress = double.NaN;
     private System.Windows.Media.ImageSource? _image;
@@ -61,6 +62,13 @@ public sealed class HomeTile : ObservableObject
     {
         get => _badge;
         set => Set(ref _badge, value);
+    }
+
+    /// <summary>The pill at the bottom centre of the card ("In lobbies: 3"); empty: none.</summary>
+    public string Footer
+    {
+        get => _footer;
+        set => Set(ref _footer, value);
     }
 
     public double Progress
@@ -400,11 +408,19 @@ public sealed class HomeViewModel : PageViewModel
         {
             _ = Launcher.RefreshModsAsync(); // the dock Mods' dot (an update on GameBanana): read off the window's thread
         }
+        Launcher.WatchPlayersInLobbies(true);
         Refresh();
         RaiseAll();
     }
 
-    public override void OnLeave() => Shell.PropertyChanged -= OnShellChanged;
+    public override void OnLeave()
+    {
+        Shell.PropertyChanged -= OnShellChanged;
+        Launcher.WatchPlayersInLobbies(false);
+    }
+
+    /// <summary>Home is on screen and its window is shown (the view says): the players in lobbies are asked of Nextendo only then.</summary>
+    public void WatchLobbies(bool on) => Launcher.WatchPlayersInLobbies(on);
 
     private void OnShellChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -477,6 +493,9 @@ public sealed class HomeViewModel : PageViewModel
                 _ => S["home.offline"],
             },
         };
+
+        // players in lobbies, at the bottom centre: nothing when it is not known or nobody is, over a game, or while something blocks PLAY (the subtitle needs the room)
+        _play.Footer = !Overlay && Problem is null && Launcher.PlayersInLobbies is > 0 and var inLobbies ? S.Format("home.lobbies", ("n", Number(inLobbies))) : "";
 
         // Get Mods: the mod store (GameBanana); the player's own list is the dock's Mods
         _store.Title = S["mods.get"];

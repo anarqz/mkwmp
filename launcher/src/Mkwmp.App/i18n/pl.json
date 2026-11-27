@@ -28,6 +28,7 @@
   "home.stop": "Zatrzymaj",
   "home.no_game": "Nie znaleziono gry",
   "home.seats": "W wyścigu: {seated}/{total}",
+  "home.lobbies": "W lobby: {n}",
   "home.offline": "Offline",
   "home.friends": "Znajomi",
   "home.friends_online": "{n} online",

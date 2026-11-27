@@ -28,6 +28,7 @@
   "home.stop": "Durdur",
   "home.no_game": "Oyun bulunamadı",
   "home.seats": "{seated}/{total} yarışıyor",
+  "home.lobbies": "Lobilerde: {n}",
   "home.offline": "Çevrimdışı",
   "home.friends": "Arkadaşlar",
   "home.friends_online": "{n} çevrimiçi",

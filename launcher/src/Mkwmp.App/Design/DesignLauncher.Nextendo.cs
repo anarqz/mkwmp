@@ -1,6 +1,7 @@
 // Copyright (C) 2026 Alexandre Moraes and contributors. GPL-3.0-or-later; see LICENSE.
 using System.IO;
 using Mkwmp.Core;
+using Mkwmp.Core.Net;
 
 using CoreStrings = Mkwmp.Core.Strings;
 
@@ -37,6 +38,9 @@ public sealed partial class DesignLauncher
     public NextendoView Nextendo => new(
         _nextendoLinked, _nextendoLinked ? "Alex" : "", _nextendoLinked ? "SW-4821-9130-5567" : "", _playOn, NextendoActive,
         _nextendoLinking, false, NextendoActive ? CoreStrings.NextendoAllowed : "", NextendoActive ? "good" : "muted", _nextendoNote?.Text, _nextendoNote?.IsError ?? false);
+
+    /// <summary>The demo's players in lobbies: on Nextendo Network the "Race · Open · 3/24" lobby of its Status page; on MKWMP servers the demo server's seats.</summary>
+    public int? PlayersInLobbies => NextendoActive ? 3 : OnlineEnabled ? LobbyPlayers.FromServer(Server) : null;
 
     /// <summary>For screenshots: a linked account, playing on Nextendo or on MKWMP servers.</summary>
     public void PretendNextendo(bool playing) => Change(() =>

@@ -28,6 +28,7 @@
   "home.stop": "Parar",
   "home.no_game": "Juego no encontrado",
   "home.seats": "{seated}/{total} en carrera",
+  "home.lobbies": "En salas: {n}",
   "home.offline": "Sin conexión",
   "home.friends": "Amigos",
   "home.friends_online": "{n} en línea",

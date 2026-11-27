@@ -28,6 +28,7 @@
   "home.stop": "停止",
   "home.no_game": "找不到遊戲",
   "home.seats": "{seated}/{total} 比賽中",
+  "home.lobbies": "大廳中: {n}",
   "home.offline": "離線",
   "home.friends": "好友",
   "home.friends_online": "{n} 人在線上",

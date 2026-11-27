@@ -28,6 +28,7 @@
   "home.stop": "Ferma",
   "home.no_game": "Gioco non trovato",
   "home.seats": "{seated}/{total} in gara",
+  "home.lobbies": "In lobby: {n}",
   "home.offline": "Offline",
   "home.friends": "Amici",
   "home.friends_online": "{n} online",

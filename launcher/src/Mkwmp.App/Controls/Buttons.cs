@@ -113,6 +113,7 @@ public sealed class Tile : Button
     public static readonly DependencyProperty IconProperty = Dp.Register<Tile, Geometry?>(nameof(Icon), null);
     public static readonly DependencyProperty SeedProperty = Dp.Register<Tile, string>(nameof(Seed), "", (d, _) => ((Tile)d).UpdateArt());
     public static readonly DependencyProperty BadgeProperty = Dp.Register<Tile, string>(nameof(Badge), "");
+    public static readonly DependencyProperty FooterProperty = Dp.Register<Tile, string>(nameof(Footer), "");
     public static readonly DependencyProperty ProgressProperty = Dp.Register<Tile, double>(nameof(Progress), double.NaN);
     public static readonly DependencyProperty AlertProperty = Dp.Register<Tile, bool>(nameof(Alert), false);
     public static readonly DependencyProperty ArtProperty = Dp.Register<Tile, Brush?>(nameof(Art), null);
@@ -155,6 +156,13 @@ public sealed class Tile : Button
     {
         get => (string)GetValue(BadgeProperty);
         set => SetValue(BadgeProperty, value);
+    }
+
+    /// <summary>A short line in a pill at the bottom centre of the card, drawn as the badge is (players in lobbies); empty hides it.</summary>
+    public string Footer
+    {
+        get => (string)GetValue(FooterProperty);
+        set => SetValue(FooterProperty, value);
     }
 
     public double Progress

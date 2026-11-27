@@ -28,6 +28,7 @@
   "home.stop": "停止",
   "home.no_game": "ゲームが見つかりません",
   "home.seats": "{seated}/{total} レース中",
+  "home.lobbies": "ロビー内: {n}人",
   "home.offline": "オフライン",
   "home.friends": "フレンド",
   "home.friends_online": "{n}人オンライン",

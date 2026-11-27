@@ -24,6 +24,10 @@ public partial class HomePage : UserControl
         TitleHost.SizeChanged += (_, _) => PlaceTitle();
         Carousel.SizeChanged += (_, _) => FitTiles();
         TilesHost.SizeChanged += (_, _) => FitTiles();
+        // the players in lobbies are asked of Nextendo only while home is on screen (not hidden to the tray, not another page)
+        IsVisibleChanged += (_, _) => (DataContext as HomeViewModel)?.WatchLobbies(IsVisible);
+        DataContextChanged += (_, _) => (DataContext as HomeViewModel)?.WatchLobbies(IsVisible);
+        Unloaded += (_, _) => (DataContext as HomeViewModel)?.WatchLobbies(false);
     }
 
     /// <summary>The smallest the tiles get; a row wider than that scrolls, as before.</summary>

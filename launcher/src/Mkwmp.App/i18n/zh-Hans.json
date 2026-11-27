@@ -28,6 +28,7 @@
   "home.stop": "停止",
   "home.no_game": "未找到游戏",
   "home.seats": "{seated}/{total} 比赛中",
+  "home.lobbies": "大厅中: {n}",
   "home.offline": "离线",
   "home.friends": "好友",
   "home.friends_online": "{n} 人在线",

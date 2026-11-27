@@ -28,6 +28,7 @@
   "home.stop": "중지",
   "home.no_game": "게임을 찾을 수 없음",
   "home.seats": "{seated}/{total} 레이스 중",
+  "home.lobbies": "로비 내: {n}",
   "home.offline": "오프라인",
   "home.friends": "친구",
   "home.friends_online": "{n}명 온라인",

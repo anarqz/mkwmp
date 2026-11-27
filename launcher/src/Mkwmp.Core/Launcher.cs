@@ -110,6 +110,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         _nextendo = new NextendoAccount(_nextendoApi, vault, _clock);
         _nxFriends = new NextendoRoster(_nextendo, _nextendoApi, _clock);
         _nxPresence = new NextendoPresence(_nextendo, _nextendoApi, _clock);
+        _nxLobbies = new NextendoLobbies(_nextendo, _nextendoApi, _clock);
         // Pictures are asked without the sign-in and never followed to another site (Launcher.NextendoAvatars.cs).
         _avatarHttp = http is null ? new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan } : null;
         _nxAvatars = new NextendoAvatars(_avatarHttp ?? _http, _userAgent, Path.Combine(launcherFolder, CacheFolderName, NextendoAvatars.FolderName), _clock, Log.Note);
@@ -769,6 +770,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         _local.Dispose();
         _nxFriends.Dispose();
         _nxPresence.Dispose();
+        _nxLobbies.Dispose();
         _nxAvatars.Changed -= RaiseChanged;
         _nxAvatars.Dispose();
         _avatarHttp?.Dispose();

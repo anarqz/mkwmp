@@ -31,6 +31,7 @@
   "home.stop": "Stop",
   "home.no_game": "Game not found",
   "home.seats": "{seated}/{total} racing",
+  "home.lobbies": "In lobbies: {n}",
   "home.offline": "Offline",
   "home.friends": "Friends",
   "home.friends_online": "{n} online",
