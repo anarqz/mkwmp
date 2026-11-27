@@ -171,6 +171,31 @@ request to the first, same bearer, then exits.
 
 Limit: burst 5 then 1/s for the two together.
 
+## Previous races: POST /local/v1/roster
+
+Who was in each online lobby, by the id the **server** gave them, next to the name their game showed. Research:
+research/docs/LOBBY-ROSTER-1.8.0.md (the game's member tree). Game 1.8.0 only; both backends (MKWMP, Nextendo).
+Same `Authorization: Bearer <launcher_token>`; JSON body; answers 204 (stored), 400 `{"state":"invalid"}`, 401.
+Limit: burst 10 then 1/s.
+
+    {"event":"change"|"match"|"left",
+     "match":"<referee key, \"%u_%d_%d_%d_%x\">"|null,     // "match" only: the key of the match that starts
+     "members":[{"ussid":12,"uid":"<__us.uid, max 1024 bytes>","name":"<PlayerStatic.name, UTF-8, max 64 bytes>",
+                 "local":true|false,"lid":0,"sid":"<p2p_sid, 16 hex>"|null}, ...]}  // st == 2 nodes, at most 32
+
+- **When the mod sends it.** `change`: the set of `{ussid, uid, name}` differs from the last one sent (a member
+  joined, left, or renamed); at most once a second, the latest set wins. `match`: once per match, at the referee
+  request (members complete). `left`: the player left online (members `[]`). Nothing while offline.
+- **Trust.** `uid` comes from the server-written `__us` document: the id to identify a player by. `name`, `sid`
+  and `lid` are what that member's own game wrote (`PlayerStatic`): shown, never trusted. A row without a `uid` is
+  dropped by the launcher.
+- **What the launcher keeps.** One file per online session (from the first roster to `left`, or 10 minutes
+  without one) in `races\` beside client.toml: `lobby-YYYY-MM-DD-HH-MM-SS.json` (local time of the first roster),
+  holding the backend, the server host, every `match` (time, key, members) and, per `uid`, each distinct name with
+  first/last seen time. Kept 30 days, 200 files at most. **Local only**: never in a bug report, a log line, a
+  crash record or anything sent to an MKWMP server; the player chooses to share it (Previous races › Report).
+- The mod logs neither uids nor names (logs go into bug reports): only counts.
+
 ## Room ID (removed in 1.0.0)
 
 `/local/v1/room` is gone: mkw-recomp's own number pad (0.1.15 on) answers the game's "search group ID"

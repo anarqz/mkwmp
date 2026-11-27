@@ -36,6 +36,7 @@ public sealed partial class Launcher
         {
             Updater.CleanOld(exe); // the <exe>.old of an update by a launcher from before the helper
         }
+        PruneRaceHistory(); // Previous races: 30 days, 200 sessions (Launcher.Races.cs)
         if (_options.BindLocalApi)
         {
             await BindLocalApiAsync(s.LocalPort, cancel).ConfigureAwait(false);

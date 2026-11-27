@@ -31,7 +31,11 @@ public sealed partial class SettingsViewModel
         PlayOnCommand = RelayCommand.Async(Shell.PickPlayOnAsync, () => !Busy);
         NextendoPaneCommand = new RelayCommand(() => At(NextendoCategory));
         BlockedPlayersCommand = new RelayCommand(() => Shell.Navigate(new BlockedPlayersViewModel(Shell)));
+        PreviousRacesCommand = new RelayCommand(() => PreviousRacesViewModel.Show(Shell));
     }
+
+    /// <summary>Settings › Profile › Previous Races: who the player met online, kept on this PC (PreviousRacesViewModel).</summary>
+    public ICommand PreviousRacesCommand { get; private set; } = null!;
 
     // ── friends on Nextendo: who sees the player, and who is blocked ──
 

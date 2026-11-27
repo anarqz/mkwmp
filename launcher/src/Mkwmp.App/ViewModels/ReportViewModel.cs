@@ -10,7 +10,8 @@ namespace Mkwmp.App.ViewModels;
 /// Settings › Online › Report Abuse: a player reported to the host of the server in use (who, what
 /// happened, optional details). One report waits for review at a time: while one does, the page
 /// shows it and offers to withdraw it. A sub-page of Settings; "Report" beside a muted player
-/// (Voice &amp; Camera) opens it with that name filled in. (View: Views/Settings/ReportPage.xaml.)
+/// (Voice &amp; Camera) opens it with that name filled in; Previous Races opens it with the name and, as the details,
+/// the player's id and the names they used. (View: Views/Settings/ReportPage.xaml.)
 /// </summary>
 public sealed class ReportViewModel : PageViewModel
 {
@@ -18,10 +19,11 @@ public sealed class ReportViewModel : PageViewModel
     private string _reason = "";
     private string _details = "";
 
-    public ReportViewModel(ShellViewModel shell, string name = "")
+    public ReportViewModel(ShellViewModel shell, string name = "", string details = "")
         : base(shell)
     {
         _name = Clean(name);
+        _details = details is { Length: > CoreStrings.ReportDetailsMax } ? details[..CoreStrings.ReportDetailsMax] : details ?? "";
         ReasonCommand = RelayCommand.Async(PickReasonAsync);
         SendCommand = RelayCommand.Async(SendAsync, () => CanSend);
         WithdrawCommand = RelayCommand.Async(() => Launcher.WithdrawReportAsync(), () => !Launcher.Report.Busy);
@@ -102,7 +104,7 @@ public sealed class ReportViewModel : PageViewModel
     public ICommand WithdrawCommand { get; }
 
     /// <summary>The language changed: the same page, with the name typed so far.</summary>
-    public override PageViewModel? Recreate() => new ReportViewModel(Shell, _name);
+    public override PageViewModel? Recreate() => new ReportViewModel(Shell, _name, _details);
 
     public override void OnStateChanged()
     {

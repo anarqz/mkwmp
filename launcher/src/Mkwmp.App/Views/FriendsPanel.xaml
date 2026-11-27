@@ -191,6 +191,9 @@
           <c:ConsoleButton Grid.Column="1" Kind="Primary" Content="{Binding S[friends.add]}" MinWidth="140" Padding="26,0" Margin="14,0,0,0"
                            Command="{Binding AddCommand}" IsEnabled="{Binding SignedIn}" />
         </Grid>
+        <!-- who the player met in online races, kept on this PC: the page opens and the panel closes -->
+        <c:ConsoleButton Style="{StaticResource RowButton}" Kind="Ghost" Icon="{StaticResource Icon.Clock}" Content="{Binding S[races.title]}"
+                         Command="{Binding PreviousRacesCommand}" HorizontalAlignment="Left" Margin="0,12,0,0" />
         <TextBlock Text="{Binding NoteText}" FontSize="23" Margin="6,14,6,0" MinHeight="62">
           <TextBlock.Style>
             <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">

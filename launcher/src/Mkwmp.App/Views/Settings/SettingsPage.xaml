@@ -80,6 +80,9 @@
             <!-- where the player goes online: Settings › Nextendo (Settings › Online for an install on MKWMP servers) -->
             <c:SettingsRow Label="{Binding ProfileOnlineLabel}" Kind="Chevron" Icon="{StaticResource Icon.Globe}" Margin="0,18,0,0"
                            Command="{Binding OnlineCommand}" Caption="{Binding ProfileOnlineCaption}" />
+            <!-- who the player met in online races, kept on this PC (PreviousRacesViewModel) -->
+            <c:SettingsRow Label="{Binding S[races.title]}" Kind="Chevron" Icon="{StaticResource Icon.Clock}"
+                           Command="{Binding PreviousRacesCommand}" Caption="{Binding S[races.settings_caption]}" />
             <TextBlock Text="{Binding BusyNote}" Style="{StaticResource Note}" Visibility="{Binding BusyNote, Converter={StaticResource Conv.Visible}}" />
           </StackPanel>
 

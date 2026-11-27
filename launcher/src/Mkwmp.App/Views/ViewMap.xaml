@@ -35,6 +35,16 @@
   <DataTemplate DataType="{x:Type vm:BlockedPlayersViewModel}">
     <settings:BlockedPlayersPage />
   </DataTemplate>
+  <!-- Previous Races: the online sessions kept on this PC, one of them, one of its players -->
+  <DataTemplate DataType="{x:Type vm:PreviousRacesViewModel}">
+    <settings:PreviousRacesPage />
+  </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:RaceSessionViewModel}">
+    <settings:RaceSessionPage />
+  </DataTemplate>
+  <DataTemplate DataType="{x:Type vm:RacePlayerViewModel}">
+    <settings:RacePlayerPage />
+  </DataTemplate>
   <DataTemplate DataType="{x:Type vm:HiddenServersViewModel}">
     <settings:HiddenServersPage />
   </DataTemplate>

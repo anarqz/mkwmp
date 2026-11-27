@@ -22,6 +22,7 @@
 #include "nextendo.h"
 #include "nnssl.h"
 #include "nxfriends.h"
+#include "rosterhook.h"
 #include "probe.h"
 #include "uuid5.h"
 #include "voice.h"
@@ -308,6 +309,7 @@ enum { FRIENDS_WAIT_MS = 1000 };
 // keepalives stopped; with a live seat this is just an immediate POST).
 static void ov_nifm_submit_wait(Cpu *c) {
     (void)c;
+    roster_online();   // the lobby that comes is a new one (rosterhook.h)
     if (g_nextendo) { crumb_state("online", "1"); return; }   // no seat to take back: the token load asks for a session
     if (seat_keepalive_paused()) {
         SeatReply r;
@@ -330,6 +332,7 @@ static void ov_nifm_cancel(Cpu *c) {
     crumb_peers_reset();
     crumb_room(NULL, 0, NULL, 0, 0);
     voice_offline();
+    roster_left();   // Previous races: the launcher closes the session's lobbies (rosterhook.h)
 }
 // In-game player name: the launcher's `name` (mkw-recomp hardcodes "Local").
 static void ov_nickname(Cpu *c) {
@@ -1994,6 +1997,8 @@ static void install_profile_dispatch_trace(void) {
     struct game_addrs a = *row;
     // Nextendo: the friends its game server names go into the game's friend list (nxfriends.h; its own guards)
     if (g_nextendo) nxfriends_install(row);
+    // Previous races: the lobby's members, for the launcher (rosterhook.h; its own guards; both backends)
+    roster_install(row);
     // Install-time guards (GAME-1.8.0-ADDRESSES.md §3). The error-service post is the one functional target here:
     // slot 6 of its vtable must hold it and it must start as expected, else nothing matches it (no skip, no log).
     if (!game_guard_slot("error service post", a.errsvc_vtable, 6, a.errsvc_post) ||

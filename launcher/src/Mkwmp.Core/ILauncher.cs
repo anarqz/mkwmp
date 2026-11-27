@@ -478,6 +478,26 @@ public interface ILauncher : IAsyncDisposable
     /// <summary>The same for the linked account itself, while PLAY goes to Nextendo Network.</summary>
     NextendoAvatar NextendoOwnAvatar => NextendoAvatar.None;
 
+    // Previous races (docs/contracts/LAUNCHER_API.md, POST /local/v1/roster; Launcher.Races.cs)
+
+    /// <summary>
+    /// The online sessions kept on this PC, newest first: who was in each lobby, by the id the server gave them next
+    /// to the names their game showed. Local only (30 days, 200 sessions): nothing of it is ever sent or put in a report.
+    /// </summary>
+    Task<IReadOnlyList<RaceSession>> RaceSessionsAsync() => Task.FromResult<IReadOnlyList<RaceSession>>([]);
+
+    /// <summary>One of them by its <see cref="RaceSession.Id"/>; null when it is gone.</summary>
+    Task<RaceSession?> RaceSessionAsync(string id) => Task.FromResult<RaceSession?>(null);
+
+    /// <summary>Everything kept about one player id, across every stored session; null when none holds it.</summary>
+    Task<RacePlayerHistory?> RacePlayerAsync(string uid) => Task.FromResult<RacePlayerHistory?>(null);
+
+    /// <summary>"Clear history": every stored session is deleted.</summary>
+    Task ClearRaceHistoryAsync() => Task.CompletedTask;
+
+    /// <summary>Goes up each time the history changed (a roster from the game, or a clear): a page that shows it reads it again.</summary>
+    int RaceHistoryRevision => 0;
+
 // The console-style overlay (launcher/docs/OVERLAY.md)
     /// <summary>The game asks for the launcher over it (<c>Requested</c>); the window answers with <c>ReturnToGame</c>.</summary>
     Overlay.OverlayBridge OverlayBridge { get; }

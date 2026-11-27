@@ -205,6 +205,8 @@ public sealed partial class Launcher
         }
         // Nextendo friends are other people: their names, friend codes and ids are in no dump either.
         secrets.AddRange(NextendoPeopleSecrets());
+        // The players of the last online lobby are in the game's memory too (Previous races): their ids and names neither.
+        secrets.AddRange(Races.RecentIdentities());
         if (install is null)
         {
             return secrets;

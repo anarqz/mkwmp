@@ -115,6 +115,29 @@ static const struct game_addrs kRows[] = {
         },
         .fr_client = 8, .fr_op = 0x28, .fr_op_done = 0x20, .fr_state = 0x88, .fr_count = 0x98, .fr_items = 0xa0,
         .fr_mapped = 0x3d0, .fr_user_size = 0x28, .fr_user_account = 0x20,
+        // The lobby roster (LOBBY-ROSTER-1.8.0.md §3, §4: static reading of 2026-11-27; not proven live yet). The
+        // controller's update main+0x6f6e70 is slot 38 of main+0x35afbd8 only and runs the context update
+        // main+0x6f6f80, which fills the member tree; main+0x21084a0 is the game's getter of the current context.
+        .ro_vtable = M(0x35afbd8), .ro_slot = 38, .ro_update = M(0x6f6e70),
+        .ro_ctrl_g = M(0x37c9830), .ro_mgr_g = M(0x37be190),
+        .ro_ctx = 0xa0, .ro_mgr = 0x80, .ro_cur = 0x12d0,
+        .rl = {.root = 0x30, .count = 0x48, .left = 0, .right = 8, .key = 0x18, .local = 0x20, .ussid = 0x28,
+               .uid = 0x50, .st = 0x874, .name = 0x878, .sid = 0x8c8, .lid = 0x8d0},
+        .ro_match = {M(0x240e570), M(0x2415e00)}, .ro_match_key = 0xb8,
+        .ro_match_slots = {{M(0x3608290), M(0x3608420), M(0x3608600), M(0x3608730), M(0x3608860), M(0x3608bb8)},
+                           {M(0x3608a10)}},
+        .ro_guard = {
+            {M(0x6f6e70), 0xd503237f}, {M(0x6f6e74), 0xa9bd7bfd}, {M(0x6f6e78), 0xf9000bf5}, {M(0x6f6e7c), 0xa9024ff4},
+            {M(0x6f6f80), 0xd503237f}, {M(0x6f6f84), 0xfc190fe8}, {M(0x6f6f88), 0xa9017bfd}, {M(0x6f6f8c), 0xa9026ffc},
+            {M(0x6f7dc4), 0x94327417},                                 // bl: the "uid" key getter
+            {M(0x6f7de0), 0xf9401afb},                                 // ldr x27, [x23, #0x30]: the uid buffer
+            {M(0x6f7f9c), 0xf9442efc},                                 // ldr x28, [x23, #0x858]: the name buffer
+            {M(0x6f7ad4), 0xf90456e0},                                 // str x0, [x23, #0x8a8]: p2p_sid
+            {M(0x21084c8), 0x91028108},                                // context getter: add x8, x8, #0xa0
+            {M(0x94cc50), 0xf9443ec8},                                 // player list: ldr x8, [x22, #0x878] (the name)
+            {M(0x240e570), 0xd503237f}, {M(0x240e574), 0xd10183ff}, {M(0x240e578), 0xa9017bfd}, {M(0x240e57c), 0xa90267fa},
+            {M(0x2415e00), 0xd503237f}, {M(0x2415e04), 0xd10203ff}, {M(0x2415e08), 0xa9027bfd}, {M(0x2415e0c), 0xa9036ffc},
+        },
         // ---- diagnostic (§4; "high" or better only)
         .pia_join_step = {M(0x16a9230), M(0x16a9390), M(0x16a94b0), M(0x16a9cf0), M(0x16aa010), M(0x16aa0f0),
                           M(0x16aa800)},
@@ -232,6 +255,18 @@ int game_guard_friends(const struct game_addrs *a) {
     for (size_t i = 0; i < sizeof a->fr_guard / sizeof a->fr_guard[0] && a->fr_guard[i].at; i++, n++)
         if (!game_guard_words("friend manager", a->fr_guard[i].at, &a->fr_guard[i].word, 1)) return 0;
     return n > 0 && a->fr_user_size > a->fr_user_account;
+}
+
+int game_guard_roster(const struct game_addrs *a) {
+    if (!a || !a->ro_update || !a->ro_vtable || !a->ro_ctrl_g || !a->ro_mgr_g) return 0;
+    if (!game_guard_slot("lobby roster", a->ro_vtable, a->ro_slot, a->ro_update)) return 0;
+    for (int f = 0; f < 2; f++)
+        for (int i = 0; i < 6 && a->ro_match_slots[f][i]; i++)
+            if (!game_guard_slot("lobby roster", a->ro_match_slots[f][i], 0, a->ro_match[f])) return 0;
+    int n = 0;
+    for (size_t i = 0; i < sizeof a->ro_guard / sizeof a->ro_guard[0] && a->ro_guard[i].at; i++, n++)
+        if (!game_guard_words("lobby roster", a->ro_guard[i].at, &a->ro_guard[i].word, 1)) return 0;
+    return n > 0;
 }
 
 int game_guard_slot(const char *what, uint64_t vtable, int slot, uint64_t expect) {

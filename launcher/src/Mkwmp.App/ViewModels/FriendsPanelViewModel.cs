@@ -267,6 +267,7 @@ public sealed class FriendsPanelViewModel : LayerViewModel
         AddCommand = new RelayCommand(Add);
         ConfigureOnlineCommand = new RelayCommand(shell.ConfigureOnline);
         CopyCodeCommand = new RelayCommand(CopyCode);
+        PreviousRacesCommand = new RelayCommand(() => PreviousRacesViewModel.Show(shell));
         Build();
     }
 
@@ -288,6 +289,9 @@ public sealed class FriendsPanelViewModel : LayerViewModel
     public bool Locked => !Launcher.OnlineEnabled && !OnNextendo;
 
     public bool Unlocked => !Locked;
+
+    /// <summary>"Previous Races": who the player met online, kept on this PC (the panel closes; PreviousRacesViewModel).</summary>
+    public ICommand PreviousRacesCommand { get; }
 
     /// <summary>The locked state's button: Settings › Online (the panel closes).</summary>
     public ICommand ConfigureOnlineCommand { get; }

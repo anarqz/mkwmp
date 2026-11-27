@@ -134,6 +134,21 @@ public partial class MainWindow
             _vm.Nav.ResetTo(Routes.Home);
             _vm.Navigate(new WhatsNewViewModel(_vm));
         }
+        else if (page is "races" or "races/session" or "races/player")
+        {
+            // Previous Races: the list; its newest session; the demo's player who used three names
+            _vm.Nav.ResetTo(Routes.Home);
+            _vm.Navigate(new PreviousRacesViewModel(_vm));
+            var sessions = _vm.Launcher.RaceSessionsAsync();
+            if (page == "races/session" && sessions is { IsCompletedSuccessfully: true, Result.Count: > 0 })
+            {
+                _vm.Navigate(new RaceSessionViewModel(_vm, sessions.Result[0].Id));
+            }
+            else if (page == "races/player")
+            {
+                _vm.Navigate(new RacePlayerViewModel(_vm, DesignLauncher.DemoRenamedPlayer));
+            }
+        }
         else if (page == "connect")
         {
             // Settings › Online's "Connect to a Server": the welcome flow's online pages over Settings

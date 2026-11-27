@@ -26,6 +26,8 @@
           <TextBlock Text="{Binding S[setup.consent.p1]}" Style="{StaticResource Text.Body}" FontSize="30" LineHeight="42" />
           <TextBlock Text="{Binding S[setup.consent.p2]}" Style="{StaticResource Text.Caption}" Margin="0,12,0,0" />
           <TextBlock Text="{Binding S[setup.consent.p3]}" Style="{StaticResource Text.Caption}" Margin="0,10,0,0" />
+          <!-- what the launcher itself keeps, on this PC only: Previous Races -->
+          <TextBlock Text="{Binding S[setup.consent.p4]}" Style="{StaticResource Text.Caption}" Margin="0,10,0,0" />
         </StackPanel>
         <Border Style="{StaticResource Card}" Margin="0,0,0,14" Visibility="{Binding Note, Converter={StaticResource Conv.Visible}}">
           <Grid>

@@ -85,6 +85,25 @@ struct game_addrs {
     uint64_t fr_changed, fr_tick, fr_reload, fr_remap, fr_reinit, fr_users_copy, fr_users_free;
     struct game_guard { uint64_t at; uint32_t word; } fr_guard[24];
     uint16_t fr_client, fr_op, fr_op_done, fr_state, fr_count, fr_items, fr_mapped, fr_user_size, fr_user_account;
+    // rosterhook.c: who is in the online lobby, read from the game's member tree (research LOBBY-ROSTER-1.8.0.md;
+    // LAUNCHER_API.md "Previous races"). 0 ro_update: off for the build.
+    //   ro_update(controller): the online race controller's per-frame update, held by slot ro_slot of ro_vtable alone
+    //     (the hooked one: it rebuilds the member tree of its contexts).
+    //   context = [[ro_ctrl_g] + ro_ctx + 8 * slot], slot = u32 [[[ro_mgr_g] + ro_mgr] + ro_cur] (2 and up: none);
+    //     rl: the tree in the context and the fields of one node (roster.h).
+    //   ro_match: the two functions that send the referee request, once per match, after writing the match's key
+    //     (a string) at node + ro_match_key; ro_match_slots: the vtable slots (addresses) that hold each (0: end).
+    //   ro_guard: instruction words that pin the functions above and the offsets (0 at: end of the list).
+    uint64_t ro_vtable, ro_update, ro_ctrl_g, ro_mgr_g;
+    uint8_t ro_slot;
+    uint16_t ro_ctx, ro_mgr, ro_cur, ro_match_key;
+    struct roster_layout {
+        uint16_t root, count;                          // context: root node pointer, node count (u32)
+        uint16_t left, right, key, local, ussid;       // node: children, key (u32), "a local player" byte, ussid (u32)
+        uint16_t uid, st, name, sid, lid;              // node: uid string, st (u32), name string, p2p_sid (u64), p2p_lid (u8)
+    } rl;                                              // a string: char * at +0, capacity (u32) at +8
+    uint64_t ro_match[2], ro_match_slots[2][6];
+    struct game_guard ro_guard[24];
 
     // ---------------------------------------------------------------- diagnostic (0 address = off)
     uint64_t pia_join_step[GAME_PIA_STEPS];         // JoinRandomSessionJob step functions
@@ -168,6 +187,8 @@ int game_guard_words(const char *what, uint64_t addr, const uint32_t *words, int
 int game_guard_slot(const char *what, uint64_t vtable, int slot, uint64_t expect);
 // Every guard of the row's friend manager fields (fr_*): 1 when all hold, 0 without them or on a mismatch (logged).
 int game_guard_friends(const struct game_addrs *a);
+// Every guard of the row's lobby roster fields (ro_*), the same way.
+int game_guard_roster(const struct game_addrs *a);
 // Read-only check of every functional guard of the running build, with one summary line in mkwmp.log (npln.c runs it
 // once, at the game's first gated SDK call, so an offline session already shows whether the row fits). Returns the
 // number of failed guards, -1 without a row. Only meaningful once main is mapped, and before any vtable is hooked.

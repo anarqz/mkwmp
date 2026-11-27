@@ -46,6 +46,28 @@ internal interface ILocalApiHost
 
     /// <summary>Changes the voice lists in place and saves; the error text when the save failed.</summary>
     string? EditVoice(Func<ClientConfig, ClientConfig> edit);
+
+    /// <summary>
+    /// The game's lobby roster (<c>POST /local/v1/roster</c>, "Previous races"): kept on this PC only, and never
+    /// logged but as counts.
+    /// </summary>
+    void Roster(Roster roster)
+    {
+    }
+}
+
+/// <summary>A lobby member of a roster: the id the server gave them, the name their game shows, and whether it is this PC's player.</summary>
+internal sealed record RosterMember(string Uid, string Name, bool Local);
+
+/// <summary>
+/// A valid <c>POST /local/v1/roster</c>: the members that have an id (<paramref name="Dropped"/>: how many rows had
+/// none, or one too long), and for a match its key ("" when the game gave none).
+/// </summary>
+internal sealed record Roster(string Event, string Key, IReadOnlyList<RosterMember> Members, int Dropped)
+{
+    public const string Change = "change";
+    public const string Match = "match";
+    public const string Left = "left";
 }
 
 internal sealed record LocalResponse(int Status, string? Body = null, bool RetryAfter = false);
@@ -80,7 +102,10 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
     // The overlay: a state poll every 2 s while it is open and every 10 s otherwise; an open per button press.
     private readonly TokenBucket _overlayOpen = new(10, 2, clock);
     private readonly TokenBucket _overlayState = new(20, 2, clock);
-    private readonly TokenBucket _instance = new(5, 1, clock);    private readonly CancellationTokenSource _stop = new();
+    private readonly TokenBucket _instance = new(5, 1, clock);
+    // The lobby roster: at most one a second from the mod, and one per match.
+    private readonly TokenBucket _roster = new(10, 1, clock);
+    private readonly CancellationTokenSource _stop = new();
     private TcpListener? _listener;
 
     /// <summary>The console-style overlay (/local/v1/overlay/...; launcher/docs/OVERLAY.md).</summary>
@@ -282,6 +307,7 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
             "/local/v1/overlay/state" => ("GET", _overlayState),
             "/local/v1/instance/show" => ("POST", _instance),
             "/local/v1/instance/host" => ("POST", _instance),
+            "/local/v1/roster" => ("POST", _roster),
             _ => null,
         };
         if (route is not { } r)
@@ -311,6 +337,7 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
             "/local/v1/nextendo/session" => await host.NextendoSessionAsync(cancel).ConfigureAwait(false),
             "/local/v1/voice" => new LocalResponse(200, VoiceJson(host.Config, off: host.Nextendo)),
             "/local/v1/voice/devices" => VoiceDevices(body),
+            "/local/v1/roster" => RosterPost(body),
             _ => VoiceMute(body),
         };
     }
@@ -513,6 +540,109 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
         }
         var name = v.At("name").Str() ?? "";
         return host.EditVoice(c => c with { Mutes = ApplyMute(c.Mutes, account, name, muted) }) is { } error ? State(500, "error", error) : new LocalResponse(204);
+    }
+
+    // ---- previous races -------------------------------------------------------------------
+
+    private LocalResponse RosterPost(ReadOnlyMemory<byte> body)
+    {
+        if (ParseRoster(body.Span) is not { } roster)
+        {
+            return new LocalResponse(400, """{"state":"invalid"}""");
+        }
+        host.Roster(roster);
+        return new LocalResponse(204);
+    }
+
+    /// <summary>
+    /// <c>{"event":"change"|"match"|"left","match":key|null,"members":[{"uid","name","local",...}]}</c>; null when it is
+    /// not that (more than <see cref="RaceHistory.MaxMembers"/> members included). A row without a <c>uid</c>, or with
+    /// one over <see cref="RaceHistory.MaxUidBytes"/> bytes, is dropped: the id is what a player is known by. A name is
+    /// cut to <see cref="RaceHistory.MaxNameBytes"/> bytes and loses what could not be shown. <c>left</c> has no members.
+    /// </summary>
+    internal static Roster? ParseRoster(ReadOnlySpan<byte> body)
+    {
+        try
+        {
+            if (Json.Parse(body) is not { ValueKind: JsonValueKind.Object } parsed)
+            {
+                return null;
+            }
+            JsonElement? v = parsed;
+            var name = v.At("event").Str();
+            if (name is not (Roster.Change or Roster.Match or Roster.Left))
+            {
+                return null;
+            }
+            var key = "";
+            if (v.At("match") is { ValueKind: not JsonValueKind.Null } match)
+            {
+                if (match.ValueKind != JsonValueKind.String)
+                {
+                    return null;
+                }
+                key = Shown(match.GetString() ?? "", RaceHistory.MaxKeyBytes);
+            }
+            var members = new List<RosterMember>();
+            var dropped = 0;
+            if (v.At("members") is { ValueKind: not JsonValueKind.Null } list)
+            {
+                if (list.ValueKind != JsonValueKind.Array || list.GetArrayLength() > RaceHistory.MaxMembers)
+                {
+                    return null;
+                }
+                foreach (var row in list.EnumerateArray())
+                {
+                    if (row.ValueKind != JsonValueKind.Object)
+                    {
+                        return null;
+                    }
+                    JsonElement? member = row;
+                    var uid = member.At("uid").Str();
+                    if (uid is not { Length: > 0 } || uid.Any(char.IsControl) || string.IsNullOrWhiteSpace(uid) || Encoding.UTF8.GetByteCount(uid) > RaceHistory.MaxUidBytes)
+                    {
+                        dropped++;
+                        continue;
+                    }
+                    members.Add(new RosterMember(uid, Shown(member.At("name").Str() ?? "", RaceHistory.MaxNameBytes), member.At("local").Bool() ?? false));
+                }
+            }
+            else if (name != Roster.Left)
+            {
+                return null;
+            }
+            return name == Roster.Left ? new Roster(name, "", [], 0) : new Roster(name, name == Roster.Match ? key : "", members, dropped);
+        }
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException)
+        {
+            return null; // a string that is not UTF-8
+        }
+    }
+
+    /// <summary>
+    /// A text another player's game wrote, as it may be kept and shown: no control characters, no line breaks, none of
+    /// the marks that turn the reading direction around (a name must not rewrite the line it is shown in), and at
+    /// most <paramref name="maxBytes"/> bytes of UTF-8, cut between characters.
+    /// </summary>
+    internal static string Shown(string text, int maxBytes)
+    {
+        var b = new StringBuilder();
+        var bytes = 0;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            var c = rune.Value;
+            if (Rune.IsControl(rune) || c is 0x2028 or 0x2029 or (>= 0x202A and <= 0x202E) or (>= 0x2066 and <= 0x2069) or 0xFFFD or 0xFEFF)
+            {
+                continue;
+            }
+            if (bytes + rune.Utf8SequenceLength > maxBytes)
+            {
+                break;
+            }
+            bytes += rune.Utf8SequenceLength;
+            b.Append(rune.ToString());
+        }
+        return b.ToString().Trim();
     }
 
     public void Dispose()
