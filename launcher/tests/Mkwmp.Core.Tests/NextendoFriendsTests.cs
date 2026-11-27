@@ -253,6 +253,18 @@ public sealed class NextendoFriendsTests
     }
 
     [Fact]
+    public void The_nsa_field_nextendo_sends_on_every_friend_is_the_game_id()
+    {
+        // GET /api/friends?images=0 as Nextendo sends it today: "nsa" is the 16-hex NPLN account id
+        var list = NextendoFriendList.Parse(Json.Parse("""
+            {"friends":[{"pid":11,"name":"Luna","nsa":"0123456789ABCDEF","presence":{"status":1}},
+                        {"pid":12,"name":"Kai","nsa":"zz","account_hex":"1f"}],
+             "requests":[]}
+            """))!;
+        Assert.Equal(["0123456789abcdef", "000000000000001f"], list.Friends.Select(f => f.Account));
+    }
+
+    [Fact]
     public void The_game_is_given_only_friends_with_an_id_who_plays_first()
     {
         static NextendoFriend F(long pid, string name, FriendState state, string account) => new(pid, name, "", state, "", "", false, Account: account);

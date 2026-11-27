@@ -280,14 +280,14 @@ internal sealed class NextendoApi(HttpClient http, string userAgent)
     internal static long? Id(JsonElement? e) =>
         e.Long() ?? (e.Str() is { } text && long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : null);
 
-    /// <summary>Where an entry may carry <see cref="NplnAccount"/>: the name asked of Nextendo, and the one its own server uses.</summary>
-    private static readonly string[] AccountKeys = ["npln_account_id", "account_hex"];
+    /// <summary>Where an entry may carry <see cref="NplnAccount"/>: <c>nsa</c>, the field every /api/friends entry
+    /// already has (Nextendo staff, 2026-11-27); then the names asked of Nextendo and used by its own server.</summary>
+    private static readonly string[] AccountKeys = ["nsa", "npln_account_id", "account_hex"];
 
     /// <summary>
     /// The id an account has on the game's servers (what the game matches a friend by), as 16 lowercase hex digits;
-    /// "" when the entry has none. Nextendo derives it on its side and does not send it yet (NEXTENDO_API.md §7): it
-    /// is optional everywhere. Read from <c>npln_account_id</c>, else <c>account_hex</c>: a string of 1 to 16 hex
-    /// digits in either case, and not zero. Anything else is no id.
+    /// "" when the entry has none. Read from <c>nsa</c> (on every /api/friends entry), else <c>npln_account_id</c>,
+    /// else <c>account_hex</c>: a string of 1 to 16 hex digits in either case, and not zero. Anything else is no id.
     /// </summary>
     internal static string NplnAccount(JsonElement? v)
     {
