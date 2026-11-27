@@ -2,6 +2,13 @@
 
 What changed in each MKWMP release, newest first. The launcher shows this file on its What's New page.
 
+## 1.5.0 — 2026-11-27
+
+- **Play online on Nextendo Network.** Sign in with your Nextendo account (or create one) and race online on Nextendo Network. You sign in on nextendo.network in your browser: your password never goes through MKWMP, and your Nextendo sign-in stays on this device, never sent to MKWMP servers.
+- **Nextendo first.** The welcome now starts with "Play online with Nextendo Network": Sign in with Nextendo, Create a Nextendo Account, or Skip for Now. Home shows your Nextendo account, or a "Sign in with Nextendo to play online" button.
+- **MKWMP servers are still there.** Settings › Online › "Use MKWMP Servers Instead" brings back the server list, seats, friends, voice and camera. If you already play on an MKWMP server, you stay on it, and Home invites you to try Nextendo.
+- **On Nextendo**, voice, camera and MKWMP friends are not available: they are MKWMP-server features.
+
 ## 1.4.9 — 2026-11-25
 
 - **Mods page, more of it is your mods.** Get Mods, From Link and From Zip share one line at the top, so the list starts right under them. "Installed" has chips to show All, On, Off, or the mods with an Update.

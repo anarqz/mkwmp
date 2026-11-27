@@ -1,3 +1,13 @@
+**mkwmp 1.5.0**: play online on Nextendo Network.
+
+The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.
+
+- **Sign in with Nextendo** (or create an account) and race online on Nextendo Network. You sign in on nextendo.network in your browser; the sign-in stays on your device and is never sent to MKWMP servers.
+- **Nextendo first**: the welcome and Home lead with Nextendo. Your Nextendo account and friend code are on Home and in Settings › Nextendo.
+- **MKWMP servers remain an alternative**: Settings › Online › "Use MKWMP Servers Instead". Players already on an MKWMP server stay on it, with an invitation to try Nextendo.
+- On Nextendo, voice, camera and MKWMP friends are not available (MKWMP-server features).
+
+---
 **mkwmp 1.4.9**: a roomier Mods page, with filters and a mod panel beside the list.
 
 The launcher installs this update by itself from 1.4.4. From 1.4.3, accept the update when it offers it.
