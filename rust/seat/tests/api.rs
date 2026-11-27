@@ -505,3 +505,194 @@ async fn reports_take_a_kind() {
     let (_, v) = h.call("GET", "/seat/v1/admin/reports", Some("admin-secret"), None).await;
     assert_eq!(v["reports"].as_array().unwrap().len(), 2);
 }
+
+// ---- bans (SEAT_API.md 2d) -----------------------------------------------------------------
+
+const DAY_MS: u64 = 86_400_000;
+
+/// A launcher behind the tunnel at `ip`: register `name` and take a seat. (status, answer, pin)
+async fn tunnel_join(h: &Harness, name: &str, ip: &str) -> (StatusCode, Value, String) {
+    let cf = [("cf-connecting-ip", ip)];
+    let (st, v) = h.call_h("POST", "/seat/v1/profiles", None, Some(json!({"name": name})), &cf).await;
+    if st != StatusCode::CREATED {
+        return (st, v, String::new());
+    }
+    let pin = v["pin"].as_str().unwrap().to_string();
+    let (st, v) = h.call_h("POST", "/seat/v1/sessions", None, Some(json!({"name": name, "pin": pin})), &cf).await;
+    (st, v, pin)
+}
+
+fn is_banned(st: StatusCode, v: &Value) -> bool {
+    st == StatusCode::FORBIDDEN && v["error"]["code"] == "BANNED" && v["error"]["message"] == "This profile is banned from MKWMP servers."
+}
+
+#[tokio::test]
+async fn a_lobby_ban_revokes_the_seat_and_refuses_the_name_and_the_address() {
+    let h = harness_at("127.0.0.1:40000"); // everything arrives through the tunnel; the admin is local
+    let (st, ana, pin) = tunnel_join(&h, "Ana", "198.51.100.1").await;
+    assert_eq!(st, StatusCode::CREATED);
+    let (sid, key) = sid_key(&ana);
+    let cf = [("cf-connecting-ip", "198.51.100.1")];
+    let (_, p) = h.call_h("POST", "/seat/v1/presence", None, Some(json!({"name": "Ana", "pin": pin})), &cf).await;
+    let presence = p["token"].as_str().unwrap().to_string();
+
+    // Only a lobby reports bans.
+    let report = json!({"bans": [{"name": "ana", "ip": "203.0.113.50", "reason": "name spoofing", "detail": "claimed \"Bia\""}]});
+    let (st, _) = h.call("POST", "/seat/v1/lobby/bans", Some("nope"), Some(report.clone())).await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+    let (st, v) = h.call("POST", "/seat/v1/lobby/bans", Some("lobby-secret"), Some(report.clone())).await;
+    assert_eq!(st, StatusCode::OK, "{v}");
+    assert_eq!(v["names"], json!(["ana"]));
+    let now = h.clock.load(Ordering::SeqCst) / 1000;
+    let mut ips: Vec<(String, u64)> = v["ips"].as_array().unwrap().iter().map(|i| (i["ip"].as_str().unwrap().into(), i["expires"].as_u64().unwrap())).collect();
+    ips.sort();
+    // the address the lobby saw the game at, and the one the seat was taken from: 14 days each
+    assert_eq!(ips, vec![("198.51.100.1".to_string(), now + 14 * 86_400), ("203.0.113.50".to_string(), now + 14 * 86_400)]);
+    let rev = v["rev"].as_str().unwrap().to_string();
+
+    // The seat and the ticket are gone, the launcher is signed out, the lobby sees the seat dead.
+    let (st, _) = h.call("GET", &format!("/seat/v1/sessions/{sid}"), Some(&key), None).await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+    let (st, v) = h.call("GET", "/seat/v1/friends", Some(&presence), None).await;
+    assert_ne!(st, StatusCode::OK, "{v}");
+    let (_, r) = h.call("POST", "/seat/v1/lobby/roster", Some("lobby-secret"), Some(json!({"sessionIds": [sid]}))).await;
+    assert_eq!(r["sessions"][0]["alive"], false);
+    let (_, s) = h.call("GET", "/seat/v1/status", None, None).await;
+    assert_eq!(s["seated"], 0);
+
+    // The name is refused everywhere, from any address, whatever the PIN.
+    let other = [("cf-connecting-ip", "192.0.2.77")];
+    for (path, body) in [
+        ("/seat/v1/sessions", json!({"name": "ANA", "pin": pin})),
+        ("/seat/v1/presence", json!({"name": "Ana", "pin": pin})),
+        ("/seat/v1/profiles", json!({"name": "ana"})),
+    ] {
+        let (st, v) = h.call_h("POST", path, None, Some(body), &other).await;
+        assert!(is_banned(st, &v), "{path}: {st} {v}");
+    }
+    // Both addresses are refused under any name; another address is not.
+    for ip in ["198.51.100.1", "203.0.113.50"] {
+        let (st, v, _) = tunnel_join(&h, "Newname", ip).await;
+        assert!(is_banned(st, &v), "{ip}: {st} {v}");
+    }
+    let (st, _, _) = tunnel_join(&h, "Bia", "192.0.2.77").await;
+    assert_eq!(st, StatusCode::CREATED);
+
+    // The same report again changes nothing; a lobby that is up to date gets only the revision.
+    let mut again = report.clone();
+    again["rev"] = json!(rev);
+    let (st, v) = h.call("POST", "/seat/v1/lobby/bans", Some("lobby-secret"), Some(again)).await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(v.get("names").is_some(), "the addresses' 14 days moved: a new revision");
+    let (_, v) = h.call("POST", "/seat/v1/lobby/bans", Some("lobby-secret"), Some(json!({"rev": v["rev"]}))).await;
+    assert!(v.get("names").is_none() && v.get("ips").is_none(), "{v}");
+    // A name no profile can have is skipped, not an error.
+    let (st, _) = h.call("POST", "/seat/v1/lobby/bans", Some("lobby-secret"), Some(json!({"bans": [{"name": "not a name"}]}))).await;
+    assert_eq!(st, StatusCode::OK);
+
+    // 14 days later the addresses are free again; the name never is.
+    h.advance(14 * DAY_MS - 60_000);
+    let (st, v, _) = tunnel_join(&h, "Newname", "203.0.113.50").await;
+    assert!(is_banned(st, &v), "day 13: {st} {v}");
+    h.advance(120_000);
+    let (st, _, _) = tunnel_join(&h, "Newname", "203.0.113.50").await;
+    assert_eq!(st, StatusCode::CREATED, "the address ban ended");
+    let (st, v) = h.call_h("POST", "/seat/v1/sessions", None, Some(json!({"name": "Ana", "pin": pin})), &other).await;
+    assert!(is_banned(st, &v), "the name ban is permanent: {st} {v}");
+    let (_, v) = h.call("POST", "/seat/v1/lobby/bans", Some("lobby-secret"), Some(json!({}))).await;
+    assert_eq!((v["names"].clone(), v["ips"].clone()), (json!(["ana"]), json!([])));
+}
+
+#[tokio::test]
+async fn the_admin_lists_and_lifts_bans() {
+    let h = harness_at("127.0.0.1:40000");
+    let (_, _, pin) = tunnel_join(&h, "Ana", "198.51.100.1").await;
+    let report = json!({"bans": [{"name": "Ana", "ip": "203.0.113.50", "reason": "name spoofing", "detail": "claimed \"Bia\" in lobby x (ussid 3)"}]});
+    h.call("POST", "/seat/v1/lobby/bans", Some("lobby-secret"), Some(report)).await;
+    let now = h.clock.load(Ordering::SeqCst) / 1000;
+
+    // Admin only: this machine, not through the tunnel, with the token.
+    let (st, _) = h.call_h("GET", "/seat/v1/admin/bans", Some("admin-secret"), None, &[("cf-connecting-ip", "198.51.100.1")]).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, _) = h.call("GET", "/seat/v1/admin/bans", Some("wrong"), None).await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    let (st, v) = h.call("GET", "/seat/v1/admin/bans", Some("admin-secret"), None).await;
+    assert_eq!(st, StatusCode::OK);
+    let list = v["bans"].as_array().unwrap();
+    assert_eq!(list.len(), 3);
+    assert_eq!((list[0]["kind"].as_str(), list[0]["name"].as_str(), list[0]["expires"].is_null()), (Some("name"), Some("Ana"), true));
+    assert_eq!(list[0]["reason"], "name spoofing");
+    assert!(list[1..].iter().all(|b| b["kind"] == "ip" && b["name"] == "Ana" && b["expires"] == now + 14 * 86_400), "{v}");
+
+    // Lifting one address leaves the rest; lifting the name lifts its addresses too.
+    let act = |action: &'static str, target: &'static str| json!({"action": action, "target": target});
+    let (st, _) = h.call("POST", "/seat/v1/admin/bans", Some("admin-secret"), Some(act("unban", "203.0.113.50"))).await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, _, _) = tunnel_join(&h, "Cid", "203.0.113.50").await;
+    assert_eq!(st, StatusCode::CREATED);
+    let (st, v, _) = tunnel_join(&h, "Dan", "198.51.100.1").await;
+    assert!(is_banned(st, &v));
+    let (st, _) = h.call("POST", "/seat/v1/admin/bans", Some("admin-secret"), Some(act("unban", "ana"))).await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, v) = h.call("POST", "/seat/v1/admin/bans", Some("admin-secret"), Some(act("unban", "ana"))).await;
+    assert_eq!((st, v["error"]["code"].as_str()), (StatusCode::NOT_FOUND, Some("BAN_NOT_FOUND")));
+    let (_, v) = h.call("GET", "/seat/v1/admin/bans", Some("admin-secret"), None).await;
+    assert_eq!(v["bans"], json!([]));
+    let (st, _) = h.call_h("POST", "/seat/v1/sessions", None, Some(json!({"name": "Ana", "pin": pin})), &[("cf-connecting-ip", "198.51.100.1")]).await;
+    assert_eq!(st, StatusCode::CREATED, "the profile and its PIN are as they were");
+
+    // The admin can ban by hand: a name (its seat ends), or an address.
+    let (st, _) = h.call("POST", "/seat/v1/admin/bans", Some("admin-secret"), Some(act("ban", "Ana"))).await;
+    assert_eq!(st, StatusCode::OK);
+    let (_, s) = h.call("GET", "/seat/v1/status", None, None).await;
+    assert_eq!(s["seated"], 1, "Cid stays, Ana is out");
+    let (st, _) = h.call("POST", "/seat/v1/admin/bans", Some("admin-secret"), Some(act("ban", "192.0.2.9"))).await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, v, _) = tunnel_join(&h, "Eve", "192.0.2.9").await;
+    assert!(is_banned(st, &v));
+    let (st, _) = h.call("POST", "/seat/v1/admin/bans", Some("admin-secret"), Some(act("ban", "127.0.0.1"))).await;
+    assert_eq!(st, StatusCode::BAD_REQUEST, "this machine is never banned");
+}
+
+#[tokio::test]
+async fn bans_survive_a_restart() {
+    let file = std::env::temp_dir().join(format!("mkwmp-bans-{}-{}.db", std::process::id(), rand_suffix()));
+    let _ = std::fs::remove_file(&file);
+    let open = || {
+        let clock = Arc::new(AtomicU64::new(1_700_000_000_000));
+        let c = clock.clone();
+        let roster = Roster::new(Rules::default(), Issuer::new("k1", SigningKey::from_bytes(&[3; 32])));
+        let state = AppState::new(
+            roster,
+            Registry::open(Some(&file), &[], 30).unwrap(),
+            vec!["lobby-secret".into()],
+            Some("admin-secret".into()),
+            Arc::new(move || c.load(Ordering::SeqCst)),
+        );
+        let peer: SocketAddr = "127.0.0.1:40000".parse().unwrap();
+        Harness { app: router(state).layer(MockConnectInfo(peer)), clock, pins: Default::default() }
+    };
+    let pin = {
+        let h = open();
+        let (st, _, pin) = tunnel_join(&h, "Ana", "198.51.100.1").await;
+        assert_eq!(st, StatusCode::CREATED);
+        h.call("POST", "/seat/v1/lobby/bans", Some("lobby-secret"), Some(json!({"bans": [{"name": "Ana", "ip": "203.0.113.50"}]}))).await;
+        pin
+    };
+    let h = open(); // the seat server restarted: seats are gone, bans are not
+    let (st, v) = h.call_h("POST", "/seat/v1/sessions", None, Some(json!({"name": "Ana", "pin": pin})), &[("cf-connecting-ip", "192.0.2.1")]).await;
+    assert!(is_banned(st, &v), "{st} {v}");
+    let (st, v, _) = tunnel_join(&h, "Bia", "203.0.113.50").await;
+    assert!(is_banned(st, &v), "{st} {v}");
+    let (_, v) = h.call("POST", "/seat/v1/lobby/bans", Some("lobby-secret"), Some(json!({}))).await;
+    assert_eq!(v["names"], json!(["ana"]), "a restarted lobby learns them again");
+    assert_eq!(v["ips"].as_array().unwrap().len(), 2);
+    drop(h);
+    for ext in ["db", "db-wal", "db-shm"] {
+        let _ = std::fs::remove_file(file.with_extension(ext));
+    }
+}
+
+fn rand_suffix() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos() as u64
+}

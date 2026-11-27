@@ -88,6 +88,7 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn std::error:
             let _ = tokio::task::spawn_blocking(move || {
                 reg.sweep(now / 1000);
                 reg.sweep_reports(now / 1000);
+                reg.sweep_bans(now / 1000);
             })
             .await;
         }

@@ -291,6 +291,7 @@ require_ticket = true
 roster_url = "http://{roster}"
 roster_token_file = "keys/lobby-tokens.txt"
 token_secret_file = "keys/lobby-token-secret"
+ban_queue_file = "lobby-bans-pending.json"
 
 [tls]
 cert = "keys/lobby-cert.pem"

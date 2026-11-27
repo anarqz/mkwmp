@@ -234,6 +234,10 @@ pub struct Lobby {
     /// random per process.
     #[serde(default)]
     pub token_secret_file: Option<PathBuf>,
+    /// Where bans the lobby made (name spoofing) wait until the seat server has them, so a
+    /// restart while the seat server is unreachable loses none. None = kept in memory only.
+    #[serde(default)]
+    pub ban_queue_file: Option<PathBuf>,
     /// Matchmaking policy overrides; unset = the lobby's tested defaults.
     #[serde(default)]
     pub policy: LobbyPolicy,
@@ -317,6 +321,7 @@ impl ServerConfig {
         }
         cfg.lobby.roster_token_file = cfg.lobby.roster_token_file.map(|p| resolve(base, &p));
         cfg.lobby.token_secret_file = cfg.lobby.token_secret_file.map(|p| resolve(base, &p));
+        cfg.lobby.ban_queue_file = cfg.lobby.ban_queue_file.map(|p| resolve(base, &p));
         cfg.lobby.relay_range()?;
         if cfg.lobby.public_host.parse::<std::net::Ipv4Addr>().is_err() {
             return Err(ConfigError::Invalid("lobby.public_host must be an IPv4 address"));

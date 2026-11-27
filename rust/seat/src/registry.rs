@@ -52,6 +52,8 @@ pub enum RegistryError {
     Friend(&'static str, String),
     /// A report that can't be filed or found: (code, message).
     Report(&'static str, String),
+    /// The name (or the caller's address) is banned from this server.
+    Banned,
     Io(String),
 }
 
@@ -63,6 +65,7 @@ impl std::fmt::Display for RegistryError {
             RegistryError::Reserved => f.write_str("that gamertag is reserved"),
             RegistryError::NotFound => f.write_str("that gamertag is not registered yet"),
             RegistryError::WrongPin => f.write_str("wrong PIN for that gamertag"),
+            RegistryError::Banned => f.write_str(BAN_MESSAGE),
             RegistryError::Friend(_, m) | RegistryError::Report(_, m) => f.write_str(m),
             RegistryError::Io(m) => write!(f, "registry: {m}"),
         }
@@ -161,7 +164,48 @@ const SCHEMA: &str = "
     );
     CREATE UNIQUE INDEX IF NOT EXISTS reports_one_open ON reports(reporter, reporter_created) WHERE status = 'open';
     CREATE INDEX IF NOT EXISTS reports_created ON reports(created);
+    CREATE TABLE IF NOT EXISTS bans (
+        id      INTEGER PRIMARY KEY AUTOINCREMENT,  -- never reused
+        kind    TEXT NOT NULL CHECK (kind IN ('name', 'ip')),
+        value   TEXT NOT NULL,     -- name key, or the address in canonical form
+        name    TEXT NOT NULL,     -- the banned profile's spelling (for an address: the profile it was banned with)
+        reason  TEXT NOT NULL,
+        detail  TEXT NOT NULL,
+        created INTEGER NOT NULL,  -- an address ban ends IP_BAN_DAYS after it
+        UNIQUE (kind, value)
+    );
 ";
+
+/// What a banned profile or address is told (the launcher shows it as is).
+pub const BAN_MESSAGE: &str = "This profile is banned from MKWMP servers.";
+/// An address ban ends this long after it was made (addresses change hands); a name ban never ends.
+pub const IP_BAN_DAYS: u64 = 14;
+
+/// One ban. Not tied to the profile row: it outlives the profile (expiry, delete, release), so
+/// the name can never be registered again.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ban {
+    pub id: i64,
+    /// `name` or `ip`.
+    pub kind: String,
+    /// The name key, or the address.
+    pub value: String,
+    /// The banned profile (for an address: the profile it was banned with).
+    pub name: String,
+    pub reason: String,
+    pub detail: String,
+    pub created: u64,
+    /// When an address ban ends (seconds); `None`: permanent (names).
+    pub expires: Option<u64>,
+}
+
+/// An address as bans compare it: parsed, an IPv4-mapped IPv6 address as IPv4. `None`: not an
+/// address, or one that is never banned (loopback: the tunnel and the admin; unspecified).
+pub fn ip_key(ip: &str) -> Option<String> {
+    let ip = ip.trim().parse::<std::net::IpAddr>().ok()?.to_canonical();
+    (!ip.is_loopback() && !ip.is_unspecified()).then(|| ip.to_string())
+}
 
 /// Why a player is reported (the launcher offers these).
 pub const REPORT_REASONS: [&str; 6] = ["harassment", "hate", "sexual", "threats", "disruption", "other"];
@@ -336,6 +380,9 @@ impl Registry {
         if pin.is_some_and(|p| !valid_pin(p)) {
             return Err(RegistryError::Invalid("a PIN is 6 digits".into()));
         }
+        if self.banned_name(name) {
+            return Err(RegistryError::Banned); // nobody registers a banned name, the admin included
+        }
         if self.is_reserved(name) && !admin {
             return Err(RegistryError::Reserved);
         }
@@ -368,6 +415,9 @@ impl Registry {
     /// Check a PIN. On success returns the registered spelling and marks the
     /// profile as used.
     pub fn login(&self, name: &str, pin: &str, now: u64) -> Result<String, RegistryError> {
+        if self.banned_name(name) {
+            return Err(RegistryError::Banned);
+        }
         let row = self.live(name, now)?.ok_or(RegistryError::NotFound)?;
         if !valid_pin(pin) || !pin_ok(pin, &row.pin_hash) {
             return Err(RegistryError::WrongPin);
@@ -821,9 +871,132 @@ impl Registry {
     }
 }
 
+// ---- bans ----------------------------------------------------------------------------------
+
+fn ban_row(r: &rusqlite::Row) -> rusqlite::Result<Ban> {
+    let (kind, created): (String, i64) = (r.get(1)?, r.get(6)?);
+    let created = created as u64;
+    let expires = (kind == "ip").then(|| created + IP_BAN_DAYS * DAY);
+    Ok(Ban { id: r.get(0)?, kind, value: r.get(2)?, name: r.get(3)?, reason: r.get(4)?, detail: r.get(5)?, created, expires })
+}
+
+impl Registry {
+    /// Ban a profile name, for good. `false`: it was banned already (nothing changes).
+    pub fn ban_name(&self, name: &str, reason: &str, detail: &str, now: u64) -> Result<bool, RegistryError> {
+        let db = self.db.lock().unwrap();
+        let key = names::key(name.trim());
+        let spelling: Option<String> = db.query_row("SELECT name FROM profiles WHERE key = ?1", [&key], |r| r.get(0)).optional()?;
+        let n = db.execute(
+            "INSERT OR IGNORE INTO bans (kind, value, name, reason, detail, created) VALUES ('name', ?1, ?2, ?3, ?4, ?5)",
+            params![key, spelling.as_deref().unwrap_or(name.trim()), clean_text(reason, 100), clean_text(detail, 300), now as i64],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Ban an address for IP_BAN_DAYS from `now` (banned again: from the new `now`). `name` is the
+    /// profile it is banned with. `false`: not an address that can be banned ([`ip_key`]).
+    pub fn ban_ip(&self, ip: &str, name: &str, reason: &str, detail: &str, now: u64) -> Result<bool, RegistryError> {
+        let Some(ip) = ip_key(ip) else { return Ok(false) };
+        let db = self.db.lock().unwrap();
+        // REPLACE: a renewed ban is a new row (and id), so the lobby's revision moves.
+        db.execute(
+            "INSERT OR REPLACE INTO bans (kind, value, name, reason, detail, created) VALUES ('ip', ?1, ?2, ?3, ?4, ?5)",
+            params![ip, name.trim(), clean_text(reason, 100), clean_text(detail, 300), now as i64],
+        )?;
+        Ok(true)
+    }
+
+    pub fn banned_name(&self, name: &str) -> bool {
+        let db = self.db.lock().unwrap();
+        db.query_row("SELECT 1 FROM bans WHERE kind = 'name' AND value = ?1", [names::key(name.trim())], |_| Ok(()))
+            .optional()
+            .ok()
+            .flatten()
+            .is_some()
+    }
+
+    /// Is this address banned at `now` (seconds)? A ban older than IP_BAN_DAYS no longer counts.
+    pub fn banned_ip(&self, ip: &str, now: u64) -> bool {
+        let Some(ip) = ip_key(ip) else { return false };
+        let db = self.db.lock().unwrap();
+        let created: Option<i64> =
+            db.query_row("SELECT created FROM bans WHERE kind = 'ip' AND value = ?1", [ip], |r| r.get(0)).optional().ok().flatten();
+        created.is_some_and(|c| now < c as u64 + IP_BAN_DAYS * DAY)
+    }
+
+    /// Every ban in force at `now`, oldest first.
+    pub fn bans(&self, now: u64) -> Result<Vec<Ban>, RegistryError> {
+        let db = self.db.lock().unwrap();
+        let mut st = db.prepare("SELECT id, kind, value, name, reason, detail, created FROM bans ORDER BY id")?;
+        let rows = st.query_map([], ban_row)?.collect::<Result<Vec<_>, _>>()?;
+        Ok(rows.into_iter().filter(|b| !b.expires.is_some_and(|e| now >= e)).collect())
+    }
+
+    /// Admin: lift the ban of a name (with every address banned with that profile) or of one
+    /// address. Returns how many bans went; none: `NotFound`.
+    pub fn unban(&self, target: &str) -> Result<usize, RegistryError> {
+        let db = self.db.lock().unwrap();
+        let n = match target.trim().parse::<std::net::IpAddr>() {
+            Ok(ip) => db.execute("DELETE FROM bans WHERE kind = 'ip' AND value = ?1", [ip.to_canonical().to_string()])?,
+            Err(_) => db.execute(
+                "DELETE FROM bans WHERE (kind = 'name' AND value = ?1) OR (kind = 'ip' AND lower(name) = ?1)",
+                [names::key(target.trim())],
+            )?,
+        };
+        if n == 0 {
+            return Err(RegistryError::NotFound);
+        }
+        Ok(n)
+    }
+
+    /// Delete address bans that ended. Returns how many.
+    pub fn sweep_bans(&self, now: u64) -> usize {
+        let cutoff = now.saturating_sub(IP_BAN_DAYS * DAY) as i64;
+        let db = self.db.lock().unwrap();
+        db.execute("DELETE FROM bans WHERE kind = 'ip' AND created <= ?1", [cutoff]).unwrap_or(0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bans_names_for_good_and_addresses_for_fourteen_days() {
+        let r = reg();
+        let pin = r.register("Ana", 0, false).unwrap();
+        assert!(r.ban_name("ana", "name spoofing", "claimed \"Bia\"", 100).unwrap());
+        assert!(!r.ban_name("ANA", "again", "", 200).unwrap(), "idempotent");
+        assert_eq!(r.login("Ana", &pin, 300), Err(RegistryError::Banned));
+        assert_eq!(r.register("ana", 300, true), Err(RegistryError::Banned), "not even the admin");
+        // the profile goes (released, or expired): the name stays banned
+        r.release("Ana").unwrap();
+        assert_eq!(r.register("Ana", 400, false), Err(RegistryError::Banned));
+        assert_eq!(r.register("Ana", 400 + 4000 * DAY, false), Err(RegistryError::Banned), "permanent");
+
+        assert!(r.ban_ip("::ffff:203.0.113.7", "Ana", "name spoofing", "", 100).unwrap());
+        assert!(!r.ban_ip("127.0.0.1", "Ana", "x", "", 100).unwrap(), "loopback is never banned");
+        assert!(!r.ban_ip("not an ip", "Ana", "x", "", 100).unwrap());
+        let end = 100 + IP_BAN_DAYS * DAY;
+        assert!(r.banned_ip("203.0.113.7", end - 1) && !r.banned_ip("203.0.113.7", end) && !r.banned_ip("203.0.113.8", 100));
+        let list = r.bans(200).unwrap();
+        assert_eq!(
+            list.iter().map(|b| (b.kind.as_str(), b.value.as_str(), b.expires)).collect::<Vec<_>>(),
+            vec![("name", "ana", None), ("ip", "203.0.113.7", Some(end))]
+        );
+        assert_eq!((list[0].name.as_str(), list[0].reason.as_str()), ("Ana", "name spoofing"));
+        assert_eq!(r.bans(end).unwrap().len(), 1, "an ended address ban is not listed");
+        assert_eq!((r.sweep_bans(end - 1), r.sweep_bans(end)), (0, 1));
+        // banned again: fourteen days from then
+        r.ban_ip("203.0.113.7", "Ana", "x", "", end + 5).unwrap();
+        assert!(r.banned_ip("203.0.113.7", end + 5 + IP_BAN_DAYS * DAY - 1));
+        // the admin lifts a name with its addresses, or one address
+        assert_eq!(r.unban("ANA").unwrap(), 2);
+        assert_eq!(r.unban("ana"), Err(RegistryError::NotFound));
+        assert!(r.register("Ana", end + 10, false).is_ok());
+        r.ban_ip("198.51.100.2", "Bia", "x", "", 0).unwrap();
+        assert_eq!(r.unban("198.51.100.2").unwrap(), 1);
+    }
 
     fn reg() -> Registry {
         Registry::open(None, &["anarqz".into()], 180).unwrap()

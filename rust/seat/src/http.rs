@@ -137,6 +137,8 @@ pub fn router(state: AppState) -> Router {
         .route("/seat/v1/friends/:name/accept", post(friend_accept))
         .route("/seat/v1/friends/:name", delete(friend_remove))
         .route("/seat/v1/lobby/roster", post(lobby_roster))
+        .route("/seat/v1/lobby/bans", post(lobby_bans))
+        .route("/seat/v1/admin/bans", get(admin_bans).post(admin_ban_action))
         .route("/seat/v1/reports", get(report_get).post(report_file).delete(report_withdraw))
         .route("/seat/v1/admin/reports", get(admin_reports).post(admin_report_action))
         .layer(DefaultBodyLimit::max(16 * 1024))
@@ -292,6 +294,16 @@ pub fn client_ip(peer: SocketAddr, h: &HeaderMap) -> String {
     peer.ip().to_string()
 }
 
+/// `403 BANNED` for a banned profile name, or a caller whose address is banned (for 14 days
+/// from the ban). The message is all a client is told.
+#[allow(clippy::result_large_err)]
+fn ban_gate(s: &AppState, ip: &str, name: &str) -> Result<(), Response> {
+    if s.registry.banned_ip(ip, s.now() / 1000) || s.registry.banned_name(name) {
+        return Err(registry_error(RegistryError::Banned));
+    }
+    Ok(())
+}
+
 fn too_many(wait_ms: u64) -> Response {
     let secs = wait_ms.div_ceil(1000).max(1);
     let mut r = error(
@@ -310,6 +322,7 @@ fn registry_error(e: RegistryError) -> Response {
         RegistryError::Reserved => (StatusCode::FORBIDDEN, "NAME_RESERVED"),
         RegistryError::NotFound => (StatusCode::NOT_FOUND, "PROFILE_NOT_FOUND"),
         RegistryError::WrongPin => (StatusCode::UNAUTHORIZED, "PIN_WRONG"),
+        RegistryError::Banned => (StatusCode::FORBIDDEN, "BANNED"),
         RegistryError::Friend(code, _) => {
             let status = match *code {
                 "FRIEND_UNKNOWN" | "REQUEST_NOT_FOUND" => StatusCode::NOT_FOUND,
@@ -352,6 +365,9 @@ async fn create(
             return too_many(w);
         }
     }
+    if let Err(r) = ban_gate(&s, &ip, &b.name) {
+        return r;
+    }
     // The name must be registered and the PIN must match.
     let (name, pin) = (b.name.clone(), b.pin.clone());
     let login = s.hashing(move |r| r.login(&name, &pin, now / 1000)).await;
@@ -368,8 +384,10 @@ async fn create(
     if let Err(r) = privacy_gate(&s, &name) {
         return r;
     }
-    match s.roster.lock().unwrap().join(&name, now) {
+    let mut roster = s.roster.lock().unwrap();
+    match roster.join(&name, now) {
         Ok(c) => {
+            roster.set_ip(&c.view.session_id, &ip);
             let mut v = serde_json::to_value(&c.view).unwrap();
             v["sessionKey"] = json!(c.session_key);
             (StatusCode::CREATED, [(header::CACHE_CONTROL, "no-store")], Json(v)).into_response()
@@ -400,6 +418,9 @@ async fn register(
     let wait = s.limiter.lock().unwrap().wait_ms(&format!("register:{ip}"), limits::REGISTER_PER_IP, now);
     if wait > 0 {
         return too_many(wait);
+    }
+    if let Err(r) = ban_gate(&s, &ip, &b.name) {
+        return r;
     }
     let (name, pin) = (b.name.clone(), b.pin.clone());
     let result = s.hashing(move |r| r.register_with(&name, pin.as_deref(), now / 1000, false)).await;
@@ -563,17 +584,154 @@ struct RosterBody {
 /// Accepted friends per roster entry (the friends cap).
 const MAX_ROSTER_FRIENDS: usize = 100;
 
-async fn lobby_roster(State(s): State<AppState>, h: HeaderMap, Json(b): Json<RosterBody>) -> Response {
+/// A lobby call: one of the configured lobby tokens, within `bucket`'s rate limit.
+#[allow(clippy::result_large_err)]
+fn lobby_auth(s: &AppState, h: &HeaderMap, bucket: &str) -> Result<(), Response> {
     if s.lobby_tokens.is_empty() {
-        return error(StatusCode::FORBIDDEN, "ROSTER_DISABLED", "no lobby tokens configured");
+        return Err(error(StatusCode::FORBIDDEN, "ROSTER_DISABLED", "no lobby tokens configured"));
     }
-    let ok = bearer(&h).is_some_and(|t| s.lobby_tokens.iter().any(|k| k == t));
+    let ok = bearer(h).is_some_and(|t| s.lobby_tokens.iter().any(|k| k == t));
     if !ok {
-        return error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED", "bad lobby token");
+        return Err(error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED", "bad lobby token"));
     }
-    let token_key = format!("roster:{}", bearer(&h).unwrap_or(""));
-    if let Err(w) = s.limiter.lock().unwrap().take(&token_key, limits::ROSTER_PER_TOKEN, s.now()) {
-        return too_many(w);
+    let token_key = format!("{bucket}:{}", bearer(h).unwrap_or(""));
+    s.limiter.lock().unwrap().take(&token_key, limits::ROSTER_PER_TOKEN, s.now()).map_err(too_many)
+}
+
+// ---- bans ------------------------------------------------------------------
+
+/// Bans one lobby call may report.
+pub const MAX_BAN_BATCH: usize = 32;
+
+/// Ban a profile name for good, and for 14 days the address the lobby saw its game at and the
+/// address its seat was taken from. Its seat and launcher presences end now: the lobby's roster
+/// sees the seat dead, friends see it offline. Reporting the same ban again changes nothing but
+/// the addresses' 14 days.
+fn apply_ban(s: &AppState, name: &str, ip: Option<&str>, reason: &str, detail: &str) -> Result<(), RegistryError> {
+    let now = s.now();
+    let fresh = s.registry.ban_name(name, reason, detail, now / 1000)?;
+    let seat_ip = s.roster.lock().unwrap().ip_of(name);
+    for ip in ip.into_iter().chain(seat_ip.as_deref()) {
+        s.registry.ban_ip(ip, name, reason, detail, now / 1000)?;
+    }
+    s.roster.lock().unwrap().drop_name(name, now);
+    s.presence.lock().unwrap().end_name(name);
+    s.friends_changed();
+    if fresh {
+        eprintln!("seat: banned {name} ({reason}; {detail})");
+    }
+    Ok(())
+}
+
+/// The bans in force, as a lobby enforces them, with a revision that moves with every change.
+fn ban_view(s: &AppState) -> Result<(String, Vec<String>, Vec<serde_json::Value>), RegistryError> {
+    let list = s.registry.bans(s.now() / 1000)?;
+    let rev = format!("{}.{}", list.len(), list.iter().map(|b| b.id).max().unwrap_or(0));
+    let names = list.iter().filter(|b| b.kind == "name").map(|b| b.value.clone()).collect();
+    let ips = list.iter().filter(|b| b.kind == "ip").map(|b| json!({"ip": b.value, "expires": b.expires})).collect();
+    Ok((rev, names, ips))
+}
+
+#[derive(Deserialize)]
+struct LobbyBan {
+    name: String,
+    #[serde(default)]
+    ip: Option<String>,
+    #[serde(default)]
+    reason: String,
+    #[serde(default)]
+    detail: String,
+}
+
+#[derive(Deserialize)]
+struct LobbyBansBody {
+    #[serde(default)]
+    bans: Vec<LobbyBan>,
+    /// The revision the lobby has; the lists are left out when it is current.
+    #[serde(default)]
+    rev: Option<String>,
+}
+
+/// The lobby reports the players it banned (name spoofing) and learns every ban in force.
+async fn lobby_bans(State(s): State<AppState>, h: HeaderMap, Json(b): Json<LobbyBansBody>) -> Response {
+    if let Err(r) = lobby_auth(&s, &h, "bans") {
+        return r;
+    }
+    if b.bans.len() > MAX_BAN_BATCH {
+        return error(StatusCode::BAD_REQUEST, "TOO_MANY", format!("at most {MAX_BAN_BATCH} bans"));
+    }
+    for ban in &b.bans {
+        // Not a name a profile can have: nothing to ban (and never a reason to refuse the batch).
+        if !crate::names::is_valid(&ban.name) {
+            continue;
+        }
+        let reason = if ban.reason.trim().is_empty() { "name spoofing" } else { ban.reason.trim() };
+        if let Err(e) = apply_ban(&s, &ban.name, ban.ip.as_deref(), reason, &ban.detail) {
+            return registry_error(e);
+        }
+    }
+    match ban_view(&s) {
+        Ok((rev, _, _)) if b.rev.as_deref() == Some(rev.as_str()) => no_store(json!({"rev": rev})),
+        Ok((rev, names, ips)) => no_store(json!({"rev": rev, "names": names, "ips": ips})),
+        Err(e) => registry_error(e),
+    }
+}
+
+async fn admin_bans(State(s): State<AppState>, ConnectInfo(peer): ConnectInfo<SocketAddr>, h: HeaderMap) -> Response {
+    if !admin_ok(&s, peer, &h) {
+        return error(StatusCode::FORBIDDEN, "FORBIDDEN", "admin only");
+    }
+    match s.registry.bans(s.now() / 1000) {
+        Ok(list) => no_store(json!({"bans": list})),
+        Err(e) => registry_error(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct AdminBanBody {
+    action: String, // ban | unban
+    /// A profile name or an address.
+    target: String,
+    #[serde(default)]
+    reason: String,
+}
+
+async fn admin_ban_action(
+    State(s): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    h: HeaderMap,
+    Json(b): Json<AdminBanBody>,
+) -> Response {
+    if !admin_ok(&s, peer, &h) {
+        return error(StatusCode::FORBIDDEN, "FORBIDDEN", "admin only");
+    }
+    let target = b.target.trim();
+    let is_ip = target.parse::<std::net::IpAddr>().is_ok();
+    let reason = if b.reason.trim().is_empty() { "admin" } else { b.reason.trim() };
+    let r = match b.action.as_str() {
+        "unban" => s.registry.unban(target).map(|_| ()),
+        "ban" if is_ip => match s.registry.ban_ip(target, "", reason, "", s.now() / 1000) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(RegistryError::Invalid("that address is never banned (loopback)".into())),
+            Err(e) => Err(e),
+        },
+        "ban" if crate::names::is_valid(target) => apply_ban(&s, target, None, reason, ""),
+        "ban" => Err(RegistryError::Invalid("a gamertag or an IP address".into())),
+        _ => return error(StatusCode::BAD_REQUEST, "BAD_ACTION", "action: ban | unban"),
+    };
+    match r {
+        Ok(()) => {
+            s.friends_changed();
+            no_store(json!({"target": target, "done": b.action}))
+        }
+        Err(RegistryError::NotFound) => error(StatusCode::NOT_FOUND, "BAN_NOT_FOUND", "no such ban"),
+        Err(e) => registry_error(e),
+    }
+}
+
+async fn lobby_roster(State(s): State<AppState>, h: HeaderMap, Json(b): Json<RosterBody>) -> Response {
+    if let Err(r) = lobby_auth(&s, &h, "roster") {
+        return r;
     }
     if b.session_ids.len() > MAX_ROSTER_IDS {
         return error(StatusCode::BAD_REQUEST, "TOO_MANY", format!("at most {MAX_ROSTER_IDS} ids"));
@@ -648,6 +806,9 @@ async fn presence_sign_in(
             return too_many(w);
         }
     }
+    if let Err(r) = ban_gate(&s, &ip, &b.name) {
+        return r;
+    }
     let (name, pin) = (b.name.clone(), b.pin.clone());
     let login = s.hashing(move |r| r.login(&name, &pin, now / 1000).map(|n| (r.pin_hash(&n), n))).await;
     match login {
@@ -687,6 +848,10 @@ fn me(s: &AppState, h: &HeaderMap) -> Result<(String, Who), Response> {
     let unauthorized = || error(StatusCode::UNAUTHORIZED, "PRESENCE_NOT_FOUND", "sign in again");
     let token = bearer(h).ok_or_else(unauthorized)?.to_string();
     let who = s.presence.lock().unwrap().touch(&token, s.now()).ok_or_else(unauthorized)?;
+    if s.registry.banned_name(&who.name) {
+        s.presence.lock().unwrap().end_name(&who.name);
+        return Err(registry_error(RegistryError::Banned));
+    }
     if s.registry.pin_hash(&who.name).as_deref() != Some(who.pin_hash.as_str()) {
         s.presence.lock().unwrap().end(&token);
         return Err(unauthorized());

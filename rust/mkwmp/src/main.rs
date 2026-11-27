@@ -9,13 +9,14 @@
 //!   server keygen [kid]                 print a new ticket signing key
 //!   server admin <list|register|reset-pin|release> [name] [--config config.toml]
 //!   server admin reports [open|closed|all] | close-report <id> [outcome...] | delete-report <id>
+//!   server admin bans | unban <name|ip> | ban <name|ip> [reason...]
 //!                                       manage registered profiles on the
 //!                                       running server (same machine)
 
 mod host;
 mod lobby;
 
-const USAGE: &str = "usage: server host [options] (see server host --help) | server <seat|lobby> [config.toml] | server beholder [beholder.toml] | server keygen [kid] | server admin <list|register|reset-pin|release> [name] [--config file] | server admin <reports [open|closed|all]|close-report <id> [outcome...]|delete-report <id>> [--config file]";
+const USAGE: &str = "usage: server host [options] (see server host --help) | server <seat|lobby> [config.toml] | server beholder [beholder.toml] | server keygen [kid] | server admin <list|register|reset-pin|release> [name] [--config file] | server admin <reports [open|closed|all]|close-report <id> [outcome...]|delete-report <id>> [--config file] | server admin <bans|unban <name|ip>|ban <name|ip> [reason...]> [--config file]";
 
 #[tokio::main]
 async fn main() {
@@ -82,10 +83,19 @@ async fn admin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     let base = format!("http://{addr}/seat/v1/admin/profiles");
     let reports = format!("http://{addr}/seat/v1/admin/reports");
+    let bans = format!("http://{addr}/seat/v1/admin/bans");
     let http = reqwest::Client::new();
     let id = |s: &str| s.parse::<i64>().map_err(|_| format!("not a report id: {s}"));
     let res = match rest.as_slice() {
         ["list"] => http.get(&base).bearer_auth(&token).send().await?,
+        ["bans"] => http.get(&bans).bearer_auth(&token).send().await?,
+        ["unban", target] => {
+            http.post(&bans).bearer_auth(&token).json(&serde_json::json!({"action": "unban", "target": target})).send().await?
+        }
+        ["ban", target, reason @ ..] => {
+            let body = serde_json::json!({"action": "ban", "target": target, "reason": reason.join(" ")});
+            http.post(&bans).bearer_auth(&token).json(&body).send().await?
+        }
         ["reports"] => http.get(&reports).bearer_auth(&token).send().await?,
         ["reports", status] => http.get(&reports).query(&[("status", status)]).bearer_auth(&token).send().await?,
         ["close-report", n, outcome @ ..] => {
@@ -105,7 +115,25 @@ async fn admin(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if !status.is_success() {
         return Err(format!("{status}: {}", body["error"]["message"].as_str().unwrap_or("error")).into());
     }
-    if let Some(list) = body["reports"].as_array() {
+    if let Some(list) = body["bans"].as_array() {
+        if list.is_empty() {
+            println!("no bans");
+        }
+        for b in list {
+            let when = |k: &str| b[k].as_u64().map(utc).unwrap_or_default();
+            let (kind, value, name) = (b["kind"].as_str().unwrap_or(""), b["value"].as_str().unwrap_or(""), b["name"].as_str().unwrap_or(""));
+            let what = match kind {
+                "ip" if name.is_empty() => format!("ip   {value}"),
+                "ip" => format!("ip   {value} (with {name})"),
+                _ => format!("name {name}"),
+            };
+            let ends = if b["expires"].is_null() { "permanent".to_string() } else { format!("until {}", when("expires")) };
+            println!("{what}  banned {}  {ends}  {}", when("created"), b["reason"].as_str().unwrap_or(""));
+            if let Some(d) = b["detail"].as_str().filter(|d| !d.is_empty()) {
+                println!("    {d}");
+            }
+        }
+    } else if let Some(list) = body["reports"].as_array() {
         if list.is_empty() {
             println!("no reports");
         }

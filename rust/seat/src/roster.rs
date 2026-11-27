@@ -100,6 +100,8 @@ struct Session {
     last_seen: u64,
     /// The lobby room this seat is in, as the lobby last reported it.
     room: Option<RoomView>,
+    /// The address the join came from (a ban of the name bans it too).
+    ip: Option<String>,
 }
 
 /// A seat's room as the lobby knows it (sent with the roster call). Shown to that seat's own
@@ -289,7 +291,7 @@ impl Roster {
         let key = random_hex(32);
         self.sessions.insert(
             sid.clone(),
-            Session { key: key.clone(), name: name.to_string(), seat: None, last_seen: now, room: None },
+            Session { key: key.clone(), name: name.to_string(), seat: None, last_seen: now, room: None, ip: None },
         );
         self.by_name.insert(names::key(name), sid.clone());
         self.queue.push_back(sid.clone());
@@ -305,7 +307,7 @@ impl Roster {
         let sid = random_hex(16);
         let key = random_hex(32);
         let seated = prev.seat.is_some();
-        self.sessions.insert(sid.clone(), Session { key: key.clone(), name: name.to_string(), seat: None, last_seen: now, room: None });
+        self.sessions.insert(sid.clone(), Session { key: key.clone(), name: name.to_string(), seat: None, last_seen: now, room: None, ip: None });
         self.by_name.insert(names::key(name), sid.clone());
         if seated {
             let seat = self.sign(&sid, now); // the ticket names the new session
@@ -376,6 +378,18 @@ impl Roster {
             self.remove(&sid);
             self.promote(now);
         }
+    }
+
+    /// Note the address a session was created from.
+    pub fn set_ip(&mut self, sid: &str, ip: &str) {
+        if let Some(s) = self.sessions.get_mut(sid) {
+            s.ip = Some(ip.to_string());
+        }
+    }
+
+    /// The address the live session of `name` was created from.
+    pub fn ip_of(&self, name: &str) -> Option<String> {
+        self.sessions.get(self.by_name.get(&names::key(name))?)?.ip.clone()
     }
 
     /// Drop sessions not heard from in time, then fill free seats.

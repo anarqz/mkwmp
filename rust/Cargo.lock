@@ -2580,6 +2580,7 @@ dependencies = [
 name = "mkwmp"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "beholder",
  "bytes",
  "config",

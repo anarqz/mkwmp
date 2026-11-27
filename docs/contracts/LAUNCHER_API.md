@@ -27,7 +27,7 @@ Send `Authorization: Bearer <launcher_token>` with no body. The listener is boun
 | --- | --- |
 | `200 {"state":"seated","ticket","lobby","name","room"}` | Use `ticket` as the account token. `lobby` overrides `server`. `room` is below. |
 | `200 {"state":"queued","position","seatsTotal"}` | Poll every 2 s and show the position. |
-| `409 {"state":"refused","message"}` | Show the message. Retrying won't help; the player fixes `client.toml` (name taken, invalid). |
+| `409 {"state":"refused","message"}` | Show the message. Retrying won't help; the player fixes `client.toml` (name taken, invalid), or nothing can be fixed: a banned profile or address gets the server's own message, "This profile is banned from MKWMP servers." (SEAT_API.md §2d: `403 BANNED`; no reason, address or date is shown). |
 | `503 {"state":"unavailable","message"}` | The seat server is unreachable; stay offline. |
 | `401` | Wrong or missing token: re-read mkwmp.toml once. |
 | connection refused | The launcher isn't running; stay offline. |

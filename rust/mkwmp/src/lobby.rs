@@ -152,7 +152,14 @@ pub async fn serve(cfg: &config::ServerConfig) -> Result<(), Box<dyn Error>> {
         // Roster mode from the first sign-in: nobody is a friend until the seat server says so, and
         // a first friend-users answer waits for it.
         core.roster(Vec::new());
-        tokio::spawn(roster_sync(core.clone(), url.trim_end_matches('/').to_string(), token, l.roster_secs.max(1)));
+        tokio::spawn(roster_sync(core.clone(), url.trim_end_matches('/').to_string(), token.clone(), l.roster_secs.max(1)));
+        // Bans: the ones an earlier run could not deliver, then the seat server's list.
+        if let Some(file) = &l.ban_queue_file {
+            core.requeue_bans(load_ban_queue(file));
+        }
+        tokio::spawn(ban_sync(core.clone(), url.trim_end_matches('/').to_string(), token, l.roster_secs.max(1), l.ban_queue_file.clone()));
+    } else {
+        eprintln!("mkwmp lobby: no roster_url; bans last until this process ends");
     }
     let gw = gateway::GatewayConfig {
         host: l.host.parse()?,
@@ -256,6 +263,103 @@ async fn roster_sync(core: lobby::Core, url: String, token: String, every: u64) 
     }
 }
 
+/// Bans one call reports (the seat server's MAX_BAN_BATCH).
+const BAN_BATCH: usize = 32;
+
+fn ban_json(b: &lobby::BanReport) -> serde_json::Value {
+    serde_json::json!({"name": b.name, "ip": b.ip, "reason": b.reason, "detail": b.detail, "at": b.at})
+}
+
+fn ban_from_json(v: &serde_json::Value) -> Option<lobby::BanReport> {
+    Some(lobby::BanReport {
+        name: v["name"].as_str()?.to_string(),
+        ip: v["ip"].as_str().map(str::to_string),
+        reason: v["reason"].as_str().unwrap_or("name spoofing").to_string(),
+        detail: v["detail"].as_str().unwrap_or("").to_string(),
+        at: v["at"].as_u64().unwrap_or(0),
+    })
+}
+
+/// The bans a previous run made and the seat server never confirmed.
+fn load_ban_queue(file: &std::path::Path) -> Vec<lobby::BanReport> {
+    let Ok(text) = std::fs::read_to_string(file) else { return vec![] };
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    let bans: Vec<_> = v.as_array().into_iter().flatten().filter_map(ban_from_json).collect();
+    if !bans.is_empty() {
+        eprintln!("mkwmp lobby: {} ban(s) from {} still to deliver", bans.len(), file.display());
+    }
+    bans
+}
+
+/// Keep the undelivered bans on disk (written before each delivery try; empty once delivered).
+fn save_ban_queue(file: Option<&std::path::Path>, bans: &[lobby::BanReport], last: &mut Option<String>) {
+    let Some(file) = file else { return };
+    let text = serde_json::Value::Array(bans.iter().map(ban_json).collect()).to_string();
+    if last.as_deref() == Some(text.as_str()) || (last.is_none() && bans.is_empty() && !file.exists()) {
+        return;
+    }
+    match std::fs::write(file, &text) {
+        Ok(()) => *last = Some(text),
+        Err(e) => eprintln!("mkwmp lobby: ban queue {}: {e}", file.display()),
+    }
+}
+
+/// Bans (SEAT_API.md §2d): the Core bans a spoofer and drops it at once; here the seat server is
+/// told (`POST /seat/v1/lobby/bans`), at once and again until it answers, so the ban is kept
+/// across restarts and applies to seats too. The answer is every ban in force, which the Core
+/// then enforces: bans survive a lobby restart, and one the admin lifted is lifted here within
+/// `every` seconds. The same report twice is harmless (the seat server ignores a name it has).
+async fn ban_sync(core: lobby::Core, url: String, token: String, every: u64, queue: Option<std::path::PathBuf>) {
+    let http = reqwest::Client::builder().timeout(Duration::from_secs(5)).build().expect("http client");
+    let signal = core.ban_signal();
+    let (mut rev, mut failing, mut saved) = (String::new(), false, None);
+    loop {
+        let pending = core.pending_bans();
+        save_ban_queue(queue.as_deref(), &pending, &mut saved);
+        let batch = &pending[..pending.len().min(BAN_BATCH)];
+        let body = serde_json::json!({"rev": rev, "bans": batch.iter().map(ban_json).collect::<Vec<_>>()});
+        let res = http.post(format!("{url}/seat/v1/lobby/bans")).bearer_auth(&token).json(&body).send().await;
+        let reply = match res {
+            Ok(r) if r.status().is_success() => r.json::<serde_json::Value>().await.ok(),
+            Ok(r) => {
+                if !failing {
+                    eprintln!("mkwmp lobby: ban call answered {} ({} ban(s) waiting)", r.status(), pending.len());
+                }
+                None
+            }
+            Err(e) => {
+                if !failing {
+                    eprintln!("mkwmp lobby: ban call failed: {e} ({} ban(s) waiting)", pending.len());
+                }
+                None
+            }
+        };
+        failing = reply.is_none();
+        let mut more = pending.len() > batch.len();
+        if let Some(v) = reply {
+            core.bans_delivered(batch);
+            if let (Some(names), Some(ips)) = (v["names"].as_array(), v["ips"].as_array()) {
+                let names: Vec<String> = names.iter().filter_map(|n| n.as_str().map(str::to_string)).collect();
+                let ips: Vec<(String, u64)> =
+                    ips.iter().filter_map(|i| Some((i["ip"].as_str()?.to_string(), i["expires"].as_u64()?))).collect();
+                core.set_bans(&names, &ips);
+            }
+            rev = v["rev"].as_str().unwrap_or("").to_string();
+            let left = core.pending_bans();
+            save_ban_queue(queue.as_deref(), &left, &mut saved);
+            more |= !left.is_empty();
+        }
+        // A ban waiting: again in 2 s; else at the next ban, or the periodic refresh.
+        let wait = Duration::from_secs(if failing && !pending.is_empty() { 2 } else { every });
+        if !more || failing {
+            tokio::select! {
+                _ = signal.notified() => {}
+                _ = tokio::time::sleep(wait) => {}
+            }
+        }
+    }
+}
+
 /// Which seats each seat-server boot has confirmed alive. A seat is reported
 /// dead to the Core only when the same boot that saw it alive says it's gone
 /// (left or timed out); a seat server restart forgets every seat, and that
@@ -324,5 +428,93 @@ mod tests {
         let e = s.entries(&dropped);
         assert!(e.len() == 1 && !e[0].alive && e[0].name == "Ana");
         assert!(s.entries(&dropped).is_empty());
+    }
+
+    const SIGN_IN: &str = "/nn.npln.auth.v1.Auth/IssuePrearrangedUserToken";
+    const WRITE: &str = "/nn.npln.gamesync.v1.Gamesync/WriteDocuments";
+
+    /// One unary call on the Core from `peer`: the reply, or the gRPC status.
+    fn unary(core: &lobby::Core, conn: u64, path: &str, bearer: Option<&str>, peer: &str, body: &[u8]) -> Result<Vec<u8>, u32> {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let stream = NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        core.open(&lobby::Call { conn, stream, path, authority: "x", bearer, peer: peer.parse().unwrap() }, tx);
+        core.message(conn, stream, body);
+        core.half_closed(conn, stream);
+        let mut msg = Vec::new();
+        while let Ok(out) = rx.try_recv() {
+            match out {
+                lobby::Out::Message(m) => msg = m,
+                lobby::Out::End { grpc_status: 0, .. } => return Ok(msg),
+                lobby::Out::End { grpc_status, .. } => return Err(grpc_status),
+            }
+        }
+        panic!("{path}: no reply");
+    }
+
+    /// Bia's game signs in (a development ticket: this lobby has no keys); (user id, access token).
+    fn sign_in(core: &lobby::Core, conn: u64, peer: &str) -> Result<(String, String), u32> {
+        use lobby::wire::{self, Msg};
+        let ticket = "mkw1.eyJuYW1lIjoiQmlhIn0.sig"; // {"name":"Bia"}
+        let body = Msg::new().bytes(1, "tenants/t").msg(3, &Msg::new().bytes(1, ticket)).into_bytes();
+        let reply = unary(core, conn, SIGN_IN, None, peer, &body)?;
+        let token = wire::bytes_field(&reply, 2).unwrap().unwrap();
+        let user = wire::str_field(token, 1).unwrap().unwrap();
+        Ok((user.rsplit('/').next().unwrap().to_owned(), wire::str_field(token, 2).unwrap().unwrap()))
+    }
+
+    async fn until(what: &str, mut ok: impl FnMut() -> bool) {
+        for _ in 0..100 {
+            if ok() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        panic!("timed out: {what}");
+    }
+
+    /// The whole path: the Core bans a spoofer, the ban waits on disk while the seat server is
+    /// away, reaches it when it answers, is kept there, and an admin unban comes back to the Core.
+    #[tokio::test]
+    async fn a_ban_reaches_the_seat_server_and_an_unban_comes_back() {
+        use lobby::value::{Fields, Value};
+        use lobby::wire::Msg;
+        let queue = std::env::temp_dir().join(format!("mkwmp-ban-queue-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&queue);
+        let core = lobby::Core::new(lobby::CoreConfig::default());
+
+        let (uid, token) = sign_in(&core, 1, "203.0.113.2:5000").unwrap();
+        let doc = Msg::new().bytes(1, format!("docs/PlayerStatic/{uid}")).msg(2, &Fields::new().with("name", Value::str("Ana")).encode());
+        let body = Msg::new().msg(1, &Msg::new().msg(1, &Msg::new().msg(1, &doc))).into_bytes();
+        assert_eq!(unary(&core, 2, WRITE, Some(&token), "203.0.113.2:5000", &body), Err(lobby::code::PERMISSION_DENIED));
+        assert_eq!(core.pending_bans().len(), 1);
+
+        // The seat server is bound but not answering yet: the ban is on disk meanwhile.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(super::ban_sync(core.clone(), url, "tok".into(), 1, Some(queue.clone())));
+        until("the queue file", || std::fs::read_to_string(&queue).is_ok_and(|t| t.contains("\"Bia\""))).await;
+        let queued = super::load_ban_queue(&queue);
+        assert_eq!(queued, core.pending_bans(), "a restarted lobby would deliver the same ban");
+
+        let key = ticket::Issuer::generate();
+        let roster = seat::roster::Roster::new(seat::roster::Rules::default(), ticket::Issuer::new("k1", key));
+        let registry = seat::registry::Registry::open(None, &[], 30).unwrap();
+        let state = seat::http::AppState::new(roster, registry, vec!["tok".into()], None, seat::http::system_clock());
+        let registry = state.registry().clone();
+        tokio::spawn(async move {
+            let app = seat::http::router(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+            axum::serve(listener, app).await.unwrap();
+        });
+        until("the seat server has the ban", || registry.banned_name("bia")).await;
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        assert!(registry.banned_ip("203.0.113.2", now) && !registry.banned_ip("203.0.113.2", now + 14 * 86_400 + 5));
+        until("the queue is empty", || core.pending_bans().is_empty() && std::fs::read_to_string(&queue).is_ok_and(|t| t == "[]")).await;
+        assert_eq!(sign_in(&core, 3, "198.51.100.9:5000").err(), Some(lobby::code::PERMISSION_DENIED));
+
+        // The admin lifts the ban on the seat server: the lobby follows at its next refresh.
+        assert_eq!(registry.unban("Bia").unwrap(), 2);
+        until("the unban reaches the lobby", || sign_in(&core, 4, "203.0.113.2:5000").is_ok()).await;
+        let _ = std::fs::remove_file(&queue);
     }
 }

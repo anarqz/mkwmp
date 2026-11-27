@@ -178,6 +178,15 @@ Docker runs the same `server host`. Use any Linux machine with Docker, for examp
     docker compose exec server server admin close-report <id> warned in DM --config /data/server.toml
     docker compose exec server server admin delete-report <id> --config /data/server.toml
 
+**Bans.** The lobby bans by itself, at once, a player whose game claims another name than its profile's (a modified client; docs/contracts/SEAT_API.md §2d): the profile name for good, and for 14 days the address it played from and the address its seat was taken from. The banned player's launcher only shows "This profile is banned from MKWMP servers." The lobby logs one `name spoofing` line (lobby, user, ussid, registered and claimed name, address); the seat server logs `seat: banned <name>`. Bans are kept in `registry.db`. To see them, lift one made by mistake, or ban by hand:
+
+    docker compose exec server server admin bans --config /data/server.toml                 # name bans (permanent) and address bans (with their end)
+    docker compose exec server server admin unban <name> --config /data/server.toml         # the name and every address banned with it
+    docker compose exec server server admin unban <ip> --config /data/server.toml           # one address only
+    docker compose exec server server admin ban <name|ip> [reason...] --config /data/server.toml
+
+An unban reaches the lobby within `roster_secs` (10 s); the profile and its PIN are as they were. If the lobby and the seat server run apart (section 1), set `[lobby] ban_queue_file` (e.g. `lobby-bans-pending.json` next to the config) so a ban made while the seat server is unreachable survives a lobby restart; `server host` sets it.
+
 To lock an abusive player out, `reset-pin` their gamertag (their launcher's PIN stops working; don't hand out the new one) and add it to `[registry] reserved_names` (then restart the server), so it never expires and nobody registers it. Don't `release` it: a free gamertag is registered again by the launcher that still has its PIN. They can still register a new gamertag. Reports are deleted 90 days after they were filed.
 
 **Voice and camera.** Voice chat and camera pictures are relayed only inside friend rooms; matchmade lobbies get none. A camera picture goes only to mutual friends in the room who asked for it (at most 4 each). The relay forwards both without decoding or storing them. `[lobby] video = false` turns cameras off on your server; `voice_port = 0` turns off both.

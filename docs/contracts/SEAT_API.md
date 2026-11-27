@@ -5,7 +5,7 @@ Our own protocol. Not an NPLN/game contract. Served by `server seat` (crate `rus
 - the launcher (`mkwmp-launcher`, `rust/client`): join, poll/heartbeat, leave; presence and friends;
 - the lobby: the roster, and ticket verification at login.
 
-Seats, queues and presences are in memory and die with the process; profiles (gamertag + PIN hash) and friendships persist in SQLite. Names are compared case-insensitively.
+Seats, queues and presences are in memory and die with the process; profiles (gamertag + PIN hash), friendships and bans (§2d) persist in SQLite. Names are compared case-insensitively.
 
 ## 1. Names
 
@@ -25,7 +25,7 @@ Rate limits (client IP = `CF-Connecting-IP` when the request comes through the l
 | Route | Body → answer |
 | --- | --- |
 | `GET /seat/v1/profiles/{name}` | → `{name, registered, reserved}` |
-| `POST /seat/v1/profiles` | `{name, pin?}` → `201 {name, pin}`; `409 NAME_REGISTERED`, `403 NAME_RESERVED`, `400 NAME_INVALID` (also a `pin` that isn't 6 digits), `429`. Without `pin` the server picks one. |
+| `POST /seat/v1/profiles` | `{name, pin?}` → `201 {name, pin}`; `409 NAME_REGISTERED`, `403 NAME_RESERVED`, `400 NAME_INVALID` (also a `pin` that isn't 6 digits), `403 BANNED` (§2d), `429`. Without `pin` the server picks one. |
 | `GET/POST /seat/v1/admin/profiles` | admin only (loopback without CF headers + `Authorization: Bearer <admin token>`): list; `{action: register\|reset-pin\|release, name}` |
 
 ## 2. Routes
@@ -38,7 +38,7 @@ Errors are `{"error": {"code", "message"}}`. Session answers carry `Cache-Contro
 | --- | --- | --- |
 | `GET /seat/v1/status` | → `{bootId, name, lobbyEndpoint, lobbyCa?, voicePort, seatsTotal, seated, queued, lobbies, reportKinds}` | Public, readable from any origin. `lobbyEndpoint` is the NPLN `host:port` the launcher writes as `server`. `lobbyCa` is the lobby's certificate (PEM, only the `CERTIFICATE` blocks of the `[tls] cert` file, at most 16 KiB; absent if the seat server can't read it). The launcher writes it to `<game>/mkwmp-lobby-ca.pem` (or deletes that file when absent), and the game patch trusts that certificate for the lobby instead of its built-in one. `voicePort` is the UDP port of the lobby's voice relay (`[lobby] voice_port`, default 8907; 0 = voice off), on the lobby's host; the launcher writes it to `mkwmp.toml` as `voice_port` (docs/contracts/VOICE_API.md). `reportKinds` (draft, branch `chat-rooms`) lists what a report can be about, `["voice","camera"]`; a server without it takes no `kind` (voice only). `lobbies` is the lobby's last count of live lobbies per mode, e.g. `{"Normal24": 3}`. It is `{}` until the lobby reports, and again once its report is older than 60 s. Lobbies have no cap: they open and close with the players. |
 | `GET /seat/v1/keys` | → `{keys: [{kid, publicKey}]}` | Public. The ticket verification key (base64url, raw 32 bytes). |
-| `POST /seat/v1/sessions` | `{name, pin}` → `201 View + sessionKey` | Checks the profile's PIN, then seats the player at once if a seat is free, else queues them. Errors: `404 PROFILE_NOT_FOUND`, `401 PIN_WRONG`, `429 RATE_LIMITED`, `409 NAME_TAKEN` (that profile is already online: its session heartbeated within its poll interval + 5 s; a session silent longer, e.g. a killed launcher, is taken over by this join, which keeps its seat or place in line under a new session id; clients retry 409 later), `503 QUEUE_FULL` (with `Retry-After: 30`). |
+| `POST /seat/v1/sessions` | `{name, pin}` → `201 View + sessionKey` | Checks the profile's PIN, then seats the player at once if a seat is free, else queues them. Errors: `404 PROFILE_NOT_FOUND`, `401 PIN_WRONG`, `403 BANNED` (§2d), `429 RATE_LIMITED`, `409 NAME_TAKEN` (that profile is already online: its session heartbeated within its poll interval + 5 s; a session silent longer, e.g. a killed launcher, is taken over by this join, which keeps its seat or place in line under a new session id; clients retry 409 later), `503 QUEUE_FULL` (with `Retry-After: 30`). |
 | `GET /seat/v1/sessions/{id}` | → `View` | The poll while queued and the heartbeat while seated. Repeat within `nextPollMs`. |
 | `DELETE /seat/v1/sessions/{id}` | → `204` | Frees the seat or the place in line. Idempotent. |
 | `POST /seat/v1/lobby/roster` | `{sessionIds: string[] (≤256), lobbies?: {mode: count}, rooms?: {sessionId: {lobby, ussid, ussids}}}` → `{bootId, sessions: RosterEntry[]}` | Lobby only. `rooms` (1.3.1): each listed seat's lobby room; a listed seat missing from it is in no room; without `rooms` nothing changes. The seat server shows a room to that seat's own launcher only (`View.room`). `lobbies` takes at most 16 modes, and mode names are `[A-Za-z0-9_-]{1,32}`. `Authorization: Bearer <lobby token>`. The tokens come from `[seats] lobby_tokens_file`. Without that file: `403 ROSTER_DISABLED`. Wrong token: `401`. |
@@ -82,7 +82,7 @@ A launcher signs in with its PIN to a **presence**. A presence never takes a sea
 
 | Route | Body → answer | Notes |
 |---|---|---|
-| `POST /seat/v1/presence` | `{name, pin}` → `{token, name, ttlMs, privacyAccepted, privacyVersion, privacyEnforced}` | Same PIN limits as joins (`401 PIN_WRONG`, `404 PROFILE_NOT_FOUND`, `429`), plus 30 sign-ins per IP per minute. The privacy fields are §2c (servers before 1.3.1 leave them out). |
+| `POST /seat/v1/presence` | `{name, pin}` → `{token, name, ttlMs, privacyAccepted, privacyVersion, privacyEnforced}` | Same PIN limits as joins (`401 PIN_WRONG`, `404 PROFILE_NOT_FOUND`, `429`) and `403 BANNED` (§2d), plus 30 sign-ins per IP per minute. The privacy fields are §2c (servers before 1.3.1 leave them out). |
 | `DELETE /seat/v1/presence` | bearer → `204` | The launcher quits: offline at once. |
 | `GET /seat/v1/friends[?since=<cursor>]` | bearer → `{cursor, friends: [{name, state}], incoming: [{name, since}], outgoing: [{name, since}]}` | `state`: `playing` (seated), `online` (launcher running, or queued), `offline`. Friends are ordered playing, online, offline, then by name. With `since` (the last `cursor`), the server waits up to 25 s for any change. 120 per minute per token. |
 | `POST /seat/v1/friends` | bearer, `{name}` → `{name, state: "pending" \| "accepted"}` | A request; if they had asked you, it accepts instead. Errors: `404 FRIEND_UNKNOWN`, `400 FRIEND_SELF`, `409 FRIEND_EXISTS`, `409 FRIEND_PENDING`, `409 FRIEND_LIMIT` (100 friends, 50 requests waiting). 20 per hour per profile. |
@@ -120,6 +120,33 @@ Each server serves its own privacy policy and records, per profile, which versio
 - `GET /seat/v1/status` gains `privacy: {version, enforced}`, so a launcher can tell before signing in whether a server enforces consent.
 - **Enforcement** (`[privacy] enforce = true`, default `false`): until the profile accepted the current version, `POST /seat/v1/sessions` (after the PIN check), `GET`/`POST /seat/v1/friends`, `POST /seat/v1/friends/{name}/accept` and `GET`/`POST /seat/v1/reports` answer `403 PRIVACY_REQUIRED` (with `privacyVersion`). Removing data stays open: `DELETE /seat/v1/friends/{name}`, `DELETE /seat/v1/reports` and `DELETE /seat/v1/profiles/{name}`. Presence sign-in, `PUT /seat/v1/privacy` and registration are never gated. The 1.3.x launchers only ask for consent locally (accepting on the server comes with the new launcher, 1.4.0), so a server enforcing it refuses them seats.
 
+## 2d. Bans (name spoofing)
+
+A game writes its player's name into its own Gamesync document `docs/PlayerStatic/<ussid>` (field `name`). An unmodified MKWMP game writes the name of its seat ticket (the launcher's registered profile), for both local players of a split-screen game (one user, one seat, one document). The lobby compares every such write to the ticket's name: trimmed, without case, and a registered name longer than the field counts as itself cut to 64 UTF-8 bytes at a character. **Any other name is a ban, automatic and at once**; an empty name claims nothing. Only for players who signed in with a seat ticket; a write to another member's `PlayerStatic` is refused as before and is not a ban.
+
+A ban is two things:
+
+- **the profile name, for good**: it cannot sign in, take a seat or get a ticket, and nobody can register it again (not the admin either, until the ban is lifted; it outlives the profile row, so expiry or a delete does not free the name);
+- **the address, for 14 days from the ban**: the address the lobby saw the game at, and the address the banned profile's seat was taken from (client IP as in §1a: `CF-Connecting-IP` through the tunnel, else the peer). No profile can register, sign in or take a seat from it until then. Loopback is never banned. Ended address bans are deleted.
+
+Bans are stored in `registry.db` (table `bans`: kind `name`/`ip`, value, the profile, reason, detail, time).
+
+**What a banned client sees:** `403 {"error": {"code": "BANNED", "message": "This profile is banned from MKWMP servers."}}` from `POST /seat/v1/sessions`, `POST /seat/v1/presence`, `POST /seat/v1/profiles` and every presence-token route (friends, reports, privacy). Nothing else is told: no reason, no address, no date. The launcher shows the message as it shows any refused join (LAUNCHER_API.md `409 {"state":"refused","message"}`). The game's NPLN calls end with gRPC `PERMISSION_DENIED` and the same message.
+
+**At the moment of the ban**, in this order:
+
+1. Lobby: the write is refused (nobody receives the claimed name); the name and address are refused from now on; the player's seat leaves the normal way without the reconnect grace (the other members get its documents and its `__us` entry `REMOVED`, the host is handed over as on any leave); its search and group end; friends see it offline; every stream of its connections ends with `PERMISSION_DENIED` and those connections get no further answer. Its access tokens are refused on any connection.
+2. Lobby → seat server: `POST /seat/v1/lobby/bans`, at once, again every 2 s until it is answered. Undelivered bans are kept in `[lobby] ban_queue_file`, so a lobby restart loses none.
+3. Seat server: stores the ban, ends the profile's seat (the roster answers `alive: false`; the ticket is worthless, since the lobby refuses the name) and its launcher presences (friends see `offline`).
+
+| Route | Body → answer | Notes |
+| --- | --- | --- |
+| `POST /seat/v1/lobby/bans` | `{bans?: [{name, ip?, reason?, detail?}] (≤32), rev?}` → `{rev, names?: string[], ips?: [{ip, expires}]}` | Lobby only (`Authorization: Bearer <lobby token>`, as the roster; 120 per minute per token). Each entry bans `name` and, for 14 days, `ip` and the seat's address. Idempotent: a name already banned stays as it was (the addresses' 14 days start again). An entry whose `name` is not a valid gamertag is skipped. The answer is every ban in force: name keys (lower case) and addresses with the time each ends (seconds since 1970). `rev` changes with every change of that list; a call that sends the current `rev` gets `{rev}` only. The lobby calls it every `roster_secs` with no bans to stay in step: a restarted lobby learns the bans again, and a ban the admin lifted is lifted in the lobby too. A profile in the list that is connected to the lobby is dropped as in step 1. |
+| `GET /seat/v1/admin/bans` | admin → `{bans: Ban[]}` | Bans in force, oldest first. |
+| `POST /seat/v1/admin/bans` | admin, `{action: ban\|unban, target, reason?}` → `{target, done}` | `target` is a gamertag or an address. `unban` of a gamertag lifts its name ban and every address banned with that profile; of an address, that address only. `404 BAN_NOT_FOUND`. `ban` by hand: a gamertag (as a lobby ban, without addresses) or an address (14 days). |
+
+`Ban` = `{id, kind: "name"|"ip", value, name, reason, detail, created, expires}`; `expires` is `null` for a name. CLI: `server admin bans`, `server admin unban <name|ip>`, `server admin ban <name|ip> [reason...]` (docs/HOSTING.md).
+
 ## 3. The seat ticket (v1)
 
     mkw1.<payload>.<sig>
@@ -140,6 +167,7 @@ Each server serves its own privacy policy and records, per profile, which versio
 1. The lobby verifies the ticket when the game logs in.
 2. It then asks the roster about that `sid`.
 3. It polls the roster about every 10 s for its connected players and drops the ones that are `alive: false`.
+4. A ticket whose name is banned (§2d) is refused, however valid.
 
 **Reference implementations:** `rust/ticket` and `resources/tools/ticket/verify_ticket.py`. Both must pass `resources/tools/ticket/vectors.json`.
 

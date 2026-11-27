@@ -26,6 +26,7 @@ There is **one server binary, `server`, with two parts**. Both run on one machin
     server lobby [config/server.toml]   the game-facing lobby
     server keygen [kid]                 new ticket signing key
     server admin <list|register|reset-pin|release> [name]
+    server admin <bans|unban <name|ip>|ban <name|ip> [reason]>
 
 ## The seat server (`server seat`, crate `rust/seat`)
 

@@ -243,6 +243,7 @@ server admin list            --config mkwmp-data/server.toml             # gamer
 server admin register <name> --config mkwmp-data/server.toml             # reserve a name and get its PIN
 server admin reset-pin <name> --config mkwmp-data/server.toml            # forgotten PIN: a new one (old PINs can't be recovered)
 server admin reports         --config mkwmp-data/server.toml             # voice and camera abuse reports
+server admin bans            --config mkwmp-data/server.toml             # bans (name spoofing); `unban <name|ip>` lifts one
 ```
 
 - **Back up** `mkwmp-data` while the server is stopped, and keep it private: it holds your server's keys.

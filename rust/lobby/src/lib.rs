@@ -81,6 +81,26 @@ pub struct RosterEntry {
     pub friends: Vec<String>,
 }
 
+/// What a banned player's game is told (the seat server tells its launcher the same).
+pub const BAN_MESSAGE: &str = "This profile is banned from MKWMP servers.";
+/// An address ban ends this long after it was made; a name ban never ends.
+pub const IP_BAN_SECS: f64 = 14.0 * 86_400.0;
+
+/// A ban the Core made (a game claimed another name than its seat ticket's), for the seat server
+/// to keep: [`Core::pending_bans`]. The Core enforces it from the moment it is made.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BanReport {
+    /// The profile name of the seat ticket.
+    pub name: String,
+    /// The address the game was connected from (`None`: loopback, never banned).
+    pub ip: Option<String>,
+    pub reason: String,
+    /// For the admin: what was claimed, where.
+    pub detail: String,
+    /// When (seconds since 1970).
+    pub at: u64,
+}
+
 /// An incoming RPC, as the transport saw its request headers.
 #[derive(Clone, Debug)]
 pub struct Call<'a> {
