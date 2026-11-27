@@ -13,9 +13,10 @@ namespace Mkwmp.Core;
 /// (<c>GET /local/v1/nextendo/session</c>).
 /// <para>
 /// The link is this PC's: who the account is and the choice are in client.toml (<c>[nextendo]</c>), the sign-in in
-/// <see cref="NextendoVault"/>, and none of it is sent to an MKWMP server. While PLAY goes to Nextendo
-/// (<see cref="NextendoMode"/>) <see cref="IsOnline"/> is false: no MKWMP server is contacted at all (no status,
-/// presence, friends, seat or voice), exactly as with no server chosen.
+/// <see cref="NextendoVault"/>, and none of it is sent to an MKWMP server. Nextendo Network is where PLAY goes online
+/// by default (<see cref="OnNextendo"/>), and while it is, <see cref="IsOnline"/> is false: no MKWMP server is
+/// contacted at all (no status, presence, friends, seat or voice), exactly as with no server chosen. Without a linked
+/// account PLAY starts the game offline; with one (<see cref="NextendoMode"/>) the game goes online there.
 /// </para>
 /// </summary>
 public sealed partial class Launcher
@@ -49,7 +50,13 @@ public sealed partial class Launcher
     /// PLAY goes to Nextendo Network now: an account is linked, Nextendo is chosen, and this run is not offline only
     /// (a required update that could not be installed: the mod in the game may be older than Nextendo mode).
     /// </summary>
-    internal bool NextendoMode => _config.Nextendo is { Linked: true, PlayOn: PlayNetwork.Nextendo } && !_offlineOnly;
+    internal bool NextendoMode => _config is { Nextendo.Linked: true, PlayOn: PlayNetwork.Nextendo } && !_offlineOnly;
+
+    /// <summary>
+    /// Nextendo Network is where PLAY goes online (the default; the saved choice), linked or not: MKWMP servers are
+    /// left alone. With no account linked PLAY is offline, and the window asks to sign in.
+    /// </summary>
+    internal bool OnNextendo => _config.PlayOn == PlayNetwork.Nextendo;
 
     bool ILocalApiHost.Nextendo => NextendoMode;
 
@@ -64,7 +71,7 @@ public sealed partial class Launcher
             { Kind: NextendoStanding.Problem } problem => (problem.Detail, "bad"),
             _ => ("", "muted"),
         };
-        return new NextendoView(link.Linked, link.Username, link.FriendCode, link.PlayOn, NextendoMode, _nextendoLinking, _nextendoChecking,
+        return new NextendoView(link.Linked, link.Username, link.FriendCode, _config.PlayOn, NextendoMode, _nextendoLinking, _nextendoChecking,
             status, tone, _nextendoNote?.Text, _nextendoNote?.IsError ?? false);
     }
 
@@ -84,9 +91,10 @@ public sealed partial class Launcher
     public async Task LinkNextendoAsync(Func<Uri, bool> openBrowser)
     {
         ArgumentNullException.ThrowIfNull(openBrowser);
-        if (Session.Busy && NextendoMode)
+        if (Session.Busy && OnNextendo)
         {
-            Mutate(() => _nextendoNote = (Strings.PressStopFirst, true)); // the game plays with the account linked now
+            // the game plays with the account linked now, or offline for want of one: neither changes under it
+            Mutate(() => _nextendoNote = (Strings.PressStopFirst, true));
             return;
         }
         CancellationTokenSource cancel;
@@ -124,8 +132,15 @@ public sealed partial class Launcher
                     var tokens = await _nextendoApi.ExchangeAsync(answer.Value, loopback.RedirectUri, verifier, cancel.Token).ConfigureAwait(false);
                     var user = await _nextendoApi.UserInfoAsync(tokens.Access, cancel.Token).ConfigureAwait(false);
                     var kept = await _nextendo.AdoptAsync(tokens, cancel.Token).ConfigureAwait(false);
-                    var before = NextendoMode;
-                    EditConfig(c => c with { Nextendo = c.Nextendo.Named(user.Pid, user.Username, user.FriendCode) }, wakeFriends: false);
+                    var before = OnNextendo;
+                    // A first link is the choice of Nextendo (an install that plays on MKWMP servers was invited to it);
+                    // linking again keeps the choice, and nothing changes under a game that runs on an MKWMP server.
+                    var choose = !Config.Nextendo.Linked && !Session.Busy;
+                    EditConfig(c =>
+                    {
+                        var named = c.Nextendo.Named(user.Pid, user.Username, user.FriendCode);
+                        return c with { Nextendo = choose && named.Linked ? named.Playing(PlayNetwork.Nextendo) : named };
+                    }, wakeFriends: false);
                     linked = Config.Nextendo.Linked;
                     Note("nextendo: account linked; the link stays on this PC"); // never who: logs go into bug reports
                     note = kept ? (Strings.NextendoLinked(user.Username), false) : (Strings.NextendoLinkNotKept, true);
@@ -196,13 +211,14 @@ public sealed partial class Launcher
         {
             return;
         }
-        var before = NextendoMode;
-        // Forgotten here first (the choice falls back to MKWMP servers with it), then revoked there when it can be reached.
+        var before = OnNextendo;
+        // Forgotten here first (the choice of network stays: on Nextendo PLAY is offline until signed in again), then
+        // revoked there when it can be reached.
         var refresh = await _nextendo.ForgetAsync().ConfigureAwait(false);
         (string Text, bool IsError) note = (Strings.NextendoUnlinked, false);
         try
         {
-            EditConfig(c => c with { Nextendo = NextendoLink.None }, wakeFriends: false);
+            EditConfig(c => c with { Nextendo = c.Nextendo.Unlinked() }, wakeFriends: false);
         }
         catch (LauncherException e)
         {
@@ -226,7 +242,7 @@ public sealed partial class Launcher
 
     public Task SetPlayOnAsync(PlayNetwork network) => Task.Run(() =>
     {
-        if (Config.Nextendo.PlayOn == network)
+        if (Config.PlayOn == network)
         {
             return;
         }
@@ -235,12 +251,7 @@ public sealed partial class Launcher
             Mutate(() => _nextendoNote = (Strings.PressStopFirst, true));
             return;
         }
-        if (network == PlayNetwork.Nextendo && !Config.Nextendo.Linked)
-        {
-            Mutate(() => _nextendoNote = (Strings.NextendoNotLinked, true)); // "nextendo" only counts with an account
-            return;
-        }
-        var before = NextendoMode;
+        var before = OnNextendo;
         try
         {
             EditConfig(c => c with { Nextendo = c.Nextendo.Playing(network) }, wakeFriends: false);
@@ -260,11 +271,11 @@ public sealed partial class Launcher
 
     /// <summary>
     /// PLAY goes somewhere else now. To Nextendo: this launcher leaves the MKWMP server at once (friends there see it
-    /// offline), and its loops go quiet. Back to MKWMP servers: they follow the server again.
+    /// offline), and its loops go quiet. To MKWMP servers: they follow the server again.
     /// </summary>
     private void NetworkChanged(bool wasNextendo)
     {
-        var now = NextendoMode;
+        var now = OnNextendo;
         if (now == wasNextendo)
         {
             return;

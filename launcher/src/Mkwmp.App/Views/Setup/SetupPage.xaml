@@ -5,9 +5,10 @@
              xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              Focusable="False">
-  <!-- DataContext: SetupViewModel. The first-start welcome as a paged flow (and, with only its online
-       pages, Settings › Online's "Connect to a Server"): the header with the page dots, one page's content
-       in the middle, and under it always the same two buttons: what moves on, and what can wait. -->
+  <!-- DataContext: SetupViewModel. The first-start welcome as a paged flow (Welcome, Nextendo Network, Your Name,
+       Your Game, Done), and, with only an MKWMP server's pages, Settings › Online's "Connect to a Server": the
+       header with the page dots, one page's content in the middle, and under it always the same two buttons: what
+       moves on, and what can wait. -->
   <UserControl.Resources>
     <Style x:Key="Lead" TargetType="TextBlock" BasedOn="{StaticResource Text.Body}">
       <Setter Property="FontSize" Value="32" />
@@ -232,66 +233,104 @@
       </StackPanel>
     </Grid>
 
-    <!-- ═════════ Want to go online? ═════════ -->
-    <StackPanel Grid.Row="1" Width="1120" VerticalAlignment="Center"
+    <!-- ═════════ Play online with Nextendo Network: sign in (the browser), create an account, or skip for now ═════════ -->
+    <!-- NextendoStage: "ask" (what signing in does, and "Create a Nextendo Account"; the page's button signs in and
+         "Skip for Now" is the quiet one beside it), "wait" (the sign-in page is open in the browser; the button is
+         Cancel), "done" (who signed in; the button is Next). -->
+    <StackPanel Grid.Row="1" Width="1180" VerticalAlignment="Center"
                 Visibility="{Binding StepName, Converter={StaticResource Conv.Visible}, ConverterParameter='=online'}">
       <Grid HorizontalAlignment="Center">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <Image Source="pack://application:,,,/Assets/Art/step-online.png" Style="{StaticResource StepArt}" Height="150" Margin="0,0,30,0" />
+        <Image Source="pack://application:,,,/Assets/Art/step-online.png" Style="{StaticResource StepArt}" Height="170" Margin="0,0,34,0" />
         <StackPanel Grid.Column="1" VerticalAlignment="Center" MaxWidth="900">
           <TextBlock Text="{Binding S[setup.online.heading]}" Style="{StaticResource Text.Display}" FontSize="48" TextWrapping="Wrap" />
-          <TextBlock Text="{Binding S[setup.online.text]}" Style="{StaticResource Lead}" FontSize="30" LineHeight="44" TextAlignment="Left" Margin="0,8,0,0" />
+          <TextBlock Text="{Binding S[setup.online.text]}" Style="{StaticResource Lead}" FontSize="30" LineHeight="44" TextAlignment="Left" Margin="0,8,0,0"
+                     Visibility="{Binding NextendoStage, Converter={StaticResource Conv.Visible}, ConverterParameter='!=done'}" />
         </StackPanel>
       </Grid>
-      <Border Style="{StaticResource Card}" Margin="0,24,0,0" Padding="34,24">
-        <StackPanel>
-          <Grid>
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Border Style="{StaticResource FeatureDisc}">
-              <c:Icon Data="{StaticResource Icon.Globe}" Width="44" Height="44" Foreground="{DynamicResource Brush.Accent}" />
-            </Border>
-            <StackPanel Grid.Column="1" Margin="26,0,0,0" VerticalAlignment="Center">
-              <TextBlock Text="{Binding S[setup.online.races]}" Style="{StaticResource Text.Base}" FontSize="30" FontWeight="SemiBold" />
-              <TextBlock Text="{Binding S[setup.online.races_text]}" Style="{StaticResource Text.Caption}" />
-            </StackPanel>
-          </Grid>
-          <Grid Margin="0,22,0,0">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Border Style="{StaticResource FeatureDisc}">
-              <c:Icon Data="{StaticResource Icon.Friends}" Width="44" Height="44" Foreground="{DynamicResource Brush.Accent}" />
-            </Border>
-            <StackPanel Grid.Column="1" Margin="26,0,0,0" VerticalAlignment="Center">
-              <TextBlock Text="{Binding S[setup.online.friends]}" Style="{StaticResource Text.Base}" FontSize="30" FontWeight="SemiBold" />
-              <TextBlock Text="{Binding S[setup.online.friends_text]}" Style="{StaticResource Text.Caption}" />
-            </StackPanel>
-          </Grid>
-          <Grid Margin="0,22,0,0">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Border Style="{StaticResource FeatureDisc}">
-              <c:Icon Data="{StaticResource Icon.Mic}" Width="44" Height="44" Foreground="{DynamicResource Brush.Accent}" />
-            </Border>
-            <StackPanel Grid.Column="1" Margin="26,0,0,0" VerticalAlignment="Center">
-              <TextBlock Text="{Binding S[setup.online.voice]}" Style="{StaticResource Text.Base}" FontSize="30" FontWeight="SemiBold" />
-              <TextBlock Text="{Binding S[setup.online.voice_text]}" Style="{StaticResource Text.Caption}" />
-            </StackPanel>
-          </Grid>
-        </StackPanel>
-      </Border>
-      <TextBlock Text="{Binding S[setup.online.note]}" Style="{StaticResource Small}" FontSize="24" Margin="0,22,0,0" />
-    </StackPanel>
 
+      <!-- ask: what happens, and the way in for who has no account yet -->
+      <StackPanel Visibility="{Binding NextendoStage, Converter={StaticResource Conv.Visible}, ConverterParameter='=ask'}">
+        <Border Style="{StaticResource Card}" Margin="0,30,0,0" Padding="34,26">
+          <StackPanel>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border Style="{StaticResource FeatureDisc}" VerticalAlignment="Center">
+                <c:Icon Data="{StaticResource Icon.Globe}" Width="44" Height="44" Foreground="{DynamicResource Brush.Accent}" />
+              </Border>
+              <TextBlock Grid.Column="1" Text="{Binding S[nextendo.link_caption]}" Style="{StaticResource Text.Caption}" FontSize="28" LineHeight="40"
+                         Foreground="{DynamicResource Brush.Text}" Margin="26,0,0,0" VerticalAlignment="Center" />
+            </Grid>
+            <Grid Margin="0,20,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+              <Border Style="{StaticResource FeatureDisc}" VerticalAlignment="Center">
+                <c:Icon Data="{StaticResource Icon.Shield}" Width="44" Height="44" Foreground="{DynamicResource Brush.Accent}" />
+              </Border>
+              <TextBlock Grid.Column="1" Text="{Binding S[setup.online.local]}" Style="{StaticResource Text.Caption}" FontSize="28" LineHeight="40"
+                         Foreground="{DynamicResource Brush.Text}" Margin="26,0,0,0" VerticalAlignment="Center" />
+            </Grid>
+          </StackPanel>
+        </Border>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,26,0,0" input:FocusNav.IsGroup="True">
+          <c:ConsoleButton Kind="Secondary" Icon="{StaticResource Icon.UserPlus}" Content="{Binding S[nextendo.create]}" Command="{Binding CreateNextendoCommand}" />
+        </StackPanel>
+        <TextBlock Text="{Binding S[nextendo.created_hint]}" Style="{StaticResource Small}" FontSize="24" Margin="0,16,0,0"
+                   Visibility="{Binding ShowCreatedHint, Converter={StaticResource Conv.Visible}}" />
+        <!-- why the last sign-in did not work (it took too long, the browser did not open…) -->
+        <TextBlock Text="{Binding NextendoNote}" Margin="0,16,0,0" Visibility="{Binding NextendoNote, Converter={StaticResource Conv.Visible}}">
+          <TextBlock.Style>
+            <Style TargetType="TextBlock" BasedOn="{StaticResource Small}">
+              <Setter Property="FontSize" Value="24" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding NextendoNoteIsError}" Value="True">
+                  <Setter Property="Foreground" Value="{DynamicResource Brush.Bad}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </TextBlock.Style>
+        </TextBlock>
+      </StackPanel>
+
+      <!-- wait: the sign-in page is open in the browser -->
+      <StackPanel Margin="0,54,0,0" Visibility="{Binding NextendoStage, Converter={StaticResource Conv.Visible}, ConverterParameter='=wait'}">
+        <c:Spinner Width="96" Height="96" HorizontalAlignment="Center" />
+        <TextBlock Text="{Binding NextendoNote}" Style="{StaticResource Lead}" Margin="0,26,0,0" />
+        <TextBlock Text="{Binding S[nextendo.link_caption]}" Style="{StaticResource Small}" FontSize="24" Margin="0,10,0,0" />
+      </StackPanel>
+
+      <!-- done: who signed in -->
+      <Border Style="{StaticResource Card}" Margin="0,40,0,0" Padding="34,28" HorizontalAlignment="Center" MinWidth="860"
+              Visibility="{Binding NextendoStage, Converter={StaticResource Conv.Visible}, ConverterParameter='=done'}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <c:Avatar DisplayName="{Binding NextendoName}" Width="116" Height="116" />
+          <StackPanel Grid.Column="1" Margin="28,0,28,0" VerticalAlignment="Center">
+            <TextBlock Text="{Binding NextendoSignedIn}" Style="{StaticResource Text.Title}" TextTrimming="CharacterEllipsis" />
+            <StackPanel Orientation="Horizontal" Visibility="{Binding HasNextendoFriendCode, Converter={StaticResource Conv.Visible}}">
+              <TextBlock Text="{Binding S[nextendo.friend_code]}" Style="{StaticResource Text.Caption}" />
+              <TextBlock Text="{Binding NextendoFriendCode}" Style="{StaticResource Text.Caption}" Foreground="{DynamicResource Brush.Text}" Margin="14,0,0,0" />
+            </StackPanel>
+            <TextBlock Text="{Binding S[setup.done.ready]}" Style="{StaticResource Text.Caption}" />
+          </StackPanel>
+          <Border Grid.Column="2" Width="84" Height="84" CornerRadius="42" Background="{DynamicResource Brush.Accent}" VerticalAlignment="Center">
+            <c:Icon Data="{StaticResource Icon.Check}" Width="48" Height="48" StrokeThickness="2.6" Foreground="{DynamicResource Brush.OnAccent}" />
+          </Border>
+        </Grid>
+      </Border>
+    </StackPanel>
     <!-- ═════════ Before you play online: the privacy component (what is kept, the server's policy, the acceptance) ═════════ -->
     <settings:PrivacyPolicyPanel x:Name="ConsentPanel" Grid.Row="1" DataContext="{Binding Privacy}" HorizontalAlignment="Center" Width="1300" Margin="0,0,0,4"
                                  Visibility="{Binding DataContext.StepName, RelativeSource={RelativeSource AncestorType=UserControl}, Converter={StaticResource Conv.Visible}, ConverterParameter='=consent'}" />
@@ -429,10 +468,34 @@
       <c:ConsoleButton Kind="Secondary" MinWidth="400" Height="112" Margin="0,0,24,0" Icon="{StaticResource Icon.Globe}"
                        Content="{Binding LanguageLabel}" Command="{Binding LanguageCommand}"
                        Visibility="{Binding ShowLanguage, Converter={StaticResource Conv.Visible}}" />
-      <c:ConsoleButton Kind="Secondary" Width="400" Height="112" Margin="0,0,24,0" Content="{Binding SecondaryLabel}" Command="{Binding SecondaryCommand}"
-                       Visibility="{Binding ShowSecondary, Converter={StaticResource Conv.Visible}}" />
-      <c:ConsoleButton x:Name="Primary" Kind="Secondary" MinWidth="650" Height="112" Content="{Binding PrimaryLabel}"
-                       Command="{Binding PrimaryCommand}" input:FocusNav.IsDefault="True" />
+      <!-- what can wait ("Later"); on the Nextendo page "Skip for Now", a quiet button: signing in is what that page is for -->
+      <c:ConsoleButton MinWidth="400" Height="112" Margin="0,0,24,0" Content="{Binding SecondaryLabel}" Command="{Binding SecondaryCommand}"
+                       Visibility="{Binding ShowSecondary, Converter={StaticResource Conv.Visible}}">
+        <c:ConsoleButton.Style>
+          <Style TargetType="c:ConsoleButton" BasedOn="{StaticResource {x:Type c:ConsoleButton}}">
+            <Setter Property="Kind" Value="Secondary" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding SecondaryIsQuiet}" Value="True">
+                <Setter Property="Kind" Value="Ghost" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </c:ConsoleButton.Style>
+      </c:ConsoleButton>
+      <!-- the page's button; filled where it is the one thing the page asks for ("Sign in with Nextendo") -->
+      <c:ConsoleButton x:Name="Primary" MinWidth="650" Height="112" Content="{Binding PrimaryLabel}"
+                       Command="{Binding PrimaryCommand}" input:FocusNav.IsDefault="True">
+        <c:ConsoleButton.Style>
+          <Style TargetType="c:ConsoleButton" BasedOn="{StaticResource {x:Type c:ConsoleButton}}">
+            <Setter Property="Kind" Value="Secondary" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding PrimaryIsAccent}" Value="True">
+                <Setter Property="Kind" Value="Primary" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </c:ConsoleButton.Style>
+      </c:ConsoleButton>
     </StackPanel>
   </Grid>
 </UserControl>

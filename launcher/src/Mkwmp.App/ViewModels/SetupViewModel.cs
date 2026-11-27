@@ -9,32 +9,35 @@ using CoreStrings = Mkwmp.Core.Strings;
 namespace Mkwmp.App.ViewModels;
 
 /// <summary>
-/// The pages of the welcome flow, in their order. The four before Done are the online part ("Go
-/// Online", or Settings › Online's Connect): a server, signing in on it, then the consent (which
-/// that server keeps, so it can only come after signing in), then the PIN.
+/// The pages of the welcome flow (Welcome, Online, Name, Game, Done), and the four of an MKWMP server's connect
+/// pages (Settings › Online's Connect): a server, signing in on it, then the consent (which that server keeps, so it
+/// can only come after signing in), then the PIN.
 /// </summary>
 public enum SetupStep { Welcome, Name, Game, Online, Server, Register, Consent, Pin, Done }
 
 /// <summary>
 /// The first-start welcome, a paged flow (shown while <c>Ui.SetupDone</c> is false; it resumes at
 /// the first step that is still open):
-/// Welcome → Your Name (local) → Your Game (download mkw-recomp, the player's own game, the setup,
-/// MKWMP's files: SetupViewModel.Game.cs) → "Want to go online?". "Not Now" ends it: home, with
-/// everything online locked behind "Configure Online". "Go Online" continues with the server (from
-/// the list, or a typed address), signing in on it (registering the name, or recovering a profile
-/// with its PIN), the consent to that server's privacy policy, the PIN (masked), then Done.
+/// Welcome → "Play online with Nextendo Network" (<see cref="SetupStep.Online"/>: "Sign in with Nextendo" opens the
+/// sign-in page in the browser and the page waits for it, then says who signed in; "Create a Nextendo Account" for
+/// who has none; "Skip for Now" plays offline and signs in later) → Your Name (local; the Nextendo account's when it
+/// fits) → Your Game (download mkw-recomp, the player's own game, the setup, MKWMP's files: SetupViewModel.Game.cs)
+/// → Done.
 /// <para>
-/// The online part alone is also Settings › Online's "Connect to a Server"
-/// (<see cref="Connect"/>): the same pages, pushed over Settings, ending back there.
+/// Nothing of an MKWMP server is in the welcome: MKWMP servers are the alternative of Settings › Online, and its
+/// "Connect to a Server" (<see cref="Connect"/>) is this class's other four pages, pushed over Settings and ending
+/// back there: the server (from the list, or a typed address), signing in on it (registering the name, or
+/// recovering a profile with its PIN), the consent to that server's privacy policy, the PIN (masked). So the
+/// consent to send anything to an MKWMP server is asked for where such a server is chosen, and nowhere before.
 /// </para>
-/// Offline is a complete state: nothing here contacts a server before "Go Online", and the game
+/// Offline is a complete state: nothing here contacts a server before the player signs in, and the game
 /// steps can wait ("Later": PLAY then says what is missing).
 /// </summary>
 public sealed partial class SetupViewModel : PageViewModel, IDisposable
 {
     private readonly bool _connectOnly;
     private SetupStep _step;
-    private bool _goOnline;
+    private bool _createdAccount;
     private string _name;
     private PrivacyViewModel? _privacy;
     private string _privacyServer = "";
@@ -58,7 +61,6 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         _name = s.Name;
         _address = Launcher.OnlineEnabled ? ProfileForm.HostOf(s.Server)
             : Launcher.SavedServers.Count > 0 ? ProfileForm.HostOf(Launcher.SavedServers[^1].Address) : "";
-        _goOnline = connectOnly || Launcher.OnlineEnabled;
         Profile = new ProfileForm(shell) { RevealAfterRegister = false };
         Profile.SignedInNow += (_, _) =>
         {
@@ -72,6 +74,12 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         PrimaryCommand = RelayCommand.Async(PrimaryAsync, () => CanPrimary);
         SecondaryCommand = RelayCommand.Async(SecondaryAsync, () => ShowSecondary);
         LanguageCommand = RelayCommand.Async(Shell.PickLanguageAsync);
+        CreateNextendoCommand = new RelayCommand(() =>
+        {
+            Shell.CreateNextendoAccount();
+            _createdAccount = true; // the page then says to come back and sign in
+            Raise(nameof(ShowCreatedHint));
+        });
         InitGame();
         _step = start ?? (connectOnly ? SetupStep.Server : FirstOpenStep());
         if (address is { Length: > 0 })
@@ -120,7 +128,7 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         _setupCancel?.Dispose();
     }
 
-    /// <summary>Where a welcome that was left half-way goes on.</summary>
+    /// <summary>Where a welcome that was left half-way goes on (with no name yet: from its first page, so the Nextendo page comes too).</summary>
     private SetupStep FirstOpenStep()
     {
         var s = Launcher.Settings;
@@ -128,23 +136,13 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         {
             return s.Name.Length == 0 ? SetupStep.Welcome : SetupStep.Name;
         }
-        if (Stage != GameStage.Ready)
-        {
-            return SetupStep.Game;
-        }
-        if (!Launcher.OnlineEnabled)
-        {
-            return SetupStep.Online;
-        }
-        return !Launcher.Profile.SignedIn ? SetupStep.Register : !s.AdultConsent ? SetupStep.Consent : SetupStep.Done;
+        return Stage != GameStage.Ready ? SetupStep.Game : SetupStep.Done;
     }
 
     /// <summary>The pages of this run, in order (the dots).</summary>
     private IReadOnlyList<SetupStep> Path => _connectOnly
         ? [SetupStep.Server, SetupStep.Register, SetupStep.Consent, SetupStep.Pin]
-        : _goOnline
-            ? [SetupStep.Welcome, SetupStep.Name, SetupStep.Game, SetupStep.Online, SetupStep.Server, SetupStep.Register, SetupStep.Consent, SetupStep.Pin, SetupStep.Done]
-            : [SetupStep.Welcome, SetupStep.Name, SetupStep.Game, SetupStep.Online, SetupStep.Done];
+        : [SetupStep.Welcome, SetupStep.Online, SetupStep.Name, SetupStep.Game, SetupStep.Done];
 
     public int StepCount => PolicyOnly ? 0 : Path.Count;
 
@@ -176,7 +174,7 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         SetupStep.Welcome => S["setup.welcome.title"],
         SetupStep.Name => S["setup.name.title"],
         SetupStep.Game => S["setup.game.title"],
-        SetupStep.Online => S["setup.online.title"],
+        SetupStep.Online => S["nextendo.title"],
         SetupStep.Consent => S[PolicyOnly ? "settings.privacy.policy" : "setup.consent.title"],
         SetupStep.Server => S["setup.server.title"],
         SetupStep.Register => S["setup.register.title"],
@@ -219,7 +217,37 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
 
     public string NameNote => NameIsError ? CoreStrings.NameRule : S["setup.name.rule"];
 
-    // ── the consent (nothing reaches a server before it) ──
+    // ── Nextendo Network: sign in (the browser), create an account, or skip for now ──
+
+    private NextendoView Nextendo => Launcher.Nextendo;
+
+    /// <summary>"ask" (sign in, create, skip), "wait" (the sign-in page is open in the browser) or "done" (signed in): what the Nextendo page shows.</summary>
+    public string NextendoStage => Nextendo.Linked ? "done" : Nextendo.Linking ? "wait" : "ask";
+
+    public string NextendoName => Nextendo.Username;
+
+    public string NextendoFriendCode => Nextendo.FriendCode;
+
+    public bool HasNextendoFriendCode => Nextendo.FriendCode.Length > 0;
+
+    /// <summary>"Signed in as bia".</summary>
+    public string NextendoSignedIn => CoreStrings.NextendoLinked(Nextendo.Username);
+
+    /// <summary>What the launcher says of the sign-in: that it waits for the browser, or why it did not work.</summary>
+    public string NextendoNote => Nextendo.Linked ? "" : Nextendo.Note ?? "";
+
+    public bool NextendoNoteIsError => Nextendo.NoteIsError;
+
+    /// <summary>"Account created? Come back here and choose Sign in with Nextendo.", once the sign-up page was opened.</summary>
+    public bool ShowCreatedHint => _createdAccount && NextendoStage == "ask";
+
+    /// <summary>nextendo.network's sign-up page, in the browser; signing in is then this page's button.</summary>
+    public ICommand CreateNextendoCommand { get; }
+
+    private void SignInNextendo() =>
+        RelayCommand.Async(() => Launcher.LinkNextendoAsync(page => Links.Open(page))).Execute(null); // not awaited: the page's button is Cancel meanwhile
+
+    // ── an MKWMP server's consent (Settings › Online's connect pages: nothing reaches that server before it) ──
 
     /// <summary>
     /// The consent page's content: the privacy component (the policy, and its acceptance under it). Only while that
@@ -372,7 +400,10 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
             {
                 lines.Add(new StatusLine("warn", S["setup.done.no_game"], StageProblem));
             }
-            lines.Add(!Launcher.OnlineEnabled ? new StatusLine("muted", S["setup.done.offline"], S["setup.done.offline_detail"])
+            // online: the Nextendo account; an install that plays on MKWMP servers (it met the welcome late) is told of its server
+            lines.Add(Nextendo is { Preferred: true, Linked: true } ? new StatusLine("good", S.Format("core.check.online.nextendo", ("name", Nextendo.Username)))
+                : Nextendo.Preferred ? new StatusLine("muted", S["setup.done.nextendo_off"], S["setup.done.nextendo_off_detail"])
+                : !Launcher.OnlineEnabled ? new StatusLine("muted", S["setup.done.offline"], S["setup.done.offline_detail"])
                 : Launcher.Profile.SignedIn ? new StatusLine("good", S.Format("setup.done.online", ("name", s.Name), ("server", ServerShort)))
                 : new StatusLine("warn", S.Format("setup.done.online_no_profile", ("server", ServerShort)), S["setup.done.online_no_profile_detail"]));
             // how to come back here from the game: the player's overlay shortcut (Settings › Game)
@@ -382,7 +413,7 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
     }
 
     public string DoneText => Stage != GameStage.Ready ? S["setup.done.almost"]
-        : Launcher.OnlineEnabled && Launcher.Profile.SignedIn ? S["setup.done.ready"]
+        : Nextendo.Active || (Launcher.OnlineEnabled && Launcher.Profile.SignedIn) ? S["setup.done.ready"]
         : S["setup.done.ready_offline"];
 
     // ── the two buttons under every page ──
@@ -391,7 +422,7 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
     {
         SetupStep.Game => GamePrimaryLabel,
         SetupStep.Consent when PolicyOnly => S["common.close"],
-        SetupStep.Online => S["setup.online.go"],
+        SetupStep.Online => S[NextendoStage switch { "done" => "common.next", "wait" => "common.cancel", _ => "nextendo.signin" }],
         SetupStep.Server => ProbeOk ? S["common.next"] : S["setup.server.connect"],
         SetupStep.Register when !Launcher.Profile.SignedIn => Profile.Working ? "…"
             : Profile.ShowPinEntry ? S["setup.register.mine"] // the name is someone's: with its PIN, it is the player's
@@ -411,16 +442,21 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         _ => true,
     };
 
-    public string SecondaryLabel => _step == SetupStep.Online ? S["setup.online.not_now"] : S["setup.later"];
+    public string SecondaryLabel => _step == SetupStep.Online ? S["setup.online.skip"] : S["setup.later"];
 
-    /// <summary>"Not Now" on the online question; "Later" where a step can wait (the game; a registration the server did not answer).</summary>
+    /// <summary>"Skip for Now" on the Nextendo page (until signed in); "Later" where a step can wait (the game).</summary>
     public bool ShowSecondary => _step switch
     {
-        SetupStep.Online => true,
+        SetupStep.Online => NextendoStage == "ask",
         SetupStep.Game => GameCanWait,
-        SetupStep.Register => IsFirstRun && !Launcher.Profile.SignedIn && !Profile.Working,
         _ => false,
     };
+
+    /// <summary>The Nextendo page's "Skip for Now" is a quiet button: signing in is what the page is for.</summary>
+    public bool SecondaryIsQuiet => _step == SetupStep.Online;
+
+    /// <summary>"Sign in with Nextendo" is filled: the one thing its page asks for.</summary>
+    public bool PrimaryIsAccent => _step == SetupStep.Online && NextendoStage == "ask";
 
     private async Task PrimaryAsync()
     {
@@ -437,13 +473,22 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
                 await GamePrimaryAsync().ConfigureAwait(true);
                 break;
             case SetupStep.Online:
-                if (Launcher.OnlineBlockedByUpdate)
+                if (Nextendo.Linked)
                 {
-                    Shell.ConfigureOnline(); // offline only until MKWMP is updated: the update's card, not a server
-                    break;
+                    Step = SetupStep.Name;
                 }
-                _goOnline = true;
-                Step = SetupStep.Server;
+                else if (Nextendo.Linking)
+                {
+                    Launcher.CancelNextendoLink();
+                }
+                else if (Launcher.OnlineBlockedByUpdate)
+                {
+                    Shell.ConfigureOnline(); // offline only until MKWMP is updated: the update's card, not a sign-in
+                }
+                else
+                {
+                    SignInNextendo();
+                }
                 break;
             case SetupStep.Consent when PolicyOnly:
                 Shell.GoBack(); // read, accepted or withdrawn: back to Settings › Online
@@ -502,7 +547,7 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
                 await FinishAsync().ConfigureAwait(true);
                 break;
             default:
-                Step = SetupStep.Name;
+                Step = SetupStep.Online;
                 break;
         }
     }
@@ -512,13 +557,9 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         switch (_step)
         {
             case SetupStep.Online:
-                _goOnline = Launcher.OnlineEnabled;
-                Step = SetupStep.Done;
+                Step = SetupStep.Name; // offline for now: home and Settings › Nextendo offer the sign-in again
                 break;
             case SetupStep.Game:
-                Step = SetupStep.Online;
-                break;
-            case SetupStep.Register:
                 Step = SetupStep.Done;
                 break;
         }
@@ -606,6 +647,11 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         {
             return !_connectOnly; // the welcome cannot be left with B; the connect pages go back to Settings
         }
+        if (_step == SetupStep.Online && Nextendo.Linking)
+        {
+            Launcher.CancelNextendoLink(); // B while the browser is awaited gives the sign-in up, and stays on the page
+            return true;
+        }
         var back = path[at - 1];
         // Pages that have nothing to ask any more are passed over: a consent already given, a profile already there.
         if (back == SetupStep.Consent && Launcher.Settings.AdultConsent)
@@ -630,6 +676,10 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         {
             EnterGame();
         }
+        else if (_step == SetupStep.Name && _name.Length == 0 && Links.ValidName(Nextendo.Username))
+        {
+            _name = Nextendo.Username; // signed in a page ago: the same name here, unless the player types another
+        }
         else if (_step == SetupStep.Register)
         {
             Profile.Refresh();
@@ -653,7 +703,6 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
         {
             return;
         }
-        _goOnline |= to is SetupStep.Consent or SetupStep.Server or SetupStep.Register or SetupStep.Pin || Launcher.OnlineEnabled;
         Step = to;
         if (arg.Length == 0)
         {
@@ -676,6 +725,11 @@ public sealed partial class SetupViewModel : PageViewModel, IDisposable
                 break;
             case SetupStep.Pin:
                 PinRevealed = arg is "show";
+                break;
+            case SetupStep.Online:
+                // online=created: after "Create a Nextendo Account" (the browser awaited: --state nextendo-linking; signed in: --demo-nextendo)
+                _createdAccount = arg is "created";
+                RaiseAll();
                 break;
         }
     }

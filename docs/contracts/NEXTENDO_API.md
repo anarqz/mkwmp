@@ -36,8 +36,15 @@ Every call is HTTPS to nextendo.network only.
 
 - The refresh token is protected with DPAPI (CurrentUser) under the launcher's data folder.
 - The cached profile `{pid, username, friendCode}` and the chosen network `play_on = "mkwmp" | "nextendo"` go
-  in client.toml or the launcher's settings store. The default is `"mkwmp"`.
-- `"nextendo"` only counts while an account is linked. Unlinking falls back to `"mkwmp"`.
+  in client.toml or the launcher's settings store (`[nextendo]`).
+- The default is `"nextendo"`. A client.toml that names no network and already holds an MKWMP setup (a server, a
+  PIN, or a profile kept for a server) is read as `"mkwmp"`: nobody who plays on an MKWMP server is moved off it
+  silently. The launcher settles this when it opens the file and writes it at its next save.
+- The choice is its own: it stays without an account. On `"nextendo"` with no account linked, PLAY writes the
+  offline mkwmp.toml (no `backend`) and no MKWMP server is contacted, whatever `server` holds. The first link of an
+  account sets `"nextendo"` (not while a game runs); linking again and unlinking keep the choice.
+- MKWMP servers are chosen in the launcher's Settings only; an MKWMP server's consent is asked for when a server
+  is chosen there, and nowhere before.
 - Never log tokens. Never put them in bug reports, crash records, URLs or mkwmp.toml.
 
 ## 3. mkwmp.toml in Nextendo mode

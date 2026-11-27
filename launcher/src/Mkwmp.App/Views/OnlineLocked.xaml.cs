@@ -5,8 +5,10 @@ using System.Windows.Controls;
 namespace Mkwmp.App.Views;
 
 /// <summary>
-/// What a place that needs a server shows while there is none: a lock, <see cref="Title"/>,
+/// What a place that needs an MKWMP server shows while there is none: a lock, <see cref="Title"/>,
 /// <see cref="Text"/> and the "Configure online" button (the DataContext's <c>ConfigureOnlineCommand</c>).
+/// While Nextendo Network is where PLAY goes online it says that this place is an MKWMP server's, and its button is
+/// "Sign in with Nextendo" until someone is signed in (then there is none): it never sends anyone to an MKWMP server.
 /// </summary>
 public partial class OnlineLocked : UserControl
 {
@@ -70,11 +72,13 @@ public partial class OnlineLocked : UserControl
     private void Show()
     {
         var update = _shell is { OnlineBlockedByUpdate: true };
-        // PLAY goes to Nextendo Network: what is locked here is an MKWMP server's, and the way back is the same Settings › Online
-        var nextendo = !update && _shell is { PlaysOnNextendo: true };
+        // Nextendo Network is where PLAY goes online: what is locked here is an MKWMP server's, and it says so without
+        // sending anyone to one.
+        var nextendo = !update && _shell is { NextendoFirst: true };
         SetValue(ShownTitleProperty, update ? _shell!.S["core.update_to_play_online"] : nextendo ? _shell!.S["nextendo.locked.title"] : Title);
         SetValue(ShownTextProperty, update ? _shell!.S["online.update.text"] : nextendo ? _shell!.S["nextendo.locked.text"] : Text);
-        SetValue(ButtonTextProperty, _shell?.OnlineLockLabel ?? "");
+        // signed in on Nextendo there is nothing to do here: no button (MKWMP servers are Settings › Online's alternative, as the text says)
+        SetValue(ButtonTextProperty, nextendo && _shell is { NextendoNeedsSignIn: false } ? "" : _shell?.OnlineLockLabel ?? "");
     }
 
     /// <summary>What lives on a server ("Friends live on an MKWMP server").</summary>

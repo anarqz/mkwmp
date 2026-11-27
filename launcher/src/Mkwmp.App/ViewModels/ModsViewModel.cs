@@ -403,7 +403,14 @@ public sealed class ModsViewModel : PageViewModel
         get
         {
             var hints = new List<Hint>();
-            hints.Add(HasAll ? new Hint(PadButton.Y, AllLabel) : new Hint(PadButton.Y, S["hint.friends"]));
+            if (HasAll)
+            {
+                hints.Add(new Hint(PadButton.Y, AllLabel));
+            }
+            else if (!Shell.NextendoFirst)
+            {
+                hints.Add(new Hint(PadButton.Y, S["hint.friends"])); // friends are an MKWMP server's (ShellViewModel.DefaultHints)
+            }
             if (_focused is { CanToggle: true })
             {
                 hints.Add(new Hint(PadButton.X, S["mods.hint.toggle"]));

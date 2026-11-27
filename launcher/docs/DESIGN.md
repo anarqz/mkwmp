@@ -538,6 +538,25 @@ asks the server anything.
 | Toasts, system notifications | none of the friend kinds (`ToastKind.Friend*`) are shown |
 | Power menu | no "your seat is given back" line |
 
+**Nextendo first.** Nextendo Network is where PLAY goes online by default (`NextendoView.Preferred`,
+`Shell.NextendoFirst`; MKWMP servers are the alternative, chosen only in Settings › Online). While it is,
+`OnlineEnabled` is false whatever server is set, so every place above is in its locked state, and each speaks
+Nextendo instead of sending anyone to an MKWMP server:
+
+| Place | On Nextendo |
+| --- | --- |
+| Home, status line | signed in: "Nextendo Network · name" and the friend code (a click: Settings › Nextendo). Nobody signed in (`NeedsSignIn`): the button "Sign in with Nextendo to play online" (`FocusNav.IsBanner`: down from any tile reaches it) |
+| Home, dock | the second button is "Sign in with Nextendo", then "Nextendo Account" |
+| Hint bar | no "Y Friends" (Y still opens the panel) |
+| `v:OnlineLocked` (friends panel, Voice & Camera) | "Only on MKWMP servers" and why; its button is "Sign in with Nextendo" until someone is signed in, then there is none |
+| Settings, Notifications | one line, nothing to press: "Friend notifications are for MKWMP servers" |
+| Checklist, Online Play | "Offline: sign in with Nextendo to race online" with that button; signed in, the account |
+| `Shell.ConfigureOnline()` | `Shell.SignInNextendo()` while nobody is signed in (the browser, and a card that waits: `NextendoSignInModal`), else Settings › Online |
+
+An install that already had an MKWMP setup stays on MKWMP servers (`ClientConfig.PlayOn`) and keeps this section's
+MKWMP wording; home shows it an invitation to Nextendo under the status line ("Sign in with Nextendo" / "Not Now",
+closed for good: `ui.nextendo_invite_dismissed`).
+
 **Offline only until MKWMP is updated** (`Shell.OnlineBlockedByUpdate`; UPDATES.md, section 1: a required update could
 not be installed and the player chose "Continue Offline"). The same locks, for the rest of the run, although a server
 is set (`OnlineEnabled` is false). What differs is said in one place each: `v:OnlineLocked` shows "Update MKWMP to play
@@ -593,26 +612,35 @@ Checking it: `--demo-offline` is the demo set up but with no server (`--demo-fre
 ```
 ## 13. Offline first: the welcome flow, Settings › Online, PINs
 
-A fresh install has no server and is complete that way: PLAY starts the game alone (status "READY · PLAY OFFLINE"),
-no server is contacted, and section 12's locks lead to **Settings › Online** (`Routes.SettingsOnline`, category key
-`Routes.OnlineCategory` = `online`, `Shell.ConfigureOnline()`).
+A fresh install has no server and no account and is complete that way: PLAY starts the game alone (status "READY ·
+PLAY OFFLINE"), nothing is contacted, and the way online is "Sign in with Nextendo" (section 12). **Settings ›
+Online** (`Routes.SettingsOnline`, category key `Routes.OnlineCategory` = `online`) shows Nextendo on top and, under
+"Alternative: MKWMP Servers", the switch "Use MKWMP Servers Instead": only with it on does the pane show an MKWMP
+server's list, profile, PIN and privacy.
 
 **The welcome flow** (`SetupViewModel`, shown while `Ui.SetupDone` is false; it resumes at the first open step, and
-Core marks a working online profile as done so an existing player never meets it):
+Core marks a working online profile as done so an existing player never meets it) is the first five steps, in this
+order: `Welcome`, `Online`, `Name`, `Game`, `Done`. Nothing of an MKWMP server is in it:
 
 | Step (`SetupStep`) | What |
 | --- | --- |
 | `Welcome` | what MKWMP is; "Built on mkw-recomp (MIT)" |
-| `Name` | the local name (gamertag rules), saved locally; nothing is asked of a server |
+| `Online` | "Play online with Nextendo Network" (`NextendoStage`): **Sign in with Nextendo** (the page's button, filled) opens the sign-in page in the browser and the page waits (a spinner; the button is Cancel), then says who signed in (the button is Next); **Create a Nextendo Account** opens the sign-up page and the page says to come back and sign in; **Skip for Now** (the quiet button) goes on offline |
+| `Name` | the local name (gamertag rules; the Nextendo account's name when it fits), saved locally; nothing is asked of a server |
 | `Game` | `GameStage`: download mkw-recomp (`RuntimeModal`: bytes, speed, time left, Cancel) or "I already have it"; the player's own copy (file, folder, or a typed path; the legal line); the setup (step, bar, time left, Stop; Try Again and Open Log when it failed); MKWMP's files (by itself). "Later" always works |
-| `Online` | "Want to go online?": **Not Now** → `Done` → home, locked; **Go Online** → the next four |
+| `Done` | what is ready and what waits |
+
+The other four steps are an MKWMP server's connect pages (Settings › Online, with MKWMP servers chosen): the consent
+to send anything to an MKWMP server is asked for there, where such a server is chosen, and nowhere before.
+
+| Step (`SetupStep`) | What |
+| --- | --- |
 | `Server` | two columns: the list at the left, scrolling by itself; at the right the address (typed, or put there by a row), the server's answer and the page's button (Connect, then Next: the focus goes to it when the server answered), and "Show closest to me" under them. The beholder's list (`ServerPicker` / `ServerList`: latency bars and ms measured to each server, name, region, version, players, queue; the five nearest first and five more with each "Show More"; Refresh; re-measured every 15 s while shown; Y on a row, or its "…", hides that server on this PC and the next takes its place, Settings › Online › Hidden Servers shows it again) and a typed address; Connect asks the server who it is ("MKWMP server · 12/32 players", or why not) |
 | `Register` | sign in: register the name (a new PIN), or, for a name that exists, "It's Mine" with its PIN (masked) |
 | `Consent` | only **after** signing in (the server keeps the consent): the privacy component, `settings:PrivacyPolicyPanel` over a `PrivacyViewModel`: the three paragraphs (what every server keeps), the server's own policy (its Markdown rendered by `MarkdownView`, never a browser; a server without `/privacy` gets "This server doesn't publish a privacy policy", never another page), and under them, always on screen, the switch "I'm 18 or older and I accept the privacy policy" (given or withdrawn at once; the focus starts on it). Next works once it is given; skipped when the sign-in said the server already has it |
 | `Pin` | the PIN, masked, with its eye (and X) |
-| `Done` | what is ready and what waits |
 
-The same class with only the online steps is Settings › Online's connect pages: `SetupViewModel.Connect(shell, address?)`
+They are the same class with only those steps: `SetupViewModel.Connect(shell, address?)`
 (pushed over Settings, ends back there) and `SetupViewModel.PrivacyPolicy(shell)`: the consent page alone, titled "Privacy Policy", with Close instead of Next and no dots. It is what Settings › Online's Privacy Policy row opens: there is no other policy viewer.
 
 **A PIN is never bound to text.** Use `settings:PinField` (`Pin`, `IsRevealed` two-way, `DigitSize`): dots drawn as

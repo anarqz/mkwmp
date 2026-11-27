@@ -93,9 +93,15 @@ public sealed class HomeTile : ObservableObject
 /// <summary>
 /// Home: the carousel (Play Online, Get Mods, the checklist, What's New with the update), the session's status under it,
 /// and the dock (Play, Friends, the player's Mods, Settings...: nothing the carousel has). PLAY is the Rust launcher's
-/// PLAY / STOP; when something blocks it, A on it explains what and leads to the place that fixes it. Without a
-/// server (<see cref="Locked"/>) the launcher is a shell for the game: "Play" starts it offline, and the dock's
-/// Friends button is "Configure online" with a lock (Settings › Online).
+/// PLAY / STOP; when something blocks it, A on it explains what and leads to the place that fixes it.
+/// <para>
+/// Online is Nextendo Network (<see cref="NextendoFirst"/>, the default): signed in, the status line names the
+/// account and PLAY goes online there; not signed in, "Play" starts the game offline and the status line and the
+/// dock say "Sign in with Nextendo". Nothing here offers an MKWMP server: those are Settings › Online's alternative.
+/// An install that plays on MKWMP servers keeps its home as it was (the server's seats, Friends; "Configure online"
+/// with a lock while it has no server: <see cref="Locked"/>), with an invitation to Nextendo it can close
+/// (<see cref="ShowNextendoInvite"/>).
+/// </para>
 /// </summary>
 public sealed class HomeViewModel : PageViewModel
 {
@@ -114,15 +120,22 @@ public sealed class HomeViewModel : PageViewModel
         PlayCommand = RelayCommand.Async(TogglePlayAsync);
         FriendsCommand = new RelayCommand(() =>
         {
-            if (Locked)
+            if (NextendoFirst && Launcher.Nextendo.Linked && !Launcher.OnlineBlockedByUpdate)
             {
-                Shell.ConfigureOnline();
+                Shell.OpenNextendo(); // the account, its friend code, how it stands
+            }
+            else if (Locked)
+            {
+                Shell.ConfigureOnline(); // "Sign in with Nextendo"; an install on MKWMP servers: Settings › Online
             }
             else
             {
                 Shell.OpenFriends();
             }
         });
+        NextendoSignInCommand = new RelayCommand(Shell.SignInNextendo);
+        NextendoAccountCommand = new RelayCommand(Shell.OpenNextendo);
+        DismissInviteCommand = RelayCommand.Async(Shell.DismissNextendoInviteAsync);
         // What's New; while an update is on its way or waits, its card (what the dock's Updates button did)
         UpdateCommand = new RelayCommand(() =>
         {
@@ -135,7 +148,6 @@ public sealed class HomeViewModel : PageViewModel
                 Shell.Navigate(new WhatsNewViewModel(Shell));
             }
         });
-        PlayOnCommand = RelayCommand.Async(Shell.PickPlayOnAsync);
         SettingsCommand = new RelayCommand(() => Shell.OpenSettings());
         ModsCommand = new RelayCommand(() => Shell.Navigate(Routes.Mods));
         FullscreenCommand = RelayCommand.Async(() => Shell.SetFullscreenAsync(!Shell.IsFullscreen));
@@ -218,14 +230,39 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>PLAY goes to Nextendo Network (a linked account, chosen): no MKWMP server, yet the game goes online.</summary>
     public bool Nextendo => Launcher.Nextendo.Active;
 
-    /// <summary>"Play on: MKWMP servers | Nextendo Network", in the status line once a Nextendo account is linked (not over a running game).</summary>
-    public bool ShowPlayOn => Launcher.Nextendo.Linked && !Overlay;
+    /// <summary>Nextendo Network is where this launcher goes online (the default): home speaks Nextendo, never an MKWMP server.</summary>
+    public bool NextendoFirst => Launcher.Nextendo.Preferred;
 
-    /// <summary>"Play on: Nextendo Network".</summary>
-    public string PlayOnText => S.Format("playon.now", ("network", Shell.PlayOnName));
+    /// <summary>
+    /// "Sign in with Nextendo to play online", in the status line: Nextendo is where PLAY goes online and nobody is
+    /// signed in (PLAY works, offline). Not over a running game, nor in a run that is offline only until MKWMP is updated.
+    /// </summary>
+    public bool ShowNextendoSignIn => Launcher.Nextendo.NeedsSignIn && !Overlay && !Launcher.OnlineBlockedByUpdate;
 
-    /// <summary>The choice of network (a list of two); while PLAY runs it says to stop first.</summary>
-    public ICommand PlayOnCommand { get; }
+    /// <summary>The sign-in page in the browser, and the card that waits for it.</summary>
+    public ICommand NextendoSignInCommand { get; }
+
+    /// <summary>The Nextendo part of the status line: signed in, and PLAY goes there.</summary>
+    public bool ShowNextendoAccount => Launcher.Nextendo is { Preferred: true, Linked: true };
+
+    /// <summary>"Nextendo Network · bia".</summary>
+    public string NextendoAccountText => S["nextendo.title"] + " · " + Launcher.Nextendo.Username;
+
+    /// <summary>The account's friend code, after its name ("" when Nextendo gave none).</summary>
+    public string NextendoFriendCode => Launcher.Nextendo.FriendCode;
+
+    /// <summary>Settings › Nextendo: the account, its friend code, how it stands.</summary>
+    public ICommand NextendoAccountCommand { get; }
+
+    /// <summary>
+    /// The invitation to Nextendo Network, under the status line: for an install that plays on MKWMP servers (it
+    /// already did before Nextendo was the default, and is never moved off them silently) with no Nextendo account.
+    /// "Sign in with Nextendo" switches it over; "Not Now" closes the card for good. Not while PLAY runs or over a game.
+    /// </summary>
+    public bool ShowNextendoInvite => Launcher.Nextendo is { Preferred: false, Linked: false, Linking: false }
+        && !Launcher.Settings.Ui.NextendoInviteDismissed && !Busy && !Overlay && !Launcher.OnlineBlockedByUpdate;
+
+    public ICommand DismissInviteCommand { get; }
 
     /// <summary>The server's part of the status line: only with a server.</summary>
     public bool ShowServer => !Locked;
@@ -274,14 +311,22 @@ public sealed class HomeViewModel : PageViewModel
 
     public bool HasRequests => !Locked && Launcher.Friends.Incoming.Count > 0;
 
-    /// <summary>The dock's Friends button; "Configure Online" with a lock while there is no server.</summary>
-    public string FriendsLabel => Locked ? Shell.OnlineLockLabel : S["home.friends"];
+    /// <summary>The dock's second button is the Nextendo account (not Friends, which are an MKWMP server's): Nextendo is where PLAY goes online, in a run that may go online.</summary>
+    private bool NextendoDock => NextendoFirst && !Launcher.OnlineBlockedByUpdate;
 
-    public string FriendsIcon => Locked ? "Icon.FriendsLocked" : "Icon.Friends";
+    /// <summary>
+    /// The dock's second button. On Nextendo: "Sign in with Nextendo", then "Nextendo Account". On MKWMP servers:
+    /// Friends; "Configure Online" with a lock while there is no server.
+    /// </summary>
+    public string FriendsLabel => NextendoDock ? S[Launcher.Nextendo.Linked ? "settings.online.nextendo_account" : "nextendo.signin"]
+        : Locked ? Shell.OnlineLockLabel
+        : S["home.friends"];
+
+    public string FriendsIcon => NextendoDock ? (Launcher.Nextendo.Linked ? "Icon.User" : "Icon.UserPlus") : Locked ? "Icon.FriendsLocked" : "Icon.Friends";
 
     public ICommand PlayCommand { get; }
 
-    /// <summary>The friends panel; Settings › Online while there is no server.</summary>
+    /// <summary>On Nextendo: the sign-in, then Settings › Nextendo. On MKWMP servers: the friends panel; Settings › Online while there is no server.</summary>
     public ICommand FriendsCommand { get; }
 
     /// <summary>The What's New tile: the update's card while one is pending, else What's New.</summary>
@@ -311,20 +356,24 @@ public sealed class HomeViewModel : PageViewModel
     /// <summary>The Checklist card: the play checklist ("Ready to Play"); while the game's setup works, its card.</summary>
     public ICommand ChecklistCommand { get; }
 
-    public override IReadOnlyList<Hint> Hints => Overlay
-        ?
-        [
-            new Hint(PadButton.Start, S["hint.options"]),
-            new Hint(PadButton.Y, S["hint.friends"]),
-            new Hint(PadButton.B, S["home.overlay.back"]),
-            new Hint(PadButton.A, S["hint.ok"]),
-        ]
-        :
-        [
-            new Hint(PadButton.Start, S["hint.options"]),
-            new Hint(PadButton.Y, S["hint.friends"]),
-            new Hint(PadButton.A, S["hint.start"]),
-        ];
+    /// <summary>Y is Friends where there are friends: on an MKWMP server (on Nextendo the hint bar does not send anyone to them).</summary>
+    public override IReadOnlyList<Hint> Hints
+    {
+        get
+        {
+            var hints = new List<Hint> { new(PadButton.Start, S["hint.options"]) };
+            if (!NextendoFirst)
+            {
+                hints.Add(new Hint(PadButton.Y, S["hint.friends"]));
+            }
+            if (Overlay)
+            {
+                hints.Add(new Hint(PadButton.B, S["home.overlay.back"]));
+            }
+            hints.Add(new Hint(PadButton.A, S[Overlay ? "hint.ok" : "hint.start"]));
+            return hints;
+        }
+    }
 
     /// <summary>B on home, over a game: back to it.</summary>
     public override bool OnBack()
@@ -370,6 +419,7 @@ public sealed class HomeViewModel : PageViewModel
     {
         Refresh();
         base.OnStateChanged();
+        RefreshHints(); // Y is Friends only on an MKWMP server
     }
 
     private static string Number(int value) => value.ToString(CultureInfo.CurrentCulture);
@@ -554,7 +604,7 @@ public sealed class HomeViewModel : PageViewModel
             Shell.ShowModal(modal);
             return;
         }
-        if (!Busy || await Shell.ConfirmAsync(S["quit.title"], S["quit.body"], S["quit.yes"]).ConfigureAwait(true))
+        if (!Busy || await Shell.ConfirmAsync(S["quit.title"], Locked ? "" : S["quit.body"], S["quit.yes"]).ConfigureAwait(true)) // the seat sentence is for a launcher that holds one (an MKWMP server)
         {
             Shell.Quit();
         }

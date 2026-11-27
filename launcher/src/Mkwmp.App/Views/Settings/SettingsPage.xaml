@@ -76,17 +76,18 @@
                 </Grid>
               </Grid>
             </Border>
-            <TextBlock Text="{Binding S[settings.profile.local_caption]}" Style="{StaticResource Note}" />
-            <c:SettingsRow Label="{Binding S[settings.online]}" Kind="Chevron" Icon="{StaticResource Icon.Globe}" Margin="0,18,0,0"
-                           Command="{Binding OnlineCommand}" Caption="{Binding S[settings.profile.online_caption]}" />
+            <TextBlock Text="{Binding LocalNameCaption}" Style="{StaticResource Note}" />
+            <!-- where the player goes online: Settings › Nextendo (Settings › Online for an install on MKWMP servers) -->
+            <c:SettingsRow Label="{Binding ProfileOnlineLabel}" Kind="Chevron" Icon="{StaticResource Icon.Globe}" Margin="0,18,0,0"
+                           Command="{Binding OnlineCommand}" Caption="{Binding ProfileOnlineCaption}" />
             <TextBlock Text="{Binding BusyNote}" Style="{StaticResource Note}" Visibility="{Binding BusyNote, Converter={StaticResource Conv.Visible}}" />
           </StackPanel>
 
-          <!-- ═════════ Online: the server, the profile on it, privacy (Views/Settings/OnlinePane.xaml) ═════════ -->
-          <settings:OnlinePane Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=online'}" />
-
-          <!-- ═════════ Nextendo: a linked account, and where PLAY goes online (Views/Settings/NextendoPane.xaml) ═════════ -->
+          <!-- ═════════ Nextendo: the account PLAY goes online with (Views/Settings/NextendoPane.xaml) ═════════ -->
           <settings:NextendoPane Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=nextendo'}" />
+
+          <!-- ═════════ Online: Nextendo Network, and the alternative: an MKWMP server, the profile on it, privacy (Views/Settings/OnlinePane.xaml) ═════════ -->
+          <settings:OnlinePane Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=online'}" />
 
           <!-- ═════════ Game ═════════ -->
           <StackPanel Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=game'}">
@@ -154,8 +155,10 @@
             <c:SectionHeader Text="{Binding S[settings.game.start]}" />
             <c:SettingsRow Label="{Binding S[settings.game.steam]}" Kind="Toggle" IsOn="{Binding Game.FromSteam}"
                            IsEnabled="{Binding Game.CanChange}" Caption="{Binding S[settings.game.steam_caption]}" />
+            <!-- when the seat on an MKWMP server is taken: nothing on Nextendo Network (no seat there) -->
             <c:SettingsRow Label="{Binding S[settings.game.seat]}" Kind="Chevron" Value="{Binding SeatName}" Command="{Binding SeatCommand}"
-                           Caption="{Binding S[settings.game.seat_body]}" />
+                           Caption="{Binding S[settings.game.seat_body]}"
+                           Visibility="{Binding ShowMkwmpOnline, Converter={StaticResource Conv.Visible}}" />
 
             <c:SectionHeader Text="{Binding S[settings.game.overlay]}" />
             <c:SettingsRow Label="{Binding S[settings.game.shortcut]}" Kind="Chevron" Icon="{StaticResource Icon.Gamepad}"
@@ -310,10 +313,13 @@
           <!-- ═════════ Notifications and background ═════════ -->
           <StackPanel Visibility="{Binding CategoryKey, Converter={StaticResource Conv.Visible}, ConverterParameter='=notifications'}">
             <c:SectionHeader Text="{Binding S[settings.notify.when]}" />
-            <!-- locked online: friends' news needs a server -->
+            <!-- locked online: friends' news needs a server (an install on MKWMP servers without one) -->
             <c:SettingsRow Label="{Binding S[settings.notify.locked]}" Kind="Chevron" Icon="{StaticResource Icon.Lock}" Value="{Binding S[online.configure]}"
                            Command="{Binding ConfigureOnlineCommand}"
-                           Visibility="{Binding OnlineLocked, Converter={StaticResource Conv.Visible}}" />
+                           Visibility="{Binding ShowNotifyLocked, Converter={StaticResource Conv.Visible}}" />
+            <!-- on Nextendo Network: friends' news is an MKWMP server's; said, with nothing to press -->
+            <c:SettingsRow Label="{Binding S[settings.notify.locked_nextendo]}" Icon="{StaticResource Icon.Info}" Focusable="False"
+                           Visibility="{Binding ShowNotifyNextendo, Converter={StaticResource Conv.Visible}}" />
             <StackPanel Visibility="{Binding OnlineEnabled, Converter={StaticResource Conv.Visible}}">
               <c:SettingsRow Label="{Binding S[settings.notify.online]}" Kind="Toggle" IsOn="{Binding NotifyOnline}" />
               <c:SettingsRow Label="{Binding S[settings.notify.playing]}" Kind="Toggle" IsOn="{Binding NotifyPlaying}" />
@@ -324,10 +330,10 @@
 
             <c:SectionHeader Text="{Binding S[settings.background]}" />
             <c:SettingsRow Label="{Binding S[settings.background.tray]}" Kind="Toggle" IsOn="{Binding CloseToTray}" IsEnabled="{Binding HasTray}"
-                           Caption="{Binding S[settings.background.tray_caption]}" />
+                           Caption="{Binding TrayRowCaption}" />
             <c:SettingsRow Label="{Binding S[settings.background.autostart]}" Kind="Toggle" IsOn="{Binding StartWithSystem}"
                            Visibility="{Binding CanStartWithSystem, Converter={StaticResource Conv.Visible}}" />
-            <TextBlock Text="{Binding TrayCaption}" Style="{StaticResource Note}" />
+            <TextBlock Text="{Binding TrayCaption}" Style="{StaticResource Note}" Visibility="{Binding TrayCaption, Converter={StaticResource Conv.Visible}}" />
             <TextBlock Text="{Binding S[settings.background.autostart_linux]}" Style="{StaticResource Note}"
                        Visibility="{Binding IsWine, Converter={StaticResource Conv.Visible}}" />
           </StackPanel>

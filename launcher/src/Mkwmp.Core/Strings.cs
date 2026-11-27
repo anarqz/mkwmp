@@ -207,6 +207,9 @@ public static class Strings
 
     public static string PickLocalName => T("core.pick_local_name");
 
+    /// <summary>The same card while Nextendo Network is where PLAY goes online: online, the name is the Nextendo account's.</summary>
+    public static string LocalNameNextendo => T("core.local_name_nextendo");
+
     // ---- Nextendo Network (docs/contracts/NEXTENDO_API.md) --------------------------------
     public static string NextendoUnreachable => T("core.nextendo.unreachable");
     public static string NextendoLinkAgain => T("core.nextendo.link_again");
@@ -249,6 +252,9 @@ public static class Strings
 
     /// <summary>A mod older than Nextendo mode asks for an MKWMP seat while PLAY goes to Nextendo: English and plain ASCII, as <see cref="OnlineOffInGame"/>.</summary>
     public const string NextendoNoSeatInGame = "Playing on Nextendo Network: no MKWMP seat. Update the MKWMP mod (launcher, Checklist)";
+
+    /// <summary>What the game's Online Play gets while PLAY goes to Nextendo and no account is linked: English and plain ASCII, as <see cref="OnlineOffInGame"/>.</summary>
+    public const string NextendoSignInInGame = "Online is off: sign in with Nextendo in the MKWMP launcher (Settings, Nextendo)";
 
     // ---- asking a server who it is (Connect) ----------------------------------------------
     public static string ProbeInvalid => T("core.probe_invalid");

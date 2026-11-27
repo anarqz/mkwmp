@@ -8,10 +8,11 @@ using CoreStrings = Mkwmp.Core.Strings;
 namespace Mkwmp.App.ViewModels;
 
 /// <summary>
-/// Settings › Online (what Profile, Server and Privacy were), and Settings › Profile's local name.
-/// Offline: "Online is off" and Connect to a Server, which is the welcome flow's online part
-/// (consent, server, register, PIN) as a page of its own. Online: the server and its status, the
-/// profile on it with its PIN (masked), Disconnect, the consent, and deleting the profile there.
+/// Settings › Online, and Settings › Profile's local name. On top where PLAY goes online: Nextendo Network (the
+/// account, or the ways to sign in: SettingsViewModel.Nextendo.cs), then "Alternative: MKWMP Servers" with its
+/// switch. Only with that switch on is the rest here an MKWMP server's: offline, "Online is off" and Connect to a
+/// Server (SetupViewModel's connect pages: server, register, that server's consent, PIN); online, the server and its
+/// status, the profile on it with its PIN (masked), Disconnect, the consent, and deleting the profile there.
 /// </summary>
 public sealed partial class SettingsViewModel
 {
@@ -32,8 +33,13 @@ public sealed partial class SettingsViewModel
         PrivacyCommand = new RelayCommand(() => Shell.Navigate(SetupViewModel.PrivacyPolicy(Shell)));
         DisconnectCommand = RelayCommand.Async(DisconnectAsync, () => !Busy && OnlineEnabled);
         ReportCommand = new RelayCommand(() => Shell.Navigate(new ReportViewModel(Shell)), () => ReportViewModel.Allowed(Launcher));
-        OnlineCommand = new RelayCommand(Shell.ConfigureOnline);
+        OnlineCommand = new RelayCommand(() => At(NextendoFirst ? NextendoCategory : Routes.OnlineCategory));
     }
+
+    /// <summary>Settings › Profile's row to where the player goes online: "Nextendo", or "Online" for an install on MKWMP servers.</summary>
+    public string ProfileOnlineLabel => S[NextendoFirst ? "nextendo.title" : "settings.online"];
+
+    public string ProfileOnlineCaption => S[NextendoFirst ? "nextendo.about" : "settings.profile.online_caption"];
 
     public bool IsOnlinePane => _category.Key == Routes.OnlineCategory;
 
@@ -41,10 +47,10 @@ public sealed partial class SettingsViewModel
     public bool UpdateOffline => Launcher.OnlineBlockedByUpdate;
 
     /// <summary>"Online is off" with its server list: no server is set (and it is not <see cref="UpdateOffline"/>).</summary>
-    public bool ShowOnlineOff => OnlineLocked && !UpdateOffline && !NextendoMode;
+    public bool ShowOnlineOff => OnlineLocked && !UpdateOffline && !NextendoFirst;
 
-    /// <summary>The MKWMP parts of the pane (the server list's source, hidden servers): not while PLAY goes to Nextendo Network.</summary>
-    public bool ShowMkwmpOnline => !NextendoMode;
+    /// <summary>The MKWMP parts of the pane (the server list's source, hidden servers): only while MKWMP servers are chosen.</summary>
+    public bool ShowMkwmpOnline => !NextendoFirst;
 
     /// <summary>The servers to choose from while offline (the beholder's list, nearest first).</summary>
     public ServerPicker Servers { get; private set; } = null!;
@@ -199,6 +205,9 @@ public sealed partial class SettingsViewModel
         : Registered ? S.Format("settings.profile.local_registered", ("server", ServerShort))
         : OnlineEnabled ? S["settings.profile.local_online"]
         : S["settings.profile.local_note"];
+
+    /// <summary>Under the name's box: its rule; for an install on MKWMP servers also that it is the name registered there.</summary>
+    public string LocalNameCaption => S[NextendoFirst ? "setup.name.rule" : "settings.profile.local_caption"];
 
     public string LocalNameShown => Launcher.Settings.Name.Length > 0 ? Launcher.Settings.Name : S["settings.profile.local_none"];
 

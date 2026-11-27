@@ -396,12 +396,13 @@ public interface ILauncher : IAsyncDisposable
     {
     }
 
-    /// <summary>Unlinks: the sign-in is revoked and forgotten, and PLAY goes to MKWMP servers again. Refused while PLAY runs.</summary>
+    /// <summary>Unlinks: the sign-in is revoked and forgotten; the choice of network stays (on Nextendo, PLAY is offline until signed in again). Refused while PLAY runs.</summary>
     Task UnlinkNextendoAsync() => Task.CompletedTask;
 
     /// <summary>
-    /// Where PLAY goes online from now on (saved). <see cref="PlayNetwork.Nextendo"/> only counts while an account is
-    /// linked. Refused while PLAY runs. On Nextendo no MKWMP server is contacted: no seat, friends, voice or camera.
+    /// Where PLAY goes online from now on (saved). Refused while PLAY runs. On Nextendo no MKWMP server is contacted
+    /// (no seat, friends, voice or camera), with or without an account; choosing MKWMP servers is what lets one be
+    /// contacted at all, and its consent is asked for when a server is chosen.
     /// </summary>
     Task SetPlayOnAsync(PlayNetwork network) => Task.CompletedTask;
 
@@ -463,10 +464,10 @@ public sealed record GameSettingsView(
 /// <summary>Where PLAY goes online (client.toml <c>[nextendo] play_on</c>).</summary>
 public enum PlayNetwork
 {
-    /// <summary>An MKWMP server (the default).</summary>
+    /// <summary>An MKWMP server: the alternative, chosen in Settings › Online (and what an install from before Nextendo stays on).</summary>
     Mkwmp,
 
-    /// <summary>Nextendo Network, with the linked account.</summary>
+    /// <summary>Nextendo Network, with the linked account: the default.</summary>
     Nextendo,
 }
 
@@ -474,7 +475,10 @@ public enum PlayNetwork
 /// <param name="Linked">An account is linked on this PC.</param>
 /// <param name="Username">Its name on Nextendo ("" when not linked).</param>
 /// <param name="FriendCode">Its friend code ("" when not linked or not known).</param>
-/// <param name="PlayOn">The saved choice; <see cref="PlayNetwork.Mkwmp"/> whenever no account is linked.</param>
+/// <param name="PlayOn">
+/// The saved choice. <see cref="PlayNetwork.Nextendo"/> is the default, also with no account linked: PLAY then starts
+/// the game offline, and the window asks to sign in instead of showing an MKWMP server.
+/// </param>
 /// <param name="Active">PLAY goes to Nextendo now: linked, chosen, and this run is not offline only.</param>
 /// <param name="Linking">The sign-in page is open in the browser and the launcher waits for it.</param>
 /// <param name="Checking">Nextendo is being asked how the account stands.</param>
@@ -484,7 +488,14 @@ public enum PlayNetwork
 public sealed record NextendoView(bool Linked, string Username, string FriendCode, PlayNetwork PlayOn, bool Active, bool Linking, bool Checking,
     string Status, string Tone, string? Note, bool NoteIsError)
 {
-    public static NextendoView None { get; } = new(false, "", "", PlayNetwork.Mkwmp, false, false, false, "", "muted", null, false);
+    /// <summary>No account, PLAY goes to Nextendo Network: a fresh install.</summary>
+    public static NextendoView None { get; } = new(false, "", "", PlayNetwork.Nextendo, false, false, false, "", "muted", null, false);
+
+    /// <summary>Nextendo Network is where this launcher goes online (the default): its pages speak Nextendo, and MKWMP servers are Settings › Online's alternative.</summary>
+    public bool Preferred => PlayOn == PlayNetwork.Nextendo;
+
+    /// <summary>Nextendo is where PLAY goes online and no account is linked yet: PLAY is offline until the player signs in.</summary>
+    public bool NeedsSignIn => Preferred && !Linked;
 }
 
 public enum ServerProbeState
@@ -709,6 +720,8 @@ public sealed record UiSettings
     public string Locale { get; init; } = "";
     /// <summary>The first-start welcome flow (name, game, "go online?") finished, or was never needed (a working online profile was already here).</summary>
     public bool SetupDone { get; init; }
+    /// <summary>Home's invitation to Nextendo Network (shown to an install that plays on MKWMP servers) was closed: it stays away.</summary>
+    public bool NextendoInviteDismissed { get; init; }
     /// <summary>The controller shortcut that opens the overlay in the game (<c>overlay_shortcut</c>; the mod takes a change at its next poll).</summary>
     public Overlay.OverlayShortcut OverlayShortcut { get; init; }
 }

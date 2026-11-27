@@ -4,10 +4,10 @@
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              xmlns:settings="clr-namespace:Mkwmp.App.Views.Settings"
              Focusable="False">
-  <!-- DataContext: SettingsViewModel (SettingsViewModel.Nextendo.cs). Settings › Nextendo. Not linked: what a link is
-       and that it stays on this PC, "Link Nextendo Account" (the sign-in page opens in the browser; while the launcher
-       waits for it, a spinner and Cancel) and "Create a Nextendo Account". Linked: the account, its friend code and how
-       it stands, the choice of network ("Play on"), and Unlink. -->
+  <!-- DataContext: SettingsViewModel (SettingsViewModel.Nextendo.cs). Settings › Nextendo. Not signed in: what it is
+       and that the sign-in stays on this PC, "Sign in with Nextendo" (the sign-in page opens in the browser; while the
+       launcher waits for it, a spinner and Cancel) and "Create a Nextendo Account". Signed in: the account, its friend
+       code and how it stands, the choice of network ("Play on"), and Unlink. -->
   <UserControl.Resources>
     <Style x:Key="Note" TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
       <Setter Property="Margin" Value="20,16,20,0" />
@@ -24,7 +24,7 @@
             <c:Icon Data="{StaticResource Icon.Globe}" Width="44" Height="44" Foreground="{DynamicResource Brush.Accent}" />
           </Grid>
           <StackPanel Margin="24,0,0,0" VerticalAlignment="Center" MaxWidth="900">
-            <TextBlock Text="{Binding S[nextendo.title]}" Style="{StaticResource Text.Heading}" />
+            <TextBlock Text="{Binding S[setup.online.heading]}" Style="{StaticResource Text.Heading}" TextWrapping="Wrap" />
             <TextBlock Text="{Binding S[nextendo.about]}" Style="{StaticResource Text.Caption}" />
             <TextBlock Text="{Binding S[nextendo.local]}" Style="{StaticResource Text.Caption}" Margin="0,8,0,0" />
           </StackPanel>
@@ -32,9 +32,9 @@
       </Border>
 
       <StackPanel Margin="0,18,0,0" Visibility="{Binding NextendoCanLink, Converter={StaticResource Conv.Visible}}">
-        <c:SettingsRow Label="{Binding S[nextendo.link]}" Kind="Chevron" Icon="{StaticResource Icon.User}"
+        <c:SettingsRow Label="{Binding S[nextendo.signin]}" Kind="Chevron" Icon="{StaticResource Icon.User}"
                        Command="{Binding LinkNextendoCommand}" Caption="{Binding S[nextendo.link_caption]}" />
-        <c:SettingsRow Label="{Binding S[nextendo.create]}" Kind="Chevron" Icon="{StaticResource Icon.Globe}"
+        <c:SettingsRow Label="{Binding S[nextendo.create]}" Kind="Chevron" Icon="{StaticResource Icon.UserPlus}"
                        Command="{Binding CreateNextendoCommand}" Caption="https://nextendo.network/register.html" />
       </StackPanel>
       <!-- waiting for the browser -->

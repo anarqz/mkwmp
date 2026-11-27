@@ -438,32 +438,67 @@ public sealed class NextendoTests
     // ---- client.toml and mkwmp.toml -------------------------------------------------------
 
     [Fact]
-    public void Play_on_nextendo_only_counts_while_an_account_is_linked()
+    public void Nextendo_is_where_play_goes_unless_the_file_says_otherwise_or_already_has_an_mkwmp_setup()
     {
-        Assert.Equal(PlayNetwork.Mkwmp, ClientConfig.Default().Nextendo.PlayOn);
-        // "nextendo" in the file with no account: MKWMP servers
-        var unlinked = ClientConfig.Parse("[nextendo]\nplay_on = \"nextendo\"\n");
-        Assert.Equal((false, PlayNetwork.Mkwmp, "mkwmp"), (unlinked.Nextendo.Linked, unlinked.Nextendo.PlayOn, unlinked.Nextendo.PlayOnName));
-        Assert.DoesNotContain("[nextendo]", unlinked.ToToml(), StringComparison.Ordinal);
-        Assert.Equal(PlayNetwork.Mkwmp, ClientConfig.Parse("[nextendo]\nplay_on = \"nextendo\"\nusername = \"bia\"\n").Nextendo.PlayOn);
-        Assert.Equal(PlayNetwork.Mkwmp, ClientConfig.Parse("[nextendo]\nplay_on = \"nextendo\"\npid = 7\n").Nextendo.PlayOn);
+        // a fresh install: Nextendo Network, and nothing about it in the file until something is chosen
+        Assert.Equal((PlayNetwork.Nextendo, (PlayNetwork?)null, false), (ClientConfig.Default().PlayOn, ClientConfig.Default().Nextendo.Choice, ClientConfig.Default().HasMkwmpSetup));
+        Assert.DoesNotContain("[nextendo]", ClientConfig.Default().ToToml(), StringComparison.Ordinal);
+        // set up, with a local name, never on a server: Nextendo too
+        Assert.Equal(PlayNetwork.Nextendo, ClientConfig.Parse("name = \"Ana\"\n\n[ui]\nsetup_done = true\n").PlayOn);
+
+        // a file from before play_on existed that has an MKWMP setup stays on MKWMP servers: a server, a PIN, a kept profile
+        Assert.Equal(PlayNetwork.Mkwmp, ClientConfig.Parse("server = \"https://mkw.example.net\"\n").PlayOn);
+        Assert.Equal(PlayNetwork.Mkwmp, ClientConfig.Parse("name = \"Ana\"\npin = \"123456\"\n").PlayOn);
+        var disconnected = ClientConfig.Parse("name = \"Ana\"\n\n[servers.\"https://mkw.example.net\"]\nname = \"Ana\"\npin = \"123456\"\n");
+        Assert.Equal(("", true, PlayNetwork.Mkwmp), (disconnected.Settings.Server, disconnected.HasMkwmpSetup, disconnected.PlayOn));
+        Assert.Null(disconnected.Nextendo.Choice); // not said by the file, and not written back by a mere round trip
+        Assert.DoesNotContain("[nextendo]", disconnected.ToToml(), StringComparison.Ordinal);
+        Assert.True(disconnected.SameAs(ClientConfig.Parse(disconnected.ToToml())));
+
+        // what the file says wins, either way round, with or without an account
+        var chose = ClientConfig.Parse("server = \"https://mkw.example.net\"\n\n[nextendo]\nplay_on = \"nextendo\"\n");
+        Assert.Equal((false, PlayNetwork.Nextendo), (chose.Nextendo.Linked, chose.PlayOn));
+        Assert.Contains("\n[nextendo]\nplay_on = \"nextendo\"\n", chose.ToToml(), StringComparison.Ordinal);
+        Assert.DoesNotContain("pid", chose.ToToml(), StringComparison.Ordinal);
+        Assert.True(chose.SameAs(ClientConfig.Parse(chose.ToToml())));
+        var mkwmp = ClientConfig.Parse("[nextendo]\nplay_on = \"MKWMP\"\n");
+        Assert.Equal((PlayNetwork.Mkwmp, false), (mkwmp.PlayOn, mkwmp.HasMkwmpSetup));
+        Assert.Contains("\n[nextendo]\nplay_on = \"mkwmp\"\n", mkwmp.ToToml(), StringComparison.Ordinal);
+        // a network that is neither is no choice
+        Assert.Equal(PlayNetwork.Nextendo, ClientConfig.Parse("[nextendo]\nplay_on = \"somewhere\"\n").PlayOn);
+        Assert.Equal(PlayNetwork.Mkwmp, ClientConfig.Parse("server = \"s.test\"\n\n[nextendo]\nplay_on = \"somewhere\"\n").PlayOn);
+
+        // half an account is no account; the choice is its own and stays
+        var half = ClientConfig.Parse("[nextendo]\nplay_on = \"nextendo\"\nusername = \"bia\"\n");
+        Assert.Equal((false, PlayNetwork.Nextendo), (half.Nextendo.Linked, half.PlayOn));
+        Assert.Equal((false, PlayNetwork.Mkwmp), (ClientConfig.Parse("[nextendo]\nplay_on = \"mkwmp\"\npid = 7\n").Nextendo.Linked, ClientConfig.Parse("[nextendo]\nplay_on = \"mkwmp\"\npid = 7\n").PlayOn));
 
         var linked = ClientConfig.Parse("[nextendo]\nplay_on = \"nextendo\"\npid = 1234567\nusername = \"bia\"\nfriend_code = \"SW-1\"\n");
         Assert.Equal((true, PlayNetwork.Nextendo, 1234567L, "bia", "SW-1"),
-            (linked.Nextendo.Linked, linked.Nextendo.PlayOn, linked.Nextendo.Pid, linked.Nextendo.Username, linked.Nextendo.FriendCode));
+            (linked.Nextendo.Linked, linked.PlayOn, linked.Nextendo.Pid, linked.Nextendo.Username, linked.Nextendo.FriendCode));
         Assert.Contains("\n[nextendo]\nplay_on = \"nextendo\"\npid = 1234567\nusername = \"bia\"\nfriend_code = \"SW-1\"\n", linked.ToToml(), StringComparison.Ordinal);
         Assert.True(linked.SameAs(ClientConfig.Parse(linked.ToToml())));
         Assert.False(linked.SameAs(linked with { Nextendo = linked.Nextendo.Playing(PlayNetwork.Mkwmp) }));
-        Assert.Equal(PlayNetwork.Mkwmp, ClientConfig.Parse("[nextendo]\nplay_on = \"somewhere\"\npid = 7\nusername = \"bia\"\n").Nextendo.PlayOn);
+        // an account with MKWMP servers chosen: both are kept
+        var both = linked with { Nextendo = linked.Nextendo.Playing(PlayNetwork.Mkwmp) };
+        Assert.Equal((true, PlayNetwork.Mkwmp), (ClientConfig.Parse(both.ToToml()).Nextendo.Linked, ClientConfig.Parse(both.ToToml()).PlayOn));
 
-        // unlinking falls back, and so does choosing Nextendo with no account
-        Assert.Equal(PlayNetwork.Mkwmp, NextendoLink.None.Playing(PlayNetwork.Nextendo).PlayOn);
-        Assert.Same(NextendoLink.None, NextendoLink.Of("nextendo", 0, "bia", ""));
-        Assert.Equal(PlayNetwork.Nextendo, linked.Nextendo.Named(1234567, "bia2", "SW-2").PlayOn); // a new name keeps the choice
+        // unlinking keeps the choice, choosing needs no account, and a new name keeps the choice
+        Assert.Equal((false, (PlayNetwork?)PlayNetwork.Nextendo), (linked.Nextendo.Unlinked().Linked, linked.Nextendo.Unlinked().Choice));
+        Assert.Equal((false, (PlayNetwork?)PlayNetwork.Mkwmp), (both.Nextendo.Unlinked().Linked, both.Nextendo.Unlinked().Choice));
+        Assert.Equal(PlayNetwork.Mkwmp, NextendoLink.None.Playing(PlayNetwork.Mkwmp).Choice);
+        Assert.Equal(NextendoLink.None, NextendoLink.Of("", 0, "bia", ""));
+        Assert.Equal((PlayNetwork?)PlayNetwork.Nextendo, linked.Nextendo.Named(1234567, "bia2", "SW-2").Choice);
+        Assert.Null(NextendoLink.None.Named(1234567, "bia", "SW-1").Choice); // naming an account chooses nothing by itself
         // nothing of a token is ever in the file
         Assert.DoesNotContain("token", linked.ToToml(), StringComparison.OrdinalIgnoreCase);
-    }
 
+        // home's invitation, once closed, stays closed; the key is only written then
+        Assert.DoesNotContain("nextendo_invite_dismissed", ClientConfig.Default().ToToml(), StringComparison.Ordinal);
+        var closed = new ClientConfig { Settings = new LauncherSettings { Ui = new UiSettings { NextendoInviteDismissed = true } } };
+        Assert.Contains("\nnextendo_invite_dismissed = true\n", closed.ToToml(), StringComparison.Ordinal);
+        Assert.True(ClientConfig.Parse(closed.ToToml()).Settings.Ui.NextendoInviteDismissed);
+    }
     [Fact]
     public void Mkwmp_toml_for_an_mkwmp_server_is_unchanged_and_for_nextendo_is_the_contract_s()
     {
@@ -509,7 +544,9 @@ public sealed class NextendoTests
         var nextendo = new FakeNextendo();
         await using var rig = new Rig(seat, s => s with { Launch = false }, http: new TwoNetworks(seat, nextendo));
         var launcher = rig.Launcher;
-        Assert.Equal(NextendoView.None, launcher.Nextendo);
+        // the rig's install plays on an MKWMP server: it was never moved to Nextendo by itself
+        Assert.Equal((false, PlayNetwork.Mkwmp, false, false), (launcher.Nextendo.Linked, launcher.Nextendo.PlayOn, launcher.Nextendo.Preferred, launcher.Nextendo.NeedsSignIn));
+        Assert.True(launcher.OnlineEnabled);
         Uri? opened = null;
         using var browser = new HttpClient();
         await launcher.LinkNextendoAsync(page =>
@@ -527,9 +564,12 @@ public sealed class NextendoTests
             return true;
         });
         Assert.StartsWith("https://nextendo.network/api/oauth/authorize?", opened!.AbsoluteUri, StringComparison.Ordinal);
+        // signing in is the choice of Nextendo: PLAY goes there from now on, and the MKWMP server is left alone
         var view = launcher.Nextendo;
-        Assert.Equal((true, "bia", "SW-1111-2222-3333", PlayNetwork.Mkwmp, false, false), (view.Linked, view.Username, view.FriendCode, view.PlayOn, view.Active, view.Linking));
+        Assert.Equal((true, "bia", "SW-1111-2222-3333", PlayNetwork.Nextendo, true, false), (view.Linked, view.Username, view.FriendCode, view.PlayOn, view.Active, view.Linking));
         Assert.Equal((Strings.NextendoLinked("bia"), false), (view.Note, view.NoteIsError));
+        Assert.Equal("Signed in as bia", view.Note);
+        Assert.False(launcher.OnlineEnabled);
         // the exchange carried the verifier of the challenge and the same redirect
         var exchange = nextendo.Forms[0];
         Assert.Equal(("authorization_code", "code-1", HttpUtility.ParseQueryString(opened.Query)["redirect_uri"]), (exchange["grant_type"], exchange["code"], exchange["redirect_uri"]));
@@ -537,7 +577,7 @@ public sealed class NextendoTests
 
         // on this PC: who it is in client.toml, the sign-in protected beside it; no token in the settings or the log
         var saved = File.ReadAllText(rig.ConfigPath);
-        Assert.Contains("[nextendo]\nplay_on = \"mkwmp\"\npid = 1234567\nusername = \"bia\"", saved, StringComparison.Ordinal);
+        Assert.Contains("[nextendo]\nplay_on = \"nextendo\"\npid = 1234567\nusername = \"bia\"", saved, StringComparison.Ordinal);
         Assert.Equal("refresh-0", NextendoVault.Beside(rig.ConfigPath).Load());
         await Rig.Until("the account to be asked about", () => !launcher.Nextendo.Checking && nextendo.Count("GET /api/oauth/userinfo") >= 2);
         var log = ReadShared(launcher.Log.Path!);
@@ -553,23 +593,192 @@ public sealed class NextendoTests
         // and nothing of it reached the MKWMP server
         Assert.Empty(seat.Requests);
 
-        // the choice: saved, and back to MKWMP servers when the account is unlinked
+        // the choice is the player's (Settings): MKWMP servers with the account kept, and back
+        await Rig.Until("the account's standing", () => launcher.Nextendo is { Checking: false, Status.Length: > 0 });
+        Assert.Equal((Strings.NextendoAllowed, "good"), (launcher.Nextendo.Status, launcher.Nextendo.Tone));
+        await launcher.SetPlayOnAsync(PlayNetwork.Mkwmp);
+        Assert.Equal((true, PlayNetwork.Mkwmp, false), (launcher.Nextendo.Linked, launcher.Nextendo.PlayOn, launcher.Nextendo.Active));
+        Assert.True(launcher.OnlineEnabled);
+        Assert.Equal(PlayNetwork.Mkwmp, ClientConfig.Load(rig.ConfigPath).PlayOn);
         await launcher.SetPlayOnAsync(PlayNetwork.Nextendo);
         Assert.True(launcher.Nextendo.Active);
         Assert.False(launcher.OnlineEnabled);
-        Assert.Equal(PlayNetwork.Nextendo, ClientConfig.Load(rig.ConfigPath).Nextendo.PlayOn);
-        await Rig.Until("the account's standing", () => launcher.Nextendo is { Checking: false, Status.Length: > 0 });
-        Assert.Equal((Strings.NextendoAllowed, "good"), (launcher.Nextendo.Status, launcher.Nextendo.Tone));
-        await launcher.UnlinkNextendoAsync();
-        Assert.Equal((false, PlayNetwork.Mkwmp, false), (launcher.Nextendo.Linked, launcher.Nextendo.PlayOn, launcher.Nextendo.Active));
-        Assert.True(launcher.OnlineEnabled);
-        Assert.False(NextendoVault.Beside(rig.ConfigPath).Exists);
-        Assert.DoesNotContain("[nextendo]", File.ReadAllText(rig.ConfigPath), StringComparison.Ordinal);
-        Assert.Equal("refresh-0", nextendo.Forms[^1]["token"]); // revoked there, with the refresh token that was kept
-        Assert.Equal(1, nextendo.Count("POST /api/oauth/revoke"));
-        // choosing Nextendo with no account changes nothing
+        Assert.Equal(PlayNetwork.Nextendo, ClientConfig.Load(rig.ConfigPath).PlayOn);
+        // signing in again (the same account) keeps a choice of MKWMP servers: only the first sign-in chooses
+        await launcher.SetPlayOnAsync(PlayNetwork.Mkwmp);
+        await launcher.LinkNextendoAsync(page =>
+        {
+            var query = HttpUtility.ParseQueryString(page.Query);
+            nextendo.Challenge = query["code_challenge"];
+            _ = Task.Run(() => browser.GetAsync($"{query["redirect_uri"]}?code=code-1&state={query["state"]}"));
+            return true;
+        });
+        Assert.Equal((true, PlayNetwork.Mkwmp, false), (launcher.Nextendo.Linked, launcher.Nextendo.PlayOn, launcher.Nextendo.NoteIsError));
         await launcher.SetPlayOnAsync(PlayNetwork.Nextendo);
-        Assert.Equal((PlayNetwork.Mkwmp, Strings.NextendoNotLinked), (launcher.Nextendo.PlayOn, launcher.Nextendo.Note));
+
+        // unlinked: Nextendo stays where PLAY goes (offline until someone signs in), and no MKWMP server comes back by itself
+        await launcher.UnlinkNextendoAsync();
+        Assert.Equal((false, PlayNetwork.Nextendo, false, true), (launcher.Nextendo.Linked, launcher.Nextendo.PlayOn, launcher.Nextendo.Active, launcher.Nextendo.NeedsSignIn));
+        Assert.False(launcher.OnlineEnabled);
+        Assert.Equal(Strings.ReadyOffline, launcher.Session.Status);
+        Assert.False(NextendoVault.Beside(rig.ConfigPath).Exists);
+        var after = File.ReadAllText(rig.ConfigPath);
+        Assert.Contains("\n[nextendo]\nplay_on = \"nextendo\"\n", after, StringComparison.Ordinal);
+        Assert.DoesNotContain("bia", after, StringComparison.Ordinal);
+        Assert.DoesNotContain("pid", after, StringComparison.Ordinal);
+        Assert.Equal(1, nextendo.Count("POST /api/oauth/revoke")); // revoked there, with the refresh token that was kept
+        Assert.StartsWith("refresh-", nextendo.Forms[^1]["token"], StringComparison.Ordinal);
+        Assert.Empty(seat.Requests);
+        // the choice needs no account, either way
+        await launcher.SetPlayOnAsync(PlayNetwork.Mkwmp);
+        Assert.Equal((PlayNetwork.Mkwmp, true), (launcher.Nextendo.PlayOn, launcher.OnlineEnabled));
+        await launcher.SetPlayOnAsync(PlayNetwork.Nextendo);
+        Assert.Equal((PlayNetwork.Nextendo, false, (string?)null), (launcher.Nextendo.PlayOn, launcher.OnlineEnabled, launcher.Nextendo.Note));
+    }
+
+    /// <summary>A launcher on a client.toml with no MKWMP setup at all (no server, no PIN), as a fresh install after its welcome; both fake networks.</summary>
+    private static Rig Fresh(FakeSeatServer seat, FakeNextendo nextendo) =>
+        new(seat, s => s with { Server = "", Pin = "", AdultConsent = false, Launch = false }, http: new TwoNetworks(seat, nextendo));
+
+    [Fact]
+    public async Task A_fresh_install_plays_on_nextendo_and_play_is_offline_until_someone_signs_in()
+    {
+        var seat = new FakeSeatServer();
+        var nextendo = new FakeNextendo();
+        await using var rig = Fresh(seat, nextendo);
+        var launcher = rig.Launcher;
+        var view = launcher.Nextendo;
+        Assert.Equal((false, PlayNetwork.Nextendo, true, true, false), (view.Linked, view.PlayOn, view.Preferred, view.NeedsSignIn, view.Active));
+        Assert.False(launcher.OnlineEnabled);
+        Assert.Equal(ServerState.NotAsked, launcher.Server.State);
+
+        // the welcome ends without any MKWMP profile (no server, no gamertag registered, no PIN, no consent): PLAY is ready, offline
+        await launcher.SaveSettingsAsync(launcher.Settings with { Ui = launcher.Settings.Ui with { SetupDone = true } });
+        Assert.True(launcher.Settings.Ui.SetupDone);
+        Assert.Equal(("", "", false), (launcher.Settings.Server, launcher.Settings.Pin, launcher.Settings.AdultConsent));
+        Assert.Null(launcher.PlayProblem);
+        Assert.Equal((Strings.ReadyOffline, "plain"), (launcher.Session.Status, launcher.Session.Tone));
+        Assert.Equal(Strings.LocalNameNextendo, launcher.Profile.Message);
+        Assert.Contains("\n[nextendo]\nplay_on = \"nextendo\"\n", File.ReadAllText(rig.ConfigPath), StringComparison.Ordinal); // said, from the first save on
+        // the checklist's online row asks to sign in with Nextendo, never for an MKWMP server; it does not block PLAY
+        var row = launcher.Checklist.Find(CheckId.Online)!;
+        Assert.Equal((CheckState.NotApplicable, false, CheckActionKind.SignInNextendo), (row.State, row.Blocks, row.Action!.Kind));
+        Assert.Equal(("Offline: sign in with Nextendo to race online", "Sign in with Nextendo"), (row.Status, row.Action.Label));
+        Assert.True(launcher.Checklist.Ready);
+
+        // PLAY, not signed in: the game starts offline, pointed at no network, and nothing is contacted
+        await launcher.PlayAsync();
+        await Rig.Until("the session to run", () => launcher.Session.State is SessionState.Running or SessionState.Failed);
+        Assert.Equal((SessionState.Running, (SeatPhase?)null), (launcher.Session.State, launcher.Session.Phase));
+        var keys = File.ReadAllText(Path.Combine(rig.Game, "mkwmp.toml")).Split('\n')
+            .Where(line => line.Contains('=', StringComparison.Ordinal) && !line.StartsWith('#')).Select(line => line.Split('=')[0].Trim()).ToList();
+        Assert.Contains("launcher_token", keys);
+        foreach (var absent in new[] { "backend", "server", "ticket", "name", "nextendo_ca" })
+        {
+            Assert.DoesNotContain(absent, keys);
+        }
+        Assert.False(File.Exists(Path.Combine(rig.Game, "nextendo-ca.pem")));
+        using var api = new LocalApi(launcher, TimeProvider.System);
+        var bearer = "Bearer " + launcher.Token;
+        // the game's Online Play is told where to sign in (not to connect to a server)
+        var asked = await api.HandleAsync("POST", "/local/v1/seat", bearer, default, default);
+        Assert.Equal((409, "refused", Strings.NextendoSignInInGame),
+            (asked.Status, JsonNode.Parse(asked.Body!)!["state"]!.GetValue<string>(), JsonNode.Parse(asked.Body!)!["message"]!.GetValue<string>()));
+        var session = await api.HandleAsync("GET", "/local/v1/nextendo/session", bearer, default, default);
+        Assert.Equal((409, "unlinked"), (session.Status, JsonNode.Parse(session.Body!)!["reason"]!.GetValue<string>()));
+        // signing in waits for STOP: the game that runs is offline, and nothing changes under it
+        await launcher.LinkNextendoAsync(_ => throw new InvalidOperationException("no browser while the game runs"));
+        Assert.Equal((false, Strings.PressStopFirst, true), (launcher.Nextendo.Linked, launcher.Nextendo.Note, launcher.Nextendo.NoteIsError));
+        await launcher.StopAsync();
+        Assert.Equal(SessionState.Idle, launcher.Session.State);
+        Assert.Empty(seat.Requests);
+        Assert.Empty(nextendo.Requests);
+
+        // signed in: PLAY goes online on Nextendo, with no MKWMP server ever chosen
+        using var browser = new HttpClient();
+        await launcher.LinkNextendoAsync(page =>
+        {
+            var query = HttpUtility.ParseQueryString(page.Query);
+            nextendo.Challenge = query["code_challenge"];
+            _ = Task.Run(() => browser.GetAsync($"{query["redirect_uri"]}?code=code-1&state={query["state"]}"));
+            return true;
+        });
+        Assert.Equal((true, PlayNetwork.Nextendo, true, false), (launcher.Nextendo.Linked, launcher.Nextendo.PlayOn, launcher.Nextendo.Active, launcher.Nextendo.NeedsSignIn));
+        Assert.Equal(Strings.NextendoReady, launcher.Session.Status);
+        Assert.Equal(CheckState.Ok, launcher.Checklist.Find(CheckId.Online)!.State);
+        await launcher.PlayAsync();
+        await Rig.Until("the session to run", () => launcher.Session.State is SessionState.Running or SessionState.Failed);
+        Assert.Equal(SessionState.Running, launcher.Session.State);
+        Assert.StartsWith("backend = \"nextendo\"\nname = \"bia\"\n", File.ReadAllText(Path.Combine(rig.Game, "mkwmp.toml")), StringComparison.Ordinal);
+        await launcher.StopAsync();
+        Assert.Empty(seat.Requests);
+    }
+
+    [Fact]
+    public async Task Mkwmp_servers_are_the_player_s_choice_and_only_then_is_a_server_s_consent_asked()
+    {
+        var seat = new FakeSeatServer();
+        await using var rig = Fresh(seat, new FakeNextendo());
+        var launcher = rig.Launcher;
+        Assert.Null(launcher.PlayProblem); // on Nextendo nothing of an MKWMP server is asked for: no gamertag, PIN or consent
+
+        // "Use MKWMP Servers Instead": no server yet, so still nothing is contacted, and the checklist now speaks of a server
+        await launcher.SetPlayOnAsync(PlayNetwork.Mkwmp);
+        Assert.Equal((PlayNetwork.Mkwmp, false, false), (launcher.Nextendo.PlayOn, launcher.Nextendo.Preferred, launcher.Nextendo.NeedsSignIn));
+        Assert.False(launcher.OnlineEnabled);
+        Assert.Null(launcher.PlayProblem);
+        Assert.Equal(CheckActionKind.ChooseServer, launcher.Checklist.Find(CheckId.Online)!.Action!.Kind);
+        Assert.Equal(Strings.LocalNameOnly, launcher.Profile.Message);
+        Assert.Contains("play_on = \"mkwmp\"", File.ReadAllText(rig.ConfigPath), StringComparison.Ordinal);
+        Assert.Empty(seat.Requests);
+
+        // a server chosen: its profile, then its consent, gate PLAY, here and not before
+        await launcher.SaveSettingsAsync(launcher.Settings with { Server = FakeSeatServer.Url });
+        Assert.True(launcher.OnlineEnabled);
+        Assert.False(launcher.Settings.AdultConsent);
+        Assert.Equal(Strings.NeedPin, launcher.PlayProblem);
+        await launcher.SaveSettingsAsync(launcher.Settings with { Pin = "123456" });
+        Assert.Equal(Strings.NoConsent, launcher.PlayProblem);
+        Assert.Equal(CheckActionKind.ReviewPrivacy, launcher.Checklist.Find(CheckId.Online)!.Action!.Kind);
+
+        // and back: Nextendo again, the MKWMP server left alone whatever is set, PLAY ready (offline until signed in)
+        await launcher.SetPlayOnAsync(PlayNetwork.Nextendo);
+        Assert.Equal((PlayNetwork.Nextendo, false), (launcher.Nextendo.PlayOn, launcher.OnlineEnabled));
+        Assert.Equal(FakeSeatServer.Url, launcher.Settings.Server); // kept for when MKWMP servers are chosen again
+        Assert.Null(launcher.PlayProblem);
+        Assert.Equal(CheckActionKind.SignInNextendo, launcher.Checklist.Find(CheckId.Online)!.Action!.Kind);
+    }
+
+    [Fact]
+    public async Task Choosing_a_server_is_choosing_mkwmp_servers()
+    {
+        var seat = new FakeSeatServer();
+        await using var rig = Fresh(seat, new FakeNextendo());
+        Assert.True(rig.Launcher.Nextendo.Preferred);
+        // a server set by any other way than Settings › Online's switch (the headless launcher, a hand-edited file's reload):
+        // it would be contacted by nothing while PLAY goes to Nextendo, so the choice follows
+        await rig.Launcher.SaveSettingsAsync(rig.Launcher.Settings with { Server = FakeSeatServer.Url });
+        Assert.Equal((PlayNetwork.Mkwmp, true), (rig.Launcher.Nextendo.PlayOn, rig.Launcher.OnlineEnabled));
+        Assert.Equal(PlayNetwork.Mkwmp, ClientConfig.Load(rig.ConfigPath).PlayOn);
+    }
+
+    [Fact]
+    public async Task An_install_with_an_mkwmp_setup_stays_on_mkwmp_servers_also_once_its_server_or_profile_is_gone()
+    {
+        var seat = new FakeSeatServer();
+        await using var rig = new Rig(seat, s => s with { Launch = false }, http: new TwoNetworks(seat, new FakeNextendo()));
+        var launcher = rig.Launcher;
+        Assert.DoesNotContain("[nextendo]", File.ReadAllText(rig.ConfigPath), StringComparison.Ordinal); // a file from before Nextendo
+        Assert.Equal((PlayNetwork.Mkwmp, true, Strings.Ready), (launcher.Nextendo.PlayOn, launcher.OnlineEnabled, launcher.Session.Status));
+        // home's invitation is closed: kept, and MKWMP servers are now said in the file
+        await launcher.SaveSettingsAsync(launcher.Settings with { Ui = launcher.Settings.Ui with { NextendoInviteDismissed = true } });
+        var saved = File.ReadAllText(rig.ConfigPath);
+        Assert.Contains("\nnextendo_invite_dismissed = true\n", saved, StringComparison.Ordinal);
+        Assert.Contains("\n[nextendo]\nplay_on = \"mkwmp\"\n", saved, StringComparison.Ordinal);
+        // disconnected: locked "Configure Online" as before, not Nextendo by surprise
+        await launcher.SaveSettingsAsync(launcher.Settings with { Server = "" });
+        Assert.Equal((PlayNetwork.Mkwmp, false, false), (launcher.Nextendo.PlayOn, launcher.OnlineEnabled, launcher.Nextendo.NeedsSignIn));
+        Assert.Equal(CheckActionKind.ChooseServer, launcher.Checklist.Find(CheckId.Online)!.Action!.Kind);
     }
 
     [Fact]
@@ -617,9 +826,15 @@ public sealed class NextendoTests
     [Fact]
     public async Task An_account_named_in_the_settings_without_its_sign_in_is_not_linked()
     {
+        // the choice of Nextendo stays: PLAY is offline until someone signs in on this PC, and the MKWMP server in the file is left alone
         await using var rig = new NextendoRig(vault: false);
-        Assert.Equal((false, PlayNetwork.Mkwmp, false), (rig.Launcher.Nextendo.Linked, rig.Launcher.Nextendo.PlayOn, rig.Launcher.Nextendo.Active));
-        Assert.True(rig.Launcher.OnlineEnabled);
+        Assert.Equal((false, PlayNetwork.Nextendo, false, true), (rig.Launcher.Nextendo.Linked, rig.Launcher.Nextendo.PlayOn, rig.Launcher.Nextendo.Active, rig.Launcher.Nextendo.NeedsSignIn));
+        Assert.False(rig.Launcher.OnlineEnabled);
+        Assert.Null(rig.Launcher.PlayProblem);
+        Assert.Equal(Strings.ReadyOffline, rig.Launcher.Session.Status);
+        // and one that had MKWMP servers chosen stays on them
+        await using var mkwmp = new NextendoRig(playOn: "mkwmp", vault: false);
+        Assert.Equal((false, PlayNetwork.Mkwmp, true), (mkwmp.Launcher.Nextendo.Linked, mkwmp.Launcher.Nextendo.PlayOn, mkwmp.Launcher.OnlineEnabled));
     }
 
     [Fact]

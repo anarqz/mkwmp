@@ -109,11 +109,15 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         var vault = NextendoVault.Beside(configPath);
         _nextendo = new NextendoAccount(_nextendoApi, vault, _clock);
         // An account client.toml names without its sign-in beside it (the file was copied from another PC, or the
-        // sign-in deleted) is not linked here: PLAY goes to MKWMP servers.
+        // sign-in deleted) is not linked here: the choice of network stays, and on Nextendo the window asks to sign in.
         if (_config.Nextendo.Linked && !vault.Exists)
         {
-            _config = _config with { Nextendo = NextendoLink.None };
+            _config = _config with { Nextendo = _config.Nextendo.Unlinked() };
         }
+        // Where PLAY goes online is settled here, once: what the file says, else Nextendo Network, else (an install
+        // that already has an MKWMP setup) MKWMP servers. Kept from now on, and written at the next save: it never
+        // changes under the player because a server or a profile came or went.
+        _config = _config with { Nextendo = _config.Nextendo.Playing(_config.PlayOn) };
         WatchOverlayHost();
         _devices = new DeviceLab(CameraFolders, Log.Note);
         Token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
@@ -236,10 +240,11 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
     /// PLAY starts the game with no seat, and the game's own request for one is refused.
     /// </summary>
     /// <remarks>
-    /// Also false while PLAY goes to Nextendo Network (<see cref="NextendoMode"/>, Launcher.Nextendo.cs): no MKWMP
-    /// server is contacted then, whatever server is set.
+    /// Also false while Nextendo Network is where PLAY goes online (<see cref="OnNextendo"/>, Launcher.Nextendo.cs),
+    /// with or without a linked account: no MKWMP server is contacted then, whatever server is set. MKWMP servers
+    /// are the player's own choice (Settings › Online).
     /// </remarks>
-    internal bool IsOnline(LauncherSettings s) => HasServer(s) && !_offlineOnly && !NextendoMode;
+    internal bool IsOnline(LauncherSettings s) => HasServer(s) && !_offlineOnly && !OnNextendo;
 
     public bool OnlineEnabled => IsOnline(Settings);
 
@@ -250,7 +255,9 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
 
     bool ILocalApiHost.Online => IsOnline(Settings);
 
-    string ILocalApiHost.OfflineText => _offlineOnly ? Strings.UpdateToPlayOnlineInGame : Strings.OnlineOffInGame;
+    string ILocalApiHost.OfflineText => _offlineOnly ? Strings.UpdateToPlayOnlineInGame
+        : OnNextendo ? Strings.NextendoSignInInGame
+        : Strings.OnlineOffInGame;
 
     /// <summary>The registered game targets (the selected one first is not implied: see <see cref="LauncherSettings.Target"/>).</summary>
     public TargetRegistry Targets => _targets;
@@ -414,7 +421,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         var nameValid = ClientConfig.ValidName(s.Name);
         var (message, isError) = s.Name.Length > 0 && !nameValid ? (Strings.NameRule, true)
             : _register == RegisterState.Failed ? (_registerMessage ?? Strings.ServerError, true)
-            : !online ? (nameValid ? Strings.LocalNameOnly : Strings.PickLocalName, false)
+            : !online ? (!nameValid ? Strings.PickLocalName : OnNextendo ? Strings.LocalNameNextendo : Strings.LocalNameOnly, false)
             : _register == RegisterState.Deleted && s.Name.Length == 0 ? (Strings.ProfileDeleted, false)
             : _register == RegisterState.Taken && s.Pin.Length != 6 ? (Strings.NameIsRegistered, true)
             : s.Pin.Length == 6 ? (Strings.KeepYourPin, false)
@@ -583,7 +590,10 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         }
         // The consent is given to one server (its own policy): another server starts without it, a known one with what
         // was given there. (A server that keeps consent itself says so again at the sign-in.) Offline it means nothing.
-        if (serverChanged && IsOnline(settings) && settings.AdultConsent == before.AdultConsent)
+        // Choosing an MKWMP server is choosing MKWMP servers: nothing would reach it while PLAY goes to Nextendo.
+        // (The window offers a server only once MKWMP servers are chosen; this keeps every other way in consistent.)
+        var toMkwmp = serverChanged && HasServer(settings) && OnNextendo && !_offlineOnly && !Session.Busy;
+        if (serverChanged && (IsOnline(settings) || toMkwmp) && settings.AdultConsent == before.AdultConsent)
         {
             settings = settings with { AdultConsent = Config.ConsentFor(settings.Server, settings.Name) };
         }
@@ -591,7 +601,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         try
         {
             // The voice lists the game owns (its devices, its mutes) are kept as they are now.
-            EditConfig(c => c with { Settings = settings }, wakeFriends: true);
+            EditConfig(c => c with { Settings = settings, Nextendo = toMkwmp ? c.Nextendo.Playing(PlayNetwork.Mkwmp) : c.Nextendo }, wakeFriends: true);
         }
         catch (LauncherException e)
         {

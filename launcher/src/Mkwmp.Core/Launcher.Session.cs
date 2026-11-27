@@ -298,7 +298,9 @@ public sealed partial class Launcher
         {
             // Also takes away what an online session left there: the server, the name, a ticket, the lobby's certificate.
             target.WriteSession(install, SessionFile.Offline(address, Token, LauncherExe));
-            Note("playing offline: no server is set (SETTINGS > ONLINE), so no seat is taken and no server is contacted");
+            Note(OnNextendo
+                ? "playing offline: no Nextendo account is linked (SETTINGS > NEXTENDO), and no server is contacted"
+                : "playing offline: no server is set (SETTINGS > ONLINE), so no seat is taken and no server is contacted");
         }
 
         IGameProcess? game = null;

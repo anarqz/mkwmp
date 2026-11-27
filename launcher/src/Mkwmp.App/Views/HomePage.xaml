@@ -5,15 +5,20 @@
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              Focusable="False">
   <!-- DataContext: HomeViewModel. The title of the focused tile (centred above it by the code-behind), the
-       carousel, the session's status with the server's (no server part while online is locked), the dock.
-       The top bar and the hint bar are the shell's. -->
+       carousel, the session's status with where PLAY goes online beside it (the Nextendo account, or "Sign in with
+       Nextendo to play online"; for an install on MKWMP servers its server, and under it the invitation to Nextendo
+       until it is closed), the dock. The top bar and the hint bar are the shell's. -->
   <Grid>
+    <!-- The status takes the height it needs (one line; two with the invitation), with the room left shared around
+         it and under the dock in the proportions home always had (a line of 50 in a stage 1080 high). -->
     <Grid.RowDefinitions>
       <RowDefinition Height="76" />
       <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
+      <RowDefinition Height="0.5*" />
       <RowDefinition Height="Auto" />
-      <RowDefinition Height="1.1*" />
+      <RowDefinition Height="0.65*" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="2.15*" />
     </Grid.RowDefinitions>
 
     <!-- the title of the tile under the focus: follows the tile, hidden while the focus is elsewhere -->
@@ -50,8 +55,9 @@
       </ItemsControl>
     </c:SmoothScrollViewer>
 
-    <!-- the session's status (a click explains what blocks PLAY), then the server's -->
-    <StackPanel x:Name="StatusLine" Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+    <!-- the session's status (a click explains what blocks PLAY), then where PLAY goes online -->
+    <StackPanel x:Name="StatusLine" Grid.Row="3" HorizontalAlignment="Center" VerticalAlignment="Center" MinHeight="50">
+     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
       <Button Style="{StaticResource ChromeButton}" Padding="18,10" Command="{Binding StatusCommand}">
         <StackPanel Orientation="Horizontal">
           <c:Spinner Width="30" Height="30" Margin="0,0,14,0" Visibility="{Binding IsWorking, Converter={StaticResource Conv.Visible}}" />
@@ -123,22 +129,45 @@
                    Foreground="{DynamicResource Brush.TextMuted}" />
       </StackPanel>
 
-      <!-- where PLAY goes online, once a Nextendo account is linked: "Play on: MKWMP servers | Nextendo Network" (A: the choice) -->
-      <Border Width="1.5" Height="30" Margin="30,0,14,0" Background="{DynamicResource Brush.Rule}"
-              Visibility="{Binding ShowPlayOn, Converter={StaticResource Conv.Visible}}" />
-      <Button Style="{StaticResource ChromeButton}" Padding="18,10" Command="{Binding PlayOnCommand}"
-              Visibility="{Binding ShowPlayOn, Converter={StaticResource Conv.Visible}}">
+      <!-- Nextendo Network, signed in: the account PLAY goes online with (a click: Settings › Nextendo) -->
+      <Border Width="1.5" Height="30" Margin="14,0,14,0" Background="{DynamicResource Brush.Rule}"
+              Visibility="{Binding ShowNextendoAccount, Converter={StaticResource Conv.Visible}}" />
+      <Button Style="{StaticResource ChromeButton}" Padding="18,10" Command="{Binding NextendoAccountCommand}"
+              Visibility="{Binding ShowNextendoAccount, Converter={StaticResource Conv.Visible}}">
         <StackPanel Orientation="Horizontal">
           <c:Icon Data="{StaticResource Icon.Globe}" Width="30" Height="30" Margin="0,0,12,0" StrokeThickness="2" Foreground="{DynamicResource Brush.Accent}" />
-          <TextBlock Text="{Binding PlayOnText}" Style="{StaticResource Text.Base}" FontSize="24" FontWeight="SemiBold"
-                     Foreground="{DynamicResource Brush.Text}" />
-          <c:Icon Data="{StaticResource Icon.ChevronRight}" Width="26" Height="26" Margin="8,2,0,0" StrokeThickness="2.4"
-                  Foreground="{DynamicResource Brush.TextMuted}" />
+          <TextBlock Text="{Binding NextendoAccountText}" Style="{StaticResource Text.Base}" FontSize="24" FontWeight="SemiBold"
+                     Foreground="{DynamicResource Brush.Text}" MaxWidth="560" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding NextendoFriendCode}" Style="{StaticResource Text.Base}" FontSize="24" Margin="16,0,0,0"
+                     Foreground="{DynamicResource Brush.TextMuted}"
+                     Visibility="{Binding NextendoFriendCode, Converter={StaticResource Conv.Visible}}" />
         </StackPanel>
       </Button>
-    </StackPanel>
 
-    <Border x:Name="DockHost" Grid.Row="3" Style="{StaticResource Dock}">
+      <!-- Nextendo Network, nobody signed in: PLAY is offline, and this is the way online (the browser, and a card that waits) -->
+      <c:ConsoleButton Kind="Primary" Height="62" MinWidth="0" Padding="28,0" FontSize="25" Margin="22,0,0,0" VerticalAlignment="Center"
+                       Icon="{StaticResource Icon.UserPlus}" Content="{Binding S[home.nextendo.signin]}" Command="{Binding NextendoSignInCommand}" input:FocusNav.IsBanner="True"
+                       Visibility="{Binding ShowNextendoSignIn, Converter={StaticResource Conv.Visible}}" />
+     </StackPanel>
+
+     <!-- an install that plays on MKWMP servers: the invitation to Nextendo Network, until it is closed -->
+     <Border Style="{StaticResource Card}" Padding="26,8,12,8" Margin="0,8,0,0" HorizontalAlignment="Center"
+             Visibility="{Binding ShowNextendoInvite, Converter={StaticResource Conv.Visible}}">
+       <StackPanel Orientation="Horizontal" input:FocusNav.IsGroup="True">
+         <c:Icon Data="{StaticResource Icon.Globe}" Width="40" Height="40" StrokeThickness="1.9" VerticalAlignment="Center" Margin="0,0,20,0"
+                 Foreground="{DynamicResource Brush.Accent}" />
+         <StackPanel VerticalAlignment="Center" MaxWidth="1000" Margin="0,0,26,0">
+           <TextBlock Text="{Binding S[home.invite.title]}" Style="{StaticResource Text.Base}" FontSize="25" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+           <TextBlock Text="{Binding S[home.invite.text]}" Style="{StaticResource Text.Caption}" FontSize="20" LineHeight="26" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+         </StackPanel>
+         <c:ConsoleButton Kind="Primary" Height="58" MinWidth="0" Padding="26,0" FontSize="25" VerticalAlignment="Center"
+                          Content="{Binding S[nextendo.signin]}" Command="{Binding NextendoSignInCommand}" input:FocusNav.IsBanner="True" />
+         <c:ConsoleButton Kind="Ghost" Height="58" MinWidth="0" Padding="22,0" FontSize="25" Margin="8,0,0,0" VerticalAlignment="Center"
+                          Content="{Binding S[setup.online.not_now]}" Command="{Binding DismissInviteCommand}" input:FocusNav.IsBanner="True" />
+       </StackPanel>
+     </Border>
+    </StackPanel>
+    <Border x:Name="DockHost" Grid.Row="5" Style="{StaticResource Dock}">
       <StackPanel Orientation="Horizontal">
         <c:DockButton Icon="{Binding PlayIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding PlayLabel}"
                       Fill="{DynamicResource Brush.Accent}" Tint="{DynamicResource Brush.OnAccent}" Command="{Binding PlayCommand}" />
@@ -146,7 +175,8 @@
         <c:DockButton Icon="{StaticResource Icon.Menu}" Label="{Binding GameMenuLabel}" Tint="#FF5B5BD6" Command="{Binding GameMenuCommand}"
                       Visibility="{Binding ShowGameMenu, Converter={StaticResource Conv.Visible}}" />
 
-        <!-- Friends; without a server: the same button with a lock, to Settings › Online -->
+        <!-- on Nextendo: "Sign in with Nextendo", then the account. On MKWMP servers: Friends; without a server the
+             same button with a lock, to Settings › Online -->
         <c:DockButton Icon="{Binding FriendsIcon, Converter={StaticResource Conv.Icon}}" Label="{Binding FriendsLabel}" Tint="#FFF08A1A"
                       HasDot="{Binding HasRequests}" Command="{Binding FriendsCommand}" />
 

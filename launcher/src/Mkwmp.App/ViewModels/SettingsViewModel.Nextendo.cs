@@ -5,25 +5,30 @@ using Mkwmp.Core;
 namespace Mkwmp.App.ViewModels;
 
 /// <summary>
-/// Settings › Nextendo (Views/Settings/NextendoPane.xaml), and what Settings › Online shows while PLAY goes to
-/// Nextendo Network. Not linked: what it is, "Link Nextendo Account" (the sign-in page in the browser; the launcher
-/// waits for it) and "Create a Nextendo Account". Linked: the account, its friend code, how it stands, the choice of
-/// network ("Play on") and Unlink. The link stays on this PC (docs/contracts/NEXTENDO_API.md).
+/// Settings › Nextendo (Views/Settings/NextendoPane.xaml), and the Nextendo part of Settings › Online. Not signed
+/// in: what it is, "Sign in with Nextendo" (the sign-in page in the browser; the launcher waits for it) and "Create a
+/// Nextendo Account". Signed in: the account, its friend code, how it stands, the choice of network ("Play on") and
+/// Unlink. The link stays on this PC (docs/contracts/NEXTENDO_API.md).
+/// <para>
+/// Nextendo Network is where PLAY goes online by default (<see cref="NextendoFirst"/>). The alternative, MKWMP
+/// servers, is Settings › Online's switch (<see cref="UseMkwmp"/>): only with it on does that pane show a server
+/// list, a profile and its PIN, and only then is anything sent to an MKWMP server (after that server's consent).
+/// </para>
 /// </summary>
 public sealed partial class SettingsViewModel
 {
     public const string NextendoCategory = "nextendo";
-    private const string NextendoRegisterUrl = "https://nextendo.network/register.html";
 
     private void InitNextendo()
     {
+        // the pane waits itself (a spinner and Cancel in place of the two rows): no card over it
         LinkNextendoCommand = new RelayCommand(
             () => RelayCommand.Async(() => Launcher.LinkNextendoAsync(page => Links.Open(page))).Execute(null),
-            () => !Nextendo.Linking && !(Busy && NextendoMode));
+            () => !Nextendo.Linking && !(Busy && NextendoFirst));
         CancelNextendoLinkCommand = new RelayCommand(Launcher.CancelNextendoLink, () => Nextendo.Linking);
-        CreateNextendoCommand = new RelayCommand(() => Links.Open(Shell, NextendoRegisterUrl));
+        CreateNextendoCommand = new RelayCommand(Shell.CreateNextendoAccount);
         UnlinkNextendoCommand = RelayCommand.Async(UnlinkNextendoAsync, () => Nextendo.Linked && !(Busy && NextendoMode));
-        PlayOnCommand = RelayCommand.Async(Shell.PickPlayOnAsync, () => Nextendo.Linked && !Busy);
+        PlayOnCommand = RelayCommand.Async(Shell.PickPlayOnAsync, () => !Busy);
         NextendoPaneCommand = new RelayCommand(() => At(NextendoCategory));
     }
 
@@ -35,8 +40,49 @@ public sealed partial class SettingsViewModel
 
     public bool NextendoUnlinked => !Nextendo.Linked;
 
-    /// <summary>PLAY goes to Nextendo Network: Settings › Online shows that instead of a server, and what is an MKWMP server's is locked.</summary>
+    /// <summary>PLAY goes to Nextendo Network now (signed in, chosen, a run that may go online).</summary>
     public bool NextendoMode => Nextendo.Active;
+
+    /// <summary>Nextendo Network is where PLAY goes online, signed in or not: Settings › Online shows it instead of a server, and what is an MKWMP server's is locked.</summary>
+    public bool NextendoFirst => Nextendo.Preferred;
+
+    /// <summary>Settings › Online's Nextendo part (the account, or the two ways in): not in a run that is offline only until MKWMP is updated (its one card says so).</summary>
+    public bool ShowNextendoOnline => NextendoFirst && !UpdateOffline;
+
+    /// <summary>In it: the account PLAY goes online with.</summary>
+    public bool ShowNextendoAccount => ShowNextendoOnline && Nextendo.Linked;
+
+    /// <summary>In it: nobody is signed in (what signing in does; the rows that sign in or create an account, or Cancel while the browser is awaited).</summary>
+    public bool ShowNextendoSignIn => ShowNextendoOnline && !Nextendo.Linked;
+
+    /// <summary>The row that leads to Nextendo while MKWMP servers are chosen: "Nextendo Network", with who is signed in or "Sign in with Nextendo".</summary>
+    public bool ShowNextendoRow => !NextendoFirst && !UpdateOffline;
+
+    public string NextendoRowValue => Nextendo.Linked ? Nextendo.Username : S["nextendo.signin"];
+
+    // ── the alternative: MKWMP servers ──
+
+    /// <summary>"Use MKWMP Servers Instead" (Settings › Online): shown unless this run is offline only.</summary>
+    public bool ShowUseMkwmp => !UpdateOffline;
+
+    /// <summary>
+    /// The switch itself: on, PLAY goes to an MKWMP server and the pane shows its list, the profile and its privacy
+    /// (nothing is sent to a server before one is chosen and its consent given); off, Nextendo Network. Not while PLAY runs.
+    /// </summary>
+    public bool UseMkwmp
+    {
+        get => !NextendoFirst;
+        set
+        {
+            if (value != UseMkwmp)
+            {
+                RelayCommand.Async(() => Shell.SetPlayOnAsync(value ? PlayNetwork.Mkwmp : PlayNetwork.Nextendo)).Execute(null);
+            }
+        }
+    }
+
+    /// <summary>Under the switch: what MKWMP servers are; while PLAY runs, why it cannot be changed.</summary>
+    public string UseMkwmpCaption => Busy ? S["playon.busy"] : S["settings.online.use_mkwmp_caption"];
 
     public bool NextendoLinking => Nextendo.Linking;
 
@@ -68,9 +114,6 @@ public sealed partial class SettingsViewModel
 
     // ── the choice of network ──
 
-    /// <summary>The "Play on" row is shown: an account is linked.</summary>
-    public bool ShowPlayOn => Nextendo.Linked;
-
     public string PlayOnName => Shell.PlayOnName;
 
     /// <summary>Under the row: what the choice does; while PLAY runs, why it cannot be changed.</summary>
@@ -101,7 +144,7 @@ public sealed partial class SettingsViewModel
     /// <summary>The pane is on screen (or Online's, on Nextendo): how the account stands is asked again.</summary>
     private void EnterNextendo()
     {
-        if (Nextendo.Linked && (IsNextendoPane || (IsOnlinePane && NextendoMode)))
+        if (Nextendo.Linked && (IsNextendoPane || (IsOnlinePane && NextendoFirst)))
         {
             RelayCommand.Async(Launcher.RefreshNextendoAsync).Execute(null);
         }

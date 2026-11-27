@@ -51,6 +51,21 @@ internal sealed record ClientConfig
     /// </summary>
     public NextendoLink Nextendo { get; init; } = NextendoLink.None;
 
+    /// <summary>
+    /// Where PLAY goes online: what the file says (<c>[nextendo] play_on</c>, <see cref="NextendoLink.Choice"/>), else
+    /// the default. The default is Nextendo Network, except for an install that already has an MKWMP setup
+    /// (<see cref="HasMkwmpSetup"/>): <c>play_on</c> is newer than such a file, and nobody who plays on an MKWMP server
+    /// is moved off it silently. The launcher keeps what it found when it opened the file (Launcher's constructor), so
+    /// the answer never changes under the player; MKWMP servers are otherwise the player's own choice (Settings › Online).
+    /// </summary>
+    public PlayNetwork PlayOn => Nextendo.Choice ?? (HasMkwmpSetup ? PlayNetwork.Mkwmp : PlayNetwork.Nextendo);
+
+    /// <summary>
+    /// An MKWMP setup is in the file: a server, a PIN, or the profile kept for a server. Such an install played on
+    /// MKWMP servers before Nextendo Network was the default, and stays there until the player says otherwise.
+    /// </summary>
+    public bool HasMkwmpSetup => Settings.Server.Length > 0 || ValidPin(Settings.Pin) || Servers.Count > 0;
+
     /// <summary>The same server, however it was typed (scheme, trailing slash, letter case).</summary>
     public static bool SameServer(string a, string b) => string.Equals(ServerBase(a), ServerBase(b), StringComparison.OrdinalIgnoreCase);
 
@@ -215,6 +230,7 @@ internal sealed record ClientConfig
                 Contrast = Str(ui, "contrast", "normal"),
                 Locale = Str(ui, "locale", ""),
                 SetupDone = Bool(ui, "setup_done", false),
+                NextendoInviteDismissed = Bool(ui, "nextendo_invite_dismissed", false),
                 OverlayShortcut = Overlay.OverlayShortcuts.Parse(Str(ui, "overlay_shortcut", "")),
             },
             Picker = PickerOf(Table(t, "picker")),
@@ -320,6 +336,10 @@ internal sealed record ClientConfig
         Line(b, "contrast", s.Ui.Contrast);
         Line(b, "locale", s.Ui.Locale);
         Line(b, "setup_done", s.Ui.SetupDone);
+        if (s.Ui.NextendoInviteDismissed)
+        {
+            Line(b, "nextendo_invite_dismissed", true); // only once the player closed home's invitation
+        }
         Line(b, "overlay_shortcut", Overlay.OverlayShortcuts.WireName(s.Ui.OverlayShortcut));
 
         b.Append("\n[voice]\n");
@@ -370,11 +390,15 @@ internal sealed record ClientConfig
             b.Append("\n[dev]\n");
             Line(b, "recomp_exe_sha256", s.DevRecompExes);
         }
-        // The linked Nextendo account (nothing is written while there is none): never a token.
-        if (Nextendo.Linked)
+        // Where PLAY goes online, once it was said (the launcher says it the first time it saves; see PlayOn), and
+        // the linked Nextendo account when there is one: never a token.
+        if (Nextendo.Linked || Nextendo.Choice is not null)
         {
             b.Append("\n[nextendo]\n");
-            Line(b, "play_on", Nextendo.PlayOnName);
+            Line(b, "play_on", PlayOn == PlayNetwork.Nextendo ? NextendoLink.NextendoName : NextendoLink.MkwmpName);
+        }
+        if (Nextendo.Linked)
+        {
             b.Append("pid = ").Append(Nextendo.Pid.ToString(CultureInfo.InvariantCulture)).Append('\n');
             Line(b, "username", Nextendo.Username);
             Line(b, "friend_code", Nextendo.FriendCode);
@@ -497,9 +521,9 @@ internal sealed record ClientConfig
 internal sealed record ServerProfile(string Server, string Name, string Pin, bool Consent = false);
 
 /// <summary>
-/// The Nextendo account linked on this PC, as client.toml keeps it (<c>[nextendo]</c>): who it is, and where PLAY
-/// goes online. <see cref="PlayNetwork.Nextendo"/> only counts while an account is linked: without one the choice is
-/// <see cref="PlayNetwork.Mkwmp"/>, whatever the file says.
+/// The Nextendo account linked on this PC and the player's choice of where PLAY goes online, as client.toml keeps
+/// them (<c>[nextendo]</c>). The choice is its own: it stays without an account (on Nextendo, PLAY then starts the
+/// game offline and the window asks to sign in). Where PLAY goes when nothing was chosen: <see cref="ClientConfig.PlayOn"/>.
 /// </summary>
 internal sealed record NextendoLink
 {
@@ -509,6 +533,7 @@ internal sealed record NextendoLink
     {
     }
 
+    /// <summary>No account, nothing chosen: a fresh install, or a file from before Nextendo.</summary>
     public static NextendoLink None { get; } = new();
 
     public long Pid { get; private init; }
@@ -517,35 +542,32 @@ internal sealed record NextendoLink
 
     public string FriendCode { get; private init; } = "";
 
-    public PlayNetwork PlayOn { get; private init; }
+    /// <summary>The network the file names (<c>play_on</c>); null when it names none: <see cref="ClientConfig.PlayOn"/> then decides.</summary>
+    public PlayNetwork? Choice { get; private init; }
 
     public bool Linked => Pid > 0 && Username.Length > 0;
 
-    /// <summary>The wire name of <see cref="PlayOn"/>: <c>"mkwmp"</c> or <c>"nextendo"</c>.</summary>
-    public string PlayOnName => PlayOn == PlayNetwork.Nextendo ? NextendoName : MkwmpName;
-
-    /// <summary>What a file (or an answer of Nextendo's) holds, made consistent: no account, no Nextendo.</summary>
+    /// <summary>What a file (or an answer of Nextendo's) holds, made consistent: half an account is no account, and a network that is neither is no choice.</summary>
     public static NextendoLink Of(string? playOn, long pid, string? username, string? friendCode)
     {
+        var said = playOn?.Trim();
+        PlayNetwork? choice = string.Equals(said, NextendoName, StringComparison.OrdinalIgnoreCase) ? PlayNetwork.Nextendo
+            : string.Equals(said, MkwmpName, StringComparison.OrdinalIgnoreCase) ? PlayNetwork.Mkwmp
+            : null;
         var name = Clean(username, 64);
-        if (pid <= 0 || name.Length == 0)
-        {
-            return None;
-        }
-        return new NextendoLink
-        {
-            Pid = pid,
-            Username = name,
-            FriendCode = Clean(friendCode, 32),
-            PlayOn = string.Equals(playOn?.Trim(), NextendoName, StringComparison.OrdinalIgnoreCase) ? PlayNetwork.Nextendo : PlayNetwork.Mkwmp,
-        };
+        return pid <= 0 || name.Length == 0
+            ? None with { Choice = choice }
+            : new NextendoLink { Pid = pid, Username = name, FriendCode = Clean(friendCode, 32), Choice = choice };
     }
 
-    /// <summary>The same account, with another choice of network.</summary>
-    public NextendoLink Playing(PlayNetwork network) => Linked ? this with { PlayOn = network } : None;
+    /// <summary>The same account (or none), with this choice of network.</summary>
+    public NextendoLink Playing(PlayNetwork network) => this with { Choice = network };
 
     /// <summary>The same choice, with what Nextendo says of the account now.</summary>
-    public NextendoLink Named(long pid, string? username, string? friendCode) => Of(PlayOnName, pid, username, friendCode);
+    public NextendoLink Named(long pid, string? username, string? friendCode) => Of(null, pid, username, friendCode) with { Choice = Choice };
+
+    /// <summary>The same choice, with no account.</summary>
+    public NextendoLink Unlinked() => None with { Choice = Choice };
 
     /// <summary>A name as the session file can hold it: no quotes, backslashes or control characters.</summary>
     private static string Clean(string? text, int most) =>

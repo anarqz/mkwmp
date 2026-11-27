@@ -17,6 +17,8 @@ namespace Mkwmp.App.Input;
 /// <item><c>IsGroup</c>: a container that remembers its last focused stop; coming back into it
 /// from outside returns there (a list keeps its place; a category list its selected item).</item>
 /// <item><c>Skip</c>: nothing inside is a stop.</item>
+/// <item><c>IsBanner</c>: a stop on a line of its own between two rows (home's "Sign in with Nextendo" between the
+/// tiles and the dock): up and down reach it from anywhere above or below, however far to the side it stands.</item>
 /// </list>
 /// </summary>
 public static class FocusNav
@@ -39,6 +41,17 @@ public static class FocusNav
     /// </summary>
     public static readonly DependencyProperty IsColumnProperty =
         DependencyProperty.RegisterAttached("IsColumn", typeof(bool), typeof(FocusNav), new PropertyMetadata(false));
+
+    /// <summary>
+    /// On a stop: it stands on a line of its own between two rows, so up and down count it as lying straight ahead
+    /// from any stop of those rows (it is as wide as the page for them). Without it the step from a tile at the far
+    /// left would pass a centred button by for the row beyond it.
+    /// </summary>
+    public static readonly DependencyProperty IsBannerProperty =
+        DependencyProperty.RegisterAttached("IsBanner", typeof(bool), typeof(FocusNav), new PropertyMetadata(false));
+
+    public static bool GetIsBanner(DependencyObject o) => (bool)(o ?? throw new ArgumentNullException(nameof(o))).GetValue(IsBannerProperty);
+    public static void SetIsBanner(DependencyObject o, bool value) => (o ?? throw new ArgumentNullException(nameof(o))).SetValue(IsBannerProperty, value);
 
     public static bool GetIsColumn(DependencyObject o) => (bool)(o ?? throw new ArgumentNullException(nameof(o))).GetValue(IsColumnProperty);
     public static void SetIsColumn(DependencyObject o, bool value) => (o ?? throw new ArgumentNullException(nameof(o))).SetValue(IsColumnProperty, value);
@@ -141,7 +154,8 @@ public static class FocusNav
         var from = Bounds(current!, root);
         var stops = Stops(root).Where(s => !ReferenceEquals(s, current)).Select(s => (Stop: s, Box: Bounds(s, root)))
             .Where(s => !s.Box.IsEmpty && s.Box.Width > 0 && s.Box.Height > 0).ToList();
-        if (direction is NavDirection.Up or NavDirection.Down)
+        var vertical = direction is NavDirection.Up or NavDirection.Down;
+        if (vertical)
         {
             // inside a column, up and down stay in it
             for (DependencyObject? at = Parent(current!); at is not null && !ReferenceEquals(at, root); at = Parent(at))
@@ -163,7 +177,11 @@ public static class FocusNav
             var bestScore = double.MaxValue;
             foreach (var (stop, to) in stops)
             {
-                var score = Score(from, to, direction, strict);
+                var score = vertical && GetIsBanner(stop)
+                    // a banner is straight ahead of everything above and below it; of two on one line, the nearer one
+                    ? Score(from, new Rect(Math.Min(from.Left, to.Left), to.Top, Math.Max(from.Right, to.Right) - Math.Min(from.Left, to.Left), to.Height), direction, strict)
+                        + Math.Abs(Center(to).X - Center(from).X) * 0.05
+                    : Score(from, to, direction, strict);
                 if (score < bestScore)
                 {
                     bestScore = score;

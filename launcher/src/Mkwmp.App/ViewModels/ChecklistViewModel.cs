@@ -254,11 +254,15 @@ public sealed class ChecklistViewModel : PageViewModel
             case CheckActionKind.InstallUpdate:
                 Shell.ShowUpdateModal();
                 break;
-            case CheckActionKind.SignIn when !Launcher.Settings.Ui.SetupDone:
-                Shell.Navigate(Routes.Setup);
-                break;
+            // an MKWMP server's rows (only while MKWMP servers are chosen): Settings › Online has the server, the profile and its privacy
             case CheckActionKind.ChooseServer or CheckActionKind.SignIn or CheckActionKind.ReviewPrivacy:
-                Shell.ConfigureOnline();
+                Shell.OpenOnlineSettings();
+                break;
+            case CheckActionKind.SignInNextendo:
+                Shell.SignInNextendo();
+                break;
+            case CheckActionKind.OpenNextendo:
+                Shell.OpenNextendo();
                 break;
             default:
                 Shell.OpenSettings("game");

@@ -247,8 +247,8 @@ public sealed partial class SetupViewModel
             case GameStage.NeedIntegration:
                 return Launcher.InstallIntegrationAsync();
             default:
-                // ready; or a download or the setup is running, and goes on behind the next pages
-                Step = SetupStep.Online;
+                // ready; or a download or the setup is running, and goes on behind the last page and home
+                Step = SetupStep.Done;
                 break;
         }
         return Task.CompletedTask;

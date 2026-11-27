@@ -36,6 +36,8 @@ public sealed partial class DesignLauncher : ILauncher
     public DesignLauncher(DemoStart start = DemoStart.Online)
     {
         Start = start;
+        // an install that already played on an MKWMP server stays on MKWMP servers; any other is on Nextendo Network
+        _playOn = start == DemoStart.Online ? PlayNetwork.Mkwmp : PlayNetwork.Nextendo;
         if (start == DemoStart.Offline)
         {
             Settings = Settings with { Server = "", Pin = "", AdultConsent = false };
@@ -67,7 +69,7 @@ public sealed partial class DesignLauncher : ILauncher
     private void Sync()
     {
         var s = Settings;
-        var online = !string.IsNullOrWhiteSpace(s.Server) && !NextendoActive; // on Nextendo no MKWMP server is asked anything
+        var online = !string.IsNullOrWhiteSpace(s.Server) && _playOn == PlayNetwork.Mkwmp; // on Nextendo no MKWMP server is asked anything
         var named = s.Name.Length is >= 3 and <= 16 && s.Name.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
         var signedIn = online && named && s.Pin.Length == 6;
         if (!online)
@@ -75,7 +77,7 @@ public sealed partial class DesignLauncher : ILauncher
             Server = new ServerView(ServerState.NotAsked, null, 0, 0, 0, null);
             Friends = new FriendsView(false, [], [], [], null, false, false);
             Profile = new ProfileView(s.Name, "", named, false, Profile.Register == RegisterState.Failed ? RegisterState.Failed : RegisterState.Idle,
-                named ? CoreStrings.LocalNameOnly : CoreStrings.PickLocalName, false);
+                !named ? CoreStrings.PickLocalName : _playOn == PlayNetwork.Nextendo ? CoreStrings.LocalNameNextendo : CoreStrings.LocalNameOnly, false);
         }
         else
         {
@@ -212,6 +214,9 @@ public sealed partial class DesignLauncher : ILauncher
         {
             case "crashed" or "crashed-solo" or "crashed-exit":
                 PretendCrash(state);
+                break;
+            case "nextendo-linking":
+                PretendNextendoLinking();
                 break;
             // ── the welcome flow's situations (with --demo-fresh) ──
             case "named":
@@ -943,7 +948,7 @@ public sealed partial class DesignLauncher : ILauncher
 
     private bool _offlineOnly;
 
-    public bool OnlineEnabled => !_offlineOnly && !string.IsNullOrWhiteSpace(Settings.Server) && !NextendoActive;
+    public bool OnlineEnabled => !_offlineOnly && !string.IsNullOrWhiteSpace(Settings.Server) && _playOn == PlayNetwork.Mkwmp;
 
     public bool OnlineBlockedByUpdate => _offlineOnly;
 

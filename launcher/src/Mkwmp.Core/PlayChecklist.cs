@@ -77,6 +77,12 @@ public enum CheckActionKind
 
     /// <summary>Settings › Game.</summary>
     OpenGameSettings,
+
+    /// <summary>Signs in with Nextendo (the sign-in page in the browser): PLAY goes to Nextendo Network and no account is linked.</summary>
+    SignInNextendo,
+
+    /// <summary>Settings › Nextendo: the linked account and how it stands.</summary>
+    OpenNextendo,
 }
 
 /// <param name="Label">The button's text, in the language in use.</param>
@@ -397,8 +403,19 @@ public sealed class PlayChecklist : IEquatable<PlayChecklist>
             // account is shown; PLAY asks again and says why if it may not go online.
             var signedIn = Strings.F("core.check.online.nextendo", ("name", nextendo.Username));
             return nextendo.Tone is "warn" or "bad" && nextendo.Status.Length > 0
-                ? new CheckItem(CheckId.Online, title, nextendo.Status, CheckState.Warning, Act(CheckActionKind.ChooseServer, "core.check.do.network"))
+                ? new CheckItem(CheckId.Online, title, nextendo.Status, CheckState.Warning, Act(CheckActionKind.OpenNextendo, "settings.online.nextendo_account"))
                 : Row(CheckId.Online, title, signedIn, CheckState.Ok);
+        }
+        if (f.Nextendo is { NeedsSignIn: true })
+        {
+            // Nextendo Network is where PLAY goes online, and nobody is signed in: PLAY works, offline. Never an MKWMP
+            // server here (those are the player's own choice, Settings › Online).
+            return Row(CheckId.Online, title, Strings.T("core.check.online.nextendo_off"), CheckState.NotApplicable, Act(CheckActionKind.SignInNextendo, "nextendo.signin"));
+        }
+        if (f.Nextendo is { Preferred: true })
+        {
+            // Linked, yet this run is offline only (a required update is not installed): nothing of an MKWMP server either.
+            return Row(CheckId.Online, title, Strings.UpdateToPlayOnline, CheckState.NotApplicable);
         }
         if (string.IsNullOrWhiteSpace(s.Server))
         {

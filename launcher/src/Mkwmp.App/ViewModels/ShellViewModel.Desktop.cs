@@ -45,10 +45,18 @@ public sealed partial class ShellViewModel
     /// </summary>
     public bool OnlineBlockedByUpdate => Launcher.OnlineBlockedByUpdate;
 
-    /// <summary>The label of every lock's way out: "Configure Online", or "Try the Update Again".</summary>
-    public string OnlineLockLabel => S[OnlineBlockedByUpdate ? "online.update.button" : "online.configure"];
+    /// <summary>
+    /// The label of every lock's way out: "Try the Update Again"; "Sign in with Nextendo" while Nextendo Network is
+    /// where PLAY goes online and nobody is signed in; else "Configure Online".
+    /// </summary>
+    public string OnlineLockLabel => S[OnlineBlockedByUpdate ? "online.update.button" : NextendoNeedsSignIn ? "nextendo.signin" : "online.configure"];
 
-    /// <summary>"Configure online": Settings › Online, from wherever a lock was (the friends panel closes). Offline only until MKWMP is updated: the update's card.</summary>
+    /// <summary>
+    /// The way out of a lock, from wherever it was (the friends panel closes). Offline only until MKWMP is updated: the
+    /// update's card. Nextendo Network with nobody signed in: the sign-in (<see cref="SignInNextendo"/>). Else
+    /// Settings › Online: the server of an install that plays on MKWMP servers, or, on Nextendo, the account and the
+    /// alternative.
+    /// </summary>
     public void ConfigureOnline()
     {
         IsFriendsOpen = false;
@@ -57,6 +65,18 @@ public sealed partial class ShellViewModel
             ShowUpdateModal();
             return;
         }
+        if (NextendoNeedsSignIn)
+        {
+            SignInNextendo();
+            return;
+        }
+        OpenOnlineSettings();
+    }
+
+    /// <summary>Settings › Online, from wherever.</summary>
+    public void OpenOnlineSettings()
+    {
+        IsFriendsOpen = false;
         OpenSettings();
         if (Page is SettingsViewModel settings
             && settings.Categories.FirstOrDefault(c => c.Key == Routes.OnlineCategory) is { } entry)

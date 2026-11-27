@@ -434,10 +434,17 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>Friends, Back (when there is a page to go back to), OK.</summary>
+    /// <summary>
+    /// Friends, Back (when there is a page to go back to), OK. Friends are an MKWMP server's: while Nextendo Network
+    /// is where PLAY goes online the hint bar does not offer them (Y still opens the panel, which says so).
+    /// </summary>
     public IReadOnlyList<Hint> DefaultHints()
     {
-        var hints = new List<Hint> { new(PadButton.Y, S["hint.friends"]) };
+        var hints = new List<Hint>();
+        if (!NextendoFirst)
+        {
+            hints.Add(new Hint(PadButton.Y, S["hint.friends"]));
+        }
         if (Nav.CanGoBack)
         {
             hints.Add(new Hint(PadButton.B, S["hint.back"]));

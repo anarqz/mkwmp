@@ -45,7 +45,8 @@ public class OfflineFirstTests
 
         // A local name is allowed before any server; it is not a profile anywhere.
         await l.SaveSettingsAsync(l.Settings with { Name = "Ana" });
-        Assert.Equal(("Ana", true, false, Strings.LocalNameOnly), (l.Profile.Name, l.Profile.NameValid, l.Profile.SignedIn, l.Profile.Message));
+        // (An install with no MKWMP setup goes online on Nextendo Network: the name's line says so, not "connect to a server".)
+        Assert.Equal(("Ana", true, false, Strings.LocalNameNextendo), (l.Profile.Name, l.Profile.NameValid, l.Profile.SignedIn, l.Profile.Message));
 
         // Everything online is refused here, without a request.
         await l.RegisterAsync("Ana");
@@ -211,9 +212,18 @@ public class OfflineFirstTests
         using var api = new LocalApi(rig.Launcher, TimeProvider.System);
         var answer = await api.HandleAsync("POST", "/local/v1/seat", $"Bearer {rig.Launcher.Token}", ReadOnlyMemory<byte>.Empty, CancellationToken.None);
         // 409 = refused: the mod shows the message and the game stays offline (503 would read "launcher not reachable").
+        // The reason is where this install goes online: Nextendo Network (nobody is signed in), so "sign in with Nextendo".
         Assert.Equal(409, answer.Status);
-        Assert.Contains(Strings.OnlineOffInGame, answer.Body, StringComparison.Ordinal); // as written: the mod's reader undoes no JSON escape
-        Assert.True(Strings.OnlineOffInGame.Length < 128 && Strings.OnlineOffInGame.All(c => c is >= ' ' and <= '~' and not ('"' or '<' or '>' or '&' or '\\' or '\'' or '+')));
+        Assert.Contains(Strings.NextendoSignInInGame, answer.Body, StringComparison.Ordinal); // as written: the mod's reader undoes no JSON escape
+        // With MKWMP servers chosen and none set: "connect to a server".
+        await rig.Launcher.SetPlayOnAsync(PlayNetwork.Mkwmp);
+        answer = await api.HandleAsync("POST", "/local/v1/seat", $"Bearer {rig.Launcher.Token}", ReadOnlyMemory<byte>.Empty, CancellationToken.None);
+        Assert.Equal(409, answer.Status);
+        Assert.Contains(Strings.OnlineOffInGame, answer.Body, StringComparison.Ordinal);
+        foreach (var text in new[] { Strings.OnlineOffInGame, Strings.NextendoSignInInGame })
+        {
+            Assert.True(text.Length < 128 && text.All(c => c is >= ' ' and <= '~' and not ('"' or '<' or '>' or '&' or '\\' or '\'' or '+')));
+        }
         // The overlay's routes do not care about a server.
         var overlay = await api.HandleAsync("GET", "/local/v1/overlay/state", $"Bearer {rig.Launcher.Token}", ReadOnlyMemory<byte>.Empty, CancellationToken.None);
         Assert.Equal(200, overlay.Status);

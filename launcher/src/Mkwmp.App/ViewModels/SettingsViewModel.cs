@@ -28,8 +28,8 @@ public sealed partial class SettingsViewModel : PageViewModel
         Categories =
         [
             new CategoryEntry("profile", S["settings.profile"]),
-            new CategoryEntry(Routes.OnlineCategory, S["settings.online"]), // the server, the profile on it, privacy (SettingsViewModel.Online.cs)
-            new CategoryEntry(NextendoCategory, S["settings.nextendo"]), // a linked Nextendo account, and where PLAY goes online (SettingsViewModel.Nextendo.cs)
+            new CategoryEntry(NextendoCategory, S["settings.nextendo"]), // the Nextendo account PLAY goes online with: sign in, create one, how it stands (SettingsViewModel.Nextendo.cs)
+            new CategoryEntry(Routes.OnlineCategory, S["settings.online"]), // where PLAY goes online: Nextendo, and the alternative, an MKWMP server with its profile and privacy (SettingsViewModel.Online.cs)
             new CategoryEntry("game", S["settings.game"]),
             new CategoryEntry("voice", S["settings.voice"]),
             new CategoryEntry("notifications", S["settings.notifications"]),
@@ -245,7 +245,11 @@ public sealed partial class SettingsViewModel : PageViewModel
         set => Save(s => s with { Background = s.Background with { CloseToTray = value } });
     }
 
-    public string TrayCaption => HasTray ? S["settings.background.caption"] : S["settings.background.no_tray"] + "\n" + S["settings.background.caption"];
+    /// <summary>Under the two switches: no tray here (Game Mode), and that the background takes no seat. A seat is an MKWMP server's: on Nextendo Network that line is left out.</summary>
+    public string TrayCaption => string.Join("\n", new[] { HasTray ? "" : S["settings.background.no_tray"], NextendoFirst ? "" : S["settings.background.caption"] }.Where(line => line.Length > 0));
+
+    /// <summary>Under "Keep Running in the System Tray": "so friends see me online", which is an MKWMP server's (nothing on Nextendo Network).</summary>
+    public string TrayRowCaption => NextendoFirst ? "" : S["settings.background.tray_caption"];
 
     /// <summary>Under Wine / Proton the registry's Run key starts nothing: Steam starts the launcher there.</summary>
 #pragma warning disable CA1822 // XAML binds to instance properties

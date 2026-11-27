@@ -269,6 +269,8 @@ internal sealed class Rig : IAsyncDisposable
             AdultConsent = true,
         };
         ConfigPath = Path.Combine(Root, "client.toml");
+        // A client.toml that names no network (as every file from before Nextendo was the default): with the rig's seat
+        // server in it, it is an install that plays on MKWMP servers, and stays one. A test of Nextendo says otherwise with `config`.
         var saved = new ClientConfig { Settings = edit?.Invoke(settings) ?? settings, Mutes = [new MutedPlayer("42", "Bia")] };
         (config?.Invoke(saved) ?? saved).Save(ConfigPath);
         prepare?.Invoke(ConfigPath);
