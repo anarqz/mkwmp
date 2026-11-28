@@ -14,6 +14,11 @@ by the same author, GPL-3.0. The changes are: the log goes to the probe instead 
 there are 24 seats, and the mix has a per-talker leveler and a limiter (`voice_loudness.h`).
 `voice_wire.h`, `mkwmp_voice.*` and `voice_loudness.h` are mkwmp's own code.
 
+`native/probe/src/ingame/` (the launcher's toasts and its overlay page drawn in the game's own frames) is ported
+from Infinity's overlay (`overlay/src/v4/`: `toasts_v4.cpp`, `overlay_v4.cpp`, `kit_v4.*`, `toast_model.h`,
+`overlay_model.h`), by the same author, GPL-3.0. The changes are: it draws through mkw-recomp's plugin API instead of a
+DXGI hook, talks to the MKWMP launcher with the mod's own HTTP, and its page has MKWMP's panes (Game, Current Lobby).
+
 ## Third-party components
 
 | Component | Where | License |
@@ -22,6 +27,8 @@ there are 24 seats, and the mix has a per-talker leveler and a limiter (`voice_l
 | RNNoise 0.2 (Xiph.Org, Mozilla, Jean-Marc Valin) | compiled into `mkwmp-voice.dll` / `libmkwmp-voice.so` | BSD-3-Clause |
 | WebRTC AudioProcessing 2.1, AEC3 (The WebRTC project authors; freedesktop's standalone release) | compiled into `mkwmp-voice.dll` / `libmkwmp-voice.so` | BSD-3-Clause, plus Google's additional IP rights grant (patents) |
 | Abseil 20240722.0 (headers only) | compiled into `mkwmp-voice.dll` / `libmkwmp-voice.so` | Apache-2.0 |
+| Dear ImGui 1.91.8 (Omar Cornut and contributors) | compiled into `mkwmp.dll` / `mkwmp.so` (`native/probe/third_party/imgui`, unmodified) | MIT (`native/probe/third_party/imgui/LICENSE.txt`) |
+| Nunito font (The Nunito Project Authors) | embedded in `mkwmp.dll` / `mkwmp.so` (`native/probe/third_party/fonts`, unmodified) | SIL Open Font License 1.1 (`native/probe/third_party/fonts/Nunito-LICENSE.txt`) |
 | Press Start 2P font (The Press Start 2P Project Authors) | embedded in the launcher | SIL Open Font License 1.1 (`rust/client/assets/PressStart2P-OFL.txt`) |
 | Rust crates (eframe/egui, tokio, axum, reqwest, rustls, ed25519-dalek, serde and others) | the launcher and the server | MIT and/or Apache-2.0 (each crate's own license; `cargo about` / `Cargo.lock` lists them) |
 

@@ -7,9 +7,10 @@
 // table, g_host, the rt_dispatch import) is an API entry here, with two differences:
 //   - indirect-call hooks are per address (override_address) and only while the game is being loaded, so the probe's
 //     version-specific hooks (npln_address_hooks, camera_game_loaded) go in from on_game_loaded, not lazily online;
-//   - the mod draws nothing into the game: no labels, no notices (api->notice), no keypad (mkw-recomp draws its own
-//     number pad for the software keyboard), and it adds no in-game hotkeys; the overlay trigger (overlay.h) is the
-//     one input of its own, and it brings up the launcher, outside the game.
+//   - the mod draws nothing of its own into the game: no labels, no notices (api->notice), no keypad (mkw-recomp
+//     draws its own number pad for the software keyboard). What it does draw is the launcher's: its toasts and, on
+//     plugin API 5, its overlay page, in the game's own frames (ingame.h; the launcher decides, the mod only draws).
+//     The overlay trigger (overlay.h) is the one input of its own.
 //
 // Folders: the probe's home (mkwmp.log, mkwmp.env, the voice library) is the mod's folder, mods/<mod>/. mkwmp.toml
 // and the lobby CA are read from there, else from the game's folder, where the MKWMP launcher writes them
@@ -58,8 +59,20 @@
 #include <string.h>
 
 // The one mkw-recomp the mod runs on (launcher/src/Mkwmp.Core/Targets/MkwRecomp/Recomp.cs, Supported): its plugin API's
-// port_version, exactly.
+// port_version, exactly; or MKWMP's own build of that release (the fork's tags: "0.1.18-mkwmp", "0.1.18-mkwmp.1", as
+// 0.1.15-mkwmp and 0.1.16-mkwmp.1 were), which adds plugin API 5 to it. What the runtime can do is never read from
+// this string: every entry is taken by the size of its table (overlay.c, ingame.h, camera.c).
 #define MKWMP_RECOMP_VERSION "0.1.18"
+#define MKWMP_RECOMP_FORK "-mkwmp"
+
+static int recomp_supported(const char *version) {
+    size_t n = strlen(MKWMP_RECOMP_VERSION), m = strlen(MKWMP_RECOMP_FORK);
+    if (!version || strncmp(version, MKWMP_RECOMP_VERSION, n) != 0) return 0;
+    const char *rest = version + n;
+    if (!*rest) return 1;                                   // the official release
+    if (strncmp(rest, MKWMP_RECOMP_FORK, m) != 0) return 0; // "0.1.180", "0.1.18-other"
+    return !rest[m] || rest[m] == '.';                      // "-mkwmp", "-mkwmp.1"
+}
 
 RtApi g_rt;
 
@@ -259,7 +272,7 @@ MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_vers
     // MKWMP runs on one mkw-recomp only (the launcher's pin, Recomp.Supported): an earlier release is refused, so a
     // player who starts the game outside the launcher is never online on it. A developer's build the launcher accepts
     // ([dev] recomp_exe_sha256) may report another version: the launcher sets MKWMP_DEV_RECOMP=1 for it.
-    if (!api->port_version || strcmp(api->port_version, MKWMP_RECOMP_VERSION) != 0) {
+    if (!recomp_supported(api->port_version)) {
         char dev[8];
         if (plat_getenv("MKWMP_DEV_RECOMP", dev, sizeof dev) && !strcmp(dev, "1")) {
             mkwmp_log("plugin: mkw-recomp %s is not %s: accepted as a development build (MKWMP_DEV_RECOMP=1)",
@@ -324,7 +337,9 @@ MKW_PLUGIN_EXPORT int mkw_plugin_init(const MkwPluginApi *api, uint32_t api_vers
     int n = probe_register();
     if (n < 0) return refuse(message, "MKWMP does not fit this mkw-recomp (see mods/<mod>/mkwmp.log); online play is off");
     g_active = n > 0;
-    overlay_install(api);   // Guide / Select+Start / Select held bring the launcher over the game (overlay.h)
+    // Guide / Select+Start / Select held bring the launcher over the game (overlay.h); the launcher's toasts and, on
+    // plugin API 5, its overlay page are drawn in the game's own frames (ingame.h)
+    overlay_install(api);
     if (g_active && mkwmp_config_nextendo()) {
         // Nextendo Network has no MKWMP relay: no friend room, no camera, no voice (NEXTENDO_API.md section 5)
         mkwmp_log("camera: off: not available on Nextendo Network");

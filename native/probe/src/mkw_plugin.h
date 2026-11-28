@@ -1,5 +1,6 @@
-// mkw-recomp native plugin API, version 4 (version 1; a mod's settings and its options page in 2; images in 3; the pad
-// filter, the menu and the shown picture in 4). The one header a plugin includes; it links against nothing of mkw-recomp.
+// mkw-recomp native plugin API, version 5 (version 1; a mod's settings and its options page in 2; images in 3; the pad
+// filter, the menu and the shown picture in 4; an overlay's triangles, textures and input in 5). The one header a plugin
+// includes; it links against nothing of mkw-recomp.
 //
 // A plugin is a shared library (.so on Linux, .dll on Windows) in mods/<mod>/plugin/ of the game folder. The runtime
 // loads it at start when the player has the mod enabled (the Mods page, or `--mod <name>` / MKW_MODS), before the game
@@ -24,7 +25,7 @@
 extern "C" {
 #endif
 
-#define MKW_PLUGIN_API_VERSION 4
+#define MKW_PLUGIN_API_VERSION 5
 
 // The start of the runtime's guest CPU state; ABI-stable for every API version (the runtime checks it at build time).
 // Arguments in x[0..7], the result in x[0], the return address in x[30].
@@ -40,6 +41,60 @@ typedef void (*MkwGuestFn)(MkwCpu *c);
 // reading a guest structure costs nothing.
 static inline void *mkw_guest_ptr(uint64_t guest) { return (void *)(uintptr_t)guest; }
 
+// ---- version 5: a plugin's overlay drawn by the plugin's own UI code (triangles and textures) and its input.
+//
+// The runtime draws what the plugin laid out: lists of textured, coloured triangles in the layout every immediate-mode
+// UI library produces (Dear ImGui's ImDrawVert / ImDrawIdx / ImDrawCmd, Nuklear's and microui's the same after a copy).
+// The plugin brings its own fonts as a texture (texture_create), so its text looks the same on every runtime, and the
+// runtime's UI library is no part of this ABI.
+typedef struct MkwDrawVert {
+    float x, y;             // pixels of the picture, origin top left
+    float u, v;             // 0..1 in the command's texture
+    uint32_t col;           // the bytes R, G, B, A in memory (0xAABBGGRR as a number); straight alpha
+} MkwDrawVert;
+typedef struct MkwDrawCmd {
+    float clip[4];          // x0, y0, x1, y1 in pixels: nothing is drawn outside
+    uint32_t texture;       // texture_create's handle. Every command has one: plain colour samples a white texel
+    uint32_t vtx_offset;    // added to each index
+    uint32_t idx_offset;    // the first index, in MkwDrawList.idx
+    uint32_t idx_count;     // a multiple of 3
+} MkwDrawCmd;
+typedef struct MkwDrawList {
+    const MkwDrawVert *vtx;
+    const uint16_t *idx;
+    const MkwDrawCmd *cmd;  // drawn in order
+    uint32_t n_vtx, n_idx, n_cmd;
+} MkwDrawList;
+
+// What the player did since the overlay's last frame, while it has the input (overlay_capture).
+enum {   // MkwInputEvent.type
+    MKW_EV_KEY,             // code: the key's USB HID usage (SDL's scancode: A is 4, Enter 40, Esc 41); down, repeat, mods
+    MKW_EV_TEXT,            // text: one character the keyboard typed, UTF-8, NUL-terminated (with MKW_CAPTURE_TEXT)
+    MKW_EV_MOUSE_POS,       // x, y: pixels of the picture
+    MKW_EV_MOUSE_BUTTON,    // code: 0 left, 1 right, 2 middle, 3 back, 4 forward; down; x, y
+    MKW_EV_MOUSE_WHEEL,     // x, y: notches, up and right positive
+    MKW_EV_FOCUS,           // down: 1 the window got the keyboard, 0 it lost it (every key is up)
+};
+enum { MKW_MOD_SHIFT = 1, MKW_MOD_CTRL = 2, MKW_MOD_ALT = 4 };   // MkwInputEvent.mods
+typedef struct MkwInputEvent {
+    uint8_t type, down, repeat, mods;
+    uint32_t code;
+    float x, y;
+    char text[8];
+} MkwInputEvent;
+
+enum {   // MkwOverlay.flags
+    MKW_OV_INPUT = 1,       // this drawing has the input this frame: events and pad are set
+    MKW_OV_MENU = 2,        // the runtime's menu or number pad is open over the overlay and has the input meanwhile
+};
+enum {   // overlay_capture flags
+    MKW_CAPTURE_INPUT = 1,  // the pad, the keyboard and the mouse go to the overlay; the game reads idle input
+    MKW_CAPTURE_TEXT = 2,   // with it: the keyboard also types (MKW_EV_TEXT; the system's input method is on)
+};
+enum { MKW_TEXTURE_NEAREST = 1 };   // texture_create flags: not filtered when scaled
+
+struct MkwPad;
+
 // What a plugin's overlay drawing gets each frame (overlay_set). Pixels of the window's picture, origin top left.
 // Colours are 0xRRGGBBAA. The text is the runtime menu's font, UTF-8.
 typedef struct MkwOverlay {
@@ -50,6 +105,27 @@ typedef struct MkwOverlay {
     void (*rect)(float x0, float y0, float x1, float y1, uint32_t rgba, float rounding);   // filled
     void (*text)(float x, float y, uint32_t rgba, const char *utf8);
     void (*text_size)(const char *utf8, float *w, float *h);
+
+    // ---- version 5 (each is there when size reaches it)
+    uint32_t flags;         // MKW_OV_*
+    float dt;               // seconds since the overlay's last frame, 0.0001 to 0.1
+    // Draws the lists in order, over what this drawing drew so far (rect and text too). The runtime copies them before
+    // it returns. A command that reaches outside its list or names no texture of the plugin's is left out.
+    void (*triangles)(const MkwDrawList *lists, int n);
+    // With MKW_OV_INPUT: the events in the order they came, event_size bytes each (sizeof(MkwInputEvent) of the
+    // runtime), and player 1's pad now as input_filter sees it before any filter (NULL without a pad). The runtime's
+    // until this call returns.
+    const MkwInputEvent *events;
+    uint32_t n_events, event_size;
+    const struct MkwPad *pad;
+    // The game's own picture of this very frame, before the menu, the notices and every overlay are drawn over it
+    // (overlay_picture): a texture for this frame's commands only, picture_w x picture_h pixels, opaque. 0 when no
+    // drawing asked for it, and on an HDR display (the picture is not sRGB there): draw a placeholder then.
+    uint32_t picture;
+    int picture_w, picture_h;
+    // Where the runtime's own display at the top right is this frame (the FPS line, or the performance panel: F10),
+    // x0, y0, x1, y1 in pixels; all 0 when it is off. It is drawn over the overlay: keep clear of it.
+    float perf[4];
 } MkwOverlay;
 
 typedef void (*MkwOverlayFn)(const MkwOverlay *o, void *user);
@@ -174,8 +250,7 @@ typedef struct MkwPluginApi {
     // answered yet. 1 asked, 0 refused (a size outside 16..4096).
     int (*frame_capture)(int max_w, int max_h, MkwFrameFn cb, void *user);
 
-    // ---- version 4, added later (each is there when the table reaches it: size): the plugin's overlay covers the
-    // game as a console's HOME menu does
+    // ---- version 4, continued: the plugin's overlay covers the game as a console's HOME menu does
     // in_focus 0: the game is told it is out of focus (nn::oe::GetCurrentFocusState 2 and the FocusStateChanged
     // message), whatever the window says and also with MKW_ASSUME_FOCUS, and the game's sound is silent. With suspend
     // 1 the game is also suspended as the console suspends an application behind HOME, when the game lets it: by its
@@ -188,6 +263,42 @@ typedef struct MkwPluginApi {
     // Ends the game as the menu's Quit and the window's close button do: the plugins' on_exit, the saves finished,
     // the pipeline cache written, then the process ends. Returns at once; also while suspended. Any thread.
     void (*quit)(void);
+
+    // ---- version 5: textures, the input, the game's picture and the faults of a plugin's overlay
+    // An image of the plugin's for its overlay's triangles: width x height pixels (1..8192), RGBA8 with straight
+    // alpha, rows row_bytes apart (at least width * 4); the pixels are copied. Returns its handle, 0 when refused (a
+    // size out of range, 64 textures already, no memory). The present thread never waits for it: the pixels go to the
+    // GPU in the command buffer of the next shown frame, and a command may name the texture from that frame on (one
+    // that names it earlier, or after its end, is left out). texture_update replaces all its pixels (the same size)
+    // the same way; 1 done, 0 not a handle. texture_destroy ends it; its place is free again a few frames later, once
+    // no frame in flight samples it. Any thread.
+    uint32_t (*texture_create)(int width, int height, const uint8_t *rgba, int row_bytes, int flags);
+    int (*texture_update)(uint32_t texture, const uint8_t *rgba, int row_bytes);
+    void (*texture_destroy)(uint32_t texture);
+    // flags MKW_CAPTURE_*: the drawing (one that overlay_show has on) takes the input, as the runtime's menu does:
+    // the game goes on and reads an idle pad, keyboard and mouse for every player, the mouse cursor is free, the
+    // runtime's own pad shortcuts are off, and each of the drawing's frames gets the events and the pad
+    // (MkwOverlay.events, .pad). Every key goes to the drawing, Esc and Tab too; only F1 (the runtime's menu, which
+    // then has the input until it closes: MKW_OV_MENU), F10 and the window's own keys stay the runtime's. flags 0
+    // gives the input back: the game reads nothing until every button is released, so the press that closed the
+    // overlay does not reach it. overlay_show(draw, 0) and a fault in the drawing give it back too. One drawing at a
+    // time; 1 done, 0 refused (another one has it, or the drawing is not shown). Any thread.
+    int (*overlay_capture)(MkwOverlayFn draw, int flags);
+    // 1 while the key (its USB HID usage, as MKW_EV_KEY's code: Tab is 43, left Shift 225) is held and the window has
+    // the keyboard: for a plugin's keyboard shortcut that opens its overlay, asked from its pad filter. The game
+    // reads the same key unless the filter empties the pad. Any thread.
+    int (*key_state)(int code);
+    // A fault in a plugin's overlay drawing (an access violation, an illegal instruction, a division by zero) ends
+    // that drawing, not the game: the runtime leaves its frame out, turns it off for good, gives its input back and
+    // logs where it faulted. on_fault's cb(user) then runs once on the present thread, so the plugin can tell its
+    // other half (cb may be NULL: nothing is told). Not covered: a stack overflow, a wait that never ends, memory
+    // the drawing spoiled before it faulted, and the plugin's own threads. Only from mkw_plugin_init; 1 done.
+    int (*overlay_on_fault)(MkwOverlayFn draw, void (*cb)(void *user), void *user);
+    // max_height > 0: while the drawing is shown, each frame's game picture is copied on the GPU, scaled down to at
+    // most that many lines (never up; 16..8192), before anything is drawn over it, and the drawing gets it as
+    // MkwOverlay.picture: the live game inside a box of the overlay's page. One blit per shown frame while it is on,
+    // nothing otherwise: turn it on when the page opens and off (0) when it closes. 1 done, 0 refused. Any thread.
+    int (*overlay_picture)(MkwOverlayFn draw, int max_height);
 } MkwPluginApi;
 
 // Exported by the plugin. api_version is the runtime's (api->version); size tells which fields exist. Return 0 to stay

@@ -13,10 +13,12 @@
 #include "overlay.h"
 
 #include "config.h"
+#include "ingame.h"
 #include "log.h"
 #include "mkw_plugin.h"
 #include "plat.h"
 
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -247,7 +249,7 @@ static void frame_arrived(const uint8_t *rgba, int w, int h, int row_bytes, void
 // ---- the launcher's local API: one request, with a body of bytes and its own timeout (launcher.c sends JSON, waits
 // 5 s and serializes its callers: the long poll must not hold the seat's keepalive)
 static int request_once(const MkwmpConfig *cfg, const char *method, const char *path, const void *body, size_t len,
-                        uint32_t timeout_ms, char *buf, size_t cap, const char **answer) {
+                        int json, uint32_t timeout_ms, char *buf, size_t cap, const char **answer) {
     plat_net_init();
     PlatSock s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s == PLAT_NO_SOCK) return 0;
@@ -262,7 +264,8 @@ static int request_once(const MkwmpConfig *cfg, const char *method, const char *
                      "%s %s HTTP/1.1\r\nHost: %s:%d\r\nAuthorization: Bearer %s\r\n%s"
                      "Content-Length: %llu\r\nConnection: close\r\n\r\n",
                      method, path, cfg->launcher_host, cfg->launcher_port, cfg->launcher_token,
-                     len ? "Content-Type: application/octet-stream\r\n" : "", (unsigned long long)len);
+                     !len ? "" : json ? "Content-Type: application/json\r\n" : "Content-Type: application/octet-stream\r\n",
+                     (unsigned long long)len);
     if (n < 0 || n >= (int)sizeof head || send(s, head, n, 0) != n) { plat_sock_close(s); return 0; }
     const char *p = body;
     for (size_t sent = 0; sent < len;) {
@@ -307,17 +310,75 @@ static const MkwmpConfig *endpoint(int reload) {
 }
 
 // The HTTP status; 0 when the launcher did not answer; -1 when there is none to ask.
-static int request(const char *method, const char *path, const void *body, size_t len, uint32_t timeout_ms, char *buf,
-                   size_t cap, const char **answer) {
+// The endpoint for one request, as a copy: the overlay's thread and the in-game overlay's pollers ask at the same time,
+// and one of them may be reading the session again.
+static int endpoint_now(int reload, MkwmpConfig *out) {
+    static PlatLock lock = PLAT_LOCK_INIT;
+    plat_lock(&lock);
+    const MkwmpConfig *cfg = endpoint(reload);
+    if (cfg) *out = *cfg;
+    plat_unlock(&lock);
+    return cfg != NULL;
+}
+
+static int request_as(const char *method, const char *path, const void *body, size_t len, int json, uint32_t timeout_ms,
+                      char *buf, size_t cap, const char **answer) {
     buf[0] = 0;
     *answer = buf;
-    const MkwmpConfig *cfg = endpoint(0);
-    int status = cfg ? request_once(cfg, method, path, body, len, timeout_ms, buf, cap, answer) : 0;
+    MkwmpConfig cfg;
+    int status = endpoint_now(0, &cfg) ? request_once(&cfg, method, path, body, len, json, timeout_ms, buf, cap, answer) : 0;
     if (status == 0 || status == 401) {   // the launcher may have restarted (new token, same port)
-        if (!(cfg = endpoint(1))) return -1;
-        status = request_once(cfg, method, path, body, len, timeout_ms, buf, cap, answer);
+        if (!endpoint_now(1, &cfg)) return -1;
+        status = request_once(&cfg, method, path, body, len, json, timeout_ms, buf, cap, answer);
     }
     return status;
+}
+
+static int request(const char *method, const char *path, const void *body, size_t len, uint32_t timeout_ms, char *buf,
+                   size_t cap, const char **answer) {
+    return request_as(method, path, body, len, 0, timeout_ms, buf, cap, answer);
+}
+
+// ---- the in-game overlay (ingame.h): the launcher's toasts and, on plugin API 5, its overlay page, drawn in the game's
+// own frames. What it needs of this file: the launcher's local API (the same endpoint and bearer as above; several
+// threads ask at once, each with a socket of its own), and the pad around the page.
+static int ingame_request(const char *method, const char *path, const char *json, uint32_t timeout_ms, char *buf,
+                          size_t cap, const char **answer) {
+    return request_as(method, path, json, json ? strlen(json) : 0, 1, timeout_ms, buf, cap, answer);
+}
+
+static void ingame_log(const char *fmt, ...) {
+    char line[512];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof line, fmt, ap);
+    va_end(ap);
+    mkwmp_log("%s", line);
+}
+
+static uint64_t ingame_now(void) { return plat_ms(); }
+static void ingame_sleep(uint32_t ms) { plat_sleep_ms(ms); }
+
+// The page's own reading of the pad while it has the input (the present thread): the player's shortcut pressed again
+// closes it. A gate of its own, primed as the page opens so what is still held from the opening is not a press.
+static OverlayGate g_page_gate;
+static volatile int g_page_prime;
+
+static int ingame_shortcut(const MkwPad *pad, uint64_t now_ms) {
+    if (plat_xchg(&g_page_prime, 0)) {
+        memset(&g_page_gate, 0, sizeof g_page_gate);
+        g_page_gate.guide_was = g_page_gate.all_was = g_page_gate.mod_held = g_page_gate.mod_fired = 1;
+    }
+    g_page_gate.combo = (OverlayCombo)plat_load(&g_combo);
+    OverlayPad p = {pad->buttons, pad->lx, pad->ly, pad->rx, pad->ry, pad->guide};
+    return overlay_gate(&g_page_gate, &p, now_ms, 1, 1) != OVERLAY_BY_NONE;
+}
+
+// The in-game page closed (B, Esc, the shortcut, the launcher went away), on the present thread: as after the window
+// overlay, the game's pad stays idle until every button is up.
+static void ingame_page_closed(void) {
+    plat_store(&g_closed, 1);
+    plat_store(&g_open, 0);
 }
 
 // The overlay host: the MKWMP launcher started by the mod, without a window until the trigger, for players who start
@@ -581,7 +642,20 @@ static void overlay_main(void *arg) {
             if (!g_filtered) sdl_watch();
         }
         int t = plat_xchg(&g_trigger, 0);
-        if (t) session((OverlayTrigger)t);
+        if (!t) continue;
+        // Plugin API 5 with a launcher that serves its page: the page opens (or closes) in the game's own frames and
+        // the game runs on (ingame.h). Anything else: the launcher's window over the game, as before.
+        int was = ingame_page_open();
+        if (!was) {
+            plat_store(&g_page_prime, 1);
+            plat_store(&g_open, 1);   // the game reads an idle pad from now (the runtime also idles it for the page)
+        }
+        if (ingame_page_toggle(trigger_name(t))) {
+            if (!was && !ingame_page_open()) ingame_page_closed();   // it did not open after all (the same press twice)
+            continue;
+        }
+        if (!was) plat_store(&g_open, 0);
+        session((OverlayTrigger)t);
     }
 }
 
@@ -628,5 +702,18 @@ void overlay_install(const MkwPluginApi *api) {
               ? "is out of focus and suspended where the game allows it (not while it uses the network)"
               : "is out of focus and runs on (overlay_pause = 0)",
               g_quit ? "ends it through the runtime" : "is the launcher closing the window");
+    // the launcher's toasts (and, on plugin API 5, its overlay page) in the game's own frames: overlay_set is only
+    // allowed here, in mkw_plugin_init
+    IngameHost host = {
+        .api = api,
+        .request = ingame_request,
+        .log = ingame_log,
+        .now_ms = ingame_now,
+        .sleep_ms = ingame_sleep,
+        .thread_start = plat_thread_start,
+        .page_closed = ingame_page_closed,
+        .shortcut = ingame_shortcut,
+    };
+    ingame_install(&host);
     if (!plat_thread_start(overlay_main, NULL)) mkwmp_log("overlay: off: no thread");
 }

@@ -3,7 +3,7 @@
 //
 //   $zig = "C:\Users\alcmo\tools\zig-x86_64-windows-0.15.2\zig.exe"
 //   & $zig cc -target x86_64-windows-gnu -O2 -Wall -Wextra -Werror -o scratch\test_overlay.exe `
-//       native\probe\tests\test_overlay.c native\probe\src\overlay.c native\probe\src\config.c `
+//       native\probe\tests\test_overlay.c native\probe\tests\stub_ingame.c native\probe\src\overlay.c native\probe\src\config.c `
 //       native\probe\src\log.c native\probe\src\plat_win.c native\probe\src\plat_net_win.c -lws2_32
 //   scratch\test_overlay.exe
 #include "../src/overlay.h"
