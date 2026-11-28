@@ -48,7 +48,7 @@ internal interface ILocalApiHost
     string? EditVoice(Func<ClientConfig, ClientConfig> edit);
 
     /// <summary>
-    /// The game's lobby roster (<c>POST /local/v1/roster</c>, "Previous races"): kept on this PC only, and never
+    /// The game's lobby roster (<c>POST /local/v1/roster</c>, "The current lobby"): held in memory only, and never
     /// logged but as counts.
     /// </summary>
     void Roster(Roster roster)
@@ -105,11 +105,22 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
     private readonly TokenBucket _instance = new(5, 1, clock);
     // The lobby roster: at most one a second from the mod, and one per match.
     private readonly TokenBucket _roster = new(10, 1, clock);
+    // The in-game toasts and overlay page (the mod's long polls, never more than ten a second; an action per button press).
+    private readonly TokenBucket _toasts = new(20, 5, clock);
+    private readonly TokenBucket _toastAction = new(10, 2, clock);
+    private readonly TokenBucket _overlayView = new(20, 5, clock);
+    private readonly TokenBucket _overlayAction = new(30, 5, clock);
     private readonly CancellationTokenSource _stop = new();
     private TcpListener? _listener;
 
     /// <summary>The console-style overlay (/local/v1/overlay/...; launcher/docs/OVERLAY.md).</summary>
     public OverlayBridge Overlay { get; } = new(clock);
+
+    /// <summary>The launcher's toasts as the game draws them (/local/v1/toasts; LAUNCHER_API.md "In-game toasts").</summary>
+    public ToastBridge Toasts { get; } = new(clock);
+
+    /// <summary>The overlay page as the game draws it (/local/v1/overlay/view and /action; LAUNCHER_API.md "In-game overlay").</summary>
+    public GameOverlay Page { get; } = new(clock);
 
     /// <summary>Standing by for a game the launcher did not start, and a second launcher's requests (/local/v1/instance/...).</summary>
     public OverlayHost Instance { get; } = new();
@@ -271,6 +282,7 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
     private static string Reason(int status) => status switch
     {
         200 => "OK",
+        202 => "Accepted",
         204 => "No Content",
         400 => "Bad Request",
         401 => "Unauthorized",
@@ -295,8 +307,13 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
     /// <summary>The same with the query string (after the '?', may be empty): the overlay and instance routes read it.</summary>
     public async Task<LocalResponse> HandleAsync(string method, string path, string query, string? authorization, ReadOnlyMemory<byte> body, CancellationToken cancel)
     {
-        (string Method, TokenBucket Bucket)? route = path switch
+        // /local/v1/toasts/{id}/action: the only route with a part of its own in the path
+        var toastId = ToastActionId(path);
+        (string Method, TokenBucket Bucket)? route = toastId is not null ? ("POST", _toastAction) : path switch
         {
+            "/local/v1/toasts" => ("GET", _toasts),
+            "/local/v1/overlay/view" => ("GET", _overlayView),
+            "/local/v1/overlay/action" => ("POST", _overlayAction),
             "/local/v1/seat" => ("POST", _seat),
             "/local/v1/friends" => ("GET", _friends),
             "/local/v1/nextendo/session" => ("GET", _nextendo),
@@ -326,8 +343,15 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
         {
             return new LocalResponse(401, """{"state":"unauthorized"}""");
         }
+        if (toastId is not null)
+        {
+            return Toasts.Action(toastId, body);
+        }
         return path switch
         {
+            "/local/v1/toasts" => await Toasts.StateAsync(Query(query), cancel).ConfigureAwait(false),
+            "/local/v1/overlay/view" => await Page.ViewAsync(Query(query), cancel).ConfigureAwait(false),
+            "/local/v1/overlay/action" => await Page.ActionAsync(body, cancel).ConfigureAwait(false),
             "/local/v1/overlay/open" => Overlay.Open(Query(query), body),
             "/local/v1/overlay/state" => await Overlay.StateAsync(Query(query), cancel).ConfigureAwait(false),
             "/local/v1/instance/show" => Instance.Show(),
@@ -340,6 +364,30 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
             "/local/v1/roster" => RosterPost(body),
             _ => VoiceMute(body),
         };
+    }
+
+    /// <summary>The toast's id of <c>/local/v1/toasts/{id}/action</c> (percent-decoded, at most 64 characters); null for any other path.</summary>
+    internal static string? ToastActionId(string path)
+    {
+        const string Head = "/local/v1/toasts/", Tail = "/action";
+        if (!path.StartsWith(Head, StringComparison.Ordinal) || !path.EndsWith(Tail, StringComparison.Ordinal) || path.Length <= Head.Length + Tail.Length)
+        {
+            return null;
+        }
+        var raw = path[Head.Length..^Tail.Length];
+        if (raw.Contains('/', StringComparison.Ordinal))
+        {
+            return null;
+        }
+        try
+        {
+            var id = Uri.UnescapeDataString(raw);
+            return id.Length is > 0 and <= 64 ? id : null;
+        }
+        catch (UriFormatException)
+        {
+            return null;
+        }
     }
 
     private bool Authorized(string? authorization) =>
@@ -542,7 +590,7 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
         return host.EditVoice(c => c with { Mutes = ApplyMute(c.Mutes, account, name, muted) }) is { } error ? State(500, "error", error) : new LocalResponse(204);
     }
 
-    // ---- previous races -------------------------------------------------------------------
+    // ---- the current lobby ----------------------------------------------------------------
 
     private LocalResponse RosterPost(ReadOnlyMemory<byte> body)
     {
@@ -556,9 +604,9 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
 
     /// <summary>
     /// <c>{"event":"change"|"match"|"left","match":key|null,"members":[{"uid","name","local",...}]}</c>; null when it is
-    /// not that (more than <see cref="RaceHistory.MaxMembers"/> members included). A row without a <c>uid</c>, or with
-    /// one over <see cref="RaceHistory.MaxUidBytes"/> bytes, is dropped: the id is what a player is known by. A name is
-    /// cut to <see cref="RaceHistory.MaxNameBytes"/> bytes and loses what could not be shown. <c>left</c> has no members.
+    /// not that (more than <see cref="CurrentLobby.MaxMembers"/> members included). A row without a <c>uid</c>, or with
+    /// one over <see cref="CurrentLobby.MaxUidBytes"/> bytes, is dropped: the id is what a player is known by. A name is
+    /// cut to <see cref="CurrentLobby.MaxNameBytes"/> bytes and loses what could not be shown. <c>left</c> has no members.
     /// </summary>
     internal static Roster? ParseRoster(ReadOnlySpan<byte> body)
     {
@@ -581,13 +629,13 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
                 {
                     return null;
                 }
-                key = Shown(match.GetString() ?? "", RaceHistory.MaxKeyBytes);
+                key = Shown(match.GetString() ?? "", CurrentLobby.MaxKeyBytes);
             }
             var members = new List<RosterMember>();
             var dropped = 0;
             if (v.At("members") is { ValueKind: not JsonValueKind.Null } list)
             {
-                if (list.ValueKind != JsonValueKind.Array || list.GetArrayLength() > RaceHistory.MaxMembers)
+                if (list.ValueKind != JsonValueKind.Array || list.GetArrayLength() > CurrentLobby.MaxMembers)
                 {
                     return null;
                 }
@@ -599,12 +647,12 @@ internal sealed class LocalApi(ILocalApiHost host, TimeProvider clock) : IDispos
                     }
                     JsonElement? member = row;
                     var uid = member.At("uid").Str();
-                    if (uid is not { Length: > 0 } || uid.Any(char.IsControl) || string.IsNullOrWhiteSpace(uid) || Encoding.UTF8.GetByteCount(uid) > RaceHistory.MaxUidBytes)
+                    if (uid is not { Length: > 0 } || uid.Any(char.IsControl) || string.IsNullOrWhiteSpace(uid) || Encoding.UTF8.GetByteCount(uid) > CurrentLobby.MaxUidBytes)
                     {
                         dropped++;
                         continue;
                     }
-                    members.Add(new RosterMember(uid, Shown(member.At("name").Str() ?? "", RaceHistory.MaxNameBytes), member.At("local").Bool() ?? false));
+                    members.Add(new RosterMember(uid, Shown(member.At("name").Str() ?? "", CurrentLobby.MaxNameBytes), member.At("local").Bool() ?? false));
                 }
             }
             else if (name != Roster.Left)

@@ -21,8 +21,6 @@ public sealed record TopAvatar(string Name, AvatarPresence Presence, string Coun
 /// </summary>
 public sealed partial class ShellViewModel : ObservableObject, IDisposable
 {
-    private static readonly TimeSpan ToastStay = TimeSpan.FromSeconds(5);
-
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _clock;
     private readonly CancellationTokenSource _lifetime = new();
@@ -356,10 +354,19 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<ToastViewModel> Toasts { get; } = [];
 
-    /// <summary>Shows a toast for a few seconds (at most four at a time; the oldest goes first).</summary>
-    public void ShowToast(string title, string body = "", ToastKind kind = ToastKind.Info)
+    /// <summary>
+    /// Toasts are also shown over a running game (Overlay/InGameToasts: drawn by the game, or the small window over it):
+    /// news that comes while the launcher is behind a game goes there, not to the system's notifications.
+    /// </summary>
+    public bool ToastsOverGame { get; set; }
+
+    /// <summary>
+    /// Shows a toast for as long as its kind stays (at most four at a time; the oldest goes first): 5 s for news, 6 s
+    /// for a warning or an answer (<paramref name="always"/>), 8 s for an error.
+    /// </summary>
+    public void ShowToast(string title, string body = "", ToastKind kind = ToastKind.Info, bool always = false)
     {
-        var toast = new ToastViewModel(title, body, kind);
+        var toast = new ToastViewModel(title, body, kind, always) { LeavesAtMs = Launcher.ToastBridge.NowMs + (long)Toast.StayFor(kind, always).TotalMilliseconds };
         Toasts.Add(toast);
         while (Toasts.Count > 4)
         {
@@ -368,11 +375,26 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         _ = RemoveLater(toast);
     }
 
-    private async Task RemoveLater(ToastViewModel toast)
+    /// <summary>The game took a toast off its screen (POST /local/v1/toasts/{id}/action dismiss): it goes here too.</summary>
+    public void DismissToast(string id)
+    {
+        if (Toasts.FirstOrDefault(t => t.Id == id && !t.Leaving) is { } toast)
+        {
+            toast.Leaving = true;
+            toast.LeavesAtMs = Launcher.ToastBridge.NowMs;
+            _ = RemoveLater(toast, TimeSpan.Zero);
+        }
+    }
+
+    private async Task RemoveLater(ToastViewModel toast, TimeSpan? stay = null)
     {
         try
         {
-            await Task.Delay(ToastStay, _lifetime.Token).ConfigureAwait(true);
+            await Task.Delay(stay ?? toast.Stay, _lifetime.Token).ConfigureAwait(true);
+            if (stay is null && toast.Leaving)
+            {
+                return; // dismissed meanwhile: that removal runs
+            }
             toast.Leaving = true;
             await Task.Delay(260, _lifetime.Token).ConfigureAwait(true);
             Toasts.Remove(toast);
@@ -677,9 +699,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             {
                 return; // locked online: there are no friends to hear from, here or in the system's notifications
             }
-            if (ToastSink?.Invoke(toast) != true)
+            // behind a running game the toast is the game's to show (top right, in the race): not a system notification
+            var overGame = ToastsOverGame && GameRuns && !IsOverlay;
+            if (overGame || ToastSink?.Invoke(toast) != true)
             {
-                ShowToast(toast.Title, toast.Body, toast.Kind);
+                ShowToast(toast.Title, toast.Body, toast.Kind, toast.Always);
             }
         });
 

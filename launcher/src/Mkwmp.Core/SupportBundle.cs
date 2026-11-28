@@ -93,7 +93,7 @@ public static class SupportBundle
                         // one file less
                     }
                 }
-                else if (item.SourcePath is not null && !RaceHistory.IsPrivate(item.SourcePath))
+                else if (item.SourcePath is not null)
                 {
                     Copy(item.SourcePath, Path.Combine(folder, name));
                 }
@@ -109,7 +109,6 @@ public static class SupportBundle
         {
             File.WriteAllText(Path.Combine(folder, SystemFile), system.ToString());
             extra?.Invoke(folder);
-            RaceHistory.RemoveFrom(folder); // Previous races stay on this PC: nothing puts them here, and this makes sure
             File.Delete(zip);
             ZipFile.CreateFromDirectory(folder, zip, CompressionLevel.Optimal, includeBaseDirectory: false);
         }

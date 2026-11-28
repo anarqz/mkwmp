@@ -243,6 +243,33 @@ public static class GameWindow
         }
     }
 
+    /// <summary>
+    /// The whole monitor (in screen pixels) the window is on: the game's for the in-game toasts; without one, the
+    /// foreground window's; without that, the primary monitor's.
+    /// </summary>
+    public static Int32Rect MonitorPixels(IntPtr window)
+    {
+        if (window == IntPtr.Zero)
+        {
+            window = GetForegroundWindow();
+        }
+        var monitor = window != IntPtr.Zero ? MonitorFromWindow(window, 2 /* MONITOR_DEFAULTTONEAREST */) : MonitorFromPoint(default, 1 /* MONITOR_DEFAULTTOPRIMARY */);
+        var info = new MonitorInfo { Size = (uint)Marshal.SizeOf<MonitorInfo>() };
+        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info))
+        {
+            return new Int32Rect(0, 0, (int)SystemParameters.PrimaryScreenWidth, (int)SystemParameters.PrimaryScreenHeight);
+        }
+        var r = info.Monitor;
+        return new Int32Rect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
+    }
+
+    /// <summary>Moves a window onto that rectangle (screen pixels), above every window that is not topmost, without activating it.</summary>
+    public static void PlaceOnTop(Window window, Int32Rect pixels)
+    {
+        var hwnd = new WindowInteropHelper(window).EnsureHandle();
+        _ = SetWindowPos(hwnd, new IntPtr(-1) /* HWND_TOPMOST */, pixels.X, pixels.Y, pixels.Width, pixels.Height, 0x0010 /* SWP_NOACTIVATE */);
+    }
+
     // ── ending the game ("Quit Game", launcher/docs/OVERLAY.md §5) ──
 
     /// <summary>That process still runs (under Wine: a process of this prefix).</summary>
@@ -313,6 +340,15 @@ public static class GameWindow
         public int Top;
         public int Right;
         public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo
+    {
+        public uint Size;
+        public Rect Monitor;
+        public Rect Work;
+        public uint Flags;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -403,6 +439,15 @@ public static class GameWindow
 
     [DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(Point32 point, uint flags);
+
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetDC(IntPtr hwnd);

@@ -478,29 +478,24 @@ public interface ILauncher : IAsyncDisposable
     /// <summary>The same for the linked account itself, while PLAY goes to Nextendo Network.</summary>
     NextendoAvatar NextendoOwnAvatar => NextendoAvatar.None;
 
-    // Previous races (docs/contracts/LAUNCHER_API.md, POST /local/v1/roster; Launcher.Races.cs)
+    // The current lobby (docs/contracts/LAUNCHER_API.md, POST /local/v1/roster; Launcher.Lobby.cs)
 
     /// <summary>
-    /// The online sessions kept on this PC, newest first: who was in each lobby, by the id the server gave them next
-    /// to the names their game showed. Local only (30 days, 200 sessions): nothing of it is ever sent or put in a report.
+    /// The players of the online lobby the game is in now, by the id the server gave them next to the name their game
+    /// shows, and the names each used since this online session began. In memory only: nothing of it is ever stored,
+    /// sent or put in a report, and it is gone when the player leaves online or the game ends.
     /// </summary>
-    Task<IReadOnlyList<RaceSession>> RaceSessionsAsync() => Task.FromResult<IReadOnlyList<RaceSession>>([]);
-
-    /// <summary>One of them by its <see cref="RaceSession.Id"/>; null when it is gone.</summary>
-    Task<RaceSession?> RaceSessionAsync(string id) => Task.FromResult<RaceSession?>(null);
-
-    /// <summary>Everything kept about one player id, across every stored session; null when none holds it.</summary>
-    Task<RacePlayerHistory?> RacePlayerAsync(string uid) => Task.FromResult<RacePlayerHistory?>(null);
-
-    /// <summary>"Clear history": every stored session is deleted.</summary>
-    Task ClearRaceHistoryAsync() => Task.CompletedTask;
-
-    /// <summary>Goes up each time the history changed (a roster from the game, or a clear): a page that shows it reads it again.</summary>
-    int RaceHistoryRevision => 0;
+    LobbyView Lobby => LobbyView.Empty;
 
 // The console-style overlay (launcher/docs/OVERLAY.md)
     /// <summary>The game asks for the launcher over it (<c>Requested</c>); the window answers with <c>ReturnToGame</c>.</summary>
     Overlay.OverlayBridge OverlayBridge { get; }
+
+    /// <summary>The launcher's toasts as the game draws them (GET /local/v1/toasts; LAUNCHER_API.md "In-game toasts").</summary>
+    Overlay.ToastBridge ToastBridge { get; }
+
+    /// <summary>The overlay page as the game draws it (GET /local/v1/overlay/view; LAUNCHER_API.md "In-game overlay").</summary>
+    Overlay.GameOverlay GameOverlay { get; }
 }
 
 /// <summary>The mods of the game in use, for the window.</summary>
@@ -699,9 +694,27 @@ public sealed record ServerListView(ServerListState State, IReadOnlyList<ListedS
 /// <summary>A server the launcher keeps a profile for (<see cref="ILauncher.SavedServers"/>). The PIN itself stays in the settings file.</summary>
 public sealed record SavedServer(string Address, string Name, bool HasPin);
 
-public sealed record Toast(string Title, string Body, ToastKind Kind);
+/// <summary>A toast: its look and how long it stays are <paramref name="Kind"/>'s.</summary>
+public sealed record Toast(string Title, string Body, ToastKind Kind)
+{
+    /// <summary>The answer to something the player did, or a notice that must be read: it stays as long as a warning does.</summary>
+    public bool Always { get; init; }
 
-public enum ToastKind { FriendOnline, FriendPlaying, FriendRequest, Info }
+    /// <summary>
+    /// How long a toast stays fully shown: 5 s for news, 6 s for warnings and the toasts marked always, 8 s for an
+    /// error. The window's toasts and the game's keep it.
+    /// </summary>
+    public static TimeSpan StayFor(ToastKind kind, bool always) => kind switch
+    {
+        ToastKind.Error => TimeSpan.FromSeconds(8),
+        ToastKind.Warning => TimeSpan.FromSeconds(6),
+        _ when always => TimeSpan.FromSeconds(6),
+        _ => TimeSpan.FromSeconds(5),
+    };
+}
+
+/// <summary>A toast's look (its icon and colour) and how long it stays.</summary>
+public enum ToastKind { FriendOnline, FriendPlaying, FriendRequest, Info, Success, Warning, Error }
 
 public enum FriendRemoval { Reject, Cancel, Unfriend }
 

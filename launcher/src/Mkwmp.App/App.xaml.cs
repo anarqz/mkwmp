@@ -68,7 +68,7 @@ public partial class App : Application
     private static readonly string[] ValueOptions =
     [
         "--session", "--parent-pid", "--shot", "--icon", "--size", "--page", "--category", "--press", "--then", "--theme", "--battery",
-        "--network", "--input", "--locale", "--modal", "--state", "--overlay-frame", "--overlay-progress", "--overlay-return",
+        "--network", "--input", "--locale", "--modal", "--state", "--overlay-frame", "--overlay-progress", "--overlay-return", "--toasts-json", "--overlay-view-json",
     ];
 
     /// <summary>The launcher behind the window. <c>--demo</c>: the design-time fake.</summary>
@@ -184,6 +184,13 @@ public partial class App : Application
         // the overlay: the game asks, the window shows over it (the harness draws its moments itself)
         var overlay = harness ? null : new Overlay.OverlayController(window, shell, _launcher as Launcher, _startup);
         window.OverlayControl = overlay;
+        // the toasts over a running game: drawn by the game (GET /local/v1/toasts), else a small window over it
+        if (!harness)
+        {
+            var preview = args.Contains("--ingame-toast", StringComparer.OrdinalIgnoreCase); // the demo: shown over the desktop
+            var inGame = new Overlay.InGameToasts(shell, window, () => overlay?.GameWindowHandle ?? IntPtr.Zero) { Forced = preview, ForcedForGame = preview };
+            window.Closed += (_, _) => inGame.Dispose();
+        }
         if (!hosted && desktop is not { StartHidden: true })
         {
             window.Show(); // --tray: the window stays hidden until the tray icon opens it

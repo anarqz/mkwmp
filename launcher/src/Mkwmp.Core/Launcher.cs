@@ -104,6 +104,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         _targets = new TargetRegistry(_options.Targets ?? [new MkwRecompTarget(Version, Log.Note)]);
         _targetInfos = _targets.Infos;
         _updater = new Updater(_http, _userAgent, _options.UpdateApi, _options.ReleaseKeys);
+        _lobby = new CurrentLobby(_clock);
         _local = new LocalApi(this, _clock);
         _nextendoApi = new NextendoApi(_http, _userAgent);
         var vault = NextendoVault.Beside(configPath);
@@ -160,6 +161,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         {
             Rebuild();
         }
+        _local.Page.Attach(this, Toast); // the game's overlay page shows this launcher's views (once they exist)
     }
 
     public event EventHandler? Changed;
@@ -359,6 +361,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
 
     private void Toast(Toast toast)
     {
+        _local.Toasts.Offer(toast); // a launcher without a window: the game draws it (nothing once a window attached)
         try
         {
             Toasted?.Invoke(this, toast);
@@ -770,6 +773,7 @@ public sealed partial class Launcher : ILauncher, ILocalApiHost
         Interlocked.Increment(ref _nxQuiet); // nothing more is said of the player on Nextendo, but "offline"
         await Task.WhenAll(WaitIdleAsync(TimeSpan.FromSeconds(5)), NextendoOfflineAsync(TimeSpan.FromSeconds(3))).ConfigureAwait(false);
         await _life.CancelAsync().ConfigureAwait(false);
+        _local.Page.Detach();
         _local.Dispose();
         _nxFriends.Dispose();
         _nxPresence.Dispose();

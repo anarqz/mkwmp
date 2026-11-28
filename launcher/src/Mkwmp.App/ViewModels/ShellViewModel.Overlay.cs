@@ -6,7 +6,8 @@ namespace Mkwmp.App.ViewModels;
 /// <summary>
 /// Overlay mode (launcher/docs/OVERLAY.md): the launcher is over a running game, as a console's
 /// HOME menu is. Home's Play tile is then "Back to the game" with the game's picture on it, B on
-/// home goes back, and PLAY starts nothing. The window work (showing over the game, the shrink
+/// home goes back, and PLAY starts nothing. While the game is in an online lobby the overlay opens
+/// on Current Lobby (its players), over home. The window work (showing over the game, the shrink
 /// and grow animation, giving the game back) is Overlay/OverlayController's; the shell only holds
 /// the state the pages read.
 /// </summary>
@@ -102,6 +103,11 @@ public sealed partial class ShellViewModel
             if (Page is not HomeViewModel)
             {
                 GoHome();
+            }
+            // in an online lobby its players are what the overlay shows right away (B: home, with Back to the Game)
+            if (Launcher.Lobby.InLobby)
+            {
+                Navigate(new LobbyViewModel(this));
             }
         }
         IsOverlay = true;

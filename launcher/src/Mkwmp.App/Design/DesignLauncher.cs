@@ -52,6 +52,7 @@ public sealed partial class DesignLauncher : ILauncher
             GameSetup = GameSetupView.None;
         }
         Sync();
+        GameOverlay.Attach(this, toast => Toasted?.Invoke(this, toast)); // the overlay page as the game would be told (--overlay-view-json)
     }
 
     private const string DemoServer = "https://mkw.example.net";

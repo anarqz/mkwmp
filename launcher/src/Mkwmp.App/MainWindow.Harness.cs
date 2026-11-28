@@ -134,19 +134,18 @@ public partial class MainWindow
             _vm.Nav.ResetTo(Routes.Home);
             _vm.Navigate(new WhatsNewViewModel(_vm));
         }
-        else if (page is "races" or "races/session" or "races/player")
+        else if (page is "lobby" or "lobby/player" or "lobby/empty")
         {
-            // Previous Races: the list; its newest session; the demo's player who used three names
-            _vm.Nav.ResetTo(Routes.Home);
-            _vm.Navigate(new PreviousRacesViewModel(_vm));
-            var sessions = _vm.Launcher.RaceSessionsAsync();
-            if (page == "races/session" && sessions is { IsCompletedSuccessfully: true, Result.Count: > 0 })
+            // Current Lobby: the demo's lobby; its player who used three names; out of a lobby
+            if (page == "lobby/empty")
             {
-                _vm.Navigate(new RaceSessionViewModel(_vm, sessions.Result[0].Id));
+                (_vm.Launcher as DesignLauncher)?.PretendLobby(false);
             }
-            else if (page == "races/player")
+            _vm.Nav.ResetTo(Routes.Home);
+            _vm.Navigate(new LobbyViewModel(_vm));
+            if (page == "lobby/player")
             {
-                _vm.Navigate(new RacePlayerViewModel(_vm, DesignLauncher.DemoRenamedPlayer));
+                _vm.Navigate(new LobbyPlayerViewModel(_vm, DesignLauncher.DemoRenamedPlayer));
             }
         }
         else if (page == "connect")
@@ -339,6 +338,21 @@ public partial class MainWindow
         if (args.Contains("--toast"))
         {
             _vm.Launcher.ShowTestToast();
+        }
+        // --toasts: one toast of each look (news, an answer, a warning, an error), as the game draws them too
+        if (args.Contains("--toasts"))
+        {
+            (_vm.Launcher as DesignLauncher)?.ShowDemoToasts();
+        }
+        // --toasts-json <file>, --overlay-view-json <file>: the exact answers of GET /local/v1/toasts and
+        // GET /local/v1/overlay/view for what is shown now (the mod's test fixtures; LAUNCHER_API.md)
+        if (App.Option(args, "--toasts-json") is { } toastsJson)
+        {
+            File.WriteAllText(Path.GetFullPath(toastsJson), _vm.Launcher.ToastBridge.Answer());
+        }
+        if (App.Option(args, "--overlay-view-json") is { } viewJson)
+        {
+            File.WriteAllText(Path.GetFullPath(viewJson), _vm.Launcher.GameOverlay.Answer());
         }
         // --switch ja: the language changes now, with the page already up (what the selector does, without saving)
         if (App.Option(args, "--switch") is { } other)

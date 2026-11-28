@@ -18,8 +18,8 @@
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <Grid Width="68" Height="68" VerticalAlignment="Top">
-              <Ellipse Fill="{DynamicResource Brush.AccentSoft}" />
-              <c:Icon Data="{Binding IconKey, Converter={StaticResource Conv.Icon}}" Width="38" Height="38"
+              <Ellipse x:Name="Disc" Fill="{DynamicResource Brush.Accent}" Opacity="0.13" />
+              <c:Icon x:Name="Glyph" Data="{Binding IconKey, Converter={StaticResource Conv.Icon}}" Width="38" Height="38"
                       Foreground="{DynamicResource Brush.Accent}" />
             </Grid>
             <StackPanel Grid.Column="1" Margin="20,0,0,0" VerticalAlignment="Center">
@@ -44,6 +44,20 @@
           </Border.Triggers>
         </Border>
         <DataTemplate.Triggers>
+          <!-- the look of its kind (as the game draws it: LAUNCHER_API.md "In-game toasts") -->
+          <DataTrigger Binding="{Binding Kind}" Value="Success">
+            <Setter TargetName="Disc" Property="Fill" Value="{DynamicResource Brush.Good}" />
+            <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource Brush.Good}" />
+          </DataTrigger>
+          <DataTrigger Binding="{Binding Kind}" Value="Warning">
+            <Setter TargetName="Disc" Property="Fill" Value="{DynamicResource Brush.Warn}" />
+            <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource Brush.Warn}" />
+          </DataTrigger>
+          <DataTrigger Binding="{Binding Kind}" Value="Error">
+            <Setter TargetName="Disc" Property="Fill" Value="{DynamicResource Brush.Bad}" />
+            <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource Brush.Bad}" />
+            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Brush.Bad}" />
+          </DataTrigger>
           <DataTrigger Binding="{Binding Leaving}" Value="True">
             <DataTrigger.EnterActions>
               <BeginStoryboard>

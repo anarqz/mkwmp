@@ -71,6 +71,7 @@ public sealed partial class Launcher
         {
             Note($"crash check: {e.Message}");
         }
+        EndLobby(); // the game is gone: nobody is in a lobby (Launcher.Lobby.cs)
         RefreshCrashes();
     }
 
@@ -120,6 +121,7 @@ public sealed partial class Launcher
             // never a silent dismissal that comes back: the log says why it will
             Note($"crash: the answered list could not be saved ({e.Message}); it will be offered again");
         }
+        EndLobby(); // the game is gone: nobody is in a lobby (Launcher.Lobby.cs)
         RefreshCrashes();
     });
 
@@ -205,8 +207,8 @@ public sealed partial class Launcher
         }
         // Nextendo friends are other people: their names, friend codes and ids are in no dump either.
         secrets.AddRange(NextendoPeopleSecrets());
-        // The players of the last online lobby are in the game's memory too (Previous races): their ids and names neither.
-        secrets.AddRange(Races.RecentIdentities());
+        // The players of the online lobby are in the game's memory too: their ids and names neither (held in memory only).
+        secrets.AddRange(_lobby.Identities());
         if (install is null)
         {
             return secrets;

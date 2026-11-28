@@ -10,6 +10,12 @@ public sealed partial class Launcher
     /// <summary>The game asks for the launcher over it; the shell answers with <see cref="OverlayBridge.ReturnToGame"/>.</summary>
     public OverlayBridge OverlayBridge => _local.Overlay;
 
+    /// <summary>The launcher's toasts as the game draws them (GET /local/v1/toasts): the window publishes them, the mod polls.</summary>
+    public ToastBridge ToastBridge => _local.Toasts;
+
+    /// <summary>The overlay page as the game draws it (GET /local/v1/overlay/view), and what the player asks there.</summary>
+    public GameOverlay GameOverlay => _local.Page;
+
     /// <summary>Standing by for a game the launcher did not start, and a second launcher's "show yourself".</summary>
     public OverlayHost OverlayHost => _local.Instance;
 
@@ -101,6 +107,7 @@ public sealed partial class Launcher
         _local.Instance.ParentExited += (_, _) =>
         {
             // the game it stood by for is closed now: an account signed in over it reaches the mod's next start
+            EndLobby();
             Volatile.Write(ref _modSynced, null);
             SyncModSettings();
             Mutate(() => { });

@@ -154,17 +154,26 @@ public sealed class ProgressModal : ModalViewModel
     public void Close() => _shell.CloseModal(this);
 }
 
-/// <summary>One toast of the stack at the top right.</summary>
+/// <summary>One toast of the stack at the top right: its kind gives its icon, its colour and how long it stays.</summary>
 public sealed class ToastViewModel : ObservableObject
 {
+    private static long _next;
     private bool _leaving;
 
-    public ToastViewModel(string title, string body, ToastKind kind)
+    public ToastViewModel(string title, string body, ToastKind kind, bool always = false)
     {
         Title = title;
         Body = body;
         Kind = kind;
+        Always = always;
+        Id = "t" + Interlocked.Increment(ref _next).ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
+
+    /// <summary>Its id for the game (GET /local/v1/toasts): "t&lt;n&gt;", once per run.</summary>
+    public string Id { get; }
+
+    /// <summary>When it starts to fade, on the toast bridge's clock (<see cref="Mkwmp.Core.Overlay.ToastBridge.NowMs"/>); set by the shell as it shows it.</summary>
+    public long LeavesAtMs { get; set; }
 
     public string Title { get; }
 
@@ -172,12 +181,19 @@ public sealed class ToastViewModel : ObservableObject
 
     public ToastKind Kind { get; }
 
+    /// <summary>The answer to something the player did (<see cref="Toast.Always"/>): it stays a second longer.</summary>
+    public bool Always { get; }
+
+    /// <summary>How long it stays fully shown: 5 s for news, 6 s for warnings and answers, 8 s for an error.</summary>
+    public TimeSpan Stay => Toast.StayFor(Kind, Always);
 
     public string IconKey => Kind switch
     {
         ToastKind.FriendPlaying => "Icon.Play",
         ToastKind.FriendRequest => "Icon.UserPlus",
         ToastKind.FriendOnline => "Icon.User",
+        ToastKind.Success => "Icon.Check",
+        ToastKind.Warning or ToastKind.Error => "Icon.Warning",
         _ => "Icon.Info",
     };
 

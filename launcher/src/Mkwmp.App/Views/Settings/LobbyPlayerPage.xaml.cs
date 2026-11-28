@@ -3,7 +3,7 @@ using System.Windows.Controls;
 
 namespace Mkwmp.App.Views.Settings;
 
-public partial class PreviousRacesPage : UserControl
+public partial class LobbyPlayerPage : UserControl
 {
-    public PreviousRacesPage() => InitializeComponent();
+    public LobbyPlayerPage() => InitializeComponent();
 }

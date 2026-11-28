@@ -220,7 +220,7 @@ internal sealed class OverlayController : IDisposable
             _window.Hide();
         }
         // Guide as the way back while the overlay is up, and as the trigger for a game whose mod does not ask
-        if (_guide.Available && (_shell.IsOverlay ? !_window.IsOverlayAnimating : !_bridge.GameListening))
+        if (_guide.Available && (_shell.IsOverlay ? !_window.IsOverlayAnimating : !_bridge.GameListening && !GameDrawsOverlay))
         {
             _guide.Start();
         }
@@ -231,6 +231,12 @@ internal sealed class OverlayController : IDisposable
     }
 
     private static bool Alive(int pid) => GameWindow.Alive(pid);
+
+    /// <summary>The window of the running game (zero: none seen), for the toasts over it to find its monitor.</summary>
+    public IntPtr GameWindowHandle => KnownGamePid is var pid and not 0 ? GameWindow.Find(pid) : IntPtr.Zero;
+
+    /// <summary>The mod draws the overlay page in the game's own frames (it polls GET /local/v1/overlay/view): the shortcut is its own.</summary>
+    private bool GameDrawsOverlay => _shell.Launcher.GameOverlay.GameDraws;
 
     /// <summary>The game "Quit Game" would end: the one that asked for the overlay, else the one the watch found; 0 for none.</summary>
     private int KnownGamePid => _bridge.GamePid != 0 ? _bridge.GamePid : _gamePid;
@@ -461,7 +467,7 @@ internal sealed class OverlayController : IDisposable
         {
             return;
         }
-        if (!_bridge.IsOpen && !_bridge.GameListening && _gamePid != 0 && GameWindow.IsForeground(_gamePid))
+        if (!_bridge.IsOpen && !_bridge.GameListening && !GameDrawsOverlay && _gamePid != 0 && GameWindow.IsForeground(_gamePid))
         {
             _ = _bridge.RequestFromLauncher(_gamePid, GameWindow.Capture(GameWindow.Find(_gamePid)));
         }

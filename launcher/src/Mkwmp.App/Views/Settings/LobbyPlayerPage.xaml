@@ -1,14 +1,14 @@
-<UserControl x:Class="Mkwmp.App.Views.Settings.RacePlayerPage"
+<UserControl x:Class="Mkwmp.App.Views.Settings.LobbyPlayerPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:Mkwmp.App.Controls"
              xmlns:input="clr-namespace:Mkwmp.App.Input"
              x:Name="Self" Focusable="False">
-  <!-- DataContext: RacePlayerViewModel. One player of Previous Races, by their Player ID (the id the server gave them,
-       the same whatever they call themselves): the id with "Copy Player ID"; when they showed more than one name, a
-       warning card; "Copy Report" (a text for Nextendo staff or the server's host: the launcher sends nothing) and, on
-       the MKWMP server in use, Report Abuse filled in; every name with when it was first and last seen, across all the
-       stored sessions; and those sessions (A opens one). -->
+  <!-- DataContext: LobbyPlayerViewModel. One player of the current lobby, by their Player ID (the id the server gave
+       them, the same whatever they call themselves): when they showed more than one name in this online session, a
+       warning card; Report (on the MKWMP server in use: Report Abuse filled in; always: "Copy Report", a text for
+       Nextendo staff or the server's host: the launcher sends nothing); the id with "Copy Player ID"; and every name
+       seen under it since this online session began. Nothing is stored. -->
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -23,8 +23,7 @@
     </c:PageHeader>
     <c:SmoothScrollViewer Grid.Row="1" Padding="16,26,24,60" EdgePadding="110" input:FocusNav.IsGroup="True" HorizontalAlignment="Center" Width="1300">
       <StackPanel>
-        <c:Spinner Width="56" Height="56" Margin="0,40,0,0" Visibility="{Binding Loading, Converter={StaticResource Conv.Visible}}" />
-        <TextBlock Text="{Binding S[races.player.gone]}" Style="{StaticResource Text.Caption}" Margin="20,26,20,0"
+        <TextBlock Text="{Binding S[lobby.player.gone]}" Style="{StaticResource Text.Caption}" Margin="20,26,20,0"
                    Visibility="{Binding Gone, Converter={StaticResource Conv.Visible}}" />
         <StackPanel Visibility="{Binding Found, Converter={StaticResource Conv.Visible}}">
           <!-- the same id, more than one name: said first, in the warning colour -->
@@ -38,37 +37,29 @@
               <TextBlock Grid.Column="1" Text="{Binding Warning}" Style="{StaticResource Text.Body}" Foreground="{DynamicResource Brush.Warn}" FontWeight="SemiBold" TextWrapping="Wrap" />
             </Grid>
           </Border>
+          <!-- Report: the server's own Report Abuse where there is one, and the text to copy -->
+          <StackPanel Visibility="{Binding ShowReport, Converter={StaticResource Conv.Visible}}">
+            <c:SettingsRow Label="{Binding S[lobby.report.host]}" Kind="Chevron" Icon="{StaticResource Icon.Shield}" Command="{Binding HostReportCommand}"
+                           Caption="{Binding S[lobby.report.host_caption]}" input:FocusNav.IsDefault="{Binding ShowHostReport}"
+                           Visibility="{Binding ShowHostReport, Converter={StaticResource Conv.Visible}}" />
+            <c:SettingsRow Label="{Binding S[lobby.report]}" Icon="{StaticResource Icon.Flag}" Command="{Binding CopyReportCommand}"
+                           Caption="{Binding ReportCaption}" input:FocusNav.IsDefault="{Binding CopyIsDefault}" />
+          </StackPanel>
           <!-- the Player ID, whole (it wraps), and the way to copy it -->
-          <Border Style="{StaticResource Card}">
+          <Border Style="{StaticResource Card}" Margin="0,8,0,0">
             <StackPanel>
-              <TextBlock Text="{Binding S[races.player.id]}" Style="{StaticResource Text.Small}" FontSize="22" FontWeight="SemiBold" />
+              <TextBlock Text="{Binding S[lobby.player.id]}" Style="{StaticResource Text.Small}" FontSize="22" FontWeight="SemiBold" />
               <TextBlock Text="{Binding Uid}" Style="{StaticResource Text.Base}" FontSize="27" TextWrapping="Wrap" Margin="0,6,0,0" />
-              <TextBlock Text="{Binding S[races.player.id_caption]}" Style="{StaticResource Text.Caption}" FontSize="22" Margin="0,10,0,0" />
+              <TextBlock Text="{Binding S[lobby.player.id_caption]}" Style="{StaticResource Text.Caption}" FontSize="22" Margin="0,10,0,0" />
             </StackPanel>
           </Border>
-          <c:SettingsRow Label="{Binding S[races.player.copy_id]}" Icon="{StaticResource Icon.File}" Command="{Binding CopyIdCommand}" Margin="0,8,0,0" />
-          <StackPanel Visibility="{Binding ShowReport, Converter={StaticResource Conv.Visible}}">
-            <c:SettingsRow Label="{Binding S[races.report]}" Icon="{StaticResource Icon.Flag}" Command="{Binding CopyReportCommand}"
-                           Caption="{Binding ReportCaption}" input:FocusNav.IsDefault="True" />
-            <c:SettingsRow Label="{Binding S[races.report.host]}" Kind="Chevron" Icon="{StaticResource Icon.Shield}" Command="{Binding HostReportCommand}"
-                           Caption="{Binding S[races.report.host_caption]}"
-                           Visibility="{Binding ShowHostReport, Converter={StaticResource Conv.Visible}}" />
-          </StackPanel>
+          <c:SettingsRow Label="{Binding S[lobby.player.copy_id]}" Icon="{StaticResource Icon.File}" Command="{Binding CopyIdCommand}" Margin="0,8,0,0" />
 
           <c:SectionHeader Text="{Binding NamesHeader}" />
           <ItemsControl ItemsSource="{Binding Names}" Focusable="False" Margin="0,6,0,0">
             <ItemsControl.ItemTemplate>
               <DataTemplate>
-                <c:SettingsRow Label="{Binding Name}" Caption="{Binding Seen}" Icon="{StaticResource Icon.User}" />
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-
-          <c:SectionHeader Text="{Binding SessionsHeader}" />
-          <ItemsControl ItemsSource="{Binding Sessions}" Focusable="False" Margin="0,6,0,0">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate>
-                <c:SettingsRow Label="{Binding Title}" Caption="{Binding Detail}" Kind="Chevron" Icon="{StaticResource Icon.Trophy}" Command="{Binding OpenCommand}" />
+                <c:SettingsRow Label="{Binding}" Icon="{StaticResource Icon.User}" />
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>

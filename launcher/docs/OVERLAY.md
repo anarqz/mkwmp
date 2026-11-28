@@ -12,6 +12,23 @@ must be tested.
 Sources quoted as `fork:` are anarqz/mkw-recomp at tag `v0.1.15-mkwmp`; `SDL:` is libsdl-org/SDL `main`;
 `gamescope:` is ValveSoftware/gamescope `master` (both read on 2026-11-20).
 
+**The game draws, the launcher decides** (the user's call, 2026-11-27; ported from Infinity's v4 overlay). Two things
+are now served to the mod as data, for it to draw inside the game's own frames while the game keeps running, focused
+and full screen (docs/contracts/LAUNCHER_API.md, "In-game toasts (v1)" and "In-game overlay (v1)"):
+
+- **Toasts in a race**, at the top right: `GET /local/v1/toasts` (a long poll on `seq`), from
+  `Mkwmp.Core/Overlay/ToastBridge.cs`. `Mkwmp.App/Overlay/InGameToasts.cs` publishes what the launcher's ToastHost
+  shows while the launcher's window is behind a running game. Until a mod polls (none for 15 s), a small click-through,
+  never-activated, topmost window at the top right of the game's monitor shows them instead (Windows only).
+- **The overlay page**: `GET /local/v1/overlay/view` and `POST /local/v1/overlay/action`, from
+  `Mkwmp.Core/Overlay/GameOverlay.cs`: Game (Back to the Game, Quit Game) and **Current Lobby** (the players of the
+  lobby the game is in now, the player's own row, a flag on whoever used more than one name in this online session,
+  Report). While a mod polls the view, the launcher's own shortcut watcher stays off for that game.
+
+Both are built on the launcher's side only; the mod's side (the polls and the drawing) is not written yet, so the
+window overlay below is still what every player gets. It stays as the way for a game whose mod does not draw. In
+overlay mode the launcher's own window opens on its Current Lobby page while the game is in an online lobby (B: home,
+with Back to the Game). The launcher stores nothing about other players ("Previous Races" of 1.5.4 is removed).
 ## 0. Summary of the decisions
 
 | # | Question | Decision |

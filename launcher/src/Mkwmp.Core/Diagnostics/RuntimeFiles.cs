@@ -111,8 +111,7 @@ public static class RuntimeFiles
             {
                 return [];
             }
-            // never a file of Previous races (races\lobby-*.json beside client.toml): that history stays on this PC
-            var all = new DirectoryInfo(folder).EnumerateFiles(pattern).Where(f => (f.Attributes & FileAttributes.ReparsePoint) == 0 && !RaceHistory.IsPrivate(f.FullName))
+            var all = new DirectoryInfo(folder).EnumerateFiles(pattern).Where(f => (f.Attributes & FileAttributes.ReparsePoint) == 0)
                 .OrderByDescending(f => f.LastWriteTimeUtc).Take(64).ToList();
             return [.. all.Where((f, i) => i < KeepRecent || f.LastWriteTimeUtc >= since.UtcDateTime.AddMinutes(-1))];
         }

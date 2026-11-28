@@ -171,12 +171,12 @@ request to the first, same bearer, then exits.
 
 Limit: burst 5 then 1/s for the two together.
 
-## Previous races: POST /local/v1/roster
+## The current lobby: POST /local/v1/roster
 
-Who was in each online lobby, by the id the **server** gave them, next to the name their game showed. Research:
-research/docs/LOBBY-ROSTER-1.8.0.md (the game's member tree). Game 1.8.0 only; both backends (MKWMP, Nextendo).
-Same `Authorization: Bearer <launcher_token>`; JSON body; answers 204 (stored), 400 `{"state":"invalid"}`, 401.
-Limit: burst 10 then 1/s.
+Who is in the game's online lobby **now**, by the id the **server** gave them, next to the name their game shows.
+Research: research/docs/LOBBY-ROSTER-1.8.0.md (the game's member tree). Game 1.8.0 only; both backends (MKWMP,
+Nextendo). Same `Authorization: Bearer <launcher_token>`; JSON body; answers 204 (taken), 400 `{"state":"invalid"}`,
+401. Limit: burst 10 then 1/s. The request is unchanged since 1.5.4 (the mod needs no change for it).
 
     {"event":"change"|"match"|"left",
      "match":"<referee key, \"%u_%d_%d_%d_%x\">"|null,     // "match" only: the key of the match that starts
@@ -188,14 +188,220 @@ Limit: burst 10 then 1/s.
   request (members complete). `left`: the player left online (members `[]`). Nothing while offline.
 - **Trust.** `uid` comes from the server-written `__us` document: the id to identify a player by. `name`, `sid`
   and `lid` are what that member's own game wrote (`PlayerStatic`): shown, never trusted. A row without a `uid` is
-  dropped by the launcher.
-- **What the launcher keeps.** One file per online session (from the first roster to `left`, or 10 minutes
-  without one) in `races\` beside client.toml: `lobby-YYYY-MM-DD-HH-MM-SS.json` (local time of the first roster),
-  holding the backend, the server host, every `match` (time, key, members) and, per `uid`, each distinct name with
-  first/last seen time. Kept 30 days, 200 files at most. **Local only**: never in a bug report, a log line, a
-  crash record or anything sent to an MKWMP server; the player chooses to share it (Previous races › Report).
+  dropped by the launcher; a name loses what cannot be shown (control characters, direction marks).
+- **What the launcher holds, in memory only** (`Mkwmp.Core/Lobby.cs`, `CurrentLobby`): the members of the last
+  roster (this PC's player first), and for this online session (from the first roster to `left`, the game's end, or
+  a roster on another network) each distinct name seen under a `uid`, with when it was first seen: a member with more
+  than one is flagged as renamed. `left` forgets all of it. **Nothing is written to disk**, logged (only counts) or
+  sent to any server; the player shares it by copying a report, or on an MKWMP server by opening Report Abuse filled
+  in. It is shown by the launcher's Current Lobby page and, in the game, by the overlay page's Lobby pane (below).
+- **"Previous Races" (1.5.4) is gone.** The launcher no longer stores any history: at start it deletes a leftover
+  `races\` folder beside client.toml (the old `lobby-*.json` files) and logs only how many files went.
 - The mod logs neither uids nor names (logs go into bug reports): only counts.
 
+## In-game toasts (v1): GET /local/v1/toasts, POST /local/v1/toasts/{id}/action
+
+Ported from Infinity's v4 overlay: **the game draws, the launcher decides.** The launcher's toasts (a friend is
+online, a request, an answer to something the player did, a warning) are drawn by the MKWMP mod **inside the game's
+own frame, at the top right**, while the game keeps running, focused and full screen; no window is put over it. The
+launcher decides everything (which toasts, their order, their times, their words, the colours); the mod only draws
+what it is told. Launcher: `Mkwmp.Core/Overlay/ToastBridge.cs`, `Mkwmp.App/Overlay/InGameToasts.cs`. Same bearer as
+every route; both routes are additive (a launcher without them answers 404, and the mod then draws nothing).
+
+`GET /local/v1/toasts[?wait=S&seq=N]`
+
+What the launcher's ToastHost shows now, in its order (oldest first, at most four). Empty while the launcher's own
+window is visible (it shows them itself) and when no toast is up.
+
+- Without `wait`, or when `seq` is not the current one: the answer at once.
+- With `wait=S` (seconds, at most 25) and `seq=N` equal to the current one: held until what is shown changes, or `S`
+  seconds, whichever comes first; then the answer.
+- `seq` moves on at every change of the list, its texts, its times or the colours. Nothing else wakes the poll.
+- Limit: burst 20 then 5/s. The mod asks with `wait=10` in a loop, never more than ten times a second.
+- 400 `{"state":"invalid","message"}`: `wait` or `seq` is not a number. 401 `{"state":"unauthorized"}`.
+
+```json
+{
+  "v": 1,                                // the version of this answer's shape
+  "seq": 12,
+  "toasts": [
+    {
+      "id": "t7",                        // "t<n>": once per launcher run
+      "kind": "friend",                  // info | success | warning | error | friend
+      "title": "Luna is racing online now",
+      "body": "Nextendo Network",        // may be ""
+      "icon": "play",                    // info | check | warning | error | user | play | userPlus (Themes/Icons.xaml)
+      "expiresInMs": 4200,               // it starts to fade then (counted from this answer's arrival)
+      "stayMs": 5000                     // its whole time: 5 s news, 6 s warnings and answers, 8 s errors
+    }
+  ],
+  "suppress": [],                        // reserved (Infinity: keys a hold-to-accept toast keeps from the game); always []
+  "palette": {                           // the player's theme, #AARRGGBB, by role
+    "toast": "#FF4E4E55", "rule": "#FF5E5E64", "accent": "#FF5CB8FF", "good": "#FF3DD27A", "warn": "#FFFFB933",
+    "bad": "#FFFF6B61", "text": "#FFF3F3F3", "textMuted": "#FFB1B1B6", "track": "#FF646469", "glyph": "#FFF3F3F3",
+    "onGlyph": "#FF2A2A2D", "onAccent": "#FF0F1A26", "surface": "#FF434349"
+  }
+}
+```
+
+(The comments are this document's; the answer is plain JSON on one line.) Every text is plain UTF-8: only `\"`, `\\`
+and a control character (`\u00XX`) are escaped, so a name with an emoji arrives as the emoji. The mod:
+
+- counts each toast down from the answer's arrival and fades it out at `expiresInMs` (220 ms; gone at 260 ms);
+- slides new cards in (240 ms from 120 units to the right, with a 200 ms fade in) and takes out those the launcher
+  no longer lists the same way; a card that stays keeps its place;
+- draws in the launcher's stage units (a 640-wide column, 48 from the right edge, from 40 down, 14 between cards,
+  corner radius 18; 1080 units high) scaled to the frame's height. A card: `palette.toast` with a 1.5-unit
+  `palette.rule` outline (`palette.bad` for `error`), a 68-unit disc tinted by kind at 13 % (`accent` for info and
+  friend, `good` success, `warn` warning, `bad` error) with the icon in that colour, the title (bold, 28 units,
+  `palette.text`, wrapped) and the body (24 units, `palette.textMuted`, wrapped; none when ""); padding 24 x 20,
+  20 between the disc and the text. This is the card of the launcher's `Controls/ToastHost.xaml`;
+- ignores keys it does not know, keeps a default for a missing one, and draws at most 12 toasts; no sound;
+- after three failed polls drops what it holds (the cards fade). Back-off: 404 / 401: 30 s, 429: 1 s, else 2 s.
+
+**Which side shows the toasts.** The mod's polls are the signal that the game draws them: while the mod is waiting
+in a poll, or asked within the last 15 s (`ToastBridge.GameDraws`), the launcher shows nothing over the game. When no
+poll came for 15 s (no mod, a mod without this), the launcher's fallback shows them: a small window at the top right
+of the game's monitor, borderless, transparent, topmost, click-through and never activated (`WS_EX_NOACTIVATE |
+WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_LAYERED`, shown without activation). Windows only (off under
+Wine/Proton unless `MKWMP_INGAME_TOASTS=1`); an exclusive full-screen game draws over it. While the launcher is behind
+a running game its news goes to these toasts, not to the system's notifications.
+
+**A launcher without a window** (the overlay host before the player opened it) serves the core's own toasts here,
+with the same kinds and times, four at most: the game is then the only place they show.
+
+`POST /local/v1/toasts/{id}/action`
+
+Body `{"action": "dismiss" | "accept" | "decline"}`; `{id}` is the toast's id, percent-encoded (at most 64
+characters).
+
+| Status | Body | Meaning |
+|---|---|---|
+| 200 | `{"ok":true}` | `dismiss`: the toast goes now, in the launcher too (the list changes: the poll answers). |
+| 404 | `{"state":"gone","message"}` | No such toast is shown (it went meanwhile). |
+| 409 | `{"state":"refused","message"}` | `accept`, `decline`: reserved names (Infinity's invite toasts); no toast of this launcher takes them. |
+| 400 | `{"state":"invalid","message"}` | Not JSON, or another action. |
+| 401 | `{"state":"unauthorized"}` | Wrong or missing token. |
+
+Limit: burst 10 then 2/s. The mod needs no input for the toasts: `dismiss` is there for a later step.
+
+## In-game overlay (v1): GET /local/v1/overlay/view, POST /local/v1/overlay/action
+
+Ported from Infinity's v4 overlay: the overlay **page** drawn by the mod inside the game's own frames, in the
+launcher's look, while **the game keeps running** (it is not paused, and keeps the screen, the focus and its full
+screen). The player's overlay shortcut opens it; B, the same shortcut or Esc close it; while it is open the game
+reads an idle pad, and after it closes until every button is up; the pad drives the page. The launcher decides (the
+entries, every text in the player's language, the colours, what can be done now) and does the actions; the mod draws
+and sends what the player chose. The outcomes are the launcher's toasts (above), which the mod keeps drawing over the
+page. Launcher: `Mkwmp.Core/Overlay/GameOverlay.cs`.
+
+These routes live **beside** `GET /local/v1/overlay/state` and `POST /local/v1/overlay/open` (the launcher's window
+over the game), which are unchanged and still serve the mod of 1.5.4. **Which overlay the player gets:** while the
+mod polls `view` (it is waiting in a poll, or asked within the last 15 s: `GameOverlay.GameDraws`), the launcher's
+own shortcut watcher never opens the launcher's window over that game: the shortcut is the mod's. A mod that draws
+the page must not also call `overlay/open`. A mod that gets 404 on `view` (an older launcher) keeps the window overlay.
+
+`GET /local/v1/overlay/view[?wait=S&seq=N]`
+
+The whole page as data. Without `wait`, or when `seq` is not the current one: at once. With `wait=S` (at most 25)
+and the current `seq`: held until the view changes, or `S` seconds, or the next minute (the clock on the page),
+whichever comes first. `seq` moves on at every change of anything below (the lobby, the language, the theme, an
+action running). Limit: burst 20 then 5/s. 503 `{"state":"unavailable"}` while the launcher is starting; 400 for a
+`wait` or `seq` that is not a number; 401.
+
+```json
+{
+  "seq": 41,
+  "v": 1,                                         // the version of this view's shape and of the actions
+  "shortcut": "guide_or_select_start",            // the player's overlay_shortcut (as in overlay/state; here always sent)
+  "clock": "10:21 PM",                            // the header's clock, as the launcher writes it
+  "status": null,                                 // reserved (Infinity: the header's network and battery)
+  "start": "lobby",                               // the pane the page opens on: "lobby" while in a lobby (its players
+                                                  // right away), else "game"
+  "palette": { "background": "#FFEBEBEB", "surface": "#FFFFFFFF", "surfaceAlt": "#FFF6F6F6", "modal": "#FFF0F0F0",
+               "text": "#FF2B2B2B", "textMuted": "#FF6C6C6C", "textFaint": "#FFAEAEAE", "accent": "#FF1E64E6",
+               "accentSoft": "#1F1E64E6", "onAccent": "#FFFFFFFF", "rule": "#FFC6C6C6", "bar": "#FF2B2B2B", "good": "#FF16A34A",
+               "warn": "#FFD98200", "bad": "#FFE0352B", "dim": "#73000000", "focusFill": "#FFFFFFFF", "track": "#FFCFCFCF",
+               "knob": "#FFFFFFFF", "hover": "#0D000000", "pressed": "#1A000000", "glyph": "#FF2B2B2B", "onGlyph": "#FFEBEBEB",
+               "toast": "#FFFFFFFF", "outline": "#FF8A8A8A" },   // the player's theme with its contrast (no window: light or dark)
+  "text": { "title": "MKWMP", "ok": "OK", "back": "Back", "backToGame": "Back to the Game", "close": "Close",
+            "cancel": "Cancel", "select": "Select" },
+  "entries": [ { "key": "game", "title": "Game", "icon": "gamepad", "separator": false, "locked": false, "soon": false },
+               { "key": "lobby", "title": "Current Lobby", "icon": "friends", "separator": false, "locked": false, "soon": false } ],
+  "busy": [ "report" ],                           // actions running now (their buttons are greyed)
+  "game": { "name": "MKW", "status": "mkw.example.net",       // where it plays: the server, "Playing on Nextendo Network", "Offline"
+            "backToGame": "Back to the Game",
+            "quit": { "label": "Quit Game", "title": "Quit MKW?", "body": "…", "yes": "Quit Game", "no": "Cancel" } },
+  "lobby": {
+    "title": "Current Lobby",
+    "subtitle": "PLAYERS · 6 · MKWMP server · mkw.example.net",   // "" out of a lobby
+    "inLobby": true,
+    "network": "mkwmp",                           // mkwmp | nextendo
+    "note": "",                                   // out of a lobby, the pane's one line ("You're not in an online lobby. …")
+    "you": "You",                                 // the pill on the player's own row
+    "players": [                                  // this PC's player first, then the game's order; at most 32
+      { "id": "p5",                               // the member's handle for this online session: what an action names
+        "name": "NotTurbo",                       // what their game shows now ("(no name)" in the player's language for none)
+        "initials": "NT", "disc": "#FF2F6BFF",    // the launcher's avatar: one or two letters on a disc of that colour
+        "you": false,                             // true on the player's own row
+        "renamed": true,                          // more than one name under the same Player ID in this online session
+        "renamedLabel": "Used 3 names",           // the row's flag, in the warning colour ("" when not renamed)
+        "renamedBody": "This player used 3 different names with the same Player ID.",   // the player pane's warning card
+        "names": [ "TurboShell", "xX_Drift_Xx", "NotTurbo" ],   // every name of this session, oldest first
+        "playerId": "0000000f-4c1e-…",            // the id the server gave them (at most 128 characters here)
+        "canReport": true,                        // Report to the server's host is offered (see "report")
+        "canCopyReport": true } ],                // Copy Report is offered (everyone but the player)
+    "player": { "namesHeader": "NAMES · {n}",     // the mod puts the count in place of {n}
+                "idLabel": "Player ID", "idCaption": "Given by the server. …",
+                "report": "Report", "copyReport": "Copy Report", "copyReportCaption": "Copies a text report …",
+                "no": "Cancel" }
+  },
+  "report": { "label": "Report", "caption": "The server's host reviews reports. …", "title": "Report Abuse",
+              "what": "What Happened", "send": "Send Report", "no": "Cancel",
+              "enabled": true, "why": "",         // greyed with why: not registered or not 18+, one report already waiting
+              "reasons": [ { "code": "cheating", "label": "Cheating" }, … ] }   // the server's; null on Nextendo and offline
+}
+```
+
+(The comments are this document's.) Every text is the launcher's own catalog entry in the player's language, plain
+UTF-8 as for the toasts. The mod ignores keys it does not know; a missing one keeps its default.
+
+The page (Infinity's layout): a list of `entries` at the left under `text.title` and the `clock`; the focused
+entry's pane at the right; a hint bar at the bottom (A `text.select` / `text.ok`, B `text.back`).
+
+- **Game** pane: `game.name`, `game.status`, a button `game.backToGame` (closes the page), and `game.quit.label`,
+  which asks first (`title`, `body`, `yes`, `no`) and then sends `quitGame`.
+- **Lobby** pane: `lobby.title` and `lobby.subtitle`; out of a lobby only `lobby.note`. In one, a row per player:
+  the disc with `initials`, `name`, the `lobby.you` pill when `you`, and when `renamed` the warning mark with
+  `renamedLabel` and the `names` joined by " · " under the name. A on a row that is not `you` opens that player:
+  `renamedBody` (when renamed), `player.idLabel` with `playerId` and `player.idCaption`, the names under
+  `player.namesHeader`, and the actions: **Report** (`player.report`; only when `canReport` and `report` is not
+  null; greyed with `report.why` when `report.enabled` is false): the mod asks the reason (`report.what`,
+  `report.reasons`) and then `report.send`, and sends `report`; **Copy Report** (`player.copyReport` with
+  `player.copyReportCaption`; when `canCopyReport`): sends `copyReport`. There is no Add Friend here. A player who
+  leaves the lobby disappears from `players`: an open player pane closes.
+
+`POST /local/v1/overlay/action`
+
+Body `{"action": "<name>", "args": {…}}`. The launcher checks it against what it shows now.
+
+| Action | Args | What the launcher does |
+|---|---|---|
+| `show` | `pane`: `game`, `lobby`, or `""` (closed) | Remembers what the page shows (`GameOverlay.IsOpen`, `Pane`). The mod sends it when the page opens, changes pane and closes. |
+| `report` | `id` (a player's `id`), `reason` (a `report.reasons` code) | On an MKWMP server: `SendReportAsync(name, reason, "Player ID …. Names used: …")`, the server's own Report Abuse. Not registered / not 18+, a name that server cannot know, one report already waiting, Nextendo: 409 with the launcher's line. |
+| `copyReport` | `id` | Puts a plain-text report on the clipboard (the Player ID, the names of this session with when each was first seen, the network, the launcher's version) and shows a toast that says who to send it to (Nextendo staff, or the server's host). Nothing is sent anywhere. 409 when there is no clipboard (a launcher without a window). |
+| `quitGame` | | Answers 200; the mod then ends the game itself through the runtime (plugin API 4 `quit`). The mod asks first. |
+
+- 200 `{"ok":true}`: done (how it went is the launcher's toast, and the view).
+- 202 `{"state":"pending"}`: still at it after 15 s (the toast and the view follow).
+- 409 `{"state":"refused","message":"…"}`: not now; the message is the launcher's, in the player's language (the
+  same action already running: `"busy"`).
+- 404 `{"state":"gone","message"}`: what it names is not there (any more): a player who left, the player's own row.
+- 400 `{"state":"invalid","message"}`: not JSON, an unknown action, bad args. 401; 503 while the launcher starts.
+- Limit: burst 30 then 5/s.
+
+Fixtures for the mod's tests, written by the launcher's harness from its demo data (the exact bytes of both
+answers): `mkwmp.exe --demo --shot <png> --toasts --toasts-json <file> --overlay-view-json <file>`.
 ## Room ID (removed in 1.0.0)
 
 `/local/v1/room` is gone: mkw-recomp's own number pad (0.1.15 on) answers the game's "search group ID"
